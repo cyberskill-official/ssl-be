@@ -1,5 +1,5 @@
 {
-    "name": "template-be-nodejs",
+    "name": "ssl-be",
     "type": "module",
     "version": "1.0.0",
     "private": true,
