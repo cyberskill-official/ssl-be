@@ -1,10 +1,9 @@
 ---
 name: Feature Request ✨
 about: Suggest a shiny new feature or improvement
-title: ''
-labels: ''
-assignees: ''
-
+title: "[FEATURE] - "
+labels: feature
+assignees: 
 ---
 
 ## Motivation

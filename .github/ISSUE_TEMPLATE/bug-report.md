@@ -1,10 +1,9 @@
 ---
-name: "Bug Report \U0001F41B"
+name: Bug Report 🐛
 about: Let us know what's broken so we can fix it!
-title: ''
-labels: ''
-assignees: ''
-
+title: "[BUG] - "
+labels: bug
+assignees: 
 ---
 
 ## Description
