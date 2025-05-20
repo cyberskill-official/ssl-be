@@ -1,0 +1,93 @@
+enum E_User_Gender {
+    MALE
+    FEMALE
+    OTHER
+    PREFER_NOT_TO_SAY
+}
+
+type T_User {
+    id: String
+    fullName: String
+    avatar: String
+    email: String
+    phoneNumber: String
+    gender: E_User_Gender
+    dateOfBirth: DateTime
+    roleId: String
+    role: T_Role
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+type T_Response_User {
+    success: Boolean!
+    message: String
+    result: T_User
+}
+
+type T_Users {
+    docs: [T_User]!
+    totalDocs: Int!
+    limit: Int!
+    hasPrevPage: Boolean!
+    hasNextPage: Boolean!
+    page: Int!
+    totalPages: Int!
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int!
+    meta: JSON
+}
+
+type T_Response_Users {
+    success: Boolean!
+    message: String
+    result: T_Users
+}
+
+input I_Input_GetUser {
+    fullName: String
+    avatar: String
+    email: String
+    phoneNumber: String
+    gender: E_User_Gender
+    dateOfBirth: DateTime
+    roleId: String
+}
+
+input I_Input_CreateUser {
+    fullName: String
+    avatar: String
+    email: String
+    phoneNumber: String
+    gender: E_User_Gender
+    dateOfBirth: DateTime
+    roleId: String
+}
+
+input I_Input_UpdateUser {
+    fullName: String
+    avatar: String
+    email: String
+    phoneNumber: String
+    gender: E_User_Gender
+    dateOfBirth: DateTime
+    roleId: String
+}
+
+
+
+type Query {
+    getUser(filter: I_Input_GetUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
+    getUsers(filter: I_Input_GetUser, options: JSON): T_Response_Users!
+}
+
+type Mutation {
+    createUser(doc: I_Input_CreateUser!): T_Response_User!
+    updateUser(filter: I_Input_Id!, update: I_Input_UpdateUser!, options: JSON): T_Response_User!
+    deleteUser(filter: I_Input_Id!, options: JSON): T_Response_User!
+    softDeleteUser(filter: I_Input_Id!, options: JSON): T_Response_User!
+    restoreUser(filter: I_Input_Id!, options: JSON): T_Response_User!
+}

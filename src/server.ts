@@ -1,0 +1,115 @@
+import { createApolloServer, expressMiddleware } from '@cyberskill/shared/node/apollo-server';
+import { createCors, createExpress, createSession, express } from '@cyberskill/shared/node/express';
+import { log } from '@cyberskill/shared/node/log';
+import { createWSServer, initGraphQLWS } from '@cyberskill/shared/node/ws';
+import mongoStore from 'connect-mongo';
+import mongoose from 'mongoose';
+import { createServer } from 'node:http';
+import process from 'node:process';
+
+// import { authCtr } from '#modules/auth/index.js';
+import { cron } from '#modules/cron/index.js';
+import { getEnv } from '#modules/env/index.js';
+import { schema } from '#modules/graphql/schema.js';
+import { mainRouter } from '#modules/rest-api/index.js';
+
+const env = getEnv();
+
+(async () => {
+    const app = createExpress({
+        staticFolder: env.STATIC_FOLDER,
+    });
+
+    app.use(createSession({
+        name: env.SESSION_NAME,
+        secret: env.SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+        store: mongoStore.create({
+            mongoUrl: env.MONGO_URI,
+        }),
+        cookie: {
+            ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
+        },
+    }));
+
+    const httpServer = createServer(app);
+    const wsServer = createWSServer({
+        server: httpServer,
+        path: env.ENDPOINT_WS,
+    });
+    const serverCleanup = initGraphQLWS({ schema, server: wsServer });
+
+    // MongoDB
+    if (!env.IS_PROD) {
+        mongoose.set('debug', true);
+    }
+    await mongoose.connect(env.MONGO_URI);
+    log.info(`Running MongoDb at ${env.MONGO_URI}`);
+
+    mongoose.connection.once('error', (err) => {
+        log.error('Mongoose connection error:', err);
+    });
+
+    // Apollo Server
+    const apolloServer = createApolloServer({
+        server: httpServer,
+        schema,
+        isDev: !env.IS_PROD,
+        async drainServer() {
+            if (serverCleanup) {
+                await serverCleanup.dispose();
+            }
+            log.info('WebSocket server drained');
+        },
+    });
+
+    await apolloServer.start();
+    log.info(`Running GRAPHQL at http://localhost:${env.PORT}${env.ENDPOINT_GRAPHQL}`);
+
+    app.use(
+        env.ENDPOINT_GRAPHQL,
+        createCors({
+            isDev: !env.IS_PROD,
+            whiteList: env.CORS_WHITELIST,
+        }),
+        express.json({ limit: env.BODY_PARSER_LIMIT }),
+        expressMiddleware(apolloServer, {
+            context: async ({ req }) => {
+                // await authCtr.checkAuthorizedGraphql({ req: req as unknown as I_Context['req'] });
+                return {
+                    req,
+                };
+            },
+        }) as unknown as express.RequestHandler,
+    );
+
+    // RestAPI
+    await new Promise<void>(resolve =>
+        httpServer.listen({ port: env.PORT }, resolve),
+    );
+    log.info(`Running RestAPI at http://localhost:${env.PORT}${env.ENDPOINT_RESTAPI}`);
+
+    app.use(
+        env.ENDPOINT_RESTAPI,
+        createCors({
+            isDev: !env.IS_PROD,
+            whiteList: env.CORS_WHITELIST,
+        }),
+        // (req, res, next) => {
+        //     authCtr.checkAuthorizedRest(req as I_Context, res, next).catch(next);
+        // },
+        mainRouter,
+    );
+
+    // Start cron jobs
+    cron.start();
+    log.info('Cron jobs started');
+
+    // Graceful shutdown
+    ['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, async () => {
+        await serverCleanup?.dispose();
+        log.info('🧼 Graceful shutdown complete');
+        process.exit(0);
+    }));
+})();

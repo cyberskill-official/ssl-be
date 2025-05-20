@@ -1,0 +1,20 @@
+type T_Auth {
+    user: T_User
+    token: String
+}
+
+type T_Response_Auth {
+    success: Boolean!
+    message: String
+    result: T_Auth
+}
+
+type Query {
+    checkAuth(token: String): T_Response_Auth!
+}
+
+type Mutation {
+    register(email: String!, password: String!, fullName: String, phone: String): T_Response_Auth!
+    login(identity: String!, password: String!, rememberMe: Boolean): T_Response_Auth!
+    logout: T_Response_Auth!
+}

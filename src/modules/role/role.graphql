@@ -1,0 +1,54 @@
+type T_Role {
+    id: String
+    name: String
+    description: String
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+type T_Response_Role {
+    success: Boolean!
+    message: String
+    result: T_Role
+}
+
+type T_Roles {
+    docs: [T_Role]!
+    totalDocs: Int!
+    limit: Int!
+    hasPrevPage: Boolean!
+    hasNextPage: Boolean!
+    page: Int!
+    totalPages: Int!
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int!
+    meta: JSON
+}
+
+type T_Response_Roles {
+    success: Boolean!
+    message: String
+    result: T_Roles
+}
+
+input I_GetRole {
+    name: String
+    description: String
+}
+
+input I_CreateRole {
+    name: String!
+    description: String
+}
+
+
+type Query {
+    getRole(filter: I_GetRole!, projection: JSON, options: JSON, populate: JSON): T_Response_Role!
+    getRoles(filter: I_GetRole, options: JSON): T_Response_Roles!
+}
+
+type Mutation {
+    createRole(doc: I_CreateRole!): T_Response_Role!
+}
