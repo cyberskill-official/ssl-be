@@ -1,4 +1,4 @@
-import type { I_Context } from '#shared/typescript/express.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_CheckAuth, I_Input_Login, I_Input_Register } from './auth.type.js';
 

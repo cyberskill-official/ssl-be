@@ -1,6 +1,6 @@
 import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
 
-import type { I_Context } from '#shared/typescript/express.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_MutateRole, I_Input_QueryRole } from './role.type.js';
 

@@ -1,6 +1,6 @@
 import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
-import type { I_Context } from '#shared/typescript/express.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_MutateUser, I_Input_QueryUser } from './user.type.js';
 
