@@ -1,9 +1,10 @@
 type T_Role {
     id: String
-    name: String
-    description: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    name: String
+    description: String
 }
 
 type T_Response_Role {
@@ -33,22 +34,25 @@ type T_Response_Roles {
     result: T_Roles
 }
 
-input I_GetRole {
+input Input_QueryRole {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     name: String
     description: String
 }
 
-input I_CreateRole {
+input Input_MutateRole {
     name: String!
     description: String
 }
 
-
 type Query {
-    getRole(filter: I_GetRole!, projection: JSON, options: JSON, populate: JSON): T_Response_Role!
-    getRoles(filter: I_GetRole, options: JSON): T_Response_Roles!
+    getRole(filter: Input_QueryRole!, projection: JSON, options: JSON, populate: JSON): T_Response_Role!
+    getRoles(filter: Input_QueryRole, options: JSON): T_Response_Roles!
 }
 
 type Mutation {
-    createRole(doc: I_CreateRole!): T_Response_Role!
+    createRole(doc: Input_MutateRole!): T_Response_Role!
 }

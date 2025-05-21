@@ -1,5 +1,6 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
+import type { I_Role } from '#modules/role/index.js';
 import type { I_Input_Id } from '#shared/typescript/index.js';
 
 export enum E_User_Gender {
@@ -17,8 +18,8 @@ export interface I_User_Payload {
     gender?: E_User_Gender;
     dateOfBirth?: Date;
     password?: string;
-    roleId: string;
-    permissionIds?: string[];
+    roleId?: string;
+    role?: I_Role;
 }
 
 export interface I_User extends I_GenericDocument, I_User_Payload { }

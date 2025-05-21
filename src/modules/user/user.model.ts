@@ -43,10 +43,6 @@ export const UserModel = mongo.createModel<I_User>({
                 },
             ],
         },
-        permissionIds: {
-            type: [String],
-            default: [],
-        },
     },
     virtuals: [
         {
@@ -56,15 +52,6 @@ export const UserModel = mongo.createModel<I_User>({
                 localField: 'roleId',
                 foreignField: 'id',
                 justOne: true,
-            },
-        },
-        {
-            name: 'permissions',
-            options: {
-                ref: 'Permission',
-                localField: 'permissionIds',
-                foreignField: 'id',
-                justOne: false,
             },
         },
     ],

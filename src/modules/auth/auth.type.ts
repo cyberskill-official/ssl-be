@@ -20,7 +20,7 @@ export interface I_Input_Login {
     phone?: number;
 }
 
-export interface I_Input_Register extends Omit<I_User_Payload, 'roleId'> {}
+export interface I_Input_Register extends Omit<I_User_Payload, 'roleId'> { }
 
 export interface I_Response_Auth {
     success: boolean;

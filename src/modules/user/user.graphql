@@ -7,6 +7,9 @@ enum E_User_Gender {
 
 type T_User {
     id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     fullName: String
     avatar: String
     email: String
@@ -15,9 +18,6 @@ type T_User {
     dateOfBirth: DateTime
     roleId: String
     role: T_Role
-    isDel: Boolean
-    createdAt: DateTime
-    updatedAt: DateTime
 }
 
 type T_Response_User {
@@ -47,7 +47,11 @@ type T_Response_Users {
     result: T_Users
 }
 
-input I_Input_GetUser {
+input Input_QueryUser {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     fullName: String
     avatar: String
     email: String
@@ -57,7 +61,8 @@ input I_Input_GetUser {
     roleId: String
 }
 
-input I_Input_CreateUser {
+input Input_MutateUser {
+    isDel: Boolean
     fullName: String
     avatar: String
     email: String
@@ -66,28 +71,16 @@ input I_Input_CreateUser {
     dateOfBirth: DateTime
     roleId: String
 }
-
-input I_Input_UpdateUser {
-    fullName: String
-    avatar: String
-    email: String
-    phoneNumber: String
-    gender: E_User_Gender
-    dateOfBirth: DateTime
-    roleId: String
-}
-
-
 
 type Query {
-    getUser(filter: I_Input_GetUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
-    getUsers(filter: I_Input_GetUser, options: JSON): T_Response_Users!
+    getUser(filter: Input_QueryUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
+    getUsers(filter: Input_QueryUser, options: JSON): T_Response_Users!
 }
 
 type Mutation {
-    createUser(doc: I_Input_CreateUser!): T_Response_User!
-    updateUser(filter: I_Input_Id!, update: I_Input_UpdateUser!, options: JSON): T_Response_User!
-    deleteUser(filter: I_Input_Id!, options: JSON): T_Response_User!
-    softDeleteUser(filter: I_Input_Id!, options: JSON): T_Response_User!
-    restoreUser(filter: I_Input_Id!, options: JSON): T_Response_User!
+    createUser(doc: Input_MutateUser!): T_Response_User!
+    updateUser(filter: Input_QueryUser!, update: Input_MutateUser!, options: JSON): T_Response_User!
+    deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
+    softDeleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
+    restoreUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
 }

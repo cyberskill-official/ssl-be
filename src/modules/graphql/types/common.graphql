@@ -1,3 +1,0 @@
-input I_Input_Id {
-    id: String!
-}
