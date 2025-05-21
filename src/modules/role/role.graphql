@@ -44,7 +44,8 @@ input Input_QueryRole {
 }
 
 input Input_MutateRole {
-    name: String!
+    isDel: Boolean
+    name: String
     description: String
 }
 
