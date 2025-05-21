@@ -13,12 +13,12 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import bcrypt from 'bcryptjs';
 
-import type { I_Context, I_Input_Id } from '#shared/typescript/index.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/role/index.js';
 import { isValidEmail, isValidPhoneNumber } from '#shared/util/index.js';
 
-import type { I_Input_CreateUser, I_Input_UpdateUser, I_User } from './user.type.js';
+import type { I_Input_MutateUser, I_Input_QueryUser, I_User } from './user.type.js';
 
 import { UserModel } from './user.model.js';
 
@@ -27,19 +27,19 @@ const mongooseCtr = new MongooseController<I_User>(UserModel);
 export const userCtr = {
     getUser: async (
         _context: I_Context,
-        { filter, projection, options, populate }: I_Input_FindOne<I_User>,
+        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     getUsers: async (
         _context: I_Context,
-        { filter, options }: I_Input_FindPaging<I_User>,
+        { filter, options }: I_Input_FindPaging<I_Input_QueryUser>,
     ): Promise<I_Return<T_PaginateResult<I_User>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
     createUser: async (
         context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateUser>,
+        { doc }: I_Input_CreateOne<I_Input_MutateUser>,
     ): Promise<I_Return<I_User>> => {
         const { email, phoneNumber, password, roleId, ...rest } = doc;
 
@@ -114,7 +114,7 @@ export const userCtr = {
     },
     updateUser: async (
         context: I_Context,
-        { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
+        { filter, update, options }: I_Input_UpdateOne<I_Input_MutateUser>,
     ): Promise<I_Return<I_User>> => {
         const userFound = await userCtr.getUser(context, { filter });
 
@@ -129,7 +129,7 @@ export const userCtr = {
     },
     deleteUser: async (
         context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_Id>,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         const userFound = await userCtr.getUser(context, { filter });
 
@@ -144,7 +144,7 @@ export const userCtr = {
     },
     softDeleteUser: async (
         context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_Id>,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         const userFound = await userCtr.getUser(context, { filter });
 
@@ -165,7 +165,7 @@ export const userCtr = {
     },
     restoreUser: async (
         context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_Id>,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         const userFound = await userCtr.getUser(context, { filter });
 

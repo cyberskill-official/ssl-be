@@ -2,17 +2,17 @@ import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging } from '@cy
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import type { I_Input_CreateRole, I_Role } from './role.type.js';
+import type { I_Input_MutateRole, I_Input_QueryRole } from './role.type.js';
 
 import { roleCtr } from './role.controller.js';
 
 const roleResolver = {
     Query: {
-        getRole: (_parent: unknown, args: I_Input_FindOne<I_Role>, context: I_Context) => roleCtr.getRole(context, args),
-        getRoles: (_parent: unknown, args: I_Input_FindPaging<I_Role>, context: I_Context) => roleCtr.getRoles(context, args),
+        getRole: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryRole>, context: I_Context) => roleCtr.getRole(context, args),
+        getRoles: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryRole>, context: I_Context) => roleCtr.getRoles(context, args),
     },
     Mutation: {
-        createRole: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateRole>, context: I_Context) => roleCtr.createRole(context, args),
+        createRole: (_parent: unknown, args: I_Input_CreateOne<I_Input_MutateRole>, context: I_Context) => roleCtr.createRole(context, args),
     },
 };
 

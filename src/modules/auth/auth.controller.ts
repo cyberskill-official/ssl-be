@@ -124,6 +124,7 @@ export const authCtr = {
             doc: {
                 ...args,
                 roleId: roleFound.result.id,
+                isDel: false,
             },
         });
 

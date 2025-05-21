@@ -12,7 +12,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateRole, I_Role } from './role.type.js';
+import type { I_Input_MutateRole, I_Input_QueryRole, I_Role } from './role.type.js';
 
 import { RoleModel } from './role.model.js';
 
@@ -21,19 +21,19 @@ const mongooseCtr = new MongooseController<I_Role>(RoleModel);
 export const roleCtr = {
     getRole: async (
         _context: I_Context,
-        { filter, projection, options, populate }: I_Input_FindOne<I_Role>,
+        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryRole>,
     ): Promise<I_Return<I_Role>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     getRoles: async (
         _context: I_Context,
-        { filter, options }: I_Input_FindPaging<I_Role>,
+        { filter, options }: I_Input_FindPaging<I_Input_QueryRole>,
     ): Promise<I_Return<T_PaginateResult<I_Role>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
     createRole: async (
         context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateRole>,
+        { doc }: I_Input_CreateOne<I_Input_MutateRole>,
     ): Promise<I_Return<I_Role>> => {
         const { name, description } = doc;
 

@@ -69,6 +69,7 @@ input Input_MutateUser {
     phoneNumber: String
     gender: E_User_Gender
     dateOfBirth: DateTime
+    password: String
     roleId: String
 }
 

@@ -1,7 +1,6 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
 import type { I_Role } from '#modules/role/index.js';
-import type { I_Input_Id } from '#shared/typescript/index.js';
 
 export enum E_User_Gender {
     MALE = 'MALE',
@@ -24,6 +23,6 @@ export interface I_User_Payload {
 
 export interface I_User extends I_GenericDocument, I_User_Payload { }
 
-export interface I_Input_CreateUser extends I_User_Payload { }
+export interface I_Input_QueryUser extends Omit<I_User, 'password' | 'role'> { }
 
-export interface I_Input_UpdateUser extends Omit<I_User_Payload, 'password'>, I_Input_Id { }
+export interface I_Input_MutateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | 'role'> { }
