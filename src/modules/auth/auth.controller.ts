@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
-import type { I_Context, I_Input_Id } from '#shared/typescript/index.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import { getEnv } from '#modules/env/index.js';
 import { E_Role } from '#modules/role/index.js';
@@ -23,7 +23,7 @@ import type {
 const env = getEnv();
 
 export const authCtr = {
-    generateToken: (_context: I_Context, { id }: I_Input_Id): string => {
+    generateToken: (_context: I_Context, id: string): string => {
         return jwt.sign({ createdAt: Date.now(), userId: id } as I_SessionPayload, env.JWT_SECRET);
     },
     checkToken: async (context: I_Context, args: I_Input_CheckToken): Promise<I_Response_Auth> => {
@@ -185,7 +185,7 @@ export const authCtr = {
             });
         }
 
-        const token = rememberMe ? authCtr.generateToken({ req }, { id: userFound.result.id }) : '';
+        const token = rememberMe ? authCtr.generateToken({ req }, userFound.result.id) : '';
         req.session.user = omit(userFound.result, 'password');
 
         return {
