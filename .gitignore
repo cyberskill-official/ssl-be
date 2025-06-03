@@ -6,3 +6,4 @@ backup
 .env
 .simple-git-hooks.json
 .migrate-mongo.config.js
+.vscode
