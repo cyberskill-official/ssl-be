@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@apollo/subgraph':
-        specifier: 2.10.2
-        version: 2.10.2(graphql@16.11.0)
+        specifier: 2.11.0
+        version: 2.11.0(graphql@16.11.0)
       '@cyberskill/shared':
         specifier: 1.173.0
         version: 1.173.0(@parcel/watcher@2.5.1)(@swc/core@1.11.29)(@testing-library/dom@10.4.0)(@types/debug@4.1.12)(@types/node@22.15.24)(@vue/compiler-sfc@3.5.16)(crossws@0.3.5)(eslint-plugin-import-x@4.13.3(eslint@9.28.0(jiti@2.4.2))(typescript@5.8.3))(eslint@9.28.0(jiti@2.4.2))(jiti@2.4.2)(next@15.3.2(@babel/core@7.27.3)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.0))(postcss@8.5.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)(subscriptions-transport-ws@0.11.0(graphql@16.11.0))(ts-api-utils@2.1.0(typescript@5.8.3))(yaml@2.8.0)
@@ -202,8 +202,8 @@ packages:
       subscriptions-transport-ws:
         optional: true
 
-  '@apollo/federation-internals@2.10.2':
-    resolution: {integrity: sha512-6GLJsFizf8J5GJUSgXmW7zzwhwSELB/X0OGkqW3x+s7M9s1VFO15jvaqwI0Pk4OAzuDxVjO4EGaPJ7MqKafAtQ==}
+  '@apollo/federation-internals@2.11.0':
+    resolution: {integrity: sha512-5kmXR2AnSN1ywP2QNkLGF8KA0p9HuvGKxbfv2nApy6TnSd3eSpCFKjceWXgwB6s6CFFRQBqL6tviFCTMXUWCRw==}
     engines: {node: '>=14.15.0'}
     peerDependencies:
       graphql: ^16.5.0
@@ -223,8 +223,8 @@ packages:
     peerDependencies:
       graphql: ^16.6.0
 
-  '@apollo/subgraph@2.10.2':
-    resolution: {integrity: sha512-823Xc8r2bTDSj8/J8/Zt9qpVnU9ahmE9xapvcZnYPCbu5wrsseRjH8UHBdStqDKNgHZU0w9BxoI3T4spjdrCtg==}
+  '@apollo/subgraph@2.11.0':
+    resolution: {integrity: sha512-6Y1UP71vHgLC2tSl2DPh4klz3CllKI6PWmmYb/783aC9HOwugBnuDHeyRlkhDtSRazzFEtiTUIfaSSdIBNkSJg==}
     engines: {node: '>=14.15.0'}
     peerDependencies:
       graphql: ^16.5.0
@@ -6695,7 +6695,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/react'
 
-  '@apollo/federation-internals@2.10.2(graphql@16.11.0)':
+  '@apollo/federation-internals@2.11.0(graphql@16.11.0)':
     dependencies:
       '@types/uuid': 9.0.8
       chalk: 4.1.2
@@ -6757,10 +6757,10 @@ snapshots:
       - encoding
       - supports-color
 
-  '@apollo/subgraph@2.10.2(graphql@16.11.0)':
+  '@apollo/subgraph@2.11.0(graphql@16.11.0)':
     dependencies:
       '@apollo/cache-control-types': 1.0.3(graphql@16.11.0)
-      '@apollo/federation-internals': 2.10.2(graphql@16.11.0)
+      '@apollo/federation-internals': 2.11.0(graphql@16.11.0)
       graphql: 16.11.0
 
   '@apollo/usage-reporting-protobuf@4.1.1':
