@@ -36,8 +36,8 @@ importers:
         specifier: 3.1.1
         version: 3.1.1
       cron:
-        specifier: 4.3.0
-        version: 4.3.0
+        specifier: 4.3.1
+        version: 4.3.1
       envalid:
         specifier: 8.0.0
         version: 8.0.0
@@ -2748,8 +2748,8 @@ packages:
   countries-list@3.1.1:
     resolution: {integrity: sha512-nPklKJ5qtmY5MdBKw1NiBAoyx5Sa7p2yPpljZyQ7gyCN1m+eMFs9I6CT37Mxt8zvR5L3VzD3DJBE4WQzX3WF4A==}
 
-  cron@4.3.0:
-    resolution: {integrity: sha512-ciiYNLfSlF9MrDqnbMdRWFiA6oizSF7kA1osPP9lRzNu0Uu+AWog1UKy7SkckiDY2irrNjeO6qLyKnXC8oxmrw==}
+  cron@4.3.1:
+    resolution: {integrity: sha512-7x7DoEOxV11t3OPWWMjj1xrL1PGkTV5RV+/54IJTZD7gStiaMploY43EkeBSkDZTLRbUwk+OISbQ0TR133oXyA==}
     engines: {node: '>=18.x'}
 
   cross-fetch@3.2.0:
@@ -9751,7 +9751,7 @@ snapshots:
 
   countries-list@3.1.1: {}
 
-  cron@4.3.0:
+  cron@4.3.1:
     dependencies:
       '@types/luxon': 3.6.2
       luxon: 3.6.1
