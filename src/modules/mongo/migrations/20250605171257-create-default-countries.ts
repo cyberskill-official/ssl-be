@@ -4,7 +4,7 @@ import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 import { continents, countries, languages } from 'countries-list';
 
-import type { I_Country } from '#modules/country/country.type.js';
+import type { I_Country } from '#modules/country/index.js';
 
 export async function up(db: C_Db) {
     const countryCtr = new MongoController<I_Country>(db, 'countries');
