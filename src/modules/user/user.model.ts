@@ -38,7 +38,7 @@ export const UserModel = mongo.createModel<I_User>({
             required: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Vui lòng chọn vai trò cho người dùng',
                 },
             ],

@@ -1,3 +1,6 @@
 {
-    "$schema": "https://unpkg.com/@cyberskill/shared@latest/public/renovate.base.json"
+    "$schema": "https://unpkg.com/@cyberskill/shared@latest/public/renovate.base.json",
+    "ignoreDeps": [
+        "node"
+    ]
 }

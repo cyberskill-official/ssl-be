@@ -21,7 +21,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country name',
                 },
                 {
@@ -36,7 +36,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country native',
                 },
                 {
@@ -50,7 +50,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             required: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter phone',
                 },
             ],
@@ -63,7 +63,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                 enum: continentCodes,
                 validate: [
                     {
-                        validator: mongo.validator.isEmpty(),
+                        validator: mongo.validator.isRequired(),
                         message: 'Please enter continent code',
                     },
                     {
@@ -78,7 +78,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                 unique: true,
                 validate: [
                     {
-                        validator: mongo.validator.isEmpty(),
+                        validator: mongo.validator.isRequired(),
                         message: 'Please enter continent name',
                     },
                     {
@@ -94,7 +94,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country capital',
                 },
                 {
@@ -108,7 +108,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             required: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country currency',
                 },
             ],
@@ -122,7 +122,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     enum: languageCodes,
                     validate: [
                         {
-                            validator: mongo.validator.isEmpty(),
+                            validator: mongo.validator.isRequired(),
                             message: 'Please enter language code',
                         },
                         {
@@ -137,7 +137,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     unique: true,
                     validate: [
                         {
-                            validator: mongo.validator.isEmpty(),
+                            validator: mongo.validator.isRequired(),
                             message: 'Please enter language name',
                         },
                         {
@@ -152,7 +152,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     unique: true,
                     validate: [
                         {
-                            validator: mongo.validator.isEmpty(),
+                            validator: mongo.validator.isRequired(),
                             message: 'Please enter language native',
                         },
                         {
@@ -166,7 +166,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     default: false,
                     validate: [
                         {
-                            validator: mongo.validator.isEmpty(),
+                            validator: mongo.validator.isRequired(),
                             message: 'isRTL is required',
                         },
                     ],
@@ -179,7 +179,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country iso2',
                 },
                 {
@@ -194,7 +194,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country iso3',
                 },
                 {
@@ -215,7 +215,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country flag',
                 },
                 {
@@ -231,7 +231,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             enum: countryCodes,
             validate: [
                 {
-                    validator: mongo.validator.isEmpty(),
+                    validator: mongo.validator.isRequired(),
                     message: 'Please enter country code',
                 },
                 {
