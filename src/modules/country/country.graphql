@@ -1,0 +1,566 @@
+enum E_CountryCode {
+    AD
+    AE
+    AF
+    AG
+    AI
+    AL
+    AM
+    AO
+    AQ
+    AR
+    AS
+    AT
+    AU
+    AW
+    AX
+    AZ
+    BA
+    BB
+    BD
+    BE
+    BF
+    BG
+    BH
+    BI
+    BJ
+    BL
+    BM
+    BN
+    BO
+    BQ
+    BR
+    BS
+    BT
+    BV
+    BW
+    BY
+    BZ
+    CA
+    CC
+    CD
+    CF
+    CG
+    CH
+    CI
+    CK
+    CL
+    CM
+    CN
+    CO
+    CR
+    CU
+    CV
+    CW
+    CX
+    CY
+    CZ
+    DE
+    DJ
+    DK
+    DM
+    DO
+    DZ
+    EC
+    EE
+    EG
+    EH
+    ER
+    ES
+    ET
+    FI
+    FJ
+    FK
+    FM
+    FO
+    FR
+    GA
+    GB
+    GD
+    GE
+    GF
+    GG
+    GH
+    GI
+    GL
+    GM
+    GN
+    GP
+    GQ
+    GR
+    GS
+    GT
+    GU
+    GW
+    GY
+    HK
+    HM
+    HN
+    HR
+    HT
+    HU
+    ID
+    IE
+    IL
+    IM
+    IN
+    IO
+    IQ
+    IR
+    IS
+    IT
+    JE
+    JM
+    JO
+    JP
+    KE
+    KG
+    KH
+    KI
+    KM
+    KN
+    KP
+    KR
+    KW
+    KY
+    KZ
+    LA
+    LB
+    LC
+    LI
+    LK
+    LR
+    LS
+    LT
+    LU
+    LV
+    LY
+    MA
+    MC
+    MD
+    ME
+    MF
+    MG
+    MH
+    MK
+    ML
+    MM
+    MN
+    MO
+    MP
+    MQ
+    MR
+    MS
+    MT
+    MU
+    MV
+    MW
+    MX
+    MY
+    MZ
+    NA
+    NC
+    NE
+    NF
+    NG
+    NI
+    NL
+    NO
+    NP
+    NR
+    NU
+    NZ
+    OM
+    PA
+    PE
+    PF
+    PG
+    PH
+    PK
+    PL
+    PM
+    PN
+    PR
+    PS
+    PT
+    PW
+    PY
+    QA
+    RE
+    RO
+    RS
+    RU
+    RW
+    SA
+    SB
+    SC
+    SD
+    SE
+    SG
+    SH
+    SI
+    SJ
+    SK
+    SL
+    SM
+    SN
+    SO
+    SR
+    SS
+    ST
+    SV
+    SX
+    SY
+    SZ
+    TC
+    TD
+    TF
+    TG
+    TH
+    TJ
+    TK
+    TL
+    TM
+    TN
+    TO
+    TR
+    TT
+    TV
+    TW
+    TZ
+    UA
+    UG
+    UM
+    US
+    UY
+    UZ
+    VA
+    VC
+    VE
+    VG
+    VI
+    VN
+    VU
+    WF
+    WS
+    XK
+    YE
+    YT
+    ZA
+    ZM
+    ZW
+}
+
+enum E_LanguageCode {
+    aa
+    ab
+    af
+    ak
+    am
+    an
+    ar
+    as
+    av
+    ay
+    az
+    ba
+    be
+    bg
+    bh
+    bi
+    bm
+    bn
+    bo
+    br
+    bs
+    ca
+    ce
+    ch
+    co
+    cr
+    cs
+    cu
+    cv
+    cy
+    da
+    de
+    dv
+    dz
+    ee
+    el
+    en
+    eo
+    es
+    et
+    eu
+    fa
+    ff
+    fi
+    fj
+    fo
+    fr
+    fy
+    ga
+    gd
+    gl
+    gn
+    gu
+    gv
+    ha
+    he
+    hi
+    ho
+    hr
+    ht
+    hu
+    hy
+    hz
+    ia
+    id
+    ie
+    ig
+    ii
+    ik
+    io
+    is
+    it
+    iu
+    ja
+    jv
+    ka
+    kg
+    ki
+    kj
+    kk
+    kl
+    km
+    kn
+    ko
+    kr
+    ks
+    ku
+    kv
+    kw
+    ky
+    la
+    lb
+    lg
+    li
+    ln
+    lo
+    lt
+    lu
+    lv
+    mg
+    mh
+    mi
+    mk
+    ml
+    mn
+    mo
+    mr
+    ms
+    mt
+    my
+    na
+    nb
+    nd
+    ne
+    ng
+    nl
+    nn
+    no
+    nr
+    nv
+    ny
+    oc
+    oj
+    om
+    or
+    os
+    pa
+    pi
+    pl
+    ps
+    pt
+    qu
+    rm
+    rn
+    ro
+    ru
+    rw
+    sa
+    sc
+    sd
+    se
+    sg
+    sh
+    si
+    sk
+    sl
+    sm
+    sn
+    so
+    sq
+    sr
+    ss
+    st
+    su
+    sv
+    sw
+    ta
+    te
+    tg
+    th
+    ti
+    tk
+    tl
+    tn
+    to
+    tr
+    ts
+    tt
+    tw
+    ty
+    ug
+    uk
+    ur
+    uz
+    ve
+    vi
+    vo
+    wa
+    wo
+    xh
+    yi
+    yo
+    za
+    zh
+    zu
+}
+
+enum E_ContinentCode {
+    AF  
+    AN  
+    AS  
+    EU  
+    NA  
+    OC  
+    SA
+}
+
+type T_Continent {
+    code: E_ContinentCode
+    name: String
+}
+
+type T_Language {
+    code: E_LanguageCode
+    name: String
+    native: String
+    isRTL: Boolean
+}
+
+type T_Country {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    native: String
+    phone: [Int]
+    continent: T_Continent
+    capital: String
+    currency: [String]
+    languages: [T_Language]
+    iso2: String
+    iso3: String
+    partOf: String
+    userAssigned: Boolean
+    flag: String
+    code: E_CountryCode
+}
+
+type T_Response_Country {
+    success: Boolean!
+    message: String
+    result: T_Country
+}
+
+type T_Countries {
+    docs: [T_Country]!
+    totalDocs: Int!
+    limit: Int!
+    hasPrevPage: Boolean!
+    hasNextPage: Boolean!
+    page: Int!
+    totalPages: Int!
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int!
+    meta: JSON
+}
+
+type T_Response_Countries {
+    success: Boolean!
+    message: String
+    result: T_Countries
+}
+
+input Input_QueryCountry {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    native: String
+    phone: [Int]
+    continent: Input_Continent
+    capital: String
+    currency: [String]
+    languages: [Input_Language]
+    iso2: String
+    iso3: String
+    partOf: String
+    userAssigned: Boolean
+    flag: String
+    code: E_CountryCode
+}
+
+input Input_Continent {
+    code: E_ContinentCode
+    name: String
+}
+
+input Input_Language {
+    code: E_LanguageCode
+    name: String
+    native: String
+    isRTL: Boolean
+}
+
+input Input_QueryCountry {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    name: String
+    native: String
+    phone: [Int]
+    continent: Input_Continent
+    capital: String
+    currency: [String]
+    languages: [Input_Language]
+    iso2: String
+    iso3: String
+    partOf: String
+    userAssigned: Boolean
+    flag: String
+    code: E_CountryCode
+}
+
+type Query {
+    getCountry(filter: Input_QueryCountry!, projection: JSON, options: JSON, populate: JSON): T_Response_Country!
+    getCountries(filter: Input_QueryCountry, options: JSON): T_Response_Countries!
+}

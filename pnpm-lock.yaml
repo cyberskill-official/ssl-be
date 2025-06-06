@@ -32,6 +32,12 @@ importers:
       connect-mongo:
         specifier: 5.1.0
         version: 5.1.0(express-session@1.18.1)(mongodb@6.16.0)
+      countries-list:
+        specifier: 3.1.1
+        version: 3.1.1
+      country-list:
+        specifier: 2.3.0
+        version: 2.3.0
       cron:
         specifier: 4.3.0
         version: 4.3.0
@@ -2738,6 +2744,12 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
+
+  countries-list@3.1.1:
+    resolution: {integrity: sha512-nPklKJ5qtmY5MdBKw1NiBAoyx5Sa7p2yPpljZyQ7gyCN1m+eMFs9I6CT37Mxt8zvR5L3VzD3DJBE4WQzX3WF4A==}
+
+  country-list@2.3.0:
+    resolution: {integrity: sha512-qZk66RlmQm7fQjMYWku1AyjlKPogjPEorAZJG88owPExoPV8EsyCcuFLvO2afTXHEhi9liVOoyd+5A6ZS5QwaA==}
 
   cron@4.3.0:
     resolution: {integrity: sha512-ciiYNLfSlF9MrDqnbMdRWFiA6oizSF7kA1osPP9lRzNu0Uu+AWog1UKy7SkckiDY2irrNjeO6qLyKnXC8oxmrw==}
@@ -9707,6 +9719,10 @@ snapshots:
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 5.8.3
+
+  countries-list@3.1.1: {}
+
+  country-list@2.3.0: {}
 
   cron@4.3.0:
     dependencies:
