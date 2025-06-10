@@ -53,7 +53,7 @@
     "devDependencies": {
         "@commitlint/cli": "19.8.1",
         "@commitlint/config-conventional": "19.8.1",
-        "@eslint/config-inspector": "1.0.2",
+        "@eslint/config-inspector": "1.1.0",
         "@types/express-session": "1.18.1",
         "@types/express-useragent": "1.0.5",
         "@types/fs-extra": "11.0.4",
