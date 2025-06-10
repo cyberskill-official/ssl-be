@@ -62,7 +62,7 @@
         "@types/node": "22.15.30",
         "eslint": "9.28.0",
         "lint-staged": "16.1.0",
-        "node-modules-inspector": "0.6.8",
+        "node-modules-inspector": "0.6.9",
         "simple-git-hooks": "2.13.0"
     }
 }
