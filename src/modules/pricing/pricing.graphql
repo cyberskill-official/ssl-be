@@ -1,0 +1,76 @@
+enum E_PricingType {
+    MEMBERSHIP
+    ANNOUNCEMENT
+}
+
+type T_Pricing {
+    type: E_PricingType
+    countryId: String
+    country: T_Country
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+}
+
+type T_Response_Pricing {
+    success: Boolean
+    message: String
+    result: T_Pricing
+}
+
+type T_Pricings {
+    docs: [T_Pricing]!
+    totalDocs: Int!
+    limit: Int!
+    hasPrevPage: Boolean!
+    hasNextPage: Boolean!
+    page: Int!
+    totalPages: Int!
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int!
+    meta: JSON
+}
+
+type T_Response_Pricings {
+    success: Boolean!
+    message: String
+    result: T_Pricings
+}
+
+input Input_QueryPricing {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_PricingType
+    countryId: String
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+}
+
+input Input_CreatePricing {
+    type: E_PricingType
+    countryId: String
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+}
+
+input Input_UpdatePricing {
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+}
+
+type Query {
+    getPricing(filter: Input_QueryPricing!, projection: JSON, options: JSON, populate: JSON): T_Response_Pricing!
+    getPricings(filter: Input_QueryPricing, options: JSON): T_Response_Pricings!
+}
+type Mutation {
+    createPricing(doc: Input_CreatePricing!): T_Response_Pricing!
+    updatePricing(filter: Input_QueryPricing!, update: Input_UpdatePricing!, options: JSON): T_Response_Pricing!
+    deletePricing(filter: Input_QueryPricing!, options: JSON): T_Response_Pricing!
+}

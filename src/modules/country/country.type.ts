@@ -37,4 +37,4 @@ export interface I_Country extends I_GenericDocument, I_Country_PayLoad { }
 
 export interface I_Input_QueryCountry extends I_Country { }
 
-export interface I_Input_MutateCountry extends Omit<I_Country, 'id' | 'createAt' | 'updateAt'> { }
+export interface I_Input_MutateCountry extends Omit<I_Country, 'id' | 'createdAt' | 'updatedAt'> { }

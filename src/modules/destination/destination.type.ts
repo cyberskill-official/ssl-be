@@ -87,4 +87,4 @@ export interface I_Destination extends I_GenericDocument, I_Destination_PayLoad 
 
 export interface I_Input_QueryDestination extends I_Destination { }
 
-export interface I_Input_MutationDestination extends Omit<I_Destination, 'id' | 'createAt' | 'updateAt' | 'country' | 'user'> { }
+export interface I_Input_MutationDestination extends Omit<I_Destination, 'id' | 'createdAt' | 'updatedAt' | 'country' | 'user'> { }
