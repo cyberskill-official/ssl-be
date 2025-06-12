@@ -285,7 +285,7 @@ export const UserModel = mongo.createModel<I_User>({
     name: 'User',
     pagination: true,
     schema: {
-        fullName: {
+        userName: {
             type: String,
             required: true,
             unique: true,

@@ -29,7 +29,7 @@ export enum E_NoteType {
     MEMBER_NOTE = 'MEMBER_NOTE',
 }
 
-export interface I_Note_PayLoad {
+export interface I_Note {
     content?: string;
     type?: E_NoteType;
     isFlag?: boolean;
@@ -37,10 +37,8 @@ export interface I_Note_PayLoad {
     createdBy?: I_User;
 }
 
-export interface I_Note extends I_GenericDocument, I_Note_PayLoad { }
-
 export interface I_User_Payload {
-    fullName?: string;
+    userName?: string;
     email?: string;
     isEmailVerified?: boolean;
     password?: string;
@@ -82,8 +80,8 @@ export enum E_PartnerGender {
     MALE = 'MALE',
     FEMALE = 'FEMALE',
 }
-export interface I_Partner_Payload {
-    gender?: E_PartnerGender; // enum
+export interface I_Partner {
+    gender?: E_PartnerGender;
     dateOfBirth?: Date;
     countryId?: string;
     country?: I_Country;
@@ -111,10 +109,6 @@ export interface I_Partner_Payload {
     bio?: string;
 }
 
-export interface I_Partner extends I_GenericDocument, I_Partner_Payload { }
-
-export interface I_Setting_Payload {
+export interface I_Setting {
     timeFormat?: string; // hh:mm a for 12h, HH:mm for 24h
 }
-
-export interface I_Setting extends I_GenericDocument, I_Setting_Payload { }

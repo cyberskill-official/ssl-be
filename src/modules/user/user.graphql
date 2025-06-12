@@ -24,7 +24,7 @@ type T_User {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    fullName: String
+    userName: String
     avatar: String
     email: String
     phoneNumber: String
@@ -80,7 +80,7 @@ input Input_QueryUser {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    fullName: String
+    userName: String
     avatar: String
     email: String
     phoneNumber: String
@@ -96,7 +96,7 @@ input Input_QueryUser {
 
 input Input_MutateUser {
     isDel: Boolean
-    fullName: String
+    userName: String
     avatar: String
     email: String
     phoneNumber: String

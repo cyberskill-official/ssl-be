@@ -5,7 +5,7 @@ import type { I_Destination, I_Hotel, I_Seo } from './destination.type.js';
 
 import { E_AgeRange, E_DestinationType, E_Rating } from './destination.type.js';
 
-export const nearbyHotelsSchema = mongo.createSchema<I_Hotel>({
+export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
     mongoose,
     schema: {
         name: {
@@ -29,7 +29,7 @@ export const nearbyHotelsSchema = mongo.createSchema<I_Hotel>({
     },
 });
 
-export const seoSchema = mongo.createSchema<I_Seo>({
+export const SeoSchema = mongo.createSchema<I_Seo>({
     mongoose,
     schema: {
         title: {
@@ -122,7 +122,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             type: Object,
         },
         nearbyHotels: {
-            type: [nearbyHotelsSchema],
+            type: [NearbyHotelsSchema],
         },
         wearImage: {
             type: String,
@@ -236,7 +236,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             type: String,
         },
         seo: {
-            type: [seoSchema],
+            type: [SeoSchema],
         },
         isActive: {
             type: Boolean,

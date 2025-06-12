@@ -14,7 +14,7 @@ type Query {
 }
 
 type Mutation {
-    register(email: String!, password: String!, fullName: String, phone: String): T_Response_Auth!
+    register(email: String!, password: String!, userName: String, phone: String): T_Response_Auth!
     login(identity: String!, password: String!, rememberMe: Boolean): T_Response_Auth!
     logout: T_Response_Auth!
 }

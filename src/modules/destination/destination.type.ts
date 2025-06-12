@@ -37,7 +37,7 @@ export interface I_DestinationRating {
     translations: JSON;
 }
 
-export interface I_Seo extends I_GenericDocument {
+export interface I_Seo {
     title?: string;
     description?: string;
     keywords?: string[];
