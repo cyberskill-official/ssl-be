@@ -1,13 +1,52 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Partner, I_Setting, I_User } from './user.type.js';
+import type { I_Note, I_Partner, I_Setting, I_User } from './user.type.js';
 
 import {
     E_AccountType,
+    E_MemberStatus,
+    E_NoteType,
     E_PartnerGender,
     E_PinStyle,
 } from './user.type.js';
+
+export const NoteSchema = mongo.createSchema<I_Note>({
+    mongoose,
+    schema: {
+        content: {
+            type: String,
+        },
+        type: {
+            type: String,
+            enum: Object.values(E_NoteType),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select note type.',
+                },
+            ],
+        },
+        isFlag: {
+            type: Boolean,
+        },
+        createdById: {
+            type: String,
+        },
+    },
+    virtuals: [
+        {
+            name: 'createdBy',
+            options: {
+                ref: 'User',
+                localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
+});
 
 export const PartnerSchema = mongo.createSchema<I_Partner>({
     mongoose,
@@ -246,7 +285,7 @@ export const UserModel = mongo.createModel<I_User>({
     name: 'User',
     pagination: true,
     schema: {
-        username: {
+        fullName: {
             type: String,
             required: true,
             unique: true,
@@ -365,6 +404,30 @@ export const UserModel = mongo.createModel<I_User>({
                 },
             ],
         },
+        ip: {
+            type: String,
+        },
+        countryId: {
+            type: String,
+        },
+        pricingId: {
+            type: String,
+        },
+        memberStatus: {
+            type: String,
+            enum: Object.values(E_MemberStatus),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select member status for the user',
+                },
+            ],
+        },
+        nextPayment: {
+            type: Date,
+        },
+        notes: [NoteSchema],
     },
     virtuals: [
         {
@@ -381,6 +444,15 @@ export const UserModel = mongo.createModel<I_User>({
             options: {
                 ref: 'Country',
                 localField: 'countryId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'pricing',
+            options: {
+                ref: 'Pricing',
+                localField: 'pricingId',
                 foreignField: 'id',
                 justOne: true,
             },

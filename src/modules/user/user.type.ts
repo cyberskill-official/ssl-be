@@ -1,6 +1,7 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
-import type { I_Country } from '#modules/country/index.js';
+import type { I_Country } from '#modules/country/country.type.js';
+import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Role } from '#modules/role/index.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
 
@@ -14,8 +15,32 @@ export enum E_AccountType {
     SINGLE = 'SINGLE',
     COUPLE = 'COUPLE',
 }
+
+export enum E_MemberStatus {
+    ACTIVE = 'ACTIVE',
+    DEACTIVATED = 'DEACTIVATED',
+    SUSPENDED = 'SUSPENDED',
+}
+
+export enum E_NoteType {
+    USER_REPORT = 'USER_REPORT',
+    CONTENT_REVIEW = 'CONTENT_REVIEW',
+    AUTOMATED_DETECTION = 'AUTOMATED_DETECTION',
+    MEMBER_NOTE = 'MEMBER_NOTE',
+}
+
+export interface I_Note_PayLoad {
+    content?: string;
+    type?: E_NoteType;
+    isFlag?: boolean;
+    createdById?: string;
+    createdBy?: I_User;
+}
+
+export interface I_Note extends I_GenericDocument, I_Note_PayLoad { }
+
 export interface I_User_Payload {
-    username?: string;
+    fullName?: string;
     email?: string;
     isEmailVerified?: boolean;
     password?: string;
@@ -37,6 +62,14 @@ export interface I_User_Payload {
     rulesOfEngagement?: string[];
     roleId?: string;
     role?: I_Role;
+    ip?: string;
+    countryId?: string;
+    country?: I_Country;
+    pricingId?: string;
+    pricing?: I_Pricing;
+    memberStatus?: E_MemberStatus;
+    nextPayment?: Date;
+    notes?: I_Note[];
 }
 
 export interface I_User extends I_GenericDocument, I_User_Payload { }

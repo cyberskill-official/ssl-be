@@ -5,6 +5,20 @@ enum E_User_Gender {
     PREFER_NOT_TO_SAY
 }
 
+enum E_MemberStatus {
+    ACTIVE 
+    DEACTIVATED 
+    SUSPENDED
+}
+
+type T_Note {
+    content: String
+    type: String
+    isFlag: Boolean
+    createdById: String
+    createdBy: T_User
+}
+
 type T_User {
     id: String
     isDel: Boolean
@@ -18,6 +32,13 @@ type T_User {
     dateOfBirth: DateTime
     roleId: String
     role: T_Role
+    ip: String
+    countryId: String
+    country: String
+    pricingId: String
+    pricing: T_Pricing
+    memberStatus: E_MemberStatus
+    notes: [T_Note]
 }
 
 type T_Response_User {
@@ -47,6 +68,13 @@ type T_Response_Users {
     result: T_Users
 }
 
+input I_Input_Note {
+    content: String
+    isFlag: Boolean
+    type: String
+    createdById: String
+}
+
 input Input_QueryUser {
     id: String
     isDel: Boolean
@@ -59,6 +87,11 @@ input Input_QueryUser {
     gender: E_User_Gender
     dateOfBirth: DateTime
     roleId: String
+    ip: String
+    countryId: String
+    pricingId: String
+    memberStatus: E_MemberStatus
+    notes: [I_Input_Note]
 }
 
 input Input_MutateUser {
@@ -71,6 +104,11 @@ input Input_MutateUser {
     dateOfBirth: DateTime
     password: String
     roleId: String
+    ip: String
+    countryId: String
+    pricingId: String
+    memberStatus: E_MemberStatus
+    notes: [I_Input_Note]
 }
 
 type Query {
