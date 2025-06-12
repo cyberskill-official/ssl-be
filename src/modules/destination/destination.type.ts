@@ -21,7 +21,7 @@ export enum E_DestinationType {
     RESORT = 'RESORT',
 }
 
-export interface I_Hotel extends I_GenericDocument {
+export interface I_Hotel {
     name?: string;
     address?: string;
     countryId?: string;

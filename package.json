@@ -26,8 +26,7 @@
         "copy:graphql": "tsx src/modules/graphql/copy.ts"
     },
     "dependencies": {
-        "@apollo/subgraph": "2.11.0",
-        "@cyberskill/shared": "1.175.0",
+        "@cyberskill/shared": "1.178.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.0.24",
         "@graphql-tools/schema": "10.0.23",

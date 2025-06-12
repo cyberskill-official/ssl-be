@@ -1,5 +1,8 @@
 {
-    "$schema": "https://unpkg.com/@cyberskill/shared@latest/public/renovate.base.json",
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+        "config:best-practices"
+    ],
     "ignoreDeps": [
         "node"
     ]
