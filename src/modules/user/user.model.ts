@@ -64,7 +64,6 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             ],
         },
         dateOfBirth: { type: Date },
-        countryId: { type: String },
         relationshipStatusIds: {
             type: [String],
             required: true,
@@ -285,7 +284,7 @@ export const UserModel = mongo.createModel<I_User>({
     name: 'User',
     pagination: true,
     schema: {
-        userName: {
+        username: {
             type: String,
             required: true,
             unique: true,

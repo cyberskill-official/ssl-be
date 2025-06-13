@@ -1,4 +1,4 @@
-enum E_User_Gender {
+enum E_Gender {
     MALE
     FEMALE
     OTHER
@@ -24,11 +24,11 @@ type T_User {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    userName: String
+    username: String
     avatar: String
     email: String
     phoneNumber: String
-    gender: E_User_Gender
+    gender: E_Gender
     dateOfBirth: DateTime
     roleId: String
     role: T_Role
@@ -80,11 +80,11 @@ input Input_QueryUser {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    userName: String
+    username: String
     avatar: String
     email: String
     phoneNumber: String
-    gender: E_User_Gender
+    gender: E_Gender
     dateOfBirth: DateTime
     roleId: String
     ip: String
@@ -96,11 +96,11 @@ input Input_QueryUser {
 
 input Input_MutateUser {
     isDel: Boolean
-    userName: String
+    username: String
     avatar: String
     email: String
     phoneNumber: String
-    gender: E_User_Gender
+    gender: E_Gender
     dateOfBirth: DateTime
     password: String
     roleId: String

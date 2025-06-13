@@ -40,7 +40,7 @@ export interface I_Note_PayLoad {
 export interface I_Note extends I_GenericDocument, I_Note_PayLoad { }
 
 export interface I_User_Payload {
-    userName?: string;
+    username?: string;
     email?: string;
     isEmailVerified?: boolean;
     password?: string;
@@ -85,8 +85,6 @@ export enum E_PartnerGender {
 export interface I_Partner {
     gender?: E_PartnerGender;
     dateOfBirth?: Date;
-    countryId?: string;
-    country?: I_Country;
     relationshipStatus?: I_Tag[];
     relationshipStatusIds?: string[];
     sexualOrientation?: I_Tag[];
