@@ -30,7 +30,7 @@ export const pricingCtr = {
         if (!countryFound.success) {
             throwError({
                 status: RESPONSE_STATUS.NOT_FOUND,
-                message: 'Country not found',
+                message: 'Country not found.',
             });
         }
 
@@ -41,21 +41,21 @@ export const pricingCtr = {
         if (existingPricing.success) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'Pricing already exists for this country and type',
+                message: 'Pricing already exists for this country and type.',
             });
         }
 
         if (!price || price <= 0) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'Price must be greater than 0',
+                message: 'Price must be greater than 0.',
             });
         }
 
         if (!taxRate || taxRate < 0 || taxRate > 100) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'Tax rate must be between 0 and 100 percent',
+                message: 'Tax rate must be between 0 and 100 percent.',
             });
         }
 

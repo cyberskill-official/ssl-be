@@ -29,13 +29,15 @@ export enum E_NoteType {
     MEMBER_NOTE = 'MEMBER_NOTE',
 }
 
-export interface I_Note {
+export interface I_Note_PayLoad {
     content?: string;
     type?: E_NoteType;
     isFlag?: boolean;
     createdById?: string;
     createdBy?: I_User;
 }
+
+export interface I_Note extends I_GenericDocument, I_Note_PayLoad { }
 
 export interface I_User_Payload {
     userName?: string;
