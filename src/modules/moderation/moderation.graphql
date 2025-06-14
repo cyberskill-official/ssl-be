@@ -20,5 +20,4 @@ type T_Moderation {
     status: E_ModerationStatus
     moderatedById: String
     reason: String
-    notes: [T_Note]
 }

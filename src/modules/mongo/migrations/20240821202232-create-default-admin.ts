@@ -13,7 +13,6 @@ export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Role>(db, 'roles');
     const userCtr = new MongoController<I_User>(db, 'users');
 
-    // Find the ADMIN role
     const adminRoleFound = await roleCtr.findOne({ name: E_Role.ADMIN });
 
     if (!adminRoleFound.success) {
@@ -21,19 +20,18 @@ export async function up(db: C_Db) {
         return;
     }
 
-    // Check if the admin user already exists
-    const existingAdminUser = await userCtr.findOne({ email: 'admin@cyberskill.world' });
+    const existingAdminUser = await userCtr.findOne({ email: 'admin@secretswingerlust.com' });
 
     if (existingAdminUser.success) {
         log.info('Default admin user already exists.');
         return;
     }
 
-    // Create the default admin user
     const adminUser = {
+        username: 'admin',
         password: bcrypt.hashSync('123456', 10),
-        email: 'admin@cyberskill.world',
-        roleId: adminRoleFound.result?.id ?? '',
+        email: 'admin@secretswingerlust.com',
+        rolesIds: [adminRoleFound.result.id],
         ...mongo.createGenericFields(),
     };
 
@@ -50,7 +48,7 @@ export async function up(db: C_Db) {
 export async function down(db: C_Db) {
     const userCtr = new MongoController<I_User>(db, 'users');
 
-    const adminDeleted = await userCtr.deleteOne({ email: 'admin@cyberskill.world' });
+    const adminDeleted = await userCtr.deleteOne({ email: 'admin@secretswingerlust.com' });
 
     if (!adminDeleted.success) {
         log.error('Failed to delete default admin user or user did not exist.');

@@ -1,6 +1,6 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
-import type { I_Note, I_User } from '#modules/user/user.type.js';
+import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_ReportType {
     KEYWORD = 'KEYWORD',
@@ -14,7 +14,6 @@ export interface I_Report_PayLoad {
     profileId?: string;
     profile?: I_User;
     content?: string;
-    notes?: I_Note[];
 }
 
 export interface I_Report extends I_Report_PayLoad, I_GenericDocument { }

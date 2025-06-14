@@ -17,16 +17,16 @@ export enum E_TagType {
     HAIR_COLOR = 'HAIR_COLOR',
     EYE_COLOR = 'EYE_COLOR',
     SKIN_TONE = 'SKIN_TONE',
+    CATALOGUE = 'CATALOGUE',
 }
 
-export interface I_Tag_Payload {
-    name: string;
-    type: E_TagType;
+export interface I_Tag extends I_GenericDocument {
+    name?: string;
+    type?: E_TagType;
     isCustom?: boolean;
     createdById?: string;
     createdBy?: I_User;
     usageCount?: number;
-    translations?: Record<string, string>;
 }
 
-export interface I_Tag extends I_GenericDocument, I_Tag_Payload { }
+export type T_Tag_Populate = 'createdBy';

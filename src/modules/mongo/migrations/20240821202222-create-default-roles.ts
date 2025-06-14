@@ -11,7 +11,6 @@ export async function up(db: C_Db) {
     const roles = Object.values(E_Role).map(role => ({ name: role }));
     const roleCtr = new MongoController<I_Role>(db, 'roles');
 
-    // Find existing roles
     const existingRoles = await roleCtr.findAll({ name: { $in: roles.map(role => role.name) } });
 
     if (!existingRoles.success) {
@@ -21,7 +20,6 @@ export async function up(db: C_Db) {
 
     const existingRoleNames = new Set(existingRoles?.result?.map(role => role.name));
 
-    // Filter out roles that already exist
     const newRoles = roles.filter(role => !existingRoleNames.has(role.name));
 
     if (!newRoles.length) {
@@ -29,7 +27,6 @@ export async function up(db: C_Db) {
         return;
     }
 
-    // Create new roles
     const rolesCreated = await roleCtr.createMany(newRoles.map(role => ({ ...role, ...mongo.createGenericFields() })));
 
     if (!rolesCreated.success) {

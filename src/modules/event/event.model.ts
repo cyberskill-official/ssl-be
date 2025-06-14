@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_EvenType, type I_Event } from './event.type.js';
+import { E_EventType, type I_Event } from './event.type.js';
 
 export const EventModel = mongo.createModel<I_Event>({
     mongoose,
@@ -10,7 +10,7 @@ export const EventModel = mongo.createModel<I_Event>({
     schema: {
         type: {
             type: String,
-            enum: Object.values(E_EvenType),
+            enum: Object.values(E_EventType),
             required: true,
             validate: [
                 {
@@ -68,12 +68,6 @@ export const EventModel = mongo.createModel<I_Event>({
         endTime: {
             type: String,
         },
-        countryId: {
-            type: String,
-        },
-        cityId: {
-            type: String,
-        },
         location: {
             type: Object,
         },
@@ -93,15 +87,6 @@ export const EventModel = mongo.createModel<I_Event>({
             options: {
                 ref: 'Destination',
                 localField: 'clubId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-        {
-            name: 'city',
-            options: {
-                ref: 'City',
-                localField: 'cityId',
                 foreignField: 'id',
                 justOne: true,
             },

@@ -1,3 +1,5 @@
+import type { I_Input_CreateOne } from '@cyberskill/shared/node/mongo';
+
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import bcrypt from 'bcryptjs';
@@ -9,13 +11,12 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { E_Role } from '#modules/role/index.js';
 import { roleCtr } from '#modules/role/role.controller.js';
-import { userCtr } from '#modules/user/index.js';
+import { type I_Input_CreateUser, userCtr } from '#modules/user/index.js';
 
 import type {
     I_Input_CheckAuth,
     I_Input_CheckToken,
     I_Input_Login,
-    I_Input_Register,
     I_Response_Auth,
     I_SessionPayload,
 } from './auth.type.js';
@@ -99,10 +100,10 @@ export const authCtr = {
             success: false,
         };
     },
-    register: async ({ req }: I_Context, args: I_Input_Register): Promise<I_Response_Auth> => {
+    register: async ({ req }: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateUser>): Promise<I_Response_Auth> => {
         if (!req?.session) {
             throwError({
-                message: 'Registration failed.',
+                message: 'Session not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
@@ -122,9 +123,8 @@ export const authCtr = {
 
         const userCreated = await userCtr.createUser({ req }, {
             doc: {
-                ...args,
-                roleId: roleFound.result.id,
-                isDel: false,
+                ...doc,
+                rolesIds: [roleFound.result.id],
             },
         });
 

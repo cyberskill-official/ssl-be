@@ -14,5 +14,4 @@ type T_Report {
     profileId: String
     profile: T_User
     content: String
-    notes: [T_Note]
 }

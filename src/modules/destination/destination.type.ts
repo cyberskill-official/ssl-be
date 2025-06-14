@@ -34,7 +34,6 @@ export interface I_Hotel {
 export interface I_DestinationRating {
     rate?: number;
     reason?: string;
-    translations: JSON;
 }
 
 export interface I_Seo {
@@ -80,7 +79,6 @@ export interface I_Destination_PayLoad {
     isActive?: boolean;
     createdById?: string;
     createdBy?: I_User;
-    translations?: JSON;
 }
 
 export interface I_Destination extends I_GenericDocument, I_Destination_PayLoad { }

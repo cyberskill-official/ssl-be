@@ -13,6 +13,7 @@ enum E_TagType {
     HAIR_COLOR
     EYE_COLOR
     SKIN_TONE
+    CATALOGUE
 }
 
 type T_Tag {
@@ -25,6 +26,5 @@ type T_Tag {
     isCustom: Boolean
     createdById: String
     createdBy: T_User
-    usageCount: Float
-    translations: JSON
+    usageCount: Int
 }

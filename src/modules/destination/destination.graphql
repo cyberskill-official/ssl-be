@@ -28,7 +28,6 @@ input I_Input_Hotel {
 input I_Input_DestinationRating {
     rate: Int
     reason: String
-    translations: JSON
 }
 
 input I_Input_Seo {
@@ -53,7 +52,6 @@ type T_Hotel {
 type T_DestinationRating {
     rate: Int
     reason: String
-    translations: JSON
 }
 
 type T_Seo {
@@ -103,7 +101,6 @@ type T_Destination {
     isActive: Boolean
     createdById: String
     createdBy: T_User
-    translations: JSON
 }
 
 type T_Response_Destination {

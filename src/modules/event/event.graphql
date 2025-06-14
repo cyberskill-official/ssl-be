@@ -19,8 +19,6 @@ type T_Event {
     endDate: DateTime
     startTime: String
     endTime: String
-    countryId: String
-    cityId: String
     location: JSON
     fee: Float
     currency: String

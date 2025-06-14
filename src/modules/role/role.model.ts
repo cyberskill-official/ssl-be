@@ -12,9 +12,33 @@ export const RoleModel = mongo.createModel<I_Role>({
             type: String,
             required: true,
             unique: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter role name',
+                },
+                {
+                    validator: mongo.validator.isUnique(['name']),
+                    message: 'Role name must be unique',
+                },
+            ],
         },
         description: {
             type: String,
         },
+        parentId: {
+            type: String,
+        },
     },
+    virtuals: [
+        {
+            name: 'parent',
+            options: {
+                ref: 'Role',
+                localField: 'parentId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });

@@ -1,8 +1,6 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { NoteSchema } from '#modules/user/user.model.js';
-
 import { E_ModerationStatus, E_ModerationType, type I_Moderation } from './moderation.type.js';
 
 export const ModerationModel = mongo.createModel<I_Moderation>({
@@ -58,9 +56,6 @@ export const ModerationModel = mongo.createModel<I_Moderation>({
         },
         reason: {
             type: String,
-        },
-        notes: {
-            type: [NoteSchema],
         },
     },
     virtuals: [

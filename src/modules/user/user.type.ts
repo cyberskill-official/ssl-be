@@ -1,9 +1,47 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
-import type { I_Country } from '#modules/country/country.type.js';
-import type { I_Pricing } from '#modules/pricing/pricing.type.js';
+import type { I_Language } from '#modules/language/index.js';
+import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
 import type { I_Role } from '#modules/role/index.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
+
+export enum E_AccountType {
+    SINGLE = 'SINGLE',
+    COUPLE = 'COUPLE',
+}
+
+export enum E_Gender {
+    MALE = 'MALE',
+    FEMALE = 'FEMALE',
+}
+export interface I_UserPartner {
+    gender?: E_Gender;
+    dateOfBirth?: Date;
+    relationshipStatusIds?: string[];
+    relationshipStatus?: I_Tag[];
+    sexualOrientationIds?: string[];
+    sexualOrientation?: I_Tag[];
+    sexualPreferencesIds?: string[];
+    sexualPreferences?: I_Tag[];
+    smokingHabitsIds?: string[];
+    smokingHabits?: I_Tag[];
+    preferredDrinksIds?: string[];
+    preferredDrinks?: I_Tag[];
+    bodyTypeId?: string;
+    bodyType?: I_Tag;
+    heightId?: string;
+    height?: I_Tag;
+    hairColorId?: string;
+    hairColor?: I_Tag;
+    eyeColorId?: string;
+    eyeColor?: I_Tag;
+    skinToneId?: string;
+    skinTone?: I_Tag;
+    picture?: string;
+    bio?: string;
+}
+
+export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
 
 export enum E_PinStyle {
     MALE = 'MALE',
@@ -11,104 +49,90 @@ export enum E_PinStyle {
     COUPLE = 'COUPLE',
     LGBTQ_PLUS = 'LGBTQ+',
 }
-export enum E_AccountType {
-    SINGLE = 'SINGLE',
-    COUPLE = 'COUPLE',
+
+export interface I_UserSettings_TemporaryLocation {
+    location?: I_Location;
+    endAt?: Date;
 }
 
-export enum E_MemberStatus {
-    ACTIVE = 'ACTIVE',
-    DEACTIVATED = 'DEACTIVATED',
-    SUSPENDED = 'SUSPENDED',
+export interface I_Input_UserSettings_TemporaryLocation {
+    location?: Omit<I_Location, T_Location_Populate>;
+    endAt?: Date;
 }
 
-export enum E_NoteType {
-    USER_REPORT = 'USER_REPORT',
-    CONTENT_REVIEW = 'CONTENT_REVIEW',
-    AUTOMATED_DETECTION = 'AUTOMATED_DETECTION',
-    MEMBER_NOTE = 'MEMBER_NOTE',
+export interface I_UserSettings_Notification {
+    followingPostAnnouncement?: boolean;
+    gainFollower?: boolean;
+    receiveMessage?: boolean;
+    newMemberJoined?: boolean;
+    sound?: boolean;
 }
 
-export interface I_Note_PayLoad {
-    content?: string;
-    type?: E_NoteType;
-    isFlag?: boolean;
-    createdById?: string;
-    createdBy?: I_User;
+export interface I_UserSettings {
+    timeFormat?: string;
+    temporaryLocation?: I_UserSettings_TemporaryLocation;
+    notification?: I_UserSettings_Notification;
 }
 
-export interface I_Note extends I_GenericDocument, I_Note_PayLoad { }
+export interface I_Input_UserSettings {
+    timeFormat?: string;
+    temporaryLocation?: I_Input_UserSettings_TemporaryLocation;
+    notification?: I_UserSettings_Notification;
+}
 
-export interface I_User_Payload {
+export interface I_User extends I_GenericDocument {
     username?: string;
     email?: string;
     isEmailVerified?: boolean;
     password?: string;
     displayName?: string;
     accountType?: E_AccountType;
-    partner1?: I_Partner;
-    partner2?: I_Partner;
-    cityId?: string;
-    nativeLanguage?: string;
-    otherLanguages?: string[];
-    avatar?: string;
-    phoneNumber?: string;
-    settings?: I_Setting[];
+    partner1?: I_UserPartner;
+    partner2?: I_UserPartner;
+    location?: I_Location;
+    nativeLanguageId?: string;
+    nativeLanguage?: I_Language;
+    otherLanguagesIds?: string[];
+    otherLanguages?: I_Language[];
     pinStyle?: E_PinStyle;
-    location?: Record<string, any>;
-    lookingFor?: string[];
-    profilePurpose?: string[];
-    willingnessToGo?: string[];
-    rulesOfEngagement?: string[];
-    roleId?: string;
-    role?: I_Role;
-    ip?: string;
-    countryId?: string;
-    country?: I_Country;
-    pricingId?: string;
-    pricing?: I_Pricing;
-    memberStatus?: E_MemberStatus;
-    nextPayment?: Date;
-    notes?: I_Note[];
+    lookingForIds?: string[];
+    lookingFor?: I_Tag[];
+    profilePurposeIds?: string[];
+    profilePurpose?: I_Tag[];
+    willingnessToGoIds?: string[];
+    willingnessToGo?: I_Tag[];
+    rulesOfEngagementIds?: string[];
+    rulesOfEngagement?: I_Tag[];
+    rolesIds?: string[];
+    roles?: I_Role[];
+    isActive?: boolean;
+    isOnline?: boolean;
+    lastOnline?: Date;
+    settings?: I_UserSettings;
 }
 
-export interface I_User extends I_GenericDocument, I_User_Payload { }
+export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';
 
-export interface I_Input_QueryUser extends Omit<I_User, 'password' | 'role'> { }
-
-export interface I_Input_MutateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | 'role'> { }
-
-export enum E_PartnerGender {
-    MALE = 'MALE',
-    FEMALE = 'FEMALE',
-}
-export interface I_Partner {
-    gender?: E_PartnerGender;
-    dateOfBirth?: Date;
-    relationshipStatus?: I_Tag[];
-    relationshipStatusIds?: string[];
-    sexualOrientation?: I_Tag[];
-    sexualOrientationIds?: string[];
-    sexualPreferences?: I_Tag[];
-    sexualPreferencesIds?: string[];
-    smokingHabits?: I_Tag[];
-    smokingHabitsIds?: string[];
-    preferredDrinks?: I_Tag[];
-    preferredDrinksIds?: string[];
-    bodyType?: I_Tag;
-    bodyTypeId?: string;
-    heightRange?: I_Tag;
-    heightRangeId?: string;
-    hairColor?: I_Tag;
-    hairColorId?: string;
-    eyeColor?: I_Tag;
-    eyeColorId?: string;
-    skinTone?: I_Tag;
-    skinToneId?: string;
-    picture: string;
-    bio?: string;
+export interface I_Input_QueryUser extends Omit<I_User, 'password' | T_User_Populate> {
+    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    location?: Omit<I_Location, T_Location_Populate>;
+    settings?: I_Input_UserSettings;
 }
 
-export interface I_Setting {
-    timeFormat?: string; // hh:mm a for 12h, HH:mm for 24h
+export interface I_Input_CreateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | T_User_Populate> {
+    username: string;
+    email: string;
+    password: string;
+    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    location?: Omit<I_Location, T_Location_Populate>;
+    settings?: I_Input_UserSettings;
+}
+
+export interface I_Input_UpdateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | T_User_Populate> {
+    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
+    location?: Omit<I_Location, T_Location_Populate>;
+    settings?: I_Input_UserSettings;
 }

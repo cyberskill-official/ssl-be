@@ -248,9 +248,6 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         linkTo: {
             type: String,
         },
-        translations: {
-            type: Object,
-        },
     },
     virtuals: [
         {

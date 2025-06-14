@@ -1,0 +1,23 @@
+# TODO: Enable belows
+type T_Location {
+    regionId: String
+    # region: T_Region
+    subRegionId: String
+    # subRegion: T_SubRegion
+    countryId: String
+    # country: T_Country
+    stateId: String
+    # state: T_State
+    cityId: String
+    # city: T_City
+    raw: JSON
+}
+
+input Input_Location {
+    regionId: String
+    subRegionId: String
+    countryId: String
+    stateId: String
+    cityId: String
+    raw: JSON
+}

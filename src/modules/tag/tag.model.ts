@@ -16,31 +16,17 @@ export const TagModel = mongo.createModel<I_Tag>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Name is required',
+                    message: 'Please enter tag name',
                 },
             ],
         },
         type: {
             type: String,
             enum: Object.values(E_TagType),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Type is required',
-                },
-            ],
         },
         isCustom: {
             type: Boolean,
             default: false,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'isCustom is required',
-                },
-            ],
         },
         createdById: {
             type: String,
@@ -48,16 +34,6 @@ export const TagModel = mongo.createModel<I_Tag>({
         usageCount: {
             type: Number,
             default: 0,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Usage count is required',
-                },
-            ],
-        },
-        translations: {
-            type: Object,
         },
     },
     virtuals: [

@@ -1,60 +1,24 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Note, I_Partner, I_Setting, I_User } from './user.type.js';
+import { LocationSchema } from '#modules/location/index.js';
+
+import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';
 
 import {
     E_AccountType,
-    E_MemberStatus,
-    E_NoteType,
-    E_PartnerGender,
+    E_Gender,
     E_PinStyle,
 } from './user.type.js';
 
-export const NoteSchema = mongo.createSchema<I_Note>({
-    mongoose,
-    schema: {
-        content: {
-            type: String,
-        },
-        type: {
-            type: String,
-            enum: Object.values(E_NoteType),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select note type.',
-                },
-            ],
-        },
-        isFlag: {
-            type: Boolean,
-        },
-        createdById: {
-            type: String,
-        },
-    },
-    virtuals: [
-        {
-            name: 'createdBy',
-            options: {
-                ref: 'User',
-                localField: 'createdById',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-    ],
-});
-
-export const PartnerSchema = mongo.createSchema<I_Partner>({
+export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
+    standalone: true,
     mongoose,
     schema: {
         gender: {
             type: String,
-            enum: Object.values(E_PartnerGender),
-            default: E_PartnerGender.FEMALE,
+            enum: Object.values(E_Gender),
+            default: E_Gender.FEMALE,
             required: true,
             validate: [
                 {
@@ -110,7 +74,7 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'preferredDrinksIds is required',
+                    message: 'Please select preferred drinks',
                 },
             ],
         },
@@ -120,17 +84,17 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'bodyTypeId is required',
+                    message: 'Please select body type',
                 },
             ],
         },
-        heightRangeId: {
+        heightId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'heightRangeId is required',
+                    message: 'Please select height',
                 },
             ],
         },
@@ -140,7 +104,7 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'hairColorId is required',
+                    message: 'Please select hair color',
                 },
             ],
         },
@@ -150,7 +114,7 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'eyeColorId is required',
+                    message: 'Please select eye color',
                 },
             ],
         },
@@ -160,7 +124,7 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'skinToneId is required',
+                    message: 'Please select skin tone',
                 },
             ],
         },
@@ -170,7 +134,7 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'picture is required',
+                    message: 'Please upload a picture',
                 },
             ],
         },
@@ -234,10 +198,10 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
             },
         },
         {
-            name: 'heightRange',
+            name: 'height',
             options: {
                 ref: 'Tag',
-                localField: 'heightRangeId',
+                localField: 'heightId',
                 foreignField: 'id',
                 justOne: true,
             },
@@ -272,10 +236,49 @@ export const PartnerSchema = mongo.createSchema<I_Partner>({
     ],
 });
 
-export const SettingSchema = mongo.createSchema<I_Setting>({
+export const UserSettingsTemporaryLocationSchema = mongo.createSchema<I_UserSettings_TemporaryLocation>({
+    standalone: true,
+    mongoose,
+    schema: {
+        location: { type: LocationSchema },
+        endAt: { type: Date },
+    },
+});
+
+export const UserSettingsNotificationSchema = mongo.createSchema<I_UserSettings_Notification>({
+    standalone: true,
+    mongoose,
+    schema: {
+        followingPostAnnouncement: {
+            type: Boolean,
+            default: true,
+        },
+        gainFollower: {
+            type: Boolean,
+            default: true,
+        },
+        receiveMessage: {
+            type: Boolean,
+            default: true,
+        },
+        newMemberJoined: {
+            type: Boolean,
+            default: true,
+        },
+        sound: {
+            type: Boolean,
+            default: true,
+        },
+    },
+});
+
+export const UserSettingsSchema = mongo.createSchema<I_UserSettings>({
+    standalone: true,
     mongoose,
     schema: {
         timeFormat: { type: String },
+        temporaryLocation: { type: UserSettingsTemporaryLocationSchema },
+        notification: { type: UserSettingsNotificationSchema },
     },
 });
 
@@ -291,11 +294,11 @@ export const UserModel = mongo.createModel<I_User>({
             validate: [
                 {
                     validator: mongo.validator.isUnique(['username']),
-                    message: 'Username must be unique',
+                    message: 'Please enter a unique username',
                 },
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Username is required',
+                    message: 'Please enter a username',
                 },
             ],
         },
@@ -306,23 +309,17 @@ export const UserModel = mongo.createModel<I_User>({
             validate: [
                 {
                     validator: mongo.validator.isUnique(['email']),
-                    message: 'Email must be unique',
+                    message: 'Please enter a unique email address',
                 },
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Email is required',
+                    message: 'Please enter an email address',
                 },
             ],
         },
         isEmailVerified: {
             type: Boolean,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Email verification status is required',
-                },
-            ],
+            default: false,
         },
         password: {
             type: String,
@@ -330,7 +327,7 @@ export const UserModel = mongo.createModel<I_User>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Password is required',
+                    message: 'Please enter a password',
                 },
             ],
         },
@@ -340,120 +337,112 @@ export const UserModel = mongo.createModel<I_User>({
             enum: Object.values(E_AccountType),
             default: E_AccountType.SINGLE,
         },
-        partner1: { type: PartnerSchema },
-        partner2: { type: PartnerSchema },
-        cityId: { type: String },
-        nativeLanguage: { type: String },
-        otherLanguages: [{ type: String }],
-        avatar: { type: String },
-        phoneNumber: { type: String },
-        settings: { type: [SettingSchema] },
+        partner1: { type: UserPartnerSchema },
+        partner2: { type: UserPartnerSchema },
+        location: { type: LocationSchema },
+        nativeLanguageId: { type: String },
+        otherLanguagesIds: [{ type: String }],
         pinStyle: {
             type: String,
             enum: Object.values(E_PinStyle),
         },
-        location: { type: Object },
-        lookingFor: {
+        lookingForIds: {
+            type: [String],
+        },
+        profilePurposeIds: {
+            type: [String],
+        },
+        willingnessToGoIds: {
+            type: [String],
+        },
+        rulesOfEngagementIds: {
+            type: [String],
+        },
+        rolesIds: {
             type: [String],
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'lookingFor is required',
+                    message: 'Please select at least one role for the user',
                 },
             ],
         },
-        profilePurpose: {
-            type: [String],
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'profilePurpose is required',
-                },
-            ],
+        isActive: {
+            type: Boolean,
+            default: false,
         },
-        willingnessToGo: {
-            type: [String],
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'willingnessToGo is required',
-                },
-            ],
+        isOnline: {
+            type: Boolean,
+            default: false,
         },
-        rulesOfEngagement: {
-            type: [String],
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'rulesOfEngagement is required',
-                },
-            ],
-        },
-        roleId: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select a role for the user',
-                },
-            ],
-        },
-        ip: {
-            type: String,
-        },
-        countryId: {
-            type: String,
-        },
-        pricingId: {
-            type: String,
-        },
-        memberStatus: {
-            type: String,
-            enum: Object.values(E_MemberStatus),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select member status for the user',
-                },
-            ],
-        },
-        nextPayment: {
+        lastOnline: {
             type: Date,
         },
-        notes: [NoteSchema],
+        settings: { type: UserSettingsSchema },
     },
     virtuals: [
         {
-            name: 'role',
+            name: 'nativeLanguage',
+            options: {
+                ref: 'Language',
+                localField: 'nativeLanguageId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'otherLanguages',
+            options: {
+                ref: 'Language',
+                localField: 'otherLanguagesIds',
+                foreignField: 'id',
+                justOne: false,
+            },
+        },
+        {
+            name: 'lookingFor',
+            options: {
+                ref: 'Tag',
+                localField: 'lookingForIds',
+                foreignField: 'id',
+                justOne: false,
+            },
+        },
+        {
+            name: 'profilePurpose',
+            options: {
+                ref: 'Tag',
+                localField: 'profilePurposeIds',
+                foreignField: 'id',
+                justOne: false,
+            },
+        },
+        {
+            name: 'willingnessToGo',
+            options: {
+                ref: 'Tag',
+                localField: 'willingnessToGoIds',
+                foreignField: 'id',
+                justOne: false,
+            },
+        },
+        {
+            name: 'rulesOfEngagement',
+            options: {
+                ref: 'Tag',
+                localField: 'rulesOfEngagementIds',
+                foreignField: 'id',
+                justOne: false,
+            },
+        },
+        {
+            name: 'roles',
             options: {
                 ref: 'Role',
-                localField: 'roleId',
+                localField: 'rolesIds',
                 foreignField: 'id',
-                justOne: true,
-            },
-        },
-        {
-            name: 'country',
-            options: {
-                ref: 'Country',
-                localField: 'countryId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-        {
-            name: 'pricing',
-            options: {
-                ref: 'Pricing',
-                localField: 'pricingId',
-                foreignField: 'id',
-                justOne: true,
+                justOne: false,
             },
         },
     ],

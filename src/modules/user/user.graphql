@@ -1,22 +1,100 @@
+enum E_AccountType {
+    SINGLE
+    COUPLE
+}
+
 enum E_Gender {
     MALE
     FEMALE
-    OTHER
-    PREFER_NOT_TO_SAY
 }
 
-enum E_MemberStatus {
-    ACTIVE 
-    DEACTIVATED 
-    SUSPENDED
+type T_UserPartner {
+    gender: E_Gender
+    dateOfBirth: DateTime
+    relationshipStatusIds: [String]
+    relationshipStatus: [T_Tag]
+    sexualOrientationIds: [String]
+    sexualOrientation: [T_Tag]
+    sexualPreferencesIds: [String]
+    sexualPreferences: [T_Tag]
+    smokingHabitsIds: [String]
+    smokingHabits: [T_Tag]
+    preferredDrinksIds: [String]
+    preferredDrinks: [T_Tag]
+    bodyTypeId: String
+    bodyType: T_Tag
+    heightId: String
+    height: T_Tag
+    hairColorId: String
+    hairColor: T_Tag
+    eyeColorId: String
+    eyeColor: T_Tag
+    skinToneId: String
+    skinTone: T_Tag
+    picture: String
+    bio: String
 }
 
-type T_Note {
-    content: String
-    type: String
-    isFlag: Boolean
-    createdById: String
-    createdBy: T_User
+input Input_UserPartner {
+    gender: E_Gender
+    dateOfBirth: DateTime
+    relationshipStatusIds: [String]
+    sexualOrientationIds: [String]
+    sexualPreferencesIds: [String]
+    smokingHabitsIds: [String]
+    preferredDrinksIds: [String]
+    bodyTypeId: String
+    heightId: String
+    hairColorId: String
+    eyeColorId: String
+    skinToneId: String
+    picture: String
+    bio: String
+}
+
+enum E_PinStyle {
+    MALE
+    FEMALE
+    COUPLE
+    LGBTQ_PLUS
+}
+
+type T_UserSettings_TemporaryLocation {
+    location: T_Location
+    endAt: DateTime
+}
+
+input Input_UserSettings_TemporaryLocation {
+    location: Input_Location
+    endAt: DateTime
+}
+
+type T_UserSettings_Notification {
+    followingPostAnnouncement: Boolean
+    gainFollower: Boolean
+    receiveMessage: Boolean
+    newMemberJoined: Boolean
+    sound: Boolean
+}
+
+input Input_UserSettings_Notification {
+    followingPostAnnouncement: Boolean!
+    gainFollower: Boolean!
+    receiveMessage: Boolean!
+    newMemberJoined: Boolean!
+    sound: Boolean!
+}
+
+type T_UserSettings {
+    timeFormat: String
+    temporaryLocation: T_UserSettings_TemporaryLocation
+    notification: T_UserSettings_Notification
+}
+
+input Input_UserSettings{
+    timeFormat: String
+    temporaryLocation: Input_UserSettings_TemporaryLocation
+    notification: Input_UserSettings_Notification
 }
 
 type T_User {
@@ -25,54 +103,59 @@ type T_User {
     createdAt: DateTime
     updatedAt: DateTime
     username: String
-    avatar: String
     email: String
-    phoneNumber: String
-    gender: E_Gender
-    dateOfBirth: DateTime
-    roleId: String
-    role: T_Role
-    ip: String
-    countryId: String
-    country: String
-    pricingId: String
-    pricing: T_Pricing
-    memberStatus: E_MemberStatus
-    notes: [T_Note]
+    isEmailVerified: Boolean
+    displayName: String
+    accountType: E_AccountType
+    partner1: T_UserPartner
+    partner2: T_UserPartner
+    location: T_Location
+    nativeLanguageId: String
+    nativeLanguage: T_Language
+    otherLanguagesIds: [String]
+    otherLanguages: [T_Language]
+    pinStyle: E_PinStyle
+    lookingForIds: [String]
+    lookingFor: [T_Tag]
+    profilePurposeIds: [String]
+    profilePurpose: [T_Tag]
+    willingnessToGoIds: [String]
+    willingnessToGo: [T_Tag]
+    rulesOfEngagementIds: [String]
+    rulesOfEngagement: [T_Tag]
+    rolesId: [String]
+    roles: [T_Role]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: T_UserSettings
 }
 
 type T_Response_User {
-    success: Boolean!
+    success: Boolean
     message: String
     result: T_User
 }
 
 type T_Users {
-    docs: [T_User]!
-    totalDocs: Int!
-    limit: Int!
-    hasPrevPage: Boolean!
-    hasNextPage: Boolean!
-    page: Int!
-    totalPages: Int!
+    docs: [T_User]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
     offset: Int
     prevPage: Int
     nextPage: Int
-    pagingCounter: Int!
+    pagingCounter: Int
     meta: JSON
 }
 
 type T_Response_Users {
-    success: Boolean!
+    success: Boolean
     message: String
     result: T_Users
-}
-
-input I_Input_Note {
-    content: String
-    isFlag: Boolean
-    type: String
-    createdById: String
 }
 
 input Input_QueryUser {
@@ -81,34 +164,75 @@ input Input_QueryUser {
     createdAt: DateTime
     updatedAt: DateTime
     username: String
-    avatar: String
     email: String
-    phoneNumber: String
-    gender: E_Gender
-    dateOfBirth: DateTime
-    roleId: String
-    ip: String
-    countryId: String
-    pricingId: String
-    memberStatus: E_MemberStatus
-    notes: [I_Input_Note]
+    isEmailVerified: Boolean
+    displayName: String
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    location: Input_Location
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    pinStyle: E_PinStyle
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    rolesIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
 }
 
-input Input_MutateUser {
+input Input_CreateUser {
+    isDel: Boolean
+    username: String!
+    email: String!
+    isEmailVerified: Boolean
+    password: String!
+    displayName: String
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    location: Input_Location
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    pinStyle: E_PinStyle
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    rolesIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
+}
+
+input Input_UpdateUser {
     isDel: Boolean
     username: String
-    avatar: String
     email: String
-    phoneNumber: String
-    gender: E_Gender
-    dateOfBirth: DateTime
+    isEmailVerified: Boolean
     password: String
-    roleId: String
-    ip: String
-    countryId: String
-    pricingId: String
-    memberStatus: E_MemberStatus
-    notes: [I_Input_Note]
+    displayName: String
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    location: Input_Location
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    pinStyle: E_PinStyle
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    rolesIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
 }
 
 type Query {
@@ -117,9 +241,7 @@ type Query {
 }
 
 type Mutation {
-    createUser(doc: Input_MutateUser!): T_Response_User!
-    updateUser(filter: Input_QueryUser!, update: Input_MutateUser!, options: JSON): T_Response_User!
+    createUser(doc: Input_CreateUser!): T_Response_User!
+    updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
     deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
-    softDeleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
-    restoreUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
 }

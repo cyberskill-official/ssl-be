@@ -1,6 +1,6 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
-import type { I_Note, I_User } from '#modules/user/user.type.js';
+import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_ModerationType {
     IMAGE = 'IMAGE',
@@ -21,7 +21,6 @@ export interface I_Moderation_PayLoad {
     status?: E_ModerationStatus;
     moderatedById?: string;
     reason?: string;
-    notes?: I_Note[];
 }
 
 export interface I_Moderation extends I_Moderation_PayLoad, I_GenericDocument { }

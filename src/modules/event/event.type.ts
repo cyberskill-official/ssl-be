@@ -1,9 +1,8 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
-import type { I_Country } from '#modules/country/country.type.js';
 import type { I_Destination } from '#modules/destination/destination.type.js';
 
-export enum E_EvenType {
+export enum E_EventType {
     BOOTY_CALL = 'BOOTY_CALL',
     PRIVATE = 'PRIVATE',
     TRAVEL = 'TRAVEL',
@@ -11,7 +10,7 @@ export enum E_EvenType {
 }
 
 export interface I_Event_PayLoad {
-    type?: E_EvenType;
+    type?: E_EventType;
     clubId?: string;
     club?: I_Destination;
     title?: string;
@@ -21,10 +20,6 @@ export interface I_Event_PayLoad {
     endDate?: Date;
     startTime?: string; // hh:mm a
     endTime?: string; // hh:mm a
-    countryId?: string;
-    country?: I_Country;
-    cityId?: string;
-    // city?: I_City;
     location?: Record<string, any>;
     fee?: number;
     currency?: string;

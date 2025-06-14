@@ -12,7 +12,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_MutateRole, I_Input_QueryRole, I_Role } from './role.type.js';
+import type { I_Input_CreateRole, I_Input_QueryRole, I_Role } from './role.type.js';
 
 import { RoleModel } from './role.model.js';
 
@@ -33,9 +33,9 @@ export const roleCtr = {
     },
     createRole: async (
         context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_MutateRole>,
+        { doc }: I_Input_CreateOne<I_Input_CreateRole>,
     ): Promise<I_Return<I_Role>> => {
-        const { name, description } = doc;
+        const { name } = doc;
 
         const roleFound = await roleCtr.getRole(context, { filter: { name } });
 
@@ -46,25 +46,6 @@ export const roleCtr = {
             });
         }
 
-        if (!name || !description) {
-            throwError({
-                message: 'Name and description are required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const roleCreated = await mongooseCtr.createOne({
-            name,
-            description,
-        });
-
-        if (!roleCreated.success) {
-            throwError({
-                message: roleCreated.message,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        return roleCreated;
+        return mongooseCtr.createOne(doc);
     },
 };

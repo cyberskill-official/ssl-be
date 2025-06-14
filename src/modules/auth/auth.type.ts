@@ -1,4 +1,4 @@
-import type { I_User, I_User_Payload } from '#modules/user/index.js';
+import type { I_User } from '#modules/user/index.js';
 
 export interface I_SessionPayload {
     createdAt: number;
@@ -19,8 +19,6 @@ export interface I_Input_Login {
     rememberMe?: boolean;
     phone?: number;
 }
-
-export interface I_Input_Register extends Omit<I_User_Payload, 'roleId'> { }
 
 export interface I_Response_Auth {
     success: boolean;

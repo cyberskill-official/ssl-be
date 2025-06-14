@@ -5,31 +5,33 @@ type T_Role {
     updatedAt: DateTime
     name: String
     description: String
+    parentId: String
+    parent: T_Role
 }
 
 type T_Response_Role {
-    success: Boolean!
+    success: Boolean
     message: String
     result: T_Role
 }
 
 type T_Roles {
-    docs: [T_Role]!
-    totalDocs: Int!
-    limit: Int!
-    hasPrevPage: Boolean!
-    hasNextPage: Boolean!
-    page: Int!
-    totalPages: Int!
+    docs: [T_Role]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
     offset: Int
     prevPage: Int
     nextPage: Int
-    pagingCounter: Int!
+    pagingCounter: Int
     meta: JSON
 }
 
 type T_Response_Roles {
-    success: Boolean!
+    success: Boolean
     message: String
     result: T_Roles
 }
@@ -41,12 +43,14 @@ input Input_QueryRole {
     updatedAt: DateTime
     name: String
     description: String
+    parentId: String
 }
 
 input Input_MutateRole {
     isDel: Boolean
-    name: String
+    name: String!
     description: String
+    parentId: String
 }
 
 type Query {

@@ -1,8 +1,6 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { NoteSchema } from '#modules/user/user.model.js';
-
 import { E_ReportType, type I_Report } from './report.type.js';
 
 export const ReportModel = mongo.createModel<I_Report>({
@@ -50,9 +48,6 @@ export const ReportModel = mongo.createModel<I_Report>({
                     message: 'Please enter content for report',
                 },
             ],
-        },
-        notes: {
-            type: [NoteSchema],
         },
     },
     virtuals: [
