@@ -1,0 +1,11 @@
+
+type T_Follower {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    followerId: String
+    follower: T_User
+    followeeId: String
+    followee: T_User
+}

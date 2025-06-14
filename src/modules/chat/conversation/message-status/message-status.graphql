@@ -1,0 +1,12 @@
+type T_MessageStatus {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    messageId: String
+    message: T_Message
+    userId: String
+    user: T_User
+    deliveredAt: DateTime
+    readAt: DateTime
+}

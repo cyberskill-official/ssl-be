@@ -290,7 +290,7 @@ export const UserModel = mongo.createModel<I_User>({
             unique: true,
             validate: [
                 {
-                    validator: mongo.validator.isUnique(['username']),
+                    validator: mongo.validator.isUnique(['userName']),
                     message: 'Username must be unique',
                 },
                 {

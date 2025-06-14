@@ -454,12 +454,12 @@ type T_Continent {
     name: String
 }
 
-type T_Language {
-    code: E_LanguageCode
-    name: String
-    native: String
-    isRTL: Boolean
-}
+# type T_Language {
+#     code: E_LanguageCode
+#     name: String
+#     native: String
+#     isRTL: Boolean
+# }
 
 type T_Country {
     id: String

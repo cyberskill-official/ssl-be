@@ -66,7 +66,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter the destination name.',
+                    message: 'Please enter the destination name',
                 },
             ],
         },
@@ -77,7 +77,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the destination type.',
+                    message: 'Please select the destination type',
                 },
             ],
         },
@@ -87,7 +87,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the country.',
+                    message: 'Please select the country',
                 },
             ],
         },
@@ -97,7 +97,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter the address.',
+                    message: 'Please enter the address',
                 },
             ],
         },
@@ -107,7 +107,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter a valid URL.',
+                    message: 'Please enter a valid URL',
                 },
             ],
         },
@@ -144,7 +144,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired (),
-                    message: 'Please select ratting.',
+                    message: 'Please select ratting',
                 },
             ],
         },
@@ -154,7 +154,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter a valid image URL.',
+                    message: 'Please enter a valid image URL',
                 },
             ],
         }],
@@ -164,7 +164,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter the introduction headline.',
+                    message: 'Please enter the introduction headline',
                 },
             ],
         },
@@ -174,7 +174,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter the introduction content.',
+                    message: 'Please enter the introduction content',
                 },
             ],
         },

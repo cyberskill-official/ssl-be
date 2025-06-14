@@ -9,6 +9,7 @@ export enum E_ConversationType {
     GROUP = 'GROUP',
     BLOG_COMMENT = 'BLOG_COMMENT',
     CLUB_COMMENT = 'CLUB_COMMENT',
+    PROFILE_COMMENT = 'PROFILE_COMMENT',
 }
 
 export interface I_Conversation_PayLoad {

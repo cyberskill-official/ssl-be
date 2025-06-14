@@ -1,0 +1,21 @@
+enum E_Benefit {
+    ONE_MONTH 
+    TWO_MONTH 
+    THREE_MONTH 
+    SIX_MONTH 
+    TWELVE_MONTH 
+    LIFETIME 
+}
+
+type T_PromoCode {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    code: String
+    benefit: E_Benefit
+    isActive: Boolean
+    isLimit: Boolean
+    usageLimit: Float
+    usageCount: Float
+}

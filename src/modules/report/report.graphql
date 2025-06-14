@@ -1,0 +1,18 @@
+enum E_ReportType {
+    KEYWORD 
+    USER
+}
+
+type T_Report {
+    id:	String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_ReportType
+    reporterIds: [String]
+    reporter: T_User
+    profileId: String
+    profile: T_User
+    content: String
+    notes: [T_Note]
+}

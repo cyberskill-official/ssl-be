@@ -1,0 +1,23 @@
+enum E_GalleryType {
+    IMAGE
+    VIDEO
+}
+
+enum E_GalleryStatus {
+    PENDING 
+    ACCEPTED 
+    REJECTED 
+}
+
+type T_Gallery {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_GalleryType
+    url: String
+    likeCount: Float
+    viewCount: Float
+    status: E_GalleryStatus
+    isPublished: Boolean
+}

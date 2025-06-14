@@ -1,0 +1,10 @@
+type T_Language {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    code: String
+    name: String
+    native: String
+    isRTL: Boolean
+}

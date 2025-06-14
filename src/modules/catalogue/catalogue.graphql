@@ -1,0 +1,15 @@
+enum E_CatalogueType {
+    IMAGE
+    VIDEO
+}
+
+type T_Catalogue {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_CatalogueType
+    tagId: String
+    tag: T_Tag
+    url: String
+}

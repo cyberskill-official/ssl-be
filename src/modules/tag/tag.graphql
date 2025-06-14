@@ -1,0 +1,30 @@
+enum E_TagType {
+    LOOKING_FOR
+    PROFILE_PURPOSE
+    WILLINGNESS_TO_GO
+    RULES_OF_ENGAGEMENT
+    RELATIONSHIP_STATUS
+    SEXUAL_ORIENTATION
+    SEXUAL_PREFERENCES
+    SMOKING_HABITS
+    PREFERRED_DRINKS
+    BODY_TYPE
+    HEIGHT_RANGE
+    HAIR_COLOR
+    EYE_COLOR
+    SKIN_TONE
+}
+
+type T_Tag {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    createdBy: T_User
+    usageCount: Float
+    translations: JSON
+}

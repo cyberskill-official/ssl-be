@@ -1,0 +1,21 @@
+enum E_Action {
+    DELETE
+    SUSPEND
+    APPROVE
+    WARN
+    DEACTIVE
+    CLOSE
+}
+
+type T_ModerationLog {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    triggeredById: String
+    triggeredBy: T_User
+    action: E_Action
+    targetId: String
+    target: T_User
+    comment: String
+}

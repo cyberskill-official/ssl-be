@@ -139,6 +139,19 @@ export const mongoBackup = {
 
                     res.status(500).send(response);
                 }
+                else {
+                    const response = {
+                        success: true,
+                        result: null,
+                        message: 'Backup completed successfully',
+                    };
+
+                    if (!res) {
+                        return response;
+                    }
+
+                    res.json(response);
+                }
             });
         }
         catch (err) {

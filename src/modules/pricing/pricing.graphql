@@ -4,6 +4,10 @@ enum E_PricingType {
 }
 
 type T_Pricing {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     type: E_PricingType
     countryId: String
     country: T_Country

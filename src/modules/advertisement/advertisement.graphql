@@ -1,0 +1,21 @@
+enum E_PositionSlot {
+    SLOT_1
+    SLOT_2
+    SLOT_3
+    SLOT_4
+}
+
+type T_Advertisement {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    image: String
+    targetURL: String
+    positionSlot: E_PositionSlot
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}

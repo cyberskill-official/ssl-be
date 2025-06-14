@@ -17,7 +17,7 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the type for conversation.',
+                    message: 'Please select the type for conversation',
                 },
             ],
         },
@@ -30,7 +30,7 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter createdById for conversation.',
+                    message: 'Please enter createdById for conversation ',
                 },
             ],
         },
@@ -40,7 +40,7 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter lastMessageId for conversation.',
+                    message: 'Please enter lastMessageId for conversation ',
                 },
             ],
         },

@@ -1,0 +1,32 @@
+enum E_TargetAudience {
+    PAID_MEMBERS_ONLY
+    FREE_MEMBERS_ONLY
+    CUSTOM_LIST
+}
+
+enum E_SenderType {
+    SEND_IMMEDIATELY
+    SCHEDULE_FOR_LATER
+}
+
+type T_Newletter {
+    id:	String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    campaignName: String
+    emailSubject: String
+    senderName: String
+    senderEmail: String
+    emailContent: String
+    targetAudience: E_TargetAudience
+    recipientIds: [String]
+    recipient: T_User
+    senderType: E_SenderType
+    scheduleDate: DateTime
+    scheduleTime: String
+    sentDate: DateTime
+    recipientCount: Float
+    openCount: Float
+    clickCount: Float
+}

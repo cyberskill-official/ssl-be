@@ -1,0 +1,8 @@
+type T_HiddenProfile {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    userId: String
+    hiddenUserId: String
+}

@@ -1,0 +1,22 @@
+enum E_InvitationType {
+    EVENT
+    CONVERSATION
+}
+
+enum E_InvitationStatus {
+    PENDING 
+    ACCEPTED 
+    REJECTED 
+    BLACKLISTED
+}
+
+type T_Invitation {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_InvitationType
+    inviterId: String
+    inviteeId: String
+    status: E_InvitationStatus
+}

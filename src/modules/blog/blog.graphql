@@ -1,0 +1,59 @@
+enum E_CategoryBlog {
+    TRAVELS
+    SWINGER_CLUB
+    SEX
+    DATING
+    LIFESTYLE
+}
+
+enum E_CategoryPodcast {
+    LIFESTYLE
+    RELATIONSHIPS
+    DATING
+    SEXUALITY
+    TRAVEL
+}
+
+enum E_SocialPlatform {
+    FACEBOOK
+    TWITTER
+    INSTAGRAM
+    LINKEDIN
+    TIKTOK
+    YOUTUBE
+    PINTEREST
+    SNAPCHAT
+    REDDIT
+    TUMBLR
+    MEDIUM
+    VIMEO
+}
+
+type T_Blog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    title: String
+    languageId: String
+    language: T_Language
+    authorName: String
+    hostName: String
+    websiteName: String
+    websiteURL: String
+    publishDate: DateTime
+    # category: E_CategoryBlog | E_CategoryPodcast
+    featuredImage: String
+    logo: String
+    cover: String
+    file: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedArticles: [String]
+    socialPlatform: E_SocialPlatform
+    socialURL: String
+    authorProfile: String
+    author: T_User
+    seo: T_Seo
+}

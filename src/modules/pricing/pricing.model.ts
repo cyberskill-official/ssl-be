@@ -17,7 +17,7 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the pricing type.',
+                    message: 'Please select the pricing type',
                 },
             ],
         },
@@ -27,7 +27,7 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country for pricing.',
+                    message: 'Please enter country for pricing',
                 },
             ],
         },
@@ -37,7 +37,7 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter value price.',
+                    message: 'Please enter value price',
                 },
             ],
         },
@@ -47,7 +47,7 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter percent taxRate.',
+                    message: 'Please enter percent taxRate',
                 },
             ],
         },

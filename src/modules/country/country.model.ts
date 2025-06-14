@@ -22,11 +22,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country name.',
+                    message: 'Please enter country name',
                 },
                 {
                     validator: mongo.validator.isUnique(['name']),
-                    message: 'Country name is unique.',
+                    message: 'Country name is unique',
                 },
             ],
         },
@@ -37,11 +37,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country native.',
+                    message: 'Please enter country native',
                 },
                 {
                     validator: mongo.validator.isUnique(['name']),
-                    message: 'Country native is unique.',
+                    message: 'Country native is unique',
                 },
             ],
         },
@@ -51,7 +51,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter phone.',
+                    message: 'Please enter phone',
                 },
             ],
         }],
@@ -64,11 +64,11 @@ export const CountryModel = mongo.createModel<I_Country>({
                 validate: [
                     {
                         validator: mongo.validator.isRequired(),
-                        message: 'Please enter continent code.',
+                        message: 'Please enter continent code',
                     },
                     {
                         validator: mongo.validator.isUnique(['code']),
-                        message: 'Continent code is unique.',
+                        message: 'Continent code is unique',
                     },
                 ],
             },
@@ -79,11 +79,11 @@ export const CountryModel = mongo.createModel<I_Country>({
                 validate: [
                     {
                         validator: mongo.validator.isRequired(),
-                        message: 'Please enter continent name.',
+                        message: 'Please enter continent name',
                     },
                     {
                         validator: mongo.validator.isUnique(['name']),
-                        message: 'Continent name is unique.',
+                        message: 'Continent name is unique',
                     },
                 ],
             },
@@ -95,11 +95,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country capital.',
+                    message: 'Please enter country capital',
                 },
                 {
                     validator: mongo.validator.isUnique(['capital']),
-                    message: 'Country capital is unique.',
+                    message: 'Country capital is unique',
                 },
             ],
         },
@@ -109,7 +109,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country currency.',
+                    message: 'Please enter country currency',
                 },
             ],
         }],
@@ -123,11 +123,11 @@ export const CountryModel = mongo.createModel<I_Country>({
                     validate: [
                         {
                             validator: mongo.validator.isRequired(),
-                            message: 'Please enter language code.',
+                            message: 'Please enter language code',
                         },
                         {
                             validator: mongo.validator.isUnique(['code']),
-                            message: 'Language code is unique.',
+                            message: 'Language code is unique',
                         },
                     ],
                 },
@@ -138,11 +138,11 @@ export const CountryModel = mongo.createModel<I_Country>({
                     validate: [
                         {
                             validator: mongo.validator.isRequired(),
-                            message: 'Please enter language name.',
+                            message: 'Please enter language name',
                         },
                         {
                             validator: mongo.validator.isUnique(['name']),
-                            message: 'Language name is unique.',
+                            message: 'Language name is unique',
                         },
                     ],
                 },
@@ -153,11 +153,11 @@ export const CountryModel = mongo.createModel<I_Country>({
                     validate: [
                         {
                             validator: mongo.validator.isRequired(),
-                            message: 'Please enter language native.',
+                            message: 'Please enter language native',
                         },
                         {
                             validator: mongo.validator.isUnique(['native']),
-                            message: 'Language native is unique.',
+                            message: 'Language native is unique',
                         },
                     ],
                 },
@@ -167,7 +167,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     validate: [
                         {
                             validator: mongo.validator.isRequired(),
-                            message: 'isRTL is required.',
+                            message: 'isRTL is required',
                         },
                     ],
                 },
@@ -180,11 +180,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country iso2.',
+                    message: 'Please enter country iso2',
                 },
                 {
                     validator: mongo.validator.isUnique(['iso2']),
-                    message: 'Country iso2 is unique.',
+                    message: 'Country iso2 is unique',
                 },
             ],
         },
@@ -195,11 +195,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country iso3.',
+                    message: 'Please enter country iso3',
                 },
                 {
-                    validator: mongo.validator.isUnique(['iso2']),
-                    message: 'Country iso3 is unique.',
+                    validator: mongo.validator.isUnique(['iso3']),
+                    message: 'Country iso3 is unique',
                 },
             ],
         },
@@ -216,11 +216,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country flag.',
+                    message: 'Please enter country flag',
                 },
                 {
                     validator: mongo.validator.isUnique(['flag']),
-                    message: 'Country flag is unique.',
+                    message: 'Country flag is unique',
                 },
             ],
         },
@@ -232,11 +232,11 @@ export const CountryModel = mongo.createModel<I_Country>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter country code.',
+                    message: 'Please enter country code',
                 },
                 {
                     validator: mongo.validator.isUnique(['code']),
-                    message: 'Country code is unique.',
+                    message: 'Country code is unique',
                 },
             ],
         },

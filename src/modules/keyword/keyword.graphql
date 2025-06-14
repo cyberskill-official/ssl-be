@@ -1,0 +1,17 @@
+enum E_CategoryKeyword {
+    INAPPROPRIATE 
+    SPAM  
+    OFFENSIVE 
+    CUSTOM
+}
+
+type E_Keyword {
+    id:	String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    keyword: String
+    category: E_CategoryKeyword
+    occurrences: Float
+    isActive: Boolean
+}

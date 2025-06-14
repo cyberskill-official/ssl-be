@@ -16,7 +16,7 @@ export const TagModel = mongo.createModel<I_Tag>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Name is required.',
+                    message: 'Name is required',
                 },
             ],
         },
@@ -27,7 +27,7 @@ export const TagModel = mongo.createModel<I_Tag>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Type is required.',
+                    message: 'Type is required',
                 },
             ],
         },
@@ -38,7 +38,7 @@ export const TagModel = mongo.createModel<I_Tag>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'isCustom is required.',
+                    message: 'isCustom is required',
                 },
             ],
         },
@@ -52,7 +52,7 @@ export const TagModel = mongo.createModel<I_Tag>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Usage count is required.',
+                    message: 'Usage count is required',
                 },
             ],
         },

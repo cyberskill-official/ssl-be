@@ -1,0 +1,24 @@
+enum E_ModerationType {
+    IMAGE
+    VIDEO
+}
+
+enum E_ModerationStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+type T_Moderation {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: E_ModerationType
+    uploadedById: String
+    url: String
+    status: E_ModerationStatus
+    moderatedById: String
+    reason: String
+    notes: [T_Note]
+}
