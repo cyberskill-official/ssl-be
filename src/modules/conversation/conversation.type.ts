@@ -2,7 +2,7 @@ import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
 import type { I_User } from '#modules/user/user.type.js';
 
-import type { I_Message } from '../message/message.type.js';
+import type { I_Message } from './message.type.js';
 
 export enum E_ConversationType {
     PRIVATE = 'PRIVATE',

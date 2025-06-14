@@ -17,9 +17,6 @@
     },
     "include": [
         "**/*.ts",
-        "**/*.tsx",
-        "src/modules/advertisement/advertisement.model.ts",
-        "src/modules/podcast/podcast.model.ts",
-        "src/modules/podcast/podcast.type.ts"
+        "**/*.tsx"
     ]
 }
