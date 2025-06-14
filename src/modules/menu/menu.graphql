@@ -1,12 +1,13 @@
 type T_Menu {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     icon: String
     text: String
     url: String
     isExternal: Boolean
     parentId: String
-    order: Float
+    parent: T_Menu
+    order: Int
 }

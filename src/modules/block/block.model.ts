@@ -1,49 +1,49 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Follower } from './follower.type.js';
+import type { I_Block } from './block.type.js';
 
-export const FollowerModel = mongo.createModel<I_Follower>({
+export const BlockModel = mongo.createModel<I_Block>({
     mongoose,
-    name: 'Follower',
+    name: 'Block',
     pagination: true,
     schema: {
-        followerId: {
+        userId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter follower id',
+                    message: 'Please enter userId for block',
                 },
             ],
         },
-        followeeId: {
+        blockId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter followee id',
+                    message: 'Please enter blockId for block',
                 },
             ],
         },
     },
     virtuals: [
         {
-            name: 'follower',
+            name: 'user',
             options: {
                 ref: 'User',
-                localField: 'followerId',
+                localField: 'userId',
                 foreignField: 'id',
                 justOne: true,
             },
         },
         {
-            name: 'followee',
+            name: 'block',
             options: {
                 ref: 'User',
-                localField: 'followeeId',
+                localField: 'blockId',
                 foreignField: 'id',
                 justOne: true,
             },

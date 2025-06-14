@@ -1,30 +1,32 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_HiddenProfile } from './hidden-profile.type.js';
+import type { I_Follow } from './follow.type.js';
 
-export const HiddenProfileModel = mongo.createModel<I_HiddenProfile>({
+export const FollowModel = mongo.createModel<I_Follow>({
     mongoose,
-    name: 'HiddenProfile',
+    name: 'Follow',
     pagination: true,
     schema: {
         userId: {
             type: String,
             required: true,
-            validate:
-            {
-                validator: mongo.validator.isRequired(),
-                message: 'Please enter user id for hidden profile',
-            },
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter userId for follow',
+                },
+            ],
         },
-        hiddenUserId: {
+        followId: {
             type: String,
             required: true,
-            validate:
-            {
-                validator: mongo.validator.isRequired(),
-                message: 'Please enter hidden user id for hidden profile',
-            },
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter followId for follow',
+                },
+            ],
         },
     },
     virtuals: [
@@ -38,10 +40,10 @@ export const HiddenProfileModel = mongo.createModel<I_HiddenProfile>({
             },
         },
         {
-            name: 'hiddenUser',
+            name: 'follow',
             options: {
                 ref: 'User',
-                localField: 'hiddenUserId',
+                localField: 'followId',
                 foreignField: 'id',
                 justOne: true,
             },

@@ -33,14 +33,7 @@ export const MenuModel = mongo.createModel<I_Menu>({
         },
         isExternal: {
             type: Boolean,
-            required: true,
             default: false,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select external for menu',
-                },
-            ],
         },
         parentId: {
             type: String,
@@ -49,4 +42,15 @@ export const MenuModel = mongo.createModel<I_Menu>({
             type: Number,
         },
     },
+    virtuals: [
+        {
+            name: 'parent',
+            options: {
+                ref: 'Menu',
+                localField: 'parentId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });

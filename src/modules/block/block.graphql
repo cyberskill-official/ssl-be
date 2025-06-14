@@ -1,0 +1,11 @@
+
+type T_Block {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    blockId: String
+    block: T_User
+}

@@ -6,6 +6,7 @@ import type { I_Destination, I_Hotel, I_Seo } from './destination.type.js';
 import { E_AgeRange, E_DestinationType, E_Rating } from './destination.type.js';
 
 export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
+    standalone: true,
     mongoose,
     schema: {
         name: {
@@ -30,6 +31,7 @@ export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
 });
 
 export const SeoSchema = mongo.createSchema<I_Seo>({
+    standalone: true,
     mongoose,
     schema: {
         title: {
