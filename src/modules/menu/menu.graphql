@@ -1,5 +1,4 @@
-
-type T_Follower {
+type T_Menu {
     id: String
     createdAt: DateTime
     updatedAt: DateTime
