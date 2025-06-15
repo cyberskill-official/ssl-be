@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_Benefit, type I_PromoCode } from './promocode.type.js';
+import type { I_PromoCode } from './promo-code.type.js';
+
+import { E_PromoCodeBenefit } from './promo-code.type.js';
 
 export const PromoCodeModel = mongo.createModel<I_PromoCode>({
     mongoose,
@@ -25,7 +27,7 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         },
         benefit: {
             type: String,
-            enum: Object.values(E_Benefit),
+            enum: Object.values(E_PromoCodeBenefit),
             required: true,
             validate: [
                 {
@@ -44,24 +46,10 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         },
         usageLimit: {
             type: Number,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Usage limit is required for promo code',
-                },
-            ],
         },
         usageCount: {
             type: Number,
-            required: true,
             default: 0,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Usage count is required for promo code',
-                },
-            ],
         },
     },
 });

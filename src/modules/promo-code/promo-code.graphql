@@ -1,0 +1,80 @@
+enum E_PromoCodeBenefit {
+    ONE_MONTH 
+    TWO_MONTH 
+    THREE_MONTH 
+    SIX_MONTH 
+    TWELVE_MONTH 
+    LIFETIME 
+}
+
+type T_PromoCode {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    code: String
+    benefit: E_PromoCodeBenefit
+    isActive: Boolean
+    isLimit: Boolean
+    usageLimit: Int
+    usageCount: Int
+}
+
+input Input_QueryPromoCode {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    code: String
+    benefit: E_PromoCodeBenefit
+    isActive: Boolean
+    isLimit: Boolean
+    usageLimit: Int
+    usageCount: Int
+}
+
+input Input_CreatePromoCode {
+    code: String!
+    benefit: E_PromoCodeBenefit!
+    isActive: Boolean
+    isLimit: Boolean
+    usageLimit: Int
+    usageCount: Int
+}
+
+input Input_UpdatePromoCode {
+    isDel: Boolean
+    code: String
+    benefit: E_PromoCodeBenefit
+    isActive: Boolean
+    isLimit: Boolean
+    usageLimit: Int
+    usageCount: Int
+}
+
+type T_Response_PromoCode {
+    success: Boolean
+    message: String
+    result: T_PromoCode
+}
+
+type T_PromoCodes {
+    docs: [T_PromoCode]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PromoCodes {
+    success: Boolean
+    message: String
+    result: T_PromoCodes
+}

@@ -1,4 +1,4 @@
-enum E_PositionSlot {
+enum E_AdvertisementSlot {
     SLOT_1
     SLOT_2
     SLOT_3
@@ -13,9 +13,74 @@ type T_Advertisement {
     name: String
     image: String
     targetURL: String
-    positionSlot: E_PositionSlot
+    slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
     clickCount: Float
     isActive: Boolean
+}
+
+input Input_QueryAdvertisement {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    image: String
+    targetURL: String
+    slot: E_AdvertisementSlot
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}
+
+input Input_CreateAdvertisement {
+    name: String
+    image: String
+    targetURL: String
+    slot: E_AdvertisementSlot
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}
+
+input Input_UpdateAdvertisement {
+    isDel: Boolean
+    name: String
+    image: String
+    targetURL: String
+    slot: E_AdvertisementSlot
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}
+
+type T_Response_Advertisement {
+    success: Boolean
+    message: String
+    result: T_Advertisement
+}
+
+type T_Advertisements {
+    docs: [T_Advertisement]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Advertisements {
+    success: Boolean
+    message: String
+    result: T_Advertisements
 }
