@@ -3,9 +3,9 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Input_CreateRole, I_Input_QueryRole } from '#modules/role/index.js';
+import type { I_Input_CreateRole, I_Input_QueryRole } from '#modules/authz/index.js';
 
-import { E_Role } from '#modules/role/index.js';
+import { E_Role } from '#modules/authz/index.js';
 
 export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Input_CreateRole>(db, 'roles');

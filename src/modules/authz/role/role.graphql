@@ -9,6 +9,29 @@ type T_Role {
     parent: T_Role
 }
 
+input Input_QueryRole {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    description: String
+    parentId: String
+}
+
+input Input_CreateRole {
+    name: String!
+    description: String
+    parentId: String
+}
+
+input Input_UpdateRole {
+    isDel: Boolean
+    name: String
+    description: String
+    parentId: String
+}
+
 type T_Response_Role {
     success: Boolean
     message: String
@@ -34,22 +57,6 @@ type T_Response_Roles {
     success: Boolean
     message: String
     result: T_Roles
-}
-
-input Input_QueryRole {
-    id: String
-    isDel: Boolean
-    createdAt: DateTime
-    updatedAt: DateTime
-    name: String
-    description: String
-    parentId: String
-}
-
-input Input_CreateRole {
-    name: String!
-    description: String
-    parentId: String
 }
 
 type Query {

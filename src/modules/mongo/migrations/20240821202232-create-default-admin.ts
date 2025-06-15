@@ -4,10 +4,10 @@ import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 import bcrypt from 'bcryptjs';
 
-import type { I_Input_QueryRole } from '#modules/role/index.js';
+import type { I_Input_QueryRole } from '#modules/authz/index.js';
 import type { I_Input_CreateUser, I_Input_QueryUser } from '#modules/user/index.js';
 
-import { E_Role } from '#modules/role/index.js';
+import { E_Role } from '#modules/authz/index.js';
 
 export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Input_QueryRole>(db, 'roles');

@@ -14,7 +14,7 @@ export const MessageStatusModel = mongo.createModel<I_MessageStatus>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter message id',
+                    message: 'Please enter message id for message status',
                 },
             ],
         },
@@ -25,16 +25,6 @@ export const MessageStatusModel = mongo.createModel<I_MessageStatus>({
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter user id for message status',
-                },
-            ],
-        },
-        deliveredAt: {
-            type: Date,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter deliver time for message',
                 },
             ],
         },

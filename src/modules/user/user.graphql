@@ -131,33 +131,6 @@ type T_User {
     settings: T_UserSettings
 }
 
-type T_Response_User {
-    success: Boolean
-    message: String
-    result: T_User
-}
-
-type T_Users {
-    docs: [T_User]
-    totalDocs: Int
-    limit: Int
-    hasPrevPage: Boolean
-    hasNextPage: Boolean
-    page: Int
-    totalPages: Int
-    offset: Int
-    prevPage: Int
-    nextPage: Int
-    pagingCounter: Int
-    meta: JSON
-}
-
-type T_Response_Users {
-    success: Boolean
-    message: String
-    result: T_Users
-}
-
 input Input_QueryUser {
     id: String
     isDel: Boolean
@@ -232,6 +205,33 @@ input Input_UpdateUser {
     isOnline: Boolean
     lastOnline: DateTime
     settings: Input_UserSettings
+}
+
+type T_Response_User {
+    success: Boolean
+    message: String
+    result: T_User
+}
+
+type T_Users {
+    docs: [T_User]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Users {
+    success: Boolean
+    message: String
+    result: T_Users
 }
 
 type Query {

@@ -20,9 +20,6 @@ export const ParticipantModel = mongo.createModel<I_Participant>({
                 },
             ],
         },
-        lastReadMessageId: {
-            type: String,
-        },
         userId: {
             type: String,
             required: true,
@@ -33,17 +30,13 @@ export const ParticipantModel = mongo.createModel<I_Participant>({
                 },
             ],
         },
+        lastReadMessageId: {
+            type: String,
+        },
         role: {
             type: String,
             enum: Object.values(E_ParticipantRole),
             default: E_ParticipantRole.MEMBER,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select role for user',
-                },
-            ],
         },
     },
     virtuals: [
@@ -57,19 +50,19 @@ export const ParticipantModel = mongo.createModel<I_Participant>({
             },
         },
         {
-            name: 'lastReadMessage',
+            name: 'user',
             options: {
-                ref: 'Message',
-                localField: 'lastReadMessageId',
+                ref: 'User',
+                localField: 'userId',
                 foreignField: 'id',
                 justOne: true,
             },
         },
         {
-            name: 'user',
+            name: 'lastReadMessage',
             options: {
-                ref: 'User',
-                localField: 'userId',
+                ref: 'Message',
+                localField: 'lastReadMessageId',
                 foreignField: 'id',
                 justOne: true,
             },

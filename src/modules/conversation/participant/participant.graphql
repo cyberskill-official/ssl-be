@@ -1,0 +1,71 @@
+enum E_ParticipantRole {
+    ADMIN
+    MEMBER 
+}
+
+type T_Participant {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    conversationId: String
+    conversation: T_Participant
+    userId: String
+    user: T_User
+    lastReadMessageId: String
+    lastReadMessage: T_Message
+    role: E_ParticipantRole
+}
+
+input Input_QueryParticipant {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    conversationId: String
+    userId: String
+    lastReadMessageId: String
+    role: E_ParticipantRole
+}
+
+input Input_CreateParticipant {
+    conversationId: String!
+    userId: String!
+    lastReadMessageId: String
+    role: E_ParticipantRole
+}
+
+input Input_UpdateParticipant {
+    isDel: Boolean
+    conversationId: String
+    userId: String
+    lastReadMessageId: String
+    role: E_ParticipantRole
+}
+
+type T_Response_Participant {
+    success: Boolean
+    message: String
+    result: T_Participant
+}
+
+type T_Participants {
+    docs: [T_Participant]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Participants {
+    success: Boolean
+    message: String
+    result: T_Participants
+}

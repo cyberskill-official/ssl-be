@@ -8,9 +8,8 @@ import { omit } from 'lodash-es';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_Role, roleCtr } from '#modules/authz/index.js';
 import { getEnv } from '#modules/env/index.js';
-import { E_Role } from '#modules/role/index.js';
-import { roleCtr } from '#modules/role/role.controller.js';
 import { type I_Input_CreateUser, userCtr } from '#modules/user/index.js';
 
 import type {
@@ -19,11 +18,11 @@ import type {
     I_Input_Login,
     I_Response_Auth,
     I_SessionPayload,
-} from './auth.type.js';
+} from './authn.type.js';
 
 const env = getEnv();
 
-export const authCtr = {
+export const authnCtr = {
     generateToken: (_context: I_Context, id: string): string => {
         return jwt.sign({ createdAt: Date.now(), userId: id } as I_SessionPayload, env.JWT_SECRET);
     },
@@ -93,7 +92,7 @@ export const authCtr = {
         }
 
         if (args?.token) {
-            return authCtr.checkToken(context, { token: args.token });
+            return authnCtr.checkToken(context, { token: args.token });
         }
 
         return {
@@ -152,7 +151,7 @@ export const authCtr = {
             });
         }
 
-        const authChecked = await authCtr.checkAuth({ req });
+        const authChecked = await authnCtr.checkAuth({ req });
 
         if (authChecked.success) {
             return authChecked;
@@ -185,7 +184,7 @@ export const authCtr = {
             });
         }
 
-        const token = rememberMe ? authCtr.generateToken({ req }, userFound.result.id) : '';
+        const token = rememberMe ? authnCtr.generateToken({ req }, userFound.result.id) : '';
         req.session.user = omit(userFound.result, 'password');
 
         return {

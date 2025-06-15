@@ -11,3 +11,62 @@ type T_Menu {
     parent: T_Menu
     order: Int
 }
+
+input Input_QueryMenu {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    icon: String
+    text: String
+    url: String
+    isExternal: Boolean
+    parentId: String
+    order: Int
+}
+
+input Input_CreateMenu {
+    icon: String
+    text: String!
+    url: String!
+    isExternal: Boolean
+    parentId: String
+    order: Int
+}
+
+input Input_UpdateMenu {
+    isDel: Boolean
+    icon: String
+    text: String
+    url: String
+    isExternal: Boolean
+    parentId: String
+    order: Int
+}
+
+type T_Response_Menu {
+    success: Boolean
+    message: String
+    result: T_Menu
+}
+
+type T_Menus {
+    docs: [T_Menu]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Menus {
+    success: Boolean
+    message: String
+    result: T_Menus
+}

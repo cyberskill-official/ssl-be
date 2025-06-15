@@ -1,8 +1,8 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { I_Role } from '#modules/authz/index.js';
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
-import type { I_Role } from '#modules/role/index.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
 
 export enum E_AccountType {

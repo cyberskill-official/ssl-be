@@ -8,16 +8,6 @@ export const MessageModel = mongo.createModel<I_Message>({
     name: 'Message',
     pagination: true,
     schema: {
-        conversationId: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter conversation for message',
-                },
-            ],
-        },
         senderId: {
             type: String,
             required: true,
@@ -38,25 +28,28 @@ export const MessageModel = mongo.createModel<I_Message>({
                 },
             ],
         },
+        conversationId: {
+            type: String,
+        },
         parentId: {
             type: String,
         },
     },
     virtuals: [
         {
-            name: 'conversation',
+            name: 'sender',
             options: {
-                ref: 'Conversation',
-                localField: 'conversationId',
+                ref: 'User',
+                localField: 'senderId',
                 foreignField: 'id',
                 justOne: true,
             },
         },
         {
-            name: 'sender',
+            name: 'conversation',
             options: {
-                ref: 'User',
-                localField: 'senderId',
+                ref: 'Conversation',
+                localField: 'conversationId',
                 foreignField: 'id',
                 justOne: true,
             },

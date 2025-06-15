@@ -1,0 +1,84 @@
+enum E_PermissionType {
+    GRAPHQL
+    REST
+    ROUTE
+}
+
+enum E_PermissionMethod {
+    QUERY
+    MUTATION
+    SUBSCRIPTION
+    GET
+    POST
+    PUT
+    PATCH
+    DELETE
+}
+
+type T_Permission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    target: String
+    name: String
+    type: E_PermissionType
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+input Input_QueryPermission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    target: String
+    name: String
+    type: E_PermissionType
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+input Input_CreatePermission {
+    target: String!
+    name: String!
+    type: E_PermissionType!
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+input Input_UpdatePermission {
+    isDel: Boolean
+    target: String
+    name: String
+    type: E_PermissionType
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+type T_Response_Permission {
+    success: Boolean
+    message: String
+    result: T_Permission
+}
+
+type T_Permissions {
+    docs: [T_Permission]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Permissions {
+    success: Boolean
+    message: String
+    result: T_Permissions
+}

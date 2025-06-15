@@ -9,3 +9,50 @@ type T_Block {
     blockId: String
     block: T_User
 }
+
+input Input_QueryBlock {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    blockId: String
+}
+
+input Input_CreateBlock {
+    userId: String!
+    blockId: String!
+}
+
+input Input_UpdateBlock {
+    isDel: Boolean
+    userId: String
+    blockId: String
+}
+
+type T_Response_Block {
+    success: Boolean
+    message: String
+    result: T_Block
+}
+
+type T_Blocks {
+    docs: [T_Block]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Blocks {
+    success: Boolean
+    message: String
+    result: T_Blocks
+}

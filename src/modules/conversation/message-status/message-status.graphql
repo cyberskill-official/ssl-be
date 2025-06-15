@@ -1,43 +1,46 @@
-
-type T_Follow {
+type T_MessageStatus {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    messageId: String
+    message: T_Message
     userId: String
     user: T_User
-    followId: String
-    follow: T_User
+    readAt: DateTime
 }
 
-input Input_QueryFollow {
+input Input_QueryMessageStatus {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    messageId: String
     userId: String
-    followId: String
+    readAt: DateTime
 }
 
-input Input_CreateFollow {
+input Input_CreateMessageStatus {
+    messageId: String!
     userId: String!
-    followId: String!
+    readAt: DateTime
 }
 
-input Input_UpdateFollow {
+input Input_UpdateMessageStatus {
     isDel: Boolean
+    messageId: String
     userId: String
-    followId: String
+    readAt: DateTime
 }
 
-type T_Response_Follow {
+type T_Response_MessageStatus {
     success: Boolean
     message: String
-    result: T_Follow
+    result: T_MessageStatus
 }
 
-type T_Follows {
-    docs: [T_Follow]
+type T_MessageStatuses {
+    docs: [T_MessageStatus]
     totalDocs: Int
     limit: Int
     hasPrevPage: Boolean
@@ -51,8 +54,8 @@ type T_Follows {
     meta: JSON
 }
 
-type T_Response_Follows {
+type T_Response_MessageStatuses {
     success: Boolean
     message: String
-    result: T_Follows
+    result: T_MessageStatuses
 }

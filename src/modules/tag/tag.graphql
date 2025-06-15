@@ -28,3 +28,59 @@ type T_Tag {
     createdBy: T_User
     usageCount: Int
 }
+
+input Input_QueryTag {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    usageCount: Int
+}
+
+input Input_CreateTag {
+    name: String!
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    usageCount: Int
+}
+
+input Input_UpdateTag {
+    isDel: Boolean
+    name: String
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    usageCount: Int
+}
+
+type T_Response_Tag {
+    success: Boolean
+    message: String
+    result: T_Tag
+}
+
+type T_Tags {
+    docs: [T_Tag]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Tags {
+    success: Boolean
+    message: String
+    result: T_Tags
+}

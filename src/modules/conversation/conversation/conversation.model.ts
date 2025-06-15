@@ -30,19 +30,12 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter createdById for conversation ',
+                    message: 'Please enter createdById for conversation',
                 },
             ],
         },
         lastMessageId: {
             type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter lastMessageId for conversation ',
-                },
-            ],
         },
     },
     virtuals: [

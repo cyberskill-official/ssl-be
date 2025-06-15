@@ -1,0 +1,66 @@
+type T_Message {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    senderId: String
+    sender: T_User
+    content: String
+    conversationId: String
+    conversation: T_Conversation
+    parentId: String
+    parent: T_Message
+}
+
+input Input_QueryMessage {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    senderId: String
+    content: String
+    conversationId: String
+    parentId: String
+}
+
+input Input_CreateMessage {
+    senderId: String!
+    content: String!
+    conversationId: String
+    parentId: String
+}
+
+input Input_UpdateMessage {
+    isDel: Boolean
+    senderId: String
+    content: String
+    conversationId: String
+    parentId: String
+}
+
+type T_Response_Message {
+    success: Boolean
+    message: String
+    result: T_Message
+}
+
+type T_Messages {
+    docs: [T_Message]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Messages {
+    success: Boolean
+    message: String
+    result: T_Messages
+}

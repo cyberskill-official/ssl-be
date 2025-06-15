@@ -1,0 +1,73 @@
+enum E_ConversationType {
+    PRIVATE
+    GROUP
+    PROFILE_COMMENT
+    BLOG_COMMENT
+    DESTINATION_COMMENT
+}
+
+type T_Conversation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ConversationType
+    name: String
+    createdById: String
+    createdBy: T_User
+    lastMessageId: String
+    lastMessage: T_Message
+}
+
+input Input_QueryConversation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ConversationType
+    name: String
+    createdById: String
+    lastMessageId: String
+}
+
+input Input_CreateConversation {
+    type: E_ConversationType!
+    name: String
+    createdById: String!
+    lastMessageId: String
+}
+
+input Input_UpdateConversation {
+    isDel: Boolean
+    type: E_ConversationType
+    name: String
+    createdById: String
+    lastMessageId: String
+}
+
+type T_Response_Conversation {
+    success: Boolean
+    message: String
+    result: T_Conversation
+}
+
+type T_Conversations {
+    docs: [T_Conversation]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Conversations {
+    success: Boolean
+    message: String
+    result: T_Conversations
+}
