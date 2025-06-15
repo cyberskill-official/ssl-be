@@ -4,14 +4,14 @@ import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 import bcrypt from 'bcryptjs';
 
-import type { I_Input_QueryRole } from '#modules/authz/index.js';
-import type { I_Input_CreateUser, I_Input_QueryUser } from '#modules/user/index.js';
+import type { I_Role } from '#modules/authz/index.js';
+import type { I_User } from '#modules/user/index.js';
 
 import { E_Role } from '#modules/authz/index.js';
 
 export async function up(db: C_Db) {
-    const roleCtr = new MongoController<I_Input_QueryRole>(db, 'roles');
-    const userCtr = new MongoController<I_Input_CreateUser>(db, 'users');
+    const roleCtr = new MongoController<I_Role>(db, 'roles');
+    const userCtr = new MongoController<I_User>(db, 'users');
 
     const adminRoleFound = await roleCtr.findOne({ name: E_Role.ADMIN });
 
@@ -42,7 +42,7 @@ export async function up(db: C_Db) {
 }
 
 export async function down(db: C_Db) {
-    const userCtr = new MongoController<I_Input_QueryUser>(db, 'users');
+    const userCtr = new MongoController<I_User>(db, 'users');
 
     const adminDeleted = await userCtr.deleteOne({ email: 'admin@secretswingerlust.com' });
 

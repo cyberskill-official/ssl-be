@@ -1,9 +1,9 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 export interface I_Menu extends I_GenericDocument {
-    icon?: string;
     text?: string;
     url?: string;
+    icon?: string;
     isExternal?: boolean;
     parentId?: string;
     parent?: I_Menu;

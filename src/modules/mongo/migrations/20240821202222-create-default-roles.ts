@@ -3,12 +3,12 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Input_CreateRole, I_Input_QueryRole } from '#modules/authz/index.js';
+import type { I_Role } from '#modules/authz/index.js';
 
 import { E_Role } from '#modules/authz/index.js';
 
 export async function up(db: C_Db) {
-    const roleCtr = new MongoController<I_Input_CreateRole>(db, 'roles');
+    const roleCtr = new MongoController<I_Role>(db, 'roles');
     const roles = Object.values(E_Role).map(role => ({ name: role }));
 
     const existingRoles = await roleCtr.findAll({ name: { $in: roles.map(role => role.name) } });
@@ -35,7 +35,7 @@ export async function up(db: C_Db) {
 }
 
 export async function down(db: C_Db) {
-    const roleCtr = new MongoController<I_Input_QueryRole>(db, 'roles');
+    const roleCtr = new MongoController<I_Role>(db, 'roles');
     const roles = Object.values(E_Role);
 
     const rolesDeleted = await roleCtr.deleteMany({ name: { $in: roles } });

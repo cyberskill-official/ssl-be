@@ -8,9 +8,6 @@ export const MenuModel = mongo.createModel<I_Menu>({
     name: 'Menu',
     pagination: true,
     schema: {
-        icon: {
-            type: String,
-        },
         text: {
             type: String,
             required: true,
@@ -31,6 +28,9 @@ export const MenuModel = mongo.createModel<I_Menu>({
                 },
             ],
         },
+        icon: {
+            type: String,
+        },
         isExternal: {
             type: Boolean,
             default: false,
@@ -40,6 +40,7 @@ export const MenuModel = mongo.createModel<I_Menu>({
         },
         order: {
             type: Number,
+            default: 0,
         },
     },
     virtuals: [

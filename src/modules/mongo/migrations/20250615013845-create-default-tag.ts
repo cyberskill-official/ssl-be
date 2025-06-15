@@ -3,7 +3,7 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Input_CreateTag, I_Input_QueryTag } from '#modules/tag/index.js';
+import type { I_Tag } from '#modules/tag/index.js';
 
 import { E_TagType } from '#modules/tag/index.js';
 
@@ -107,7 +107,7 @@ const tags = [
 ];
 
 export async function up(db: C_Db) {
-    const tagCtr = new MongoController<I_Input_CreateTag>(db, 'tags');
+    const tagCtr = new MongoController<I_Tag>(db, 'tags');
 
     const existingTags = await tagCtr.findAll({
         name: { $in: tags.map(tag => tag.name) },
@@ -135,7 +135,7 @@ export async function up(db: C_Db) {
 }
 
 export async function down(db: C_Db) {
-    const tagCtr = new MongoController<I_Input_QueryTag>(db, 'tags');
+    const tagCtr = new MongoController<I_Tag>(db, 'tags');
 
     const deleted = await tagCtr.deleteMany({ name: { $in: tags.map(tag => tag.name) } });
 

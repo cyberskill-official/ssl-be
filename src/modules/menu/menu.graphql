@@ -3,9 +3,9 @@ type T_Menu {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    icon: String
     text: String
     url: String
+    icon: String
     isExternal: Boolean
     parentId: String
     parent: T_Menu
@@ -17,18 +17,18 @@ input Input_QueryMenu {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    icon: String
     text: String
     url: String
+    icon: String
     isExternal: Boolean
     parentId: String
     order: Int
 }
 
 input Input_CreateMenu {
-    icon: String
     text: String!
     url: String!
+    icon: String
     isExternal: Boolean
     parentId: String
     order: Int
@@ -36,9 +36,9 @@ input Input_CreateMenu {
 
 input Input_UpdateMenu {
     isDel: Boolean
-    icon: String
     text: String
     url: String
+    icon: String
     isExternal: Boolean
     parentId: String
     order: Int
