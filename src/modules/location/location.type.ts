@@ -14,3 +14,5 @@ export interface I_Location {
 }
 
 export type T_Location_Populate = 'region' | 'subRegion' | 'country' | 'state' | 'city';
+
+export interface I_Input_Location extends Omit<I_Location, T_Location_Populate> {}

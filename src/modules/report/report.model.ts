@@ -1,6 +1,8 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { NoteSchema } from '#modules/note/index.js';
+
 import { E_ReportType, type I_Report } from './report.type.js';
 
 export const ReportModel = mongo.createModel<I_Report>({
@@ -19,23 +21,23 @@ export const ReportModel = mongo.createModel<I_Report>({
                 },
             ],
         },
-        reporterIds: {
+        reportedByIds: {
             type: [String],
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter reporter id for report',
+                    message: 'Please enter reporter ids for report',
                 },
             ],
         },
-        profileId: {
+        targetId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter profile id for report',
+                    message: 'Please enter target id for report',
                 },
             ],
         },
@@ -49,22 +51,25 @@ export const ReportModel = mongo.createModel<I_Report>({
                 },
             ],
         },
+        notes: {
+            type: NoteSchema,
+        },
     },
     virtuals: [
         {
-            name: 'reporter',
+            name: 'reportedBy',
             options: {
                 ref: 'User',
-                localField: 'reporterIds',
+                localField: 'reportedByIds',
                 foreignField: 'id',
                 justOne: false,
             },
         },
         {
-            name: 'profile',
+            name: 'target',
             options: {
                 ref: 'User',
-                localField: 'profileId',
+                localField: 'targetId',
                 foreignField: 'id',
                 justOne: false,
             },

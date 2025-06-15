@@ -36,9 +36,9 @@ input Input_QueryAdvertisement {
 }
 
 input Input_CreateAdvertisement {
-    name: String
-    image: String
-    targetURL: String
+    name: String!
+    image: String!
+    targetURL: String!
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime

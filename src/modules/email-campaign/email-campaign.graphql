@@ -1,0 +1,107 @@
+enum E_EmailCampaign_Target {
+    ALL_SUBSCRIBERS
+    PAID_MEMBERS
+    FREE_MEMBERS
+    CUSTOM_RECIPIENTS
+}
+
+type T_EmailCampaign {
+    id:	String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    subject: String
+    content: String
+    senderName: String
+    senderEmail: String
+    target: E_EmailCampaign_Target
+    customRecipientsIds: [String]
+    customRecipients: [T_User]
+    isScheduled: Boolean
+    scheduledDate: DateTime
+    scheduledTime: String
+    recipientCount: Int
+    openCount: Int
+    clickCount: Int
+}
+
+input Input_QueryEmailCampaign {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    subject: String
+    content: String
+    senderName: String
+    senderEmail: String
+    target: E_EmailCampaign_Target
+    customRecipientsIds: [String]
+    isScheduled: Boolean
+    scheduledDate: DateTime
+    scheduledTime: String
+    recipientCount: Int
+    openCount: Int
+    clickCount: Int
+}
+
+input Input_CreateEmailCampaign {
+    name: String!
+    subject: String!
+    content: String!
+    senderName: String!
+    senderEmail: String!
+    target: E_EmailCampaign_Target!
+    customRecipientsIds: [String]
+    isScheduled: Boolean
+    scheduledDate: DateTime
+    scheduledTime: String
+    recipientCount: Int
+    openCount: Int
+    clickCount: Int
+}
+
+input Input_UpdateEmailCampaign {
+    isDel: Boolean
+    name: String
+    subject: String
+    content: String
+    senderName: String
+    senderEmail: String
+    target: E_EmailCampaign_Target
+    customRecipientsIds: [String]
+    isScheduled: Boolean
+    scheduledDate: DateTime
+    scheduledTime: String
+    recipientCount: Int
+    openCount: Int
+    clickCount: Int
+}
+
+type T_Response_EmailCampaign {
+    success: Boolean
+    message: String
+    result: T_EmailCampaign
+}
+
+type T_EmailCampaigns {
+    docs: [T_EmailCampaign]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_EmailCampaigns {
+    success: Boolean
+    message: String
+    result: T_EmailCampaigns
+}

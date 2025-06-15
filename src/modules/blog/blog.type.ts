@@ -1,10 +1,10 @@
-import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Language } from '#modules/country/country.type.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
-export enum E_CategoryBlog {
+export enum E_BlogCategory_Blog {
     TRAVELS = 'TRAVELS',
     SWINGER_CLUB = 'SWINGER_CLUB',
     SEX = 'SEX',
@@ -12,7 +12,7 @@ export enum E_CategoryBlog {
     LIFESTYLE = 'LIFESTYLE',
 }
 
-export enum E_CategoryPodcast {
+export enum E_BlogCategory_Podcast {
     LIFESTYLE = 'LIFESTYLE',
     RELATIONSHIPS = 'RELATIONSHIPS',
     DATING = 'DATING',
@@ -35,33 +35,45 @@ export enum E_SocialPlatform {
     VIMEO = 'VIMEO',
 }
 
-export interface I_Blog_PayLoad {
+export interface I_Blog extends I_GenericDocument {
     title?: string;
-    languageId?: string;
-    language: I_Language;
     authorName?: string;
-    hostName?: string;
     websiteName?: string;
     websiteURL?: string;
-    publishDate?: Date;
-    category: E_CategoryBlog | E_CategoryPodcast;
+    category: E_BlogCategory_Blog | E_BlogCategory_Podcast;
     featuredImage?: string;
-    logo?: string;
-    cover?: string;
-    file?: string;
     contentHeadline?: string;
     contentSubHeadline?: string;
     content?: string;
-    relatedArticles?: string[];
+    relatedBlogsIds?: string[];
+    relatedBlogs?: I_Blog[];
+    languageId?: string;
+    language: I_Language;
+    hostName?: string;
+    logo?: string;
+    cover?: string;
+    file?: string;
     socialPlatform?: E_SocialPlatform;
     socialURL?: string;
-    authorProfileId?: string;
+    authorId?: string;
     author: I_User;
     seo?: I_Seo;
 }
 
-export interface I_Blog extends I_Blog_PayLoad, I_GenericDocument { }
+export type T_Blog_Populate = 'relatedBlogs' | 'language' | 'author';
 
-export interface I_QueryBlog extends I_Blog { }
+export interface I_Input_QueryBlog extends Omit<I_Blog, T_Blog_Populate> { }
 
-export interface I_MutateBlog extends Omit<I_Blog, 'id' | 'createdAt' | 'updatedAt' | 'language' | 'author'> { }
+export interface I_Input_CreateBlog extends Omit<I_Blog, T_Omit_Create | T_Blog_Populate> {
+    title: string;
+    authorName: string;
+    websiteName: string;
+    websiteURL: string;
+    category: E_BlogCategory_Blog | E_BlogCategory_Podcast;
+    featuredImage: string;
+    contentHeadline: string;
+    contentSubHeadline: string;
+    content: string;
+}
+
+export interface I_Input_UpdateBlog extends Omit<I_Blog, T_Omit_Update | T_Blog_Populate> { }

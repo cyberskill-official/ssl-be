@@ -1,2 +1,2 @@
-export * from './moderation.model.js';
-export * from './moderation.type.js';
+export * from './moderation-log/index.js';
+export * from './moderation-media/index.js';

@@ -1,7 +1,7 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/index.js';
-import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
+import type { I_Input_Location, I_Location } from '#modules/location/index.js';
 
 export enum E_EventType {
     BOOTY_CALL = 'BOOTY_CALL',
@@ -37,9 +37,9 @@ export interface I_Input_CreateEvent extends Omit<I_Event, T_Omit_Create | T_Eve
     description: string;
     startDate: Date;
     endDate: Date;
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
 }
 
 export interface I_Input_UpdateEvent extends Omit<I_Event, T_Omit_Update | T_Event_Populate> {
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
 }

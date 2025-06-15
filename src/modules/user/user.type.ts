@@ -2,7 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Language } from '#modules/language/index.js';
-import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
+import type { I_Input_Location, I_Location } from '#modules/location/index.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
 
 export enum E_AccountType {
@@ -43,6 +43,8 @@ export interface I_UserPartner {
 
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
 
+export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> {}
+
 export enum E_PinStyle {
     MALE = 'MALE',
     FEMALE = 'FEMALE',
@@ -55,9 +57,8 @@ export interface I_UserSettings_TemporaryLocation {
     endAt?: Date;
 }
 
-export interface I_Input_UserSettings_TemporaryLocation {
-    location?: Omit<I_Location, T_Location_Populate>;
-    endAt?: Date;
+export interface I_Input_UserSettings_TemporaryLocation extends I_UserSettings_TemporaryLocation {
+    location?: I_Input_Location;
 }
 
 export interface I_UserSettings_Notification {
@@ -109,14 +110,15 @@ export interface I_User extends I_GenericDocument {
     isOnline?: boolean;
     lastOnline?: Date;
     settings?: I_UserSettings;
+    flagCount?: number;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';
 
 export interface I_Input_QueryUser extends Omit<I_User, 'password' | T_User_Populate> {
-    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    location?: Omit<I_Location, T_Location_Populate>;
+    partner1?: I_Input_UserPartner;
+    partner2?: I_Input_UserPartner;
+    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }
 
@@ -124,15 +126,15 @@ export interface I_Input_CreateUser extends Omit<I_User, T_Omit_Create | T_User_
     username: string;
     email: string;
     password: string;
-    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    location?: Omit<I_Location, T_Location_Populate>;
+    partner1?: I_Input_UserPartner;
+    partner2?: I_Input_UserPartner;
+    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }
 
 export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_Populate> {
-    partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
-    location?: Omit<I_Location, T_Location_Populate>;
+    partner1?: I_Input_UserPartner;
+    partner2?: I_Input_UserPartner;
+    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }

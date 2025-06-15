@@ -1,16 +1,20 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_ModerationStatus, E_ModerationType, type I_Moderation } from './moderation.type.js';
+import { NoteSchema } from '#modules/note/index.js';
 
-export const ModerationModel = mongo.createModel<I_Moderation>({
+import type { I_ModerationMedia } from './moderation-media.type.js';
+
+import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
+
+export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
     mongoose,
-    name: 'Moderation',
+    name: 'ModerationMedia',
     pagination: true,
     schema: {
         type: {
             type: String,
-            enum: Object.values(E_ModerationType),
+            enum: Object.values(E_ModerationMediaType),
             required: true,
             validate: [
                 {
@@ -41,21 +45,17 @@ export const ModerationModel = mongo.createModel<I_Moderation>({
         },
         status: {
             type: String,
-            enum: Object.values(E_ModerationStatus),
-            default: E_ModerationStatus.PENDING,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select status for moderation',
-                },
-            ],
+            enum: Object.values(E_ModerationMediaStatus),
+            default: E_ModerationMediaStatus.PENDING,
         },
         moderatedById: {
             type: String,
         },
         reason: {
             type: String,
+        },
+        notes: {
+            type: NoteSchema,
         },
     },
     virtuals: [
@@ -64,6 +64,15 @@ export const ModerationModel = mongo.createModel<I_Moderation>({
             options: {
                 ref: 'User',
                 localField: 'uploadedById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'moderatedBy',
+            options: {
+                ref: 'User',
+                localField: 'moderatedById',
                 foreignField: 'id',
                 justOne: true,
             },

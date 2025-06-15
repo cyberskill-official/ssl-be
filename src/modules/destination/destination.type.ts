@@ -1,6 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
+import type { I_Input_Location, I_Location } from '#modules/location/index.js';
 import type { I_Rating } from '#modules/rating/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/user.type.js';
@@ -33,7 +33,7 @@ export interface I_Hotel {
 }
 
 export interface I_Input_Hotel extends I_Hotel {
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
 }
 
 export interface I_Destination extends I_GenericDocument {
@@ -72,7 +72,7 @@ export interface I_Destination extends I_GenericDocument {
 export type T_Destination_Populate = 'createdBy';
 
 export interface I_Input_QueryDestination extends Omit<I_Destination, T_Destination_Populate> {
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
     nearbyHotels?: I_Input_Hotel[];
 }
 
@@ -86,11 +86,11 @@ export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Cr
     introductionHeadline: string;
     introductionContent: string;
     ageGroup: E_DestinationAgeGroup;
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
     nearbyHotels?: I_Input_Hotel[];
 }
 
 export interface I_Input_UpdateDestination extends Omit<I_Destination, T_Omit_Update | T_Destination_Populate> {
-    location?: Omit<I_Location, T_Location_Populate>;
+    location?: I_Input_Location;
     nearbyHotels?: I_Input_Hotel[];
 }

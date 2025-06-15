@@ -1,0 +1,88 @@
+enum E_ModerationMediaType {
+    IMAGE
+    VIDEO
+}
+
+enum E_ModerationMediaStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+type T_ModerationMedia {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ModerationMediaType
+    uploadedById: String
+    uploadedBy: T_User
+    url: String
+    status: E_ModerationMediaStatus
+    moderatedById: String
+    moderatedBy: T_User
+    reason: String
+    notes: [T_Note]
+}
+
+input Input_QueryModerationMedia {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ModerationMediaType
+    uploadedById: String
+    url: String
+    status: E_ModerationMediaStatus
+    moderatedById: String
+    reason: String
+    notes: [Input_Note]
+}
+
+input Input_CreateModerationMedia {
+    type: E_ModerationMediaType!
+    uploadedById: String!
+    url: String!
+    status: E_ModerationMediaStatus
+    moderatedById: String
+    reason: String
+    notes: [Input_Note]
+}
+
+input Input_UpdateModerationMedia {
+    isDel: Boolean
+    type: E_ModerationMediaType
+    uploadedById: String
+    url: String
+    status: E_ModerationMediaStatus
+    moderatedById: String
+    reason: String
+    notes: [Input_Note]
+}
+
+type T_Response_ModerationMedia {
+    success: Boolean
+    message: String
+    result: T_ModerationMedia
+}
+
+type T_ModerationMedias {
+    docs: [T_ModerationMedia]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_ModerationMedias {
+    success: Boolean
+    message: String
+    result: T_ModerationMedias
+}

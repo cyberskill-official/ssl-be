@@ -1,4 +1,4 @@
-enum E_CategoryKeyword {
+enum E_KeywordCategory {
     INAPPROPRIATE 
     SPAM  
     OFFENSIVE 
@@ -7,11 +7,64 @@ enum E_CategoryKeyword {
 
 type T_Keyword {
     id:	String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
-    keyword: String
-    category: E_CategoryKeyword
-    occurrences: Float
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
     isActive: Boolean
+}
+
+input Input_QueryKeyword {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
+    isActive: Boolean
+}
+
+input Input_CreateKeyword {
+    word: String!
+    category: E_KeywordCategory!
+    occurrences: Int
+    isActive: Boolean
+}
+
+input Input_UpdateKeyword{
+    isDel: Boolean
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
+    isActive: Boolean
+}
+
+type T_Response_Keyword {
+    success: Boolean
+    message: String
+    result: T_Keyword
+}
+
+type T_Keywords {
+    docs: [T_Keyword]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Keywords {
+    success: Boolean
+    message: String
+    result: T_Keywords
 }

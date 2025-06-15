@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import { SeoSchema } from '#modules/seo/index.js';
 
-import { E_CategoryBlog, E_CategoryPodcast, E_SocialPlatform, type I_Blog } from './blog.type.js';
+import { E_BlogCategory_Blog, E_BlogCategory_Podcast, E_SocialPlatform, type I_Blog } from './blog.type.js';
 
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,
@@ -18,9 +18,6 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 message: 'Please enter title for blog',
             },
         },
-        languageId: {
-            type: String,
-        },
         authorName: {
             type: String,
             required: true,
@@ -28,9 +25,6 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 validator: mongo.validator.isRequired(),
                 message: 'Please enter author name for blog',
             },
-        },
-        hostName: {
-            type: String,
         },
         websiteName: {
             type: String,
@@ -48,34 +42,17 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 message: 'Please enter website URL for blog',
             },
         },
-        publishDate: {
-            type: Date,
-            required: true,
-            validate: {
-                validator: mongo.validator.isRequired(),
-                message: 'Please select publish date for blog',
-            },
-        },
         category: {
             type: String,
             enum: [
-                ...Object.values(E_CategoryBlog),
-                ...Object.values(E_CategoryPodcast),
+                ...Object.values(E_BlogCategory_Blog),
+                ...Object.values(E_BlogCategory_Podcast),
             ],
             required: true,
             validate: {
                 validator: mongo.validator.isRequired(),
                 message: 'Please select category for blog',
             },
-        },
-        logo: {
-            type: String,
-        },
-        cover: {
-            type: String,
-        },
-        file: {
-            type: String,
         },
         featuredImage: {
             type: String,
@@ -117,8 +94,23 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 },
             ],
         },
-        relatedArticles: {
+        relatedBlogsIds: {
             type: [String],
+        },
+        languageId: {
+            type: String,
+        },
+        hostName: {
+            type: String,
+        },
+        logo: {
+            type: String,
+        },
+        cover: {
+            type: String,
+        },
+        file: {
+            type: String,
         },
         socialPlatform: {
             type: String,
@@ -127,15 +119,8 @@ export const BlogModel = mongo.createModel<I_Blog>({
         socialURL: {
             type: String,
         },
-        authorProfileId: {
+        authorId: {
             type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter author user for this post blog.',
-                },
-            ],
         },
         seo: {
             type: [SeoSchema],
@@ -143,12 +128,12 @@ export const BlogModel = mongo.createModel<I_Blog>({
     },
     virtuals: [
         {
-            name: 'author',
+            name: 'relatedBlogs',
             options: {
-                ref: 'User',
-                localField: 'authorProfileId',
+                ref: 'Blog',
+                localField: 'relatedBlogsIds',
                 foreignField: 'id',
-                justOne: true,
+                justOne: false,
             },
         },
         {
@@ -156,6 +141,15 @@ export const BlogModel = mongo.createModel<I_Blog>({
             options: {
                 ref: 'Language',
                 localField: 'languageId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'author',
+            options: {
+                ref: 'User',
+                localField: 'authorId',
                 foreignField: 'id',
                 justOne: true,
             },

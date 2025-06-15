@@ -1,15 +1,10 @@
-enum E_CategoryBlog {
+enum E_BlogCategory {
     TRAVELS
     SWINGER_CLUB
     SEX
     DATING
     LIFESTYLE
-}
-
-enum E_CategoryPodcast {
-    LIFESTYLE
     RELATIONSHIPS
-    DATING
     SEXUALITY
     TRAVEL
 }
@@ -35,25 +30,123 @@ type T_Blog {
     createdAt: DateTime
     updatedAt: DateTime
     title: String
-    languageId: String
-    language: T_Language
     authorName: String
-    hostName: String
     websiteName: String
     websiteURL: String
-    publishDate: DateTime
-    # category: E_CategoryBlog | E_CategoryPodcast
+    category: E_BlogCategory
     featuredImage: String
-    logo: String
-    cover: String
-    file: String
     contentHeadline: String
     contentSubHeadline: String
     content: String
-    relatedArticles: [String]
+    relatedBlogsIds: [String]
+    relatedBlogs: [T_Blog]
+    languageId: String
+    language: T_Language
+    hostName: String
+    logo: String
+    cover: String
+    file: String
     socialPlatform: E_SocialPlatform
     socialURL: String
-    authorProfile: String
+    authorId: String
     author: T_User
     seo: T_Seo
+}
+
+input Input_QueryBlog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    title: String
+    authorName: String
+    websiteName: String
+    websiteURL: String
+    category: E_BlogCategory
+    featuredImage: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialPlatform: E_SocialPlatform
+    socialURL: String
+    authorId: String
+    seo: Input_Seo
+}
+
+input Input_CreateBlog {
+    title: String!
+    authorName: String!
+    websiteName: String!
+    websiteURL: String!
+    category: E_BlogCategory!
+    featuredImage: String!
+    contentHeadline: String!
+    contentSubHeadline: String!
+    content: String!
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialPlatform: E_SocialPlatform
+    socialURL: String
+    authorId: String
+    seo: Input_Seo
+}
+
+input Input_UpdateBlog {
+    isDel: Boolean
+    title: String
+    authorName: String
+    websiteName: String
+    websiteURL: String
+    category: E_BlogCategory
+    featuredImage: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialPlatform: E_SocialPlatform
+    socialURL: String
+    authorId: String
+    seo: Input_Seo
+}
+
+type T_Response_Blog {
+    success: Boolean
+    message: String
+    result: T_Blog
+}
+
+type T_Blogs {
+    docs: [T_Blog]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Blogs {
+    success: Boolean
+    message: String
+    result: T_Blogs
 }

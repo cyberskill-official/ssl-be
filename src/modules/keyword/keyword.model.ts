@@ -1,55 +1,43 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_CategoryKeyword, type I_Keyword } from './keyword.type.js';
+import type { I_Keyword } from './keyword.type.js';
+
+import { E_KeywordCategory } from './keyword.type.js';
 
 export const KeywordModel = mongo.createModel<I_Keyword>({
     mongoose,
     name: 'Keyword',
     pagination: true,
     schema: {
-        keyword: {
+        word: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter keyword',
+                    message: 'Please enter word',
                 },
             ],
         },
         category: {
             type: String,
-            enum: Object.values(E_CategoryKeyword),
+            enum: Object.values(E_KeywordCategory),
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the keyword type',
+                    message: 'Please select word category',
                 },
             ],
         },
         occurrences: {
             type: Number,
             default: 0,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter occurrences for keyword',
-                },
-            ],
         },
         isActive: {
             type: Boolean,
             default: false,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select is active for keyword',
-                },
-            ],
         },
     },
 });

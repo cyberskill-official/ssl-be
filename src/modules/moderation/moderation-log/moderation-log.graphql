@@ -1,0 +1,70 @@
+enum E_ModerationLogAction {
+    DELETE
+    SUSPEND
+    APPROVE
+    WARN
+    DEACTIVATE
+    CLOSE
+}
+
+type T_ModerationLog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    action: E_ModerationLogAction
+    userId: String
+    user: T_User
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
+}
+
+input Input_QueryModerationLog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    action: E_ModerationLogAction
+    userId: String
+    moderationMediaId: String
+}
+
+input Input_CreateModerationLog {
+    action: E_ModerationLogAction!
+    userId: String
+    moderationMediaId: String
+}
+
+input Input_UpdateModerationLog {
+    isDel: Boolean
+    action: E_ModerationLogAction
+    userId: String
+    moderationMediaId: String
+}
+
+type T_Response_ModerationLog {
+    success: Boolean
+    message: String
+    result: T_ModerationLog
+}
+
+type T_ModerationLogs {
+    docs: [T_ModerationLog]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_ModerationLogs {
+    success: Boolean
+    message: String
+    result: T_ModerationLogs
+}

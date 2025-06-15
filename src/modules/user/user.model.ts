@@ -394,6 +394,10 @@ export const UserModel = mongo.createModel<I_User>({
         settings: {
             type: UserSettingsSchema,
         },
+        flagCount: {
+            type: Number,
+            default: 0,
+        },
     },
     virtuals: [
         {
