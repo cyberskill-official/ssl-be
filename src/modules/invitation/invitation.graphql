@@ -12,11 +12,66 @@ enum E_InvitationStatus {
 
 type T_Invitation {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    type: E_InvitationType
+    userId: String
+    user: T_User
+    inviteId: String
+    invite: T_User
+    status: E_InvitationStatus
+}
+
+input Input_QueryInvitation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_InvitationType
+    userId: String
+    inviteId: String
+    status: E_InvitationStatus
+}
+
+input Input_CreateInvitation {
+    type: E_InvitationType!
+    userId: String!
+    inviteId: String!
+    status: E_InvitationStatus
+}
+
+input Input_UpdateInvitation {
     isDel: Boolean
     type: E_InvitationType
-    inviterId: String
-    inviteeId: String
+    userId: String
+    inviteId: String
     status: E_InvitationStatus
+}
+
+type T_Response_Invitation {
+    success: Boolean
+    message: String
+    result: T_Invitation
+}
+
+type T_Invitations {
+    docs: [T_Invitation]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Invitations {
+    success: Boolean
+    message: String
+    result: T_Invitations
 }

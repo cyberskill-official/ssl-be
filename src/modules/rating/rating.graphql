@@ -1,0 +1,9 @@
+type T_Rating {
+    rate: Float
+    reason: String
+}
+
+input Input_Rating {
+    rate: Float
+    reason: String
+}

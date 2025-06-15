@@ -11,13 +11,72 @@ enum E_GalleryStatus {
 
 type T_Gallery {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    type: E_GalleryType
+    url: String
+    likeCount: Int
+    viewCount: Int
+    status: E_GalleryStatus
+    isPublished: Boolean
+}
+
+input Input_QueryGallery {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_GalleryType
+    url: String
+    likeCount: Int
+    viewCount: Int
+    status: E_GalleryStatus
+    isPublished: Boolean
+}
+
+input Input_CreateGallery {
+    type: E_GalleryType!
+    url: String!
+    likeCount: Int
+    viewCount: Int
+    status: E_GalleryStatus
+    isPublished: Boolean
+}
+
+input Input_UpdateGallery {
     isDel: Boolean
     type: E_GalleryType
     url: String
-    likeCount: Float
-    viewCount: Float
+    likeCount: Int
+    viewCount: Int
     status: E_GalleryStatus
     isPublished: Boolean
+}
+
+type T_Response_Gallery {
+    success: Boolean
+    message: String
+    result: T_Gallery
+}
+
+type T_Galleries {
+    docs: [T_Gallery]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Galleries {
+    success: Boolean
+    message: String
+    result: T_Galleries
 }

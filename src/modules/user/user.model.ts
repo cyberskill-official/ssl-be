@@ -331,17 +331,29 @@ export const UserModel = mongo.createModel<I_User>({
                 },
             ],
         },
-        displayName: { type: String },
+        displayName: {
+            type: String,
+        },
         accountType: {
             type: String,
             enum: Object.values(E_AccountType),
             default: E_AccountType.SINGLE,
         },
-        partner1: { type: UserPartnerSchema },
-        partner2: { type: UserPartnerSchema },
-        location: { type: LocationSchema },
-        nativeLanguageId: { type: String },
-        otherLanguagesIds: [{ type: String }],
+        partner1: {
+            type: UserPartnerSchema,
+        },
+        partner2: {
+            type: UserPartnerSchema,
+        },
+        location: {
+            type: LocationSchema,
+        },
+        nativeLanguageId: {
+            type: String,
+        },
+        otherLanguagesIds: {
+            type: [String],
+        },
         pinStyle: {
             type: String,
             enum: Object.values(E_PinStyle),
@@ -379,7 +391,9 @@ export const UserModel = mongo.createModel<I_User>({
         lastOnline: {
             type: Date,
         },
-        settings: { type: UserSettingsSchema },
+        settings: {
+            type: UserSettingsSchema,
+        },
     },
     virtuals: [
         {

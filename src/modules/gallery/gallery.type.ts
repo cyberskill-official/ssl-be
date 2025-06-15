@@ -1,4 +1,4 @@
-import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 export enum E_GalleryType {
     IMAGE = 'IMAGE',
@@ -11,7 +11,7 @@ export enum E_GalleryStatus {
     REJECTED = 'REJECTED',
 }
 
-export interface I_Gallery_PayLoad {
+export interface I_Gallery extends I_GenericDocument {
     type?: E_GalleryType;
     url?: string;
     likeCount?: number;
@@ -20,8 +20,11 @@ export interface I_Gallery_PayLoad {
     isPublished?: boolean;
 }
 
-export interface I_Gallery extends I_Gallery_PayLoad, I_GenericDocument { }
-
 export interface I_Input_QueryGallery extends I_Gallery { }
 
-export interface I_Input_MutateGallery extends Omit<I_Gallery, 'id' | 'createdAt' | 'updatedAt'> { }
+export interface I_Input_CreateGallery extends Omit<I_Gallery, T_Omit_Create> {
+    type: E_GalleryType;
+    url: string;
+}
+
+export interface I_Input_UpdateGallery extends Omit<I_Gallery, T_Omit_Update> {}

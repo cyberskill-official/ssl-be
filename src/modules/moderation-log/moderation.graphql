@@ -9,9 +9,9 @@ enum E_Action {
 
 type T_ModerationLog {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     triggeredById: String
     triggeredBy: T_User
     action: E_Action

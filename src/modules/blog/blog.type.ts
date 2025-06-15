@@ -1,7 +1,7 @@
 import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
 
 import type { I_Language } from '#modules/country/country.type.js';
-import type { I_Seo } from '#modules/destination/destination.type.js';
+import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_CategoryBlog {

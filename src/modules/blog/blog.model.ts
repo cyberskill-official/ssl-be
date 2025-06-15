@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { SeoSchema } from '#modules/destination/destination.model.js';
+import { SeoSchema } from '#modules/seo/index.js';
 
 import { E_CategoryBlog, E_CategoryPodcast, E_SocialPlatform, type I_Blog } from './blog.type.js';
 

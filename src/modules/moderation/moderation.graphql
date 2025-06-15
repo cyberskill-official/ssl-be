@@ -11,9 +11,9 @@ enum E_ModerationStatus {
 
 type T_Moderation {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     type: E_ModerationType
     uploadedById: String
     url: String

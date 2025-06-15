@@ -542,9 +542,9 @@ input Input_Language {
 
 input Input_QueryCountry {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     name: String
     native: String
     phone: [Int]

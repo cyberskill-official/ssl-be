@@ -7,12 +7,24 @@ export const LocationSchema = mongo.createSchema<I_Location>({
     standalone: true,
     mongoose,
     schema: {
-        regionId: { type: String },
-        subRegionId: { type: String },
-        countryId: { type: String },
-        stateId: { type: String },
-        cityId: { type: String },
-        raw: { type: Object },
+        regionId: {
+            type: String,
+        },
+        subRegionId: {
+            type: String,
+        },
+        countryId: {
+            type: String,
+        },
+        stateId: {
+            type: String,
+        },
+        cityId: {
+            type: String,
+        },
+        raw: {
+            type: Object,
+        },
     },
     virtuals: [
         {

@@ -19,53 +19,47 @@ export const InvitationModel = mongo.createModel<I_Invitation>({
                 },
             ],
         },
-        inviterId: {
+        userId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter invert id for invitation',
+                    message: 'Please enter user id for invitation',
                 },
             ],
         },
-        inviteeId: {
+        inviteId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter invitee id invitation',
+                    message: 'Please enter invite id for invitation',
                 },
             ],
         },
         status: {
             type: String,
             enum: Object.values(E_InvitationStatus),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select status for invitation',
-                },
-            ],
+            default: E_InvitationStatus.PENDING,
         },
     },
     virtuals: [
         {
-            name: 'inviter',
+            name: 'user',
             options: {
                 ref: 'User',
-                localField: 'inviterId',
+                localField: 'userId',
                 foreignField: 'id',
                 justOne: true,
             },
         },
         {
-            name: 'invitee',
+            name: 'invite',
             options: {
                 ref: 'User',
-                localField: 'inviteeId',
+                localField: 'inviteId',
                 foreignField: 'id',
                 justOne: true,
             },

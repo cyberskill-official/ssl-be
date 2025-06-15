@@ -1,11 +1,15 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Destination, I_Hotel, I_Seo } from './destination.type.js';
+import { LocationSchema } from '#modules/location/index.js';
+import { RatingSchema } from '#modules/rating/index.js';
+import { SeoSchema } from '#modules/seo/index.js';
 
-import { E_AgeRange, E_DestinationType, E_Rating } from './destination.type.js';
+import type { I_Destination, I_Hotel } from './destination.type.js';
 
-export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
+import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
+
+export const HotelSchema = mongo.createSchema<I_Hotel>({
     standalone: true,
     mongoose,
     schema: {
@@ -13,9 +17,6 @@ export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
             type: String,
         },
         address: {
-            type: String,
-        },
-        countryId: {
             type: String,
         },
         url: {
@@ -30,48 +31,11 @@ export const NearbyHotelsSchema = mongo.createSchema<I_Hotel>({
     },
 });
 
-export const SeoSchema = mongo.createSchema<I_Seo>({
-    standalone: true,
-    mongoose,
-    schema: {
-        title: {
-            type: String,
-        },
-        description: {
-            type: String,
-        },
-        keywords: [{
-            type: String,
-        }],
-        socialImage: {
-            type: String,
-        },
-        socialMediaDescription: {
-            type: String,
-        },
-        urlSlug: {
-            type: String,
-        },
-        altTextForImages: {
-            type: String,
-        },
-    },
-});
 export const DestinationModel = mongo.createModel<I_Destination>({
     mongoose,
     name: 'Destination',
     pagination: true,
     schema: {
-        name: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter the destination name',
-                },
-            ],
-        },
         type: {
             type: String,
             enum: Object.values(E_DestinationType),
@@ -83,13 +47,13 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 },
             ],
         },
-        countryId: {
+        name: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select the country',
+                    message: 'Please enter the destination name',
                 },
             ],
         },
@@ -113,53 +77,27 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 },
             ],
         },
-        ageGroup: {
-            type: String,
-            enum: Object.values(E_AgeRange),
-        },
-        logo: {
-            type: String,
-        },
-        location: {
-            type: Object,
-        },
-        nearbyHotels: {
-            type: [NearbyHotelsSchema],
-        },
-        wearImage: {
-            type: String,
-        },
-        womenDressCode: {
-            type: String,
-        },
-        menDressCode: {
-            type: String,
-        },
-        userDefaultText: {
-            type: Boolean,
-            default: false,
-        },
         rating: {
             type: String,
-            enum: Object.values(E_Rating),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired (),
-                    message: 'Please select ratting',
-                },
-            ],
-        },
-        images: [{
-            type: String,
+            enum: Object.values(E_DestinationRating),
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter a valid image URL',
+                    message: 'Please select ratting',
                 },
             ],
-        }],
+        },
+        images: {
+            type: [String],
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please upload at least one image',
+                },
+            ],
+        },
         introductionHeadline: {
             type: String,
             required: true,
@@ -180,50 +118,53 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 },
             ],
         },
+        ageGroup: {
+            type: String,
+            enum: Object.values(E_DestinationAgeGroup),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select the age group',
+                },
+            ],
+        },
+        logo: {
+            type: String,
+        },
+        location: {
+            type: LocationSchema,
+        },
+        nearbyHotels: {
+            type: [HotelSchema],
+        },
+        wearImage: {
+            type: String,
+        },
+        womenDressCode: {
+            type: String,
+        },
+        menDressCode: {
+            type: String,
+        },
+        useDefaultText: {
+            type: Boolean,
+            default: false,
+        },
         atmosphereRating: {
-            rate: {
-                type: Number,
-                default: 0,
-            },
-            reason: {
-                type: String,
-            },
+            type: RatingSchema,
         },
         guestsRating: {
-            rate: {
-                type: Number,
-                default: 0,
-            },
-            reason: {
-                type: String,
-            },
+            type: RatingSchema,
         },
         facilitiesRating: {
-            rate: {
-                type: Number,
-                default: 0,
-            },
-            reason: {
-                type: String,
-            },
+            type: RatingSchema,
         },
         serviceRating: {
-            rate: {
-                type: Number,
-                default: 0,
-            },
-            reason: {
-                type: String,
-            },
+            type: RatingSchema,
         },
         xFactorRating: {
-            rate: {
-                type: Number,
-                default: 0,
-            },
-            reason: {
-                type: String,
-            },
+            type: RatingSchema,
         },
         highlightSex: {
             type: String,
@@ -240,6 +181,9 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         seo: {
             type: [SeoSchema],
         },
+        linkTo: {
+            type: String,
+        },
         isActive: {
             type: Boolean,
             default: false,
@@ -247,20 +191,8 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         createdById: {
             type: String,
         },
-        linkTo: {
-            type: String,
-        },
     },
     virtuals: [
-        {
-            name: 'country',
-            options: {
-                ref: 'Country',
-                localField: 'countryId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
         {
             name: 'createdBy',
             options: {

@@ -45,9 +45,9 @@ type T_Response_Pricings {
 
 input Input_QueryPricing {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     type: E_PricingType
     countryId: String
     price: Float

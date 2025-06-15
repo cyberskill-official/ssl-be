@@ -1,4 +1,4 @@
-enum E_EvenType {
+enum E_EventType {
     BOOTY_CALL
     PRIVATE
     TRAVEL
@@ -7,20 +7,100 @@ enum E_EvenType {
 
 type T_Event {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
-    type: E_EvenType
-    clubId: String
+    type: E_EventType
     title: String
-    image: String
     description: String
     startDate: DateTime
     endDate: DateTime
+    destinationId: String
+    image: String
     startTime: String
     endTime: String
-    location: JSON
+    location: T_Location
     fee: Float
     currency: String
     pushMessage: String
+}
+
+input Input_QueryEvent {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_EventType
+    title: String
+    description: String
+    startDate: DateTime
+    endDate: DateTime
+    destinationId: String
+    image: String
+    startTime: String
+    endTime: String
+    location: Input_Location
+    fee: Float
+    currency: String
+    pushMessage: String
+}
+
+input Input_CreateEvent {
+    type: E_EventType!
+    title: String!
+    description: String!
+    startDate: DateTime!
+    endDate: DateTime!
+    destinationId: String
+    image: String
+    startTime: String
+    endTime: String
+    location: Input_Location
+    fee: Float
+    currency: String
+    pushMessage: String
+}
+
+input Input_UpdateEvent {
+    isDel: Boolean
+    type: E_EventType
+    title: String
+    description: String
+    startDate: DateTime
+    endDate: DateTime
+    destinationId: String
+    image: String
+    startTime: String
+    endTime: String
+    location: Input_Location
+    fee: Float
+    currency: String
+    pushMessage: String
+}
+
+type T_Response_Event {
+    success: Boolean
+    message: String
+    result: T_Event
+}
+
+type T_Events {
+    docs: [T_Event]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Events {
+    success: Boolean
+    message: String
+    result: T_Events
 }

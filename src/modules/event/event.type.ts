@@ -1,6 +1,7 @@
-import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Destination } from '#modules/destination/destination.type.js';
+import type { I_Destination } from '#modules/destination/index.js';
+import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
 
 export enum E_EventType {
     BOOTY_CALL = 'BOOTY_CALL',
@@ -9,25 +10,36 @@ export enum E_EventType {
     CLUB_VISIT = 'CLUB_VISIT',
 }
 
-export interface I_Event_PayLoad {
+export interface I_Event extends I_GenericDocument {
     type?: E_EventType;
-    clubId?: string;
-    club?: I_Destination;
     title?: string;
-    image?: string;
     description?: string;
     startDate?: Date;
     endDate?: Date;
-    startTime?: string; // hh:mm a
-    endTime?: string; // hh:mm a
-    location?: Record<string, any>;
+    destinationId?: string;
+    destination?: I_Destination;
+    image?: string;
+    startTime?: string;
+    endTime?: string;
+    location?: I_Location;
     fee?: number;
     currency?: string;
     pushMessage?: string;
 }
 
-export interface I_Event extends I_Event_PayLoad, I_GenericDocument { }
+export type T_Event_Populate = 'destination';
 
-export interface I_Input_QueryEvent extends I_Event { }
+export interface I_Input_QueryEvent extends Omit<I_Event, T_Event_Populate> { }
 
-export interface I_Input_MutateEvent extends Omit<I_Event, 'id' | 'createdAt' | 'updatedAt' | 'club' | 'country' | 'city'> { }
+export interface I_Input_CreateEvent extends Omit<I_Event, T_Omit_Create | T_Event_Populate> {
+    type: E_EventType;
+    title: string;
+    description: string;
+    startDate: Date;
+    endDate: Date;
+    location?: Omit<I_Location, T_Location_Populate>;
+}
+
+export interface I_Input_UpdateEvent extends Omit<I_Event, T_Omit_Update | T_Event_Populate> {
+    location?: Omit<I_Location, T_Location_Populate>;
+}

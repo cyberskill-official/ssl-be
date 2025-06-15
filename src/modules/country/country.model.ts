@@ -45,7 +45,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                 },
             ],
         },
-        phone: [{
+        phone: {
             type: String,
             required: true,
             validate: [
@@ -54,7 +54,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     message: 'Please enter phone',
                 },
             ],
-        }],
+        },
         continent: {
             code: {
                 type: String,
@@ -103,7 +103,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                 },
             ],
         },
-        currency: [{
+        currency: {
             type: String,
             required: true,
             validate: [
@@ -112,7 +112,7 @@ export const CountryModel = mongo.createModel<I_Country>({
                     message: 'Please enter country currency',
                 },
             ],
-        }],
+        },
         languages: [
             {
                 code: {

@@ -1,6 +1,8 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { LocationSchema } from '#modules/location/index.js';
+
 import { E_EventType, type I_Event } from './event.type.js';
 
 export const EventModel = mongo.createModel<I_Event>({
@@ -18,9 +20,6 @@ export const EventModel = mongo.createModel<I_Event>({
                     message: 'Please select event type',
                 },
             ],
-        },
-        clubId: {
-            type: String,
         },
         title: {
             type: String,
@@ -62,6 +61,9 @@ export const EventModel = mongo.createModel<I_Event>({
                 },
             ],
         },
+        destinationId: {
+            type: String,
+        },
         startTime: {
             type: String,
         },
@@ -69,10 +71,11 @@ export const EventModel = mongo.createModel<I_Event>({
             type: String,
         },
         location: {
-            type: Object,
+            type: LocationSchema,
         },
         fee: {
             type: Number,
+            default: 0,
         },
         currency: {
             type: String,
@@ -83,10 +86,10 @@ export const EventModel = mongo.createModel<I_Event>({
     },
     virtuals: [
         {
-            name: 'club',
+            name: 'destination',
             options: {
                 ref: 'Destination',
-                localField: 'clubId',
+                localField: 'destinationId',
                 foreignField: 'id',
                 justOne: true,
             },

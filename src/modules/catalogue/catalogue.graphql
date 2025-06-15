@@ -5,11 +5,61 @@ enum E_CatalogueType {
 
 type T_Catalogue {
     id: String
+    isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    isDel: Boolean
     type: E_CatalogueType
     tagId: String
     tag: T_Tag
     url: String
+}
+
+input Input_QueryCatalogue {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_CatalogueType
+    tagId: String
+    url: String
+}
+
+input Input_CreateCatalogue {
+    type: E_CatalogueType!
+    tagId: String!
+    url: String!
+}
+
+input Input_UpdateCatalogue {
+    isDel: Boolean
+    type: E_CatalogueType
+    tagId: String
+    url: String
+}
+
+type T_Response_Catalogue {
+    success: Boolean
+    message: String
+    result: T_Catalogue
+}
+
+type T_Catalogues {
+    docs: [T_Catalogue]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Catalogues {
+    success: Boolean
+    message: String
+    result: T_Catalogues
 }

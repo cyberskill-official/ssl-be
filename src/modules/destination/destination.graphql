@@ -1,36 +1,22 @@
-enum E_AgeRange {
+enum E_DestinationType {
+    CLUB
+    RESORT
+}
+
+enum E_DestinationRating {
+    BRONZE 
+    SILVER 
+    GOLD 
+}
+
+enum E_DestinationAgeGroup {
     A18_25 
     A26_35 
     A36_45 
     A45_PLUS 
 }
 
-enum E_Rating {
-    BRONZE 
-    SILVER 
-    GOLD 
-}
-
-enum E_DestinationType {
-    CLUB
-    RESORT
-}
-
-input I_Input_Hotel {
-    name: String
-    address: String
-    countryId: String
-    url: String
-    description: String
-    image: String
-}
-
-input I_Input_DestinationRating {
-    rate: Int
-    reason: String
-}
-
-input I_Input_Seo {
+input Input_Seo {
     title: String
     description: String
     keywords: [String]
@@ -49,9 +35,13 @@ type T_Hotel {
     image: String
 }
 
-type T_DestinationRating {
-    rate: Int
-    reason: String
+input Input_Hotel {
+    name: String
+    address: String
+    countryId: String
+    url: String
+    description: String
+    image: String
 }
 
 type T_Seo {
@@ -71,27 +61,25 @@ type T_Destination {
     updatedAt: DateTime
     type: E_DestinationType
     name: String
-    countryId: String
-    country: T_Country
     address: String
     websiteURL: String
-    ageGroup: E_AgeRange
+    rating: E_DestinationRating
+    images: [String]
+    introductionHeadline: String
+    introductionContent: String
+    ageGroup: E_DestinationAgeGroup
     logo: String
-    location: JSON
+    location: T_Location
     nearbyHotels: [T_Hotel]
     wearImage: String
     womenDressCode: String
     menDressCode: String
-    userDefaultText: Boolean
-    rating: E_Rating
-    images: [String]
-    introductionHeadline: String
-    introductionContent: String
-    atmosphereRating: T_DestinationRating
-    guestsRating: T_DestinationRating
-    facilitiesRating: T_DestinationRating
-    serviceRating: T_DestinationRating
-    xFactorRating: T_DestinationRating
+    useDefaultText: Boolean
+    atmosphereRating: T_Rating
+    guestsRating: T_Rating
+    facilitiesRating: T_Rating
+    serviceRating: T_Rating
+    xFactorRating: T_Rating
     highlightSex: String
     highlightWellness: String
     highlightBar: String
@@ -103,33 +91,6 @@ type T_Destination {
     createdBy: T_User
 }
 
-type T_Response_Destination {
-    success: Boolean!
-    message: String
-    result: T_Destination
-}
-
-type T_Destinations {
-    docs: [T_Destination]!
-    totalDocs: Int!
-    limit: Int!
-    hasPrevPage: Boolean!
-    hasNextPage: Boolean!
-    page: Int!
-    totalPages: Int!
-    offset: Int
-    prevPage: Int
-    nextPage: Int
-    pagingCounter: Int!
-    meta: JSON
-}
-
-type T_Response_Destinations {
-    success: Boolean!
-    message: String
-    result: T_Destinations
-}
-
 input Input_QueryDestination {
     id: String
     isDel: Boolean
@@ -137,78 +98,123 @@ input Input_QueryDestination {
     updatedAt: DateTime
     type: E_DestinationType
     name: String
-    countryId: String
     address: String
     websiteURL: String
-    ageGroup: E_AgeRange
-    logo: String
-    location: JSON
-    nearbyHotels: [I_Input_Hotel]
-    wearImage: String
-    womenDressCode: String
-    menDressCode: String
-    userDefaultText: Boolean
-    rating: E_Rating
+    rating: E_DestinationRating
     images: [String]
     introductionHeadline: String
     introductionContent: String
-    atmosphereRating: I_Input_DestinationRating
-    guestsRating: I_Input_DestinationRating
-    facilitiesRating: I_Input_DestinationRating
-    serviceRating: I_Input_DestinationRating
-    xFactorRating: I_Input_DestinationRating
+    ageGroup: E_DestinationAgeGroup
+    logo: String
+    location: Input_Location
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
     highlightSex: String
     highlightWellness: String
     highlightBar: String
     highlightDance: String
-    seo: I_Input_Seo
+    seo: Input_Seo
     linkTo: String
     isActive: Boolean
     createdById: String
 }
 
-input Input_MutationDestination {
+input Input_CreateDestination {
+    type: E_DestinationType!
+    name: String!
+    address: String!
+    websiteURL: String!
+    rating: E_DestinationRating!
+    images: [String]!
+    introductionHeadline: String!
+    introductionContent: String!
+    ageGroup: E_DestinationAgeGroup!
+    logo: String
+    location: Input_Location
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
+    highlightSex: String
+    highlightWellness: String
+    highlightBar: String
+    highlightDance: String
+    seo: Input_Seo
+    linkTo: String
+    isActive: Boolean
+    createdById: String
+}
+
+input Input_UpdateDestination {
     isDel: Boolean
     type: E_DestinationType
     name: String
-    countryId: String
     address: String
     websiteURL: String
-    ageGroup: E_AgeRange
-    logo: String
-    location: JSON
-    nearbyHotels: [I_Input_Hotel]
-    wearImage: String
-    womenDressCode: String
-    menDressCode: String
-    userDefaultText: Boolean
-    rating: E_Rating
+    rating: E_DestinationRating
     images: [String]
     introductionHeadline: String
     introductionContent: String
-    atmosphereRating: I_Input_DestinationRating
-    guestsRating: I_Input_DestinationRating
-    facilitiesRating: I_Input_DestinationRating
-    serviceRating: I_Input_DestinationRating
-    xFactorRating: I_Input_DestinationRating
+    ageGroup: E_DestinationAgeGroup
+    logo: String
+    location: Input_Location
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
     highlightSex: String
     highlightWellness: String
     highlightBar: String
     highlightDance: String
-    seo: I_Input_Seo
+    seo: Input_Seo
     linkTo: String
     isActive: Boolean
     createdById: String
 }
 
-type Query {
-    getDestination(filter: Input_QueryDestination!, projection: JSON, options: JSON, populate: JSON): T_Response_Destination!
-    getDestinations(filter: Input_QueryDestination, options: JSON): T_Response_Destinations!
+type T_Response_Destination {
+    success: Boolean
+    message: String
+    result: T_Destination
 }
-type Mutation {
-    createDestination(doc: Input_MutationDestination!): T_Response_Destination!
-    updateDestination(filter: Input_QueryDestination!, update: Input_MutationDestination!, options: JSON): T_Response_Destination!
-    deleteDestination(filter: Input_QueryDestination!, options: JSON): T_Response_Destination!
-    softDeleteDestination(filter: Input_QueryDestination!, options: JSON): T_Response_Destination!
-    restoreDestination(filter: Input_QueryDestination!, options: JSON): T_Response_Destination!
+
+type T_Destinations {
+    docs: [T_Destination]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Destinations {
+    success: Boolean
+    message: String
+    result: T_Destinations
 }
