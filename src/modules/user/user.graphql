@@ -186,7 +186,6 @@ input Input_QueryUser {
 }
 
 input Input_CreateUser {
-    isDel: Boolean
     username: String!
     email: String!
     isEmailVerified: Boolean

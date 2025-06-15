@@ -47,7 +47,6 @@ input Input_QueryRole {
 }
 
 input Input_CreateRole {
-    isDel: Boolean
     name: String!
     description: String
     parentId: String

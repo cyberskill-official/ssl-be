@@ -1,4 +1,4 @@
-import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Location, T_Location_Populate } from '#modules/location/index.js';
@@ -120,7 +120,7 @@ export interface I_Input_QueryUser extends Omit<I_User, 'password' | T_User_Popu
     settings?: I_Input_UserSettings;
 }
 
-export interface I_Input_CreateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | T_User_Populate> {
+export interface I_Input_CreateUser extends Omit<I_User, T_Omit_Create | T_User_Populate> {
     username: string;
     email: string;
     password: string;
@@ -130,7 +130,7 @@ export interface I_Input_CreateUser extends Omit<I_User, 'id' | 'createdAt' | 'u
     settings?: I_Input_UserSettings;
 }
 
-export interface I_Input_UpdateUser extends Omit<I_User, 'id' | 'createdAt' | 'updatedAt' | T_User_Populate> {
+export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_Populate> {
     partner1?: Omit<I_UserPartner, T_UserPartner_Populate>;
     partner2?: Omit<I_UserPartner, T_UserPartner_Populate>;
     location?: Omit<I_Location, T_Location_Populate>;

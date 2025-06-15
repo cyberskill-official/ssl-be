@@ -1,21 +1,20 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
+import { MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Role } from '#modules/role/index.js';
+import type { I_Input_CreateRole, I_Input_QueryRole } from '#modules/role/index.js';
 
 import { E_Role } from '#modules/role/index.js';
 
 export async function up(db: C_Db) {
+    const roleCtr = new MongoController<I_Input_CreateRole>(db, 'roles');
     const roles = Object.values(E_Role).map(role => ({ name: role }));
-    const roleCtr = new MongoController<I_Role>(db, 'roles');
 
     const existingRoles = await roleCtr.findAll({ name: { $in: roles.map(role => role.name) } });
 
     if (!existingRoles.success) {
-        log.error('Failed to find existing roles.');
-        return;
+        return log.error('Failed to find existing roles.');
     }
 
     const existingRoleNames = new Set(existingRoles?.result?.map(role => role.name));
@@ -23,30 +22,27 @@ export async function up(db: C_Db) {
     const newRoles = roles.filter(role => !existingRoleNames.has(role.name));
 
     if (!newRoles.length) {
-        log.info('No new roles to create.');
-        return;
+        return log.info('No new roles to create.');
     }
 
-    const rolesCreated = await roleCtr.createMany(newRoles.map(role => ({ ...role, ...mongo.createGenericFields() })));
+    const rolesCreated = await roleCtr.createMany(newRoles);
 
     if (!rolesCreated.success) {
-        log.error(`Failed to create some roles.`);
-        return;
+        return log.error(`Failed to create some roles.`);
     }
 
-    log.success(`Roles created successfully: ${newRoles.map(role => role.name).join(', ')}`);
+    log.success(`Roles created successfully.`);
 }
 
 export async function down(db: C_Db) {
+    const roleCtr = new MongoController<I_Input_QueryRole>(db, 'roles');
     const roles = Object.values(E_Role);
-    const roleCtr = new MongoController<I_Role>(db, 'roles');
 
     const rolesDeleted = await roleCtr.deleteMany({ name: { $in: roles } });
 
     if (!rolesDeleted.success) {
-        log.error('Failed to delete some roles.');
-        return;
+        return log.error('Failed to delete some roles.');
     }
 
-    log.success(`Roles deleted successfully: ${roles.join(', ')}`);
+    log.success(`Roles deleted successfully.`);
 }
