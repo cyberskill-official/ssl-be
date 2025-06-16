@@ -8,3 +8,61 @@ type T_Language {
     native: String
     isRTL: Boolean
 }
+
+input Input_QueryLanguage {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    code: String
+    name: String
+    native: String
+    isRTL: Boolean
+}
+
+input Input_CreateLanguage {
+    code: String
+    name: String
+    native: String
+    isRTL: Boolean
+}
+
+input Input_UpdateLanguage {
+    isDel: Boolean
+    code: String
+    name: String
+    native: String
+    isRTL: Boolean
+}
+
+type T_Response_Language {
+    success: Boolean
+    message: String
+    result: T_Language
+}
+
+type T_Languages {
+    docs: [T_Language]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Languages {
+    success: Boolean
+    message: String
+    result: T_Languages
+}
+
+type Query {
+    getLanguage(filter: Input_QueryLanguage!, projection: JSON, options: JSON, populate: JSON): T_Response_Language!
+    getLanguages(filter: Input_QueryLanguage, options: JSON): T_Response_Languages!
+}

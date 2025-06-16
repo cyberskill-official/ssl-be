@@ -14,8 +14,8 @@ export enum E_ModerationLogAction {
 }
 
 export interface I_ModerationLog extends I_GenericDocument {
-    action: E_ModerationLogAction;
-    userId: string;
+    action?: E_ModerationLogAction;
+    userId?: string;
     user?: I_User;
     moderationMediaId?: string;
     moderationMedia?: I_ModerationMedia;

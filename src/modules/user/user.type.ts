@@ -2,7 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Language } from '#modules/language/index.js';
-import type { I_Input_Location, I_Location } from '#modules/location/index.js';
+import type { I_Input_Location, I_Location } from '#modules/location/location/index.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
 
 export enum E_AccountType {

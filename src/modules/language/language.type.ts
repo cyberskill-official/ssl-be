@@ -1,14 +1,17 @@
-import type { I_GenericDocument } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
+import type {
+    TLanguageCode,
+} from 'countries-list';
 
-export interface I_Language_PayLoad {
-    code?: string;
+export interface I_Language extends I_GenericDocument {
+    code?: TLanguageCode;
     name?: string;
     native?: string;
     isRTL?: boolean;
 }
 
-export interface I_Language extends I_Language_PayLoad, I_GenericDocument { }
+export interface I_Input_QueryLanguage extends I_Language { }
 
-export interface I_QueryLanguage extends I_Language { }
+export interface I_Input_CreateLanguage extends Omit<I_Language, T_Omit_Create> {}
 
-export interface I_MutateLanguage extends Omit<I_Language, 'id' | 'createdAt' | 'updatedAt'> { }
+export interface I_Input_UpdateLanguage extends Omit<I_Language, T_Omit_Update> {}

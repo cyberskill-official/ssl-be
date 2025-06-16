@@ -1,6 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Language } from '#modules/country/country.type.js';
+import type { I_Language } from '#modules/language/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
@@ -40,7 +40,7 @@ export interface I_Blog extends I_GenericDocument {
     authorName?: string;
     websiteName?: string;
     websiteURL?: string;
-    category: E_BlogCategory_Blog | E_BlogCategory_Podcast;
+    category?: E_BlogCategory_Blog | E_BlogCategory_Podcast;
     featuredImage?: string;
     contentHeadline?: string;
     contentSubHeadline?: string;
@@ -48,7 +48,7 @@ export interface I_Blog extends I_GenericDocument {
     relatedBlogsIds?: string[];
     relatedBlogs?: I_Blog[];
     languageId?: string;
-    language: I_Language;
+    language?: I_Language;
     hostName?: string;
     logo?: string;
     cover?: string;
@@ -56,7 +56,7 @@ export interface I_Blog extends I_GenericDocument {
     socialPlatform?: E_SocialPlatform;
     socialURL?: string;
     authorId?: string;
-    author: I_User;
+    author?: I_User;
     seo?: I_Seo;
 }
 

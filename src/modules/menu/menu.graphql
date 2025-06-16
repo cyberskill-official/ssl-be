@@ -70,3 +70,14 @@ type T_Response_Menus {
     message: String
     result: T_Menus
 }
+
+type Query {
+    getMenu(filter: Input_QueryMenu!, projection: JSON, options: JSON, populate: JSON): T_Response_Menu!
+    getMenus(filter: Input_QueryMenu, options: JSON): T_Response_Menus!
+}
+
+type Mutation {
+    createMenu(doc: Input_CreateMenu!): T_Response_Menu!
+    updateMenu(filter: Input_QueryMenu!, update: Input_UpdateMenu!, options: JSON): T_Response_Menu!
+    deleteMenu(filter: Input_QueryMenu!, options: JSON): T_Response_Menu!
+}
