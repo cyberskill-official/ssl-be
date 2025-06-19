@@ -17,4 +17,4 @@ jobs:
           PRIVATE_KEY: ${{ secrets.SSL_DEVELOPMENT_PRIVATE_KEY }}
           PATH: ssl-be
           BRANCH: ${GITHUB_REF##*/}
-          name: be
+          NAME: be
