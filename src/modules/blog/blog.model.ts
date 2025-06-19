@@ -2,8 +2,11 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { SeoSchema } from '#modules/seo/index.js';
+import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import { E_BlogCategory_Blog, E_BlogCategory_Podcast, E_SocialPlatform, type I_Blog } from './blog.type.js';
+import type { I_Blog } from './blog.type.js';
+
+import { E_BlogCategory_Blog, E_BlogCategory_Podcast } from './blog.type.js';
 
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,

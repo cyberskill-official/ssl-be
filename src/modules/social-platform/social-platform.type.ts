@@ -1,0 +1,14 @@
+export enum E_SocialPlatform {
+    FACEBOOK = 'FACEBOOK',
+    TWITTER = 'TWITTER',
+    INSTAGRAM = 'INSTAGRAM',
+    LINKEDIN = 'LINKEDIN',
+    TIKTOK = 'TIKTOK',
+    YOUTUBE = 'YOUTUBE',
+    PINTEREST = 'PINTEREST',
+    SNAPCHAT = 'SNAPCHAT',
+    REDDIT = 'REDDIT',
+    TUMBLR = 'TUMBLR',
+    MEDIUM = 'MEDIUM',
+    VIMEO = 'VIMEO',
+}

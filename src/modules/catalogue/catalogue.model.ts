@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_CatalogueType, type I_Catalogue } from './catalogue.type.js';
+import type { I_Catalogue } from './catalogue.type.js';
+
+import { E_CatalogueType } from './catalogue.type.js';
 
 export const CatalogueModel = mongo.createModel<I_Catalogue>({
     mongoose,

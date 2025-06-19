@@ -1,0 +1,80 @@
+type T_SocialLink {
+    type: E_SocialPlatform
+    url: String
+}
+
+input Input_SocialLink {
+    type: E_SocialPlatform!
+    url: String!
+}
+
+type T_Footer {
+    socialLinks: [T_SocialLink]
+}
+
+input Input_Footer {
+    socialLinks: [Input_SocialLink]!
+}
+
+type T_Setting {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    footer: T_Footer
+}
+
+input Input_QuerySetting {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    footer: Input_Footer
+}
+
+input Input_CreateSetting{
+    footer: Input_Footer!
+}
+
+input Input_UpdateSetting {
+    isDel: Boolean
+    footer: Input_Footer
+}
+
+type T_Response_Setting {
+    success: Boolean
+    message: String
+    result: T_Setting
+}
+
+type T_Settings {
+    docs: [T_Setting]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Settings {
+    success: Boolean
+    message: String
+    result: T_Settings
+}
+
+type Query {
+    getSetting(filter: Input_QuerySetting!, projection: JSON, options: JSON, populate: JSON): T_Response_Setting!
+    getSettings(filter: Input_QuerySetting, options: JSON): T_Response_Settings!
+}
+
+type Mutation {
+    createSetting(doc: Input_CreateSetting!): T_Response_Setting!
+    updateSetting(filter: Input_QuerySetting!, update: Input_UpdateSetting, options: JSON): T_Response_Setting!
+    deleteSetting(filter: Input_QuerySetting!, options: JSON): T_Response_Setting!
+}

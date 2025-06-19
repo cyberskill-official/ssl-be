@@ -2,7 +2,8 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
-import type { I_User } from '#modules/user/user.type.js';
+import type { E_SocialPlatform } from '#modules/social-platform/index.js';
+import type { I_User } from '#modules/user/index.js';
 
 export enum E_BlogCategory_Blog {
     TRAVELS = 'TRAVELS',
@@ -18,21 +19,6 @@ export enum E_BlogCategory_Podcast {
     DATING = 'DATING',
     SEXUALITY = 'SEXUALITY',
     TRAVEL = 'TRAVEL',
-}
-
-export enum E_SocialPlatform {
-    FACEBOOK = 'FACEBOOK',
-    TWITTER = 'TWITTER',
-    INSTAGRAM = 'INSTAGRAM',
-    LINKEDIN = 'LINKEDIN',
-    TIKTOK = 'TIKTOK',
-    YOUTUBE = 'YOUTUBE',
-    PINTEREST = 'PINTEREST',
-    SNAPCHAT = 'SNAPCHAT',
-    REDDIT = 'REDDIT',
-    TUMBLR = 'TUMBLR',
-    MEDIUM = 'MEDIUM',
-    VIMEO = 'VIMEO',
 }
 
 export interface I_Blog extends I_GenericDocument {

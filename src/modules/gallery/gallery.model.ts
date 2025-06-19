@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_GalleryStatus, E_GalleryType, type I_Gallery } from './gallery.type.js';
+import type { I_Gallery } from './gallery.type.js';
+
+import { E_GalleryStatus, E_GalleryType } from './gallery.type.js';
 
 export const GalleryModel = mongo.createModel<I_Gallery>({
     mongoose,

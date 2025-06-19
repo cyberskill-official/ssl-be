@@ -3,7 +3,9 @@ import mongoose from 'mongoose';
 
 import { NoteSchema } from '#modules/note/index.js';
 
-import { E_ReportType, type I_Report } from './report.type.js';
+import type { I_Report } from './report.type.js';
+
+import { E_ReportType } from './report.type.js';
 
 export const ReportModel = mongo.createModel<I_Report>({
     mongoose,

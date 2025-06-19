@@ -9,21 +9,6 @@ enum E_BlogCategory {
     TRAVEL
 }
 
-enum E_SocialPlatform {
-    FACEBOOK
-    TWITTER
-    INSTAGRAM
-    LINKEDIN
-    TIKTOK
-    YOUTUBE
-    PINTEREST
-    SNAPCHAT
-    REDDIT
-    TUMBLR
-    MEDIUM
-    VIMEO
-}
-
 type T_Blog {
     id: String
     isDel: Boolean

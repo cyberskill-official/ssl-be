@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_AdvertisementSlot, type I_Advertisement } from './advertisement.type.js';
+import type { I_Advertisement } from './advertisement.type.js';
+
+import { E_AdvertisementSlot } from './advertisement.type.js';
 
 export const AdvertisementModel = mongo.createModel<I_Advertisement>({
     mongoose,

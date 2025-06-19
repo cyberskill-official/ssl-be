@@ -1,0 +1,14 @@
+enum E_SocialPlatform {
+    FACEBOOK
+    TWITTER
+    INSTAGRAM
+    LINKEDIN
+    TIKTOK
+    YOUTUBE
+    PINTEREST
+    SNAPCHAT
+    REDDIT
+    TUMBLR
+    MEDIUM
+    VIMEO
+}

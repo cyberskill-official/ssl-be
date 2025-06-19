@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_InvitationStatus, E_InvitationType, type I_Invitation } from './invitation.type.js';
+import type { I_Invitation } from './invitation.type.js';
+
+import { E_InvitationStatus, E_InvitationType } from './invitation.type.js';
 
 export const InvitationModel = mongo.createModel<I_Invitation>({
     mongoose,

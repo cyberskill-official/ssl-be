@@ -3,7 +3,9 @@ import mongoose from 'mongoose';
 
 import { LocationSchema } from '#modules/location/location/index.js';
 
-import { E_EventType, type I_Event } from './event.type.js';
+import type { I_Event } from './event.type.js';
+
+import { E_EventType } from './event.type.js';
 
 export const EventModel = mongo.createModel<I_Event>({
     mongoose,
