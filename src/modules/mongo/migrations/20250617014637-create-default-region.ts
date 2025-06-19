@@ -93,6 +93,8 @@ export async function up(db: C_Db) {
 
                     for (const { id, country_id, country_name, state_id, state_name, ...cityRest } of citiesFound) {
                         cityRest.stateId = stateCreated.result.id;
+                        cityRest.countryId = countryCreated.result.id;
+
 
                         const cityCreated = await citytr.createOne(cityRest);
 
