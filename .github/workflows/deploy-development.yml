@@ -1,0 +1,20 @@
+name: 🚀 CI - Deploy development
+on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    name: 🚀 Deploy development
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Deploy
+        uses: cyberskill-world/.github/actions/deploy@main
+        with:
+          HOST: ${{ vars.SSL_DEVELOPMENT_HOST }}
+          USERNAME: ${{ vars.SSL_DEVELOPMENT_USERNAME }}
+          PRIVATE_KEY: ${{ secrets.SSL_DEVELOPMENT_PRIVATE_KEY }}
+          PATH: ssl-be
+          BRANCH: develop
+          name: be
