@@ -1,9 +1,9 @@
-name: 🚀 CI - Deploy development
+name: 🚀 CI - Deploy
 on:
   workflow_dispatch:
 jobs:
   deploy:
-    name: 🚀 Deploy development
+    name: 🚀 Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -16,5 +16,5 @@ jobs:
           USERNAME: ${{ vars.SSL_DEVELOPMENT_USERNAME }}
           PRIVATE_KEY: ${{ secrets.SSL_DEVELOPMENT_PRIVATE_KEY }}
           PATH: ssl-be
-          BRANCH: develop
+          BRANCH: ${GITHUB_REF##*/}
           name: be
