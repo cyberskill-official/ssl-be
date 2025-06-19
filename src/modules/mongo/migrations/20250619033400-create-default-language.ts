@@ -196,28 +196,11 @@ const languages = [
 export async function up(db: C_Db) {
     const languageCtr = new MongoController<I_Language>(db, 'languages');
 
-    const existingLanguages = await languageCtr.findAll({
-        name: { $in: languages.map(language => language.name) },
-    });
-
-    if (!existingLanguages.success) {
-        return log.error('Failed to find existing languages.');
-    }
-
-    const existingTagNames = new Set(existingLanguages.result.map(language => language.name));
-
-    const newLanguages = languages
-        .filter(language => !existingTagNames.has(language.name))
+    const createdTag = await languageCtr.createMany(languages
         .map(language => ({
             ...language,
             code: language.code as I_Language['code'],
-        }));
-
-    if (!newLanguages.length) {
-        return log.info('No new languages to create.');
-    }
-
-    const createdTag = await languageCtr.createMany(newLanguages);
+        })));
 
     if (!createdTag.success) {
         return log.error('Failed to create some languages.');

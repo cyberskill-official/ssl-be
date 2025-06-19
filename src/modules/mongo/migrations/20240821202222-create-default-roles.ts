@@ -11,21 +11,7 @@ export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Role>(db, 'roles');
     const roles = Object.values(E_Role).map(role => ({ name: role }));
 
-    const existingRoles = await roleCtr.findAll({ name: { $in: roles.map(role => role.name) } });
-
-    if (!existingRoles.success) {
-        return log.error('Failed to find existing roles.');
-    }
-
-    const existingRoleNames = new Set(existingRoles?.result?.map(role => role.name));
-
-    const newRoles = roles.filter(role => !existingRoleNames.has(role.name));
-
-    if (!newRoles.length) {
-        return log.info('No new roles to create.');
-    }
-
-    const rolesCreated = await roleCtr.createMany(newRoles);
+    const rolesCreated = await roleCtr.createMany(roles);
 
     if (!rolesCreated.success) {
         return log.error(`Failed to create some roles.`);

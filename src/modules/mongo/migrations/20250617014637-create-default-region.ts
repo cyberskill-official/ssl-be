@@ -47,64 +47,109 @@ export async function up(db: C_Db) {
     const subregionCtr = new MongoController<I_SubRegion>(db, 'subregions');
     const countryCtr = new MongoController<I_Country>(db, 'countries');
     const stateCtr = new MongoController<I_State>(db, 'states');
-    const citytr = new MongoController<I_City>(db, 'cities');
+    const cityCtr = new MongoController<I_City>(db, 'cities');
 
-    for (const { id, translations, ...rest } of regions) {
-        const regionCreated = await regionCtr.createOne(rest);
+    try {
+        const regionCreated = await regionCtr.createMany(regions);
 
         if (!regionCreated.success) {
-            return log.error(`Failed to create region: ${rest.name}`);
+            return log.error(`Failed to create regions`);
         }
 
-        const subregionsFound = subregions.filter((sub: I_SubRegionRaw) => sub.region_id === id);
+        const regionMap = new Map(regions.map(region => [region.id, regionCreated.result.find(r => r.id === region.id)]));
 
-        for (const { id, region_id, translations, ...subRest } of subregionsFound) {
-            subRest.regionId = regionCreated.result.id;
+        const subregionMap = new Map<string, I_SubRegionRaw[]>();
 
-            const subregionCreated = await subregionCtr.createOne(subRest);
-
-            if (!subregionCreated.success) {
-                return log.error(`Failed to create subregion: ${subRest.name}`);
+        subregions.forEach((subregion) => {
+            if (!subregionMap.has(subregion.region_id)) {
+                subregionMap.set(subregion.region_id, []);
             }
+            subregionMap.get(subregion.region_id)!.push(subregion);
+        });
 
-            const countriesFound = countries.filter((country: I_CountryRaw) => country.subregion_id === id);
+        for (const [regionId, subregionList] of subregionMap.entries()) {
+            const region = regionMap.get(regionId);
 
-            for (const { id, region_id, region, subregion_id, subregion, translations, ...countryRest } of countriesFound) {
-                countryRest.subRegionId = subregionCreated.result.id;
+            if (region) {
+                const subregionCreated = await subregionCtr.createMany(subregionList.map(sub => ({ ...sub, regionId: region.id })));
 
-                const countryCreated = await countryCtr.createOne(countryRest);
+                if (!subregionCreated.success) {
+                    log.error(`Failed to create subregions for region: ${region.name}`);
+                    continue;
+                }
+            }
+        }
+
+        const countryMap = new Map<string, I_CountryRaw[]>();
+
+        countries.forEach((country) => {
+            if (!countryMap.has(country.subregion_id)) {
+                countryMap.set(country.subregion_id, []);
+            }
+            countryMap.get(country.subregion_id)!.push(country);
+        });
+
+        for (const [subregionId, countryList] of countryMap.entries()) {
+            const subregion = subregions.find(s => s.id === subregionId);
+
+            if (subregion) {
+                const countryCreated = await countryCtr.createMany(countryList.map(country => ({ ...country, subRegionId: subregion.id })));
 
                 if (!countryCreated.success) {
-                    return log.error(`Failed to create country: ${countryRest.name}`);
-                }
-
-                const statesFound = states.filter((state: I_StateRaw) => state.country_id === id);
-
-                for (const { id, country_id, country_name, ...stateRest } of statesFound) {
-                    stateRest.countryId = countryCreated.result.id;
-
-                    const stateCreated = await stateCtr.createOne(stateRest);
-
-                    if (!stateCreated.success) {
-                        return log.error(`Failed to create state: ${stateRest.name}`);
-                    }
-
-                    const citiesFound = cities.filter((city: I_CityRaw) => city.state_id === id);
-
-                    for (const { id, country_id, country_name, state_id, state_name, ...cityRest } of citiesFound) {
-                        cityRest.stateId = stateCreated.result.id;
-                        cityRest.countryId = countryCreated.result.id;
-
-
-                        const cityCreated = await citytr.createOne(cityRest);
-
-                        if (!cityCreated.success) {
-                            return log.error(`Failed to create city: ${cityRest.name}`);
-                        }
-                    }
+                    log.error(`Failed to create countries for subregion: ${subregion.name}`);
+                    continue;
                 }
             }
         }
+
+        const stateMap = new Map<string, I_StateRaw[]>();
+
+        states.forEach((state) => {
+            if (!stateMap.has(state.country_id)) {
+                stateMap.set(state.country_id, []);
+            }
+            stateMap.get(state.country_id)!.push(state);
+        });
+
+        for (const [countryId, stateList] of stateMap.entries()) {
+            const country = countries.find(c => c.id === countryId);
+
+            if (country) {
+                const stateCreated = await stateCtr.createMany(stateList.map(state => ({ ...state, countryId: country.id })));
+
+                if (!stateCreated.success) {
+                    log.error(`Failed to create states for country: ${country.name}`);
+                    continue;
+                }
+            }
+        }
+
+        const cityMap = new Map<string, I_CityRaw[]>();
+
+        cities.forEach((city) => {
+            if (!cityMap.has(city.state_id)) {
+                cityMap.set(city.state_id, []);
+            }
+            cityMap.get(city.state_id)!.push(city);
+        });
+
+        for (const [stateId, cityList] of cityMap.entries()) {
+            const state = states.find(s => s.id === stateId);
+
+            if (state) {
+                const cityCreated = await cityCtr.createMany(cityList.map(city => ({ ...city, stateId: state.id })));
+
+                if (!cityCreated.success) {
+                    log.error(`Failed to create cities for state: ${state.name}`);
+                    continue;
+                }
+            }
+        }
+
+        log.success('Migration completed successfully');
+    }
+    catch (error) {
+        log.error('Error during migration process', error);
     }
 }
 
@@ -113,41 +158,20 @@ export async function down(db: C_Db) {
     const subregionCtr = new MongoController<I_SubRegion>(db, 'subregions');
     const countryCtr = new MongoController<I_Country>(db, 'countries');
     const stateCtr = new MongoController<I_State>(db, 'states');
-    const citytr = new MongoController<I_State>(db, 'cities');
+    const cityCtr = new MongoController<I_City>(db, 'cities');
 
-    const regionDeleted = await regionCtr.deleteMany({});
+    try {
+        await Promise.all([
+            regionCtr.deleteMany({ name: { $in: regions.map(r => r.name) } }),
+            subregionCtr.deleteMany({ name: { $in: subregions.map(s => s.name) } }),
+            countryCtr.deleteMany({ name: { $in: countries.map(c => c.name) } }),
+            stateCtr.deleteMany({ name: { $in: states.map(s => s.name) } }),
+            cityCtr.deleteMany({ name: { $in: cities.map(c => c.name) } }),
+        ]);
 
-    if (!regionDeleted.success) {
-        return log.error('Failed to delete regions.');
+        log.success('All entities deleted successfully');
     }
-
-    log.success('Regions deleted successfully.');
-
-    const subregionDeleted = await subregionCtr.deleteMany({});
-
-    if (!subregionDeleted.success) {
-        return log.error('Failed to delete subregions.');
-    }
-
-    log.success('Subregions deleted successfully.');
-
-    const countryDeleted = await countryCtr.deleteMany({});
-
-    if (!countryDeleted.success) {
-        return log.error('Failed to delete countries.');
-    }
-
-    log.success('Countries deleted successfully.');
-
-    const stateDeleted = await stateCtr.deleteMany({});
-
-    if (!stateDeleted.success) {
-        return log.error('Failed to delete states');
-    }
-
-    const cityDeleted = await citytr.deleteMany({});
-
-    if (!cityDeleted.success) {
-        return log.error('Failed to delete cities');
+    catch (error) {
+        log.error('Error during down migration', error);
     }
 }

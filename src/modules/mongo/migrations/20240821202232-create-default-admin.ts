@@ -19,12 +19,6 @@ export async function up(db: C_Db) {
         return log.error('ADMIN role not found. Cannot create default admin user.');
     }
 
-    const existingAdminUser = await userCtr.findOne({ email: 'admin@secretswingerlust.com' });
-
-    if (existingAdminUser.success) {
-        return log.info('Default admin user already exists.');
-    }
-
     const adminUser = {
         username: 'admin',
         email: 'admin@secretswingerlust.com',

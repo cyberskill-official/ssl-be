@@ -109,23 +109,7 @@ const tags = [
 export async function up(db: C_Db) {
     const tagCtr = new MongoController<I_Tag>(db, 'tags');
 
-    const existingTags = await tagCtr.findAll({
-        name: { $in: tags.map(tag => tag.name) },
-    });
-
-    if (!existingTags.success) {
-        return log.error('Failed to find existing tags.');
-    }
-
-    const existingTagNames = new Set(existingTags.result.map(tag => tag.name));
-
-    const newTags = tags.filter(tag => !existingTagNames.has(tag.name));
-
-    if (!newTags.length) {
-        return log.info('No new tags to create.');
-    }
-
-    const createdTag = await tagCtr.createMany(newTags);
+    const createdTag = await tagCtr.createMany(tags);
 
     if (!createdTag.success) {
         return log.error('Failed to create some tags.');
