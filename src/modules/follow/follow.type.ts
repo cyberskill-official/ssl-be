@@ -21,6 +21,7 @@ export interface I_Input_CreateFollow extends Omit<I_Follow, T_Omit_Create | T_F
 export interface I_Input_Follow {
     followId: string;
 }
+
 export interface I_Input_UnFollow {
     followId: string;
 }

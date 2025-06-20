@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindPaging } from '@
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateFollow, I_Input_QueryFollow } from './follow.type.js';
+import type { I_Input_Follow, I_Input_UnFollow } from './follow.type.js';
 
 import { followCtr } from './follow.controller.js';
 
@@ -12,8 +12,8 @@ const followResolver = {
         getFollowings: (_parent: unknown, args: I_Input_FindPaging, context: I_Context) => followCtr.getFollowings(context, args),
     },
     Mutation: {
-        follow: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateFollow>, context: I_Context) => followCtr.createFollow(context, args),
-        unFollow: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryFollow>, context: I_Context) => followCtr.deleteFollow(context, args),
+        follow: (_parent: unknown, args: I_Input_CreateOne<I_Input_Follow>, context: I_Context) => followCtr.follow(context, args),
+        unFollow: (_parent: unknown, args: I_Input_DeleteOne<I_Input_UnFollow>, context: I_Context) => followCtr.unFollow(context, args),
     },
 };
 

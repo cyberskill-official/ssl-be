@@ -1,0 +1,54 @@
+type T_LegalConsent {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    legalDocumentId: String
+    legalDocument: T_LegalDocument
+    userId: String
+    user: T_User
+    version: Int
+}
+
+input Input_QueryLegalConsent {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    legalDocumentId: String
+    userId: String
+    version: Int
+}
+
+input Input_CreateLegalConsent {
+    legalDocumentId: String!
+    userId: String!
+    version: Int!
+}
+
+type T_Response_LegalConsent {
+    success: Boolean
+    message: String
+    result: T_LegalConsent
+}
+
+type T_LegalConsents {
+    docs: [T_LegalConsent]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_LegalConsents {
+    success: Boolean
+    message: String
+    result: T_LegalConsents
+}
