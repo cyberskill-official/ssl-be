@@ -37,4 +37,4 @@ export interface I_Input_CreateTag extends Omit<I_Tag, T_Omit_Create | T_Tag_Pop
     name: string;
 }
 
-export interface I_Input_UpdateTag extends Omit<I_Tag, T_Omit_Update | T_Tag_Populate> {}
+export interface I_Input_UpdateTag extends Omit<I_Tag, T_Omit_Update | T_Tag_Populate> { }

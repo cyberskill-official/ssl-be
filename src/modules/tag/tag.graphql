@@ -52,7 +52,6 @@ input Input_CreateTag {
 input Input_UpdateTag {
     isDel: Boolean
     name: String
-    type: E_TagType
     isCustom: Boolean
     createdById: String
     usageCount: Int
@@ -83,4 +82,15 @@ type T_Response_Tags {
     success: Boolean
     message: String
     result: T_Tags
+}
+
+type Query {
+    getTag(filter: Input_QueryTag!, projection: JSON, options: JSON, populate: JSON): T_Response_Tag!
+    getTags(filter: Input_QueryTag, options: JSON): T_Response_Tags!
+}
+
+type Mutation {
+    createTag(doc: Input_CreateTag!): T_Response_Tag!
+    updateTag(filter: Input_QueryTag!, update: Input_UpdateTag, options: JSON): T_Response_Tag!
+    deleteTag(filter: Input_QueryTag!, options: JSON): T_Response_Tag!
 }

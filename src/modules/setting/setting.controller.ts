@@ -7,7 +7,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateSetting, I_Input_QuerySetting, I_Input_UpdateSetting, I_Setting } from './setting.type.js';
+import type { I_Input_CreateSetting, I_Input_QuerySetting, I_Input_UpdateSetting, I_Setting, I_SocialLink } from './setting.type.js';
 
 import { SettingsModel } from './setting.model.js';
 
@@ -74,7 +74,29 @@ export const settingCtr = {
             });
         }
 
-        return await mongooseCtr.updateOne({ filter, update, options });
+        const socialLinks = update.footer?.socialLinks;
+        if (socialLinks) {
+            const platforms = socialLinks.map((link: I_SocialLink) => link.type);
+            const uniquePlatforms = new Set(platforms);
+
+            if (uniquePlatforms.size !== platforms.length) {
+                throwError({
+                    message: 'Each social platform must be unique in socialLinks',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            for (const link of socialLinks) {
+                if (!link.type || !link.url) {
+                    throwError({
+                        message: 'Each social link must have both platform and url',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+            }
+        }
+
+        return await mongooseCtr.updateOne(filter, update, options);
     },
     deleteSetting: async (
         context: I_Context,
