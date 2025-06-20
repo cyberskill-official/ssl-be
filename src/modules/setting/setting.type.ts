@@ -8,17 +8,18 @@ export interface I_SocialLink {
 }
 
 export interface I_Footer {
-    socialLinks: I_SocialLink[];
+    socialLinks?: I_SocialLink[];
 }
 
-export interface I_SettingsStoreLink_Response {
-    success: boolean;
-    message: string;
-    result: I_SocialLink[];
+export interface I_AdminNotification {
+    successfulPayments?: boolean;
+    failedPayments?: boolean;
+    newMembers?: boolean;
 }
 
 export interface I_Setting extends I_GenericDocument {
-    footer: I_Footer;
+    footer?: I_Footer;
+    adminNotification?: I_AdminNotification;
 }
 
 export interface I_Input_QuerySetting extends I_Setting { }

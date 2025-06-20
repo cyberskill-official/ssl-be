@@ -13,7 +13,19 @@ type T_Footer {
 }
 
 input Input_Footer {
-    socialLinks: [Input_SocialLink]!
+    socialLinks: [Input_SocialLink]
+}
+
+type T_AdminNotification {
+    successfulPayments: Boolean
+    failedPayments: Boolean
+    newMembers: Boolean
+}
+
+input Input_AdminNotification {
+    successfulPayments: Boolean
+    failedPayments: Boolean
+    newMembers: Boolean
 }
 
 type T_Setting {
@@ -22,6 +34,7 @@ type T_Setting {
     createdAt: DateTime
     updatedAt: DateTime
     footer: T_Footer
+    adminNotification: T_AdminNotification
 }
 
 input Input_QuerySetting {
@@ -30,15 +43,18 @@ input Input_QuerySetting {
     createdAt: DateTime
     updatedAt: DateTime
     footer: Input_Footer
+    adminNotification: Input_AdminNotification
 }
 
-input Input_CreateSetting{
+input Input_CreateSetting {
     footer: Input_Footer!
+    adminNotification: Input_AdminNotification!
 }
 
 input Input_UpdateSetting {
     isDel: Boolean
     footer: Input_Footer
+    adminNotification: Input_AdminNotification
 }
 
 type T_Response_Setting {

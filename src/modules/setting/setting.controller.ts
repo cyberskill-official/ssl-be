@@ -30,25 +30,26 @@ export const settingCtr = {
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateSetting>,
     ): Promise<I_Return<I_Setting>> => {
-        const { footer: { socialLinks } } = doc;
+        const { footer } = doc;
 
-        if (socialLinks.length === 0) {
+        if (footer?.socialLinks?.length === 0) {
             throwError({
                 message: 'At least one social link is required',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const platforms = socialLinks.map(link => link.type);
+        const platforms = footer?.socialLinks?.map(link => link.type);
         const uniquePlatforms = new Set(platforms);
-        if (uniquePlatforms.size !== platforms.length) {
+
+        if (uniquePlatforms.size !== platforms?.length) {
             throwError({
                 message: 'Each social platform must be unique in socialLinks',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        for (const link of socialLinks) {
+        for (const link of footer?.socialLinks || []) {
             if (!link.type || !link.url) {
                 throwError({
                     message: 'Each social link must have both platform and url',
@@ -57,7 +58,9 @@ export const settingCtr = {
             }
         }
 
-        doc.footer.socialLinks = socialLinks;
+        if (doc.footer) {
+            doc.footer.socialLinks = footer?.socialLinks;
+        }
 
         return mongooseCtr.createOne(doc);
     },
@@ -75,11 +78,12 @@ export const settingCtr = {
         }
 
         const socialLinks = update.footer?.socialLinks;
+
         if (socialLinks) {
             const platforms = socialLinks.map((link: I_SocialLink) => link.type);
             const uniquePlatforms = new Set(platforms);
 
-            if (uniquePlatforms.size !== platforms.length) {
+            if (uniquePlatforms.size !== platforms?.length) {
                 throwError({
                     message: 'Each social platform must be unique in socialLinks',
                     status: RESPONSE_STATUS.BAD_REQUEST,
@@ -101,7 +105,7 @@ export const settingCtr = {
     deleteSetting: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QuerySetting>,
-    ): Promise <I_Return <I_Setting>> => {
+    ): Promise<I_Return<I_Setting>> => {
         const settingFound = await settingCtr.getSetting(context, { filter });
 
         if (!settingFound.success) {

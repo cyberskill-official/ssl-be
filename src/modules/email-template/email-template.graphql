@@ -1,0 +1,59 @@
+type T_EmailTemplate {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    subject: String
+    content: String
+}
+
+input Input_QueryEmailTemplate {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    subject: String
+    content: String
+}
+
+input Input_CreateEmailTemplate {
+    name: String!
+    subject: String!
+    content: String!
+}
+
+input Input_UpdateEmailTemplate {
+    isDel: Boolean
+    name: String
+    subject: String
+    content: String
+}
+
+type T_Response_EmailTemplate {
+    success: Boolean
+    message: String
+    result: T_EmailTemplate
+}
+
+type T_EmailTemplates {
+    docs: [T_EmailTemplate]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_EmailTemplates {
+    success: Boolean
+    message: String
+    result: T_EmailTemplates
+}

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import type { I_Footer, I_Setting, I_SocialLink } from './setting.type.js';
+import type { I_AdminNotification, I_Footer, I_Setting, I_SocialLink } from './setting.type.js';
 
 const SocialLinksSchema = mongo.createSchema<I_SocialLink>({
     standalone: true,
@@ -39,13 +39,25 @@ const FooterSchema = mongo.createSchema<I_Footer>({
     schema: {
         socialLinks: {
             type: [SocialLinksSchema],
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Social links are required for footer',
-                },
-            ],
+        },
+    },
+});
+
+const AdminNotificationSchema = mongo.createSchema<I_AdminNotification>({
+    standalone: true,
+    mongoose,
+    schema: {
+        successfulPayments: {
+            type: Boolean,
+            default: true,
+        },
+        failedPayments: {
+            type: Boolean,
+            default: true,
+        },
+        newMembers: {
+            type: Boolean,
+            default: true,
         },
     },
 });
@@ -57,13 +69,9 @@ export const SettingsModel = mongo.createModel<I_Setting>({
     schema: {
         footer: {
             type: FooterSchema,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Footer settings are required',
-                },
-            ],
+        },
+        adminNotification: {
+            type: AdminNotificationSchema,
         },
     },
 });
