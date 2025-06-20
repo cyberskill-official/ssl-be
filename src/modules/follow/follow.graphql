@@ -10,17 +10,11 @@ type T_Follow {
     follow: T_User
 }
 
-input Input_QueryFollow {
-    id: String
-    isDel: Boolean
-    createdAt: DateTime
-    updatedAt: DateTime
-    userId: String
-    followId: String
+input Input_Follow {
+    followId: String!
 }
 
-input Input_CreateFollow {
-    userId: String!
+input Input_UnFollow {
     followId: String!
 }
 
@@ -55,4 +49,13 @@ type T_Response_Follows {
     success: Boolean
     message: String
     result: T_Follows
+}
+
+type Query {
+    getFollowers(options: JSON): T_Response_Follows!
+    getFollowings(options: JSON): T_Response_Follows!
+}
+type Mutation {
+    follow(doc: Input_Follow!): T_Response_Follow!
+    unFollow(filter: Input_UnFollow!, options: JSON): T_Response_Follow!
 }

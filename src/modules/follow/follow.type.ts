@@ -1,4 +1,4 @@
-import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
+import type { I_GenericDocument, T_Omit_Create } from '@cyberskill/shared/node/mongo';
 
 import type { I_User } from '#modules/user/user.type.js';
 
@@ -18,4 +18,9 @@ export interface I_Input_CreateFollow extends Omit<I_Follow, T_Omit_Create | T_F
     followId: string;
 }
 
-export interface I_Input_UpdateFollow extends Omit<I_Follow, T_Omit_Update | T_Follow_Populate> {}
+export interface I_Input_Follow {
+    followId: string;
+}
+export interface I_Input_UnFollow {
+    followId: string;
+}
