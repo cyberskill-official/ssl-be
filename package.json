@@ -6,14 +6,14 @@
     "main": "./src/server.js",
     "scripts": {
         "build": "run-s tsc tsc:alias copy:graphql",
-        "dev": "run-s prepare migrate:up start:dev",
+        "dev": "run-s ready migrate:up start:dev",
         "lint": "cyberskill lint",
         "lint:fix": "cyberskill lint:fix",
         "lint:inspect": "cyberskill lint:inspect",
         "reset": "cyberskill reset",
         "inspect": "cyberskill inspect",
-        "prepare": "run-s prepare:cyberskill prepare:migrate",
-        "prepare:cyberskill": "cyberskill prepare",
+        "ready": "run-s ready:cyberskill prepare:migrate",
+        "ready:cyberskill": "cyberskill ready",
         "prepare:migrate": "tsx src/modules/mongo/mongo.migrate.ts",
         "migrate": "run-s migrate:create migrate:up",
         "migrate:create": "cyberskill mongo:migrate:create",
@@ -26,7 +26,7 @@
         "copy:graphql": "tsx src/modules/graphql/copy.ts"
     },
     "dependencies": {
-        "@cyberskill/shared": "1.183.0",
+        "@cyberskill/shared": "1.184.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.0.24",
         "@graphql-tools/schema": "10.0.23",
