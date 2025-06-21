@@ -44,6 +44,7 @@ const env = getEnv();
     if (!env.IS_PROD) {
         mongoose.set('debug', true);
     }
+
     await mongoose.connect(env.MONGO_URI);
     log.info(`Running MongoDb at ${env.MONGO_URI}`);
 
@@ -60,6 +61,7 @@ const env = getEnv();
             if (serverCleanup) {
                 await serverCleanup.dispose();
             }
+
             log.info('WebSocket server drained');
         },
     });

@@ -208,6 +208,7 @@ export async function up(db: C_Db) {
 
     log.success('All menus created successfully.');
 }
+
 export async function down(db: C_Db) {
     const languageCtr = new MongoController<I_Language>(db, 'languages');
 

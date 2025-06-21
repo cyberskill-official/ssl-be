@@ -7,8 +7,10 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import type { I_Input_CreateTag, I_Input_QueryTag, I_Input_UpdateTag, I_Tag } from './tag.type.js';
+
 import { TagModel } from './tag.model.js';
-import { E_TagType, type I_Input_CreateTag, type I_Input_QueryTag, type I_Input_UpdateTag, type I_Tag } from './tag.type.js';
+import { E_TagType } from './tag.type.js';
 
 const mongooseCtr = new MongooseController<I_Tag>(TagModel);
 
@@ -40,22 +42,20 @@ export const tagCtr = {
             });
         }
 
-        if (isCustom) {
-            if (type) {
-                const tagsResult = await tagCtr.getTags(context, { filter: { type } });
+        if (type && isCustom) {
+            const tagCount = await mongooseCtr.count({ type });
 
-                if (tagsResult.success && tagsResult.result.totalDocs === 10) {
-                    throwError({
-                        message: `Cannot add custom tag. Maximum of 10 tags reached for category '${type}'.`,
-                        status: RESPONSE_STATUS.BAD_REQUEST,
-                    });
-                }
+            if (tagCount.success && tagCount.result === 10) {
+                throwError({
+                    message: `Maximum custom tags reached for type ${type}. Only 10 tags allowed.`,
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
             }
 
-            if (type && [E_TagType.BODY_TYPE, E_TagType.HEIGHT, E_TagType.HAIR_COLOR, E_TagType.EYE_COLOR, E_TagType.SKIN_TONE].includes(type)) {
-                const tagCustomFound = await tagCtr.getTag(context, { filter: { isCustom: true, type } });
+            if ([E_TagType.BODY_TYPE, E_TagType.HEIGHT, E_TagType.HAIR_COLOR, E_TagType.EYE_COLOR, E_TagType.SKIN_TONE].includes(type)) {
+                const customTagCount = await mongooseCtr.count({ type, isCustom: true });
 
-                if (tagCustomFound.success) {
+                if (customTagCount.success && customTagCount.result === 1) {
                     throwError({
                         message: `Maximum custom tags reached for type ${type}. Only 1 custom tag allowed.`,
                         status: RESPONSE_STATUS.BAD_REQUEST,

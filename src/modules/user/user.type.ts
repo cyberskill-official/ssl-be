@@ -14,6 +14,7 @@ export enum E_Gender {
     MALE = 'MALE',
     FEMALE = 'FEMALE',
 }
+
 export interface I_UserPartner {
     gender?: E_Gender;
     dateOfBirth?: Date;

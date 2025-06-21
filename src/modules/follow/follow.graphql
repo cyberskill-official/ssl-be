@@ -55,6 +55,7 @@ type Query {
     getFollowers(options: JSON): T_Response_Follows!
     getFollowings(options: JSON): T_Response_Follows!
 }
+
 type Mutation {
     follow(doc: Input_Follow!): T_Response_Follow!
     unFollow(filter: Input_UnFollow!, options: JSON): T_Response_Follow!
