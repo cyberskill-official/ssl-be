@@ -26,7 +26,7 @@
         "copy:graphql": "tsx src/modules/graphql/copy.ts"
     },
     "dependencies": {
-        "@cyberskill/shared": "1.184.0",
+        "@cyberskill/shared": "1.188.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.0.24",
         "@graphql-tools/schema": "10.0.23",
@@ -62,7 +62,7 @@
         "@types/node": "24.0.3",
         "eslint": "9.29.0",
         "lint-staged": "16.1.2",
-        "node-modules-inspector": "0.6.9",
+        "node-modules-inspector": "0.6.10",
         "simple-git-hooks": "2.13.0"
     }
 }
