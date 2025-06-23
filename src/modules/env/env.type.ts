@@ -24,4 +24,5 @@ export interface I_Environment {
     ENDPOINT_GRAPHQL: string;
     ENDPOINT_RESTAPI: string;
     JWT_SECRET: string;
+    IPINFO_TOKEN: string;
 }

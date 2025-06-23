@@ -36,6 +36,7 @@ export function getEnv(): I_Environment {
         ENDPOINT_GRAPHQL: str({ default: ENDPOINT_GRAPHQL }),
         ENDPOINT_RESTAPI: str({ default: ENDPOINT_RESTAPI }),
         JWT_SECRET: str(),
+        IPINFO_TOKEN: str(),
     });
 
     const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;
