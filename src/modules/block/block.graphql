@@ -10,6 +10,14 @@ type T_Block {
     block: T_User
 }
 
+input Input_Block{
+    blockId: String!
+}
+
+input Input_UnBlock {
+    blockId: String!
+}
+
 input Input_QueryBlock {
     id: String
     isDel: Boolean
@@ -20,7 +28,6 @@ input Input_QueryBlock {
 }
 
 input Input_CreateBlock {
-    userId: String!
     blockId: String!
 }
 
@@ -55,4 +62,13 @@ type T_Response_Blocks {
     success: Boolean
     message: String
     result: T_Blocks
+}
+
+type Query {
+    getBlocks(options: JSON): T_Response_Blocks!
+}
+
+type Mutation {
+    block(doc: Input_CreateBlock!): T_Response_Block!
+    unBlock(filter: Input_UnBlock!, options: JSON): T_Response_Block!
 }
