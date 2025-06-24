@@ -5,7 +5,10 @@ import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
 import type { I_AdminNotification, I_Footer, I_Setting, I_SocialLink } from './setting.type.js';
 
-const SocialLinksSchema = mongo.createSchema<I_SocialLink>({
+import { E_SettingType } from './setting.type.js';
+import { validateSettingValue } from './setting.validation.js';
+
+export const SocialLinksSchema = mongo.createSchema<I_SocialLink>({
     standalone: true,
     mongoose,
     schema: {
@@ -33,7 +36,7 @@ const SocialLinksSchema = mongo.createSchema<I_SocialLink>({
     },
 });
 
-const FooterSchema = mongo.createSchema<I_Footer>({
+export const FooterSchema = mongo.createSchema<I_Footer>({
     standalone: true,
     mongoose,
     schema: {
@@ -43,7 +46,7 @@ const FooterSchema = mongo.createSchema<I_Footer>({
     },
 });
 
-const AdminNotificationSchema = mongo.createSchema<I_AdminNotification>({
+export const AdminNotificationSchema = mongo.createSchema<I_AdminNotification>({
     standalone: true,
     mongoose,
     schema: {
@@ -67,11 +70,25 @@ export const SettingsModel = mongo.createModel<I_Setting>({
     name: 'Settings',
     pagination: true,
     schema: {
-        footer: {
-            type: FooterSchema,
+        type: {
+            type: String,
+            enum: Object.values(E_SettingType),
+            required: true,
         },
-        adminNotification: {
-            type: AdminNotificationSchema,
+        value: {
+            type: mongoose.Schema.Types.Mixed,
+            required: true,
+            validate: [
+                {
+                    validator(this: { type: E_SettingType }, value: I_Footer | I_AdminNotification) {
+                        if (!this.type) {
+                            return true;
+                        }
+                        return validateSettingValue(value, this.type);
+                    },
+                    message: 'Value does not match the expected schema for the given type',
+                },
+            ],
         },
     },
 });

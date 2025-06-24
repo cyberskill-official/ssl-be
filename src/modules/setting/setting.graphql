@@ -1,3 +1,8 @@
+enum E_SettingType {
+    FOOTER
+    ADMIN_NOTIFICATION
+}
+
 type T_SocialLink {
     type: E_SocialPlatform
     url: String
@@ -28,13 +33,20 @@ input Input_AdminNotification {
     newMembers: Boolean
 }
 
+union T_SettingValue = T_Footer | T_AdminNotification
+
+input Input_Setting {
+    footer: Input_Footer
+    adminNotification: Input_AdminNotification
+}
+
 type T_Setting {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    footer: T_Footer
-    adminNotification: T_AdminNotification
+    type: E_SettingType
+    value: T_SettingValue
 }
 
 input Input_QuerySetting {
@@ -42,19 +54,19 @@ input Input_QuerySetting {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    footer: Input_Footer
-    adminNotification: Input_AdminNotification
+    type: E_SettingType
+    value: Input_Setting
 }
 
 input Input_CreateSetting {
-    footer: Input_Footer
-    adminNotification: Input_AdminNotification
+    type: E_SettingType!
+    value: Input_Setting!
 }
 
 input Input_UpdateSetting {
     isDel: Boolean
-    footer: Input_Footer
-    adminNotification: Input_AdminNotification
+    type: E_SettingType
+    value: Input_Setting
 }
 
 type T_Response_Setting {

@@ -11,4 +11,5 @@ enum E_SocialPlatform {
     TUMBLR
     MEDIUM
     VIMEO
+    OTHER
 }

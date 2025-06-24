@@ -11,4 +11,5 @@ export enum E_SocialPlatform {
     TUMBLR = 'TUMBLR',
     MEDIUM = 'MEDIUM',
     VIMEO = 'VIMEO',
+    OTHER = 'OTHER',
 }
