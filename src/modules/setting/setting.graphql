@@ -47,8 +47,8 @@ input Input_QuerySetting {
 }
 
 input Input_CreateSetting {
-    footer: Input_Footer!
-    adminNotification: Input_AdminNotification!
+    footer: Input_Footer
+    adminNotification: Input_AdminNotification
 }
 
 input Input_UpdateSetting {

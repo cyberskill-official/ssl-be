@@ -18,6 +18,17 @@ export interface I_Input_CreateRole extends Omit<I_Role, T_Omit_Create | T_Role_
 export interface I_Input_UpdateRole extends Omit<I_Role, T_Omit_Update | T_Role_Populate> {}
 
 export enum E_Role {
-    ADMIN = 'ADMIN',
+    STAFF = 'STAFF',
     USER = 'USER',
+}
+
+export enum E_Role_Staff {
+    ADMIN = 'ADMIN',
+    MODERATOR = 'MODERATOR',
+    VIEWER = 'VIEWER',
+}
+
+export enum E_Role_User {
+    FREE_MEMBER = 'FREE_MEMBER',
+    PAID_MEMBER = 'PAID_MEMBER',
 }

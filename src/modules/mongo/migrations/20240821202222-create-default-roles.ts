@@ -18,6 +18,8 @@ export async function up(db: C_Db) {
     }
 
     log.success(`Roles created successfully.`);
+
+    // TODO: create sub-roles for staff and user
 }
 
 export async function down(db: C_Db) {

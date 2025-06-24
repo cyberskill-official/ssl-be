@@ -7,13 +7,13 @@ import bcrypt from 'bcryptjs';
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_User } from '#modules/user/index.js';
 
-import { E_Role } from '#modules/authz/index.js';
+import { E_Role_Staff } from '#modules/authz/index.js';
 
 export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Role>(db, 'roles');
     const userCtr = new MongoController<I_User>(db, 'users');
 
-    const adminRoleFound = await roleCtr.findOne({ name: E_Role.ADMIN });
+    const adminRoleFound = await roleCtr.findOne({ name: E_Role_Staff.ADMIN });
 
     if (!adminRoleFound.success) {
         return log.error('ADMIN role not found. Cannot create default admin user.');
