@@ -9,7 +9,7 @@ type T_EmailCampaign {
     content: String
     senderName: String
     senderEmail: String
-    target: E_EmailCampaign_Target
+    target: E_UserGroup
     customRecipientsIds: [String]
     customRecipients: [T_User]
     isScheduled: Boolean
@@ -30,7 +30,7 @@ input Input_QueryEmailCampaign {
     content: String
     senderName: String
     senderEmail: String
-    target: E_EmailCampaign_Target
+    target: E_UserGroup
     customRecipientsIds: [String]
     isScheduled: Boolean
     scheduledDate: DateTime
@@ -46,7 +46,7 @@ input Input_CreateEmailCampaign {
     content: String!
     senderName: String!
     senderEmail: String!
-    target: E_EmailCampaign_Target!
+    target: E_UserGroup!
     customRecipientsIds: [String]
     isScheduled: Boolean
     scheduledDate: DateTime
@@ -63,7 +63,7 @@ input Input_UpdateEmailCampaign {
     content: String
     senderName: String
     senderEmail: String
-    target: E_EmailCampaign_Target
+    target: E_UserGroup
     customRecipientsIds: [String]
     isScheduled: Boolean
     scheduledDate: DateTime
