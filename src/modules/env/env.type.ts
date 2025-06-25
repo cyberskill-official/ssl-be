@@ -25,4 +25,5 @@ export interface I_Environment {
     ENDPOINT_RESTAPI: string;
     JWT_SECRET: string;
     IPINFO_TOKEN: string;
+    UPLOAD_FOLDER: string;
 }

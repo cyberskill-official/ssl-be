@@ -3,8 +3,10 @@ import { createCors, createExpress, createSession, express } from '@cyberskill/s
 import { log } from '@cyberskill/shared/node/log';
 import { createWSServer, initGraphQLWS } from '@cyberskill/shared/node/ws';
 import mongoStore from 'connect-mongo';
+import graphqlUploadExpress from 'graphql-upload/graphqlUploadExpress.mjs';
 import mongoose from 'mongoose';
 import { createServer } from 'node:http';
+import path from 'node:path';
 import process from 'node:process';
 
 // import { authCtr } from '#modules/auth/index.js';
@@ -19,12 +21,15 @@ const env = getEnv();
     const app = createExpress({
         staticFolder: env.STATIC_FOLDER,
     });
+    app.use(graphqlUploadExpress());
+    app.use(`/${env.UPLOAD_FOLDER}`, express.static(path.resolve(env.UPLOAD_FOLDER)));
 
     app.use(createSession({
         name: env.SESSION_NAME,
         secret: env.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
+        // TODO: remove expired indexes from the database
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
             stringify: false,

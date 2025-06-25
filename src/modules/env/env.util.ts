@@ -6,7 +6,7 @@ import process from 'node:process';
 
 import type { I_Environment } from './env.type.js';
 
-import { BODY_PARSER_LIMIT, ENDPOINT_GRAPHQL, ENDPOINT_RESTAPI, ENDPOINT_WS, MONGO_BACKUP_FOLDER, MONGO_HOST, MONGO_PORT, PORT, STATIC_FOLDER } from './env.constant.js';
+import { BODY_PARSER_LIMIT, ENDPOINT_GRAPHQL, ENDPOINT_RESTAPI, ENDPOINT_WS, MONGO_BACKUP_FOLDER, MONGO_HOST, MONGO_PORT, PORT, STATIC_FOLDER, UPLOAD_FOLDER } from './env.constant.js';
 
 export function getEnv(): I_Environment {
     loadEnvFile();
@@ -37,6 +37,7 @@ export function getEnv(): I_Environment {
         ENDPOINT_RESTAPI: str({ default: ENDPOINT_RESTAPI }),
         JWT_SECRET: str(),
         IPINFO_TOKEN: str(),
+        UPLOAD_FOLDER: str({ default: UPLOAD_FOLDER }),
     });
 
     const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;

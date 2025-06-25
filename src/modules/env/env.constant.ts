@@ -7,3 +7,4 @@ export const MONGO_BACKUP_FOLDER = 'backup';
 export const ENDPOINT_WS = '/subscriptions';
 export const ENDPOINT_GRAPHQL = '/graphql';
 export const ENDPOINT_RESTAPI = '/rest';
+export const UPLOAD_FOLDER = 'uploads';
