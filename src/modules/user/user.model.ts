@@ -2,6 +2,7 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { LocationSchema } from '#modules/location/location/index.js';
+import { validate } from '#shared/util/index.js';
 
 import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';
 
@@ -9,6 +10,7 @@ import {
     E_AccountType,
     E_Gender,
     E_PinStyle,
+    E_RegisterStep,
 } from './user.type.js';
 
 export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
@@ -300,6 +302,8 @@ export const UserModel = mongo.createModel<I_User>({
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter a username',
                 },
+                validate.username.format,
+                validate.username.length,
             ],
         },
         email: {
@@ -315,6 +319,7 @@ export const UserModel = mongo.createModel<I_User>({
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter an email address',
                 },
+                validate.email.format,
             ],
         },
         isEmailVerified: {
@@ -329,6 +334,9 @@ export const UserModel = mongo.createModel<I_User>({
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter a password',
                 },
+                validate.password.minLength,
+                validate.password.alphanumeric,
+                validate.password.specialChar,
             ],
         },
         displayName: {
@@ -397,6 +405,17 @@ export const UserModel = mongo.createModel<I_User>({
         flagCount: {
             type: Number,
             default: 0,
+        },
+        registerStep: {
+            type: String,
+            enum: Object.values(E_RegisterStep),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select a register step',
+                },
+            ],
         },
     },
     virtuals: [

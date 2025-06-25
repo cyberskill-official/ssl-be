@@ -9,10 +9,19 @@ enum E_Gender {
 }
 
 enum E_UserGroup {
-    ALL_SUBSCRIBERS 
+    ALL_SUBSCRIBERS
     PAID_MEMBERS
     FREE_MEMBERS
     CUSTOM_RECIPIENTS
+}
+
+enum E_RegisterStep {
+    CREDENTIALS
+    PERSONAL_INFO
+    PREFERENCES
+    CHOOSE_MEMBERSHIP
+    PAYMENT
+    COMPLETE
 }
 
 type T_UserPartner {
@@ -98,7 +107,7 @@ type T_UserSettings {
     notification: T_UserSettings_Notification
 }
 
-input Input_UserSettings{
+input Input_UserSettings {
     timeFormat: String
     temporaryLocation: Input_UserSettings_TemporaryLocation
     notification: Input_UserSettings_Notification
@@ -138,6 +147,7 @@ type T_User {
     settings: T_UserSettings
     flagCount: Int
     userGroup: E_UserGroup
+    registerStep: E_RegisterStep
 }
 
 input Input_QueryUser {
@@ -167,6 +177,7 @@ input Input_QueryUser {
     settings: Input_UserSettings
     flagCount: Int
     userGroup: E_UserGroup
+    registerStep: E_RegisterStep
 }
 
 input Input_CreateUser {
@@ -250,12 +261,21 @@ type T_Response_Users {
 }
 
 type Query {
-    getUser(filter: Input_QueryUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
+    getUser(
+        filter: Input_QueryUser!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_User!
     getUsers(filter: Input_QueryUser, options: JSON): T_Response_Users!
 }
 
 type Mutation {
     createUser(doc: Input_CreateUser!): T_Response_User!
-    updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
+    updateUser(
+        filter: Input_QueryUser!
+        update: Input_UpdateUser!
+        options: JSON
+    ): T_Response_User!
     deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
 }

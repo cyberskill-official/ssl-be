@@ -1,3 +1,70 @@
+enum E_MembershipType {
+    FREE
+    PAID
+    PROMO
+}
+
+input Input_InitiateRegister {
+    email: String!
+    username: String!
+}
+
+input Input_VerifyUserData {
+    displayName: String!
+    username: String!
+    password: String!
+    accountType: E_AccountType!
+}
+
+# Register Step 2
+input Input_CompleteProfileS2Partner {
+    gender: E_Gender!
+    dateOfBirth: DateTime!
+}
+
+input Input_CompleteProfileS2Location {
+    countryId: String!
+}
+
+input Input_CompleteProfileS2Settings {
+    timeFormat: String
+}
+
+input Input_CompleteProfileS2 {
+    partner1: Input_CompleteProfileS2Partner!
+    partner2: Input_CompleteProfileS2Partner!
+    location: Input_CompleteProfileS2Location!
+    nativeLanguageId: String!
+    otherLanguagesIds: [String!]!
+    settings: Input_CompleteProfileS2Settings!
+    pinStyle: E_PinStyle!
+}
+
+# Register Step 3
+input Input_CompleteProfileS3Partner {
+    relationshipStatusIds: [String!]
+    sexualOrientationIds: [String!]
+    sexualPreferencesIds: [String!]
+    smokingHabitsIds: [String!]
+    preferredDrinksIds: [String!]
+    bodyTypeId: String
+    heightId: String
+    hairColorId: String
+    eyeColorId: String
+    skinToneId: String
+    picture: String
+    bio: String
+}
+
+input Input_CompleteProfileS3 {
+    lookingForIds: [String!]!
+    profilePurposeIds: [String!]!
+    willingnessToGoIds: [String!]!
+    rulesOfEngagementIds: [String!]!
+    partner1: Input_CompleteProfileS3Partner!
+    partner2: Input_CompleteProfileS3Partner!
+}
+
 type T_Auth {
     user: T_User
     token: String
@@ -14,7 +81,22 @@ type Query {
 }
 
 type Mutation {
-    register(doc: Input_CreateUser!): T_Response_Auth!
-    login(identity: String!, password: String!, rememberMe: Boolean): T_Response_Auth!
+    initiateRegister(email: String!, username: String!): T_Response_Auth!
+    login(
+        identity: String!
+        password: String!
+        rememberMe: Boolean
+    ): T_Response_Auth!
     logout: T_Response_Auth!
+    verifyEmail(
+        email: String!
+        otp: String!
+        userData: Input_VerifyUserData!
+    ): T_Response_Auth!
+    completeProfileStep2(update: Input_CompleteProfileS2!): T_Response_User!
+    completeProfileStep3(update: Input_CompleteProfileS3!): T_Response_User!
+    chooseMembership(
+        type: E_MembershipType!
+        promoCode: String
+    ): T_Response_User!
 }

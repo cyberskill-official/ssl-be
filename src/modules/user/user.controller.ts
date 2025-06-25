@@ -42,12 +42,9 @@ export const userCtr = {
     ): Promise<I_Return<I_User>> => {
         const { username, email, password } = doc;
 
-        if (!validate.isValidEmail(email)) {
-            throwError({
-                message: 'Invalid email.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
+        validate.email.validate(email);
+        validate.username.validate(username);
+        validate.password.validate(password);
 
         const userFound = await userCtr.getUser(context, {
             filter: {
@@ -71,6 +68,13 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
+        const { password } = update;
+
+        if (password) {
+            validate.password.validate(password);
+            update.password = bcrypt.hashSync(password);
+        }
+
         const userFound = await userCtr.getUser(context, { filter });
 
         if (!userFound.success) {

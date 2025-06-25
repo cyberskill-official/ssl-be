@@ -51,7 +51,7 @@ export function validateAdminNotification(value: I_AdminNotification): boolean {
         return false;
     }
 
-    const validKeys = ['successfulPayments', 'failedPayments', 'newMembers'] as const;
+    const validKeys = ['successfulPayments', 'failedPayments', 'newMembers'];
     const providedKeys = Object.keys(value);
 
     for (const key of providedKeys) {

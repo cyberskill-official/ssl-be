@@ -1,3 +1,5 @@
-export const CRON_JOB_EVERYDAY_MIDNIGHT = '00 00 * * *';
-
-export const CRON_JOB_EVERY_5_MINUTES = '*/5 * * * *';
+export const CRON_JOB_SCHEDULE = {
+    EVERYDAY_MIDNIGHT: '00 00 * * *',
+    EVERY_5_MINUTES: '*/5 * * * *',
+    CLEANUP_VERIFICATION: '*/15 * * * *',
+}

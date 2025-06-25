@@ -22,6 +22,14 @@ export enum E_UserGroup {
     CUSTOM_RECIPIENTS = 'CUSTOM_RECIPIENTS',
 }
 
+export enum E_RegisterStep {
+    CREDENTIALS = 'CREDENTIALS', // Step 1
+    PERSONAL_INFO = 'PERSONAL_INFO', // Step 2
+    PREFERENCES = 'PREFERENCES', // Step 3
+    CHOOSE_MEMBERSHIP = 'CHOOSE_MEMBERSHIP',
+    PAYMENT = 'PAYMENT',
+    COMPLETE = 'COMPLETE',
+}
 export interface I_UserPartner {
     gender?: E_Gender;
     dateOfBirth?: Date;
@@ -51,7 +59,7 @@ export interface I_UserPartner {
 
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
 
-export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> {}
+export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> { }
 
 export enum E_PinStyle {
     MALE = 'MALE',
@@ -120,6 +128,7 @@ export interface I_User extends I_GenericDocument {
     settings?: I_UserSettings;
     flagCount?: number;
     userGroup?: E_UserGroup;
+    registerStep?: E_RegisterStep;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';

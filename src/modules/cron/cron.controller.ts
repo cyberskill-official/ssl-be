@@ -1,13 +1,14 @@
+import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
-import { log } from '@cyberskill/shared/node/log';
 
 import { getEnv } from '#modules/env/index.js';
-import { mongoBackup } from '#modules/mongo/index.js';
 import { eventCtr } from '#modules/event/index.js';
+import { mongoBackup } from '#modules/mongo/index.js';
+import { verificationCtr } from '#modules/verification/index.js';
 
-import { CRON_JOB_EVERYDAY_MIDNIGHT, CRON_JOB_EVERY_5_MINUTES } from './cron.constant.js';
+import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
 
@@ -15,9 +16,10 @@ const cron = {
     start: () => {
         cron.backupDB().start();
         cron.checkExpiredEvents().start();
+        cron.cleanupVerification().start();
     },
     backupDB: () => {
-        return new CronJob(CRON_JOB_EVERYDAY_MIDNIGHT, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
             mongoBackup.backup();
 
             const currentList = await mongoBackup.getList();
@@ -39,42 +41,43 @@ const cron = {
         });
     },
     checkExpiredEvents: () => {
-        return new CronJob(CRON_JOB_EVERY_5_MINUTES, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
             try {
                 log.info('Checking for expired events...');
-                
+
                 const currentTime = new Date();
                 const expiredEventIds: string[] = [];
 
                 // Query 1A: Same-day events with endTime that have expired
                 const sameDayExpiredEvents = await eventCtr.getEvents({}, {
-                    filter: { 
+                    filter: {
                         isActive: true,
                         startTime: { $exists: true, $ne: null },
                         endTime: { $exists: true, $ne: null },
-                        startDate: { $exists: true, $ne: null, $lte: currentTime }
+                        startDate: { $exists: true, $ne: null, $lte: currentTime },
                     },
-                    options: { pagination: false }
+                    options: { pagination: false },
                 });
 
                 if (sameDayExpiredEvents.success && sameDayExpiredEvents.result?.docs) {
                     for (const event of sameDayExpiredEvents.result.docs) {
-                        if (!event.startDate || !event.startTime || !event.endTime) continue;
+                        if (!event.startDate || !event.startTime || !event.endTime)
+                            continue;
 
                         const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
                         const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());
-                        
+
                         const startTimeHours = startTimeParsed.getHours();
                         const endTimeHours = endTimeParsed.getHours();
-                        const isOvernight = endTimeHours < startTimeHours || 
-                            (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+                        const isOvernight = endTimeHours < startTimeHours
+                            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
                         if (!isOvernight) {
                             const eventEndDateTime = set(event.startDate, {
                                 hours: endTimeParsed.getHours(),
                                 minutes: endTimeParsed.getMinutes(),
                                 seconds: 0,
-                                milliseconds: 0
+                                milliseconds: 0,
                             });
 
                             if (isAfter(currentTime, eventEndDateTime)) {
@@ -86,26 +89,27 @@ const cron = {
 
                 // Query 1B: Overnight events that have expired
                 const overnightExpiredEvents = await eventCtr.getEvents({}, {
-                    filter: { 
+                    filter: {
                         isActive: true,
                         startTime: { $exists: true, $ne: null },
                         endTime: { $exists: true, $ne: null },
-                        startDate: { $exists: true, $ne: null, $lte: new Date(currentTime.getTime() - 24 * 60 * 60 * 1000) }
+                        startDate: { $exists: true, $ne: null, $lte: new Date(currentTime.getTime() - 24 * 60 * 60 * 1000) },
                     },
-                    options: { pagination: false }
+                    options: { pagination: false },
                 });
 
                 if (overnightExpiredEvents.success && overnightExpiredEvents.result?.docs) {
                     for (const event of overnightExpiredEvents.result.docs) {
-                        if (!event.startDate || !event.startTime || !event.endTime) continue;
+                        if (!event.startDate || !event.startTime || !event.endTime)
+                            continue;
 
                         const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
                         const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());
-                        
+
                         const startTimeHours = startTimeParsed.getHours();
                         const endTimeHours = endTimeParsed.getHours();
-                        const isOvernight = endTimeHours < startTimeHours || 
-                            (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+                        const isOvernight = endTimeHours < startTimeHours
+                            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
                         if (isOvernight) {
                             const nextDay = new Date(event.startDate);
@@ -114,7 +118,7 @@ const cron = {
                                 hours: endTimeParsed.getHours(),
                                 minutes: endTimeParsed.getMinutes(),
                                 seconds: 0,
-                                milliseconds: 0
+                                milliseconds: 0,
                             });
 
                             if (isAfter(currentTime, eventEndDateTime)) {
@@ -126,11 +130,11 @@ const cron = {
 
                 // Query 2: Events with endDate that have expired
                 const eventsWithEndDate = await eventCtr.getEvents({}, {
-                    filter: { 
+                    filter: {
                         isActive: true,
-                        endDate: { $exists: true, $ne: null, $lt: currentTime }
+                        endDate: { $exists: true, $ne: null, $lt: currentTime },
                     },
-                    options: { pagination: false }
+                    options: { pagination: false },
                 });
 
                 if (eventsWithEndDate.success && eventsWithEndDate.result?.docs) {
@@ -145,22 +149,34 @@ const cron = {
                 if (expiredEventIds.length > 0) {
                     const updateResult = await eventCtr.updateEvents({}, {
                         filter: { id: { $in: expiredEventIds } },
-                        update: { isActive: false }
+                        update: { isActive: false },
                     });
 
                     if (updateResult.success) {
                         log.success(`Successfully marked ${expiredEventIds.length} events as expired`);
-                    } else {
+                    }
+                    else {
                         log.error('Failed to update expired events:', updateResult.message);
                     }
-                } else {
+                }
+                else {
                     log.info('No expired events found');
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 log.error('Error checking expired events:', error);
             }
         });
-    }
+    },
+    cleanupVerification: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.CLEANUP_VERIFICATION, async () => {
+            await verificationCtr.deleteVerifications({}, {
+                filter: {
+                    expiresAt: { $lt: new Date() },
+                },
+            });
+        });
+    },
 };
 
 export { cron };
