@@ -1,9 +1,3 @@
-enum E_EmailCampaign_Target {
-    ALL_SUBSCRIBERS
-    PAID_MEMBERS
-    FREE_MEMBERS
-    CUSTOM_RECIPIENTS
-}
 
 type T_EmailCampaign {
     id:	String

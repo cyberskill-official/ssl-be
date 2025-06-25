@@ -1,13 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_User } from '#modules/user/index.js';
-
-export enum E_EmailCampaign_Target {
-    ALL_SUBSCRIBERS = 'ALL_SUBSCRIBERS',
-    PAID_MEMBERS = 'PAID_MEMBERS',
-    FREE_MEMBERS = 'FREE_MEMBERS',
-    CUSTOM_RECIPIENTS = 'CUSTOM_RECIPIENTS',
-}
+import type { E_UserGroup, I_User } from '#modules/user/index.js';
 
 export interface I_EmailCampaign extends I_GenericDocument {
     name?: string;
@@ -15,7 +8,7 @@ export interface I_EmailCampaign extends I_GenericDocument {
     content?: string;
     senderName?: string;
     senderEmail?: string;
-    target?: E_EmailCampaign_Target;
+    target?: E_UserGroup;
     customRecipientsIds?: string[];
     customRecipients?: I_User[];
     isScheduled?: boolean;
@@ -36,7 +29,7 @@ export interface I_Input_CreateEmailCampaign extends Omit<I_EmailCampaign, T_Omi
     content: string;
     senderName: string;
     senderEmail: string;
-    target: E_EmailCampaign_Target;
+    target: E_UserGroup;
 }
 
 export interface I_Input_UpdateEmailCampaign extends Omit<I_EmailCampaign, T_Omit_Update | T_EmailCampaign_Populate> { }

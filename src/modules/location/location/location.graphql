@@ -9,7 +9,14 @@ type T_Location {
     state: T_State
     cityId: String
     city: T_City
+    coordinates: T_Coordinates
+    address: String
     raw: JSON
+}
+
+type T_Coordinates {
+    latitude: Float!
+    longitude: Float!
 }
 
 input Input_Location {
@@ -18,5 +25,12 @@ input Input_Location {
     countryId: String
     stateId: String
     cityId: String
+    coordinates: Input_Coordinates
+    address: String
     raw: JSON
+}
+
+input Input_Coordinates {
+    latitude: Float!
+    longitude: Float!
 }

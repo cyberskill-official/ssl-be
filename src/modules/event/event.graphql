@@ -23,6 +23,9 @@ type T_Event {
     fee: Float
     currency: String
     pushMessage: String
+    createdBy: T_User
+    createdById: String
+    isActive: Boolean
 }
 
 input Input_QueryEvent {
@@ -43,6 +46,8 @@ input Input_QueryEvent {
     fee: Float
     currency: String
     pushMessage: String
+    createdById: String
+    isActive: Boolean
 }
 
 input Input_CreateEvent {
@@ -52,13 +57,15 @@ input Input_CreateEvent {
     startDate: DateTime!
     endDate: DateTime!
     destinationId: String
-    image: String
+    image: String!
     startTime: String
     endTime: String
     location: Input_Location
     fee: Float
     currency: String
     pushMessage: String
+    createdById: String
+    isActive: Boolean
 }
 
 input Input_UpdateEvent {
@@ -76,6 +83,8 @@ input Input_UpdateEvent {
     fee: Float
     currency: String
     pushMessage: String
+    createdById: String
+    isActive: Boolean
 }
 
 type T_Response_Event {
@@ -104,3 +113,15 @@ type T_Response_Events {
     message: String
     result: T_Events
 }
+
+type Query {
+    getEvent(filter: Input_QueryEvent!, projection: JSON, options: JSON, populate: JSON): T_Response_Event!
+    getEvents(filter: Input_QueryEvent, options: JSON): T_Response_Events!
+}
+
+type Mutation {
+    createEvent(doc: Input_CreateEvent!): T_Response_Event!
+    updateEvent(filter: Input_QueryEvent!, update: Input_UpdateEvent!, options: JSON): T_Response_Event!
+    deleteEvent(filter: Input_QueryEvent!, options: JSON): T_Response_Event!
+}
+

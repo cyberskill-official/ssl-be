@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Destination } from '#modules/destination/index.js';
 import type { I_Input_Location, I_Location } from '#modules/location/location/index.js';
+import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_EventType {
     BOOTY_CALL = 'BOOTY_CALL',
@@ -25,9 +26,12 @@ export interface I_Event extends I_GenericDocument {
     fee?: number;
     currency?: string;
     pushMessage?: string;
+    createdById?: string;
+    createdBy?: I_User;
+    isActive?: boolean;
 }
 
-export type T_Event_Populate = 'destination';
+export type T_Event_Populate = 'destination' | 'createdBy';
 
 export interface I_Input_QueryEvent extends Omit<I_Event, T_Event_Populate> { }
 
@@ -37,7 +41,10 @@ export interface I_Input_CreateEvent extends Omit<I_Event, T_Omit_Create | T_Eve
     description: string;
     startDate: Date;
     endDate: Date;
-    location?: I_Input_Location;
+    destinationId?: string;
+    location: I_Input_Location;
+    image: string;
+    createdById: string;
 }
 
 export interface I_Input_UpdateEvent extends Omit<I_Event, T_Omit_Update | T_Event_Populate> {

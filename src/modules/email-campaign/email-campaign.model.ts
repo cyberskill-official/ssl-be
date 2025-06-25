@@ -1,9 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_EmailCampaign } from './email-campaign.type.js';
+import { E_UserGroup } from '#modules/user/user.type.js';
 
-import { E_EmailCampaign_Target } from './email-campaign.type.js';
+import type { I_EmailCampaign } from './email-campaign.type.js';
 
 export const EmailCampaignModel = mongo.createModel<I_EmailCampaign>({
     mongoose,
@@ -52,7 +52,7 @@ export const EmailCampaignModel = mongo.createModel<I_EmailCampaign>({
         },
         target: {
             type: String,
-            enum: Object.values(E_EmailCampaign_Target),
+            enum: Object.values(E_UserGroup),
             required: true,
             validate: {
                 validator: mongo.validator.isRequired(),

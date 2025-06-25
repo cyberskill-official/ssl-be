@@ -85,6 +85,14 @@ export const EventModel = mongo.createModel<I_Event>({
         pushMessage: {
             type: String,
         },
+        createdById: {
+            type: String,
+            required: true,
+        },
+        isActive: {
+            type: Boolean,
+            default: true,
+        },
     },
     virtuals: [
         {
@@ -92,6 +100,15 @@ export const EventModel = mongo.createModel<I_Event>({
             options: {
                 ref: 'Destination',
                 localField: 'destinationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'createdBy',
+            options: {
+                ref: 'User',
+                localField: 'createdById',
                 foreignField: 'id',
                 justOne: true,
             },

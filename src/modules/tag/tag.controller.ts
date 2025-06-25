@@ -43,15 +43,17 @@ export const tagCtr = {
         }
 
         if (type && isCustom) {
-            const tagCount = await mongooseCtr.count({ type });
+            if ([E_TagType.RELATIONSHIP_STATUS, E_TagType.SEXUAL_ORIENTATION, E_TagType.SEXUAL_PREFERENCES, E_TagType.SMOKING_HABITS, E_TagType.PREFERRED_DRINKS, E_TagType.LOOKING_FOR, E_TagType.PROFILE_PURPOSE, E_TagType.WILLINGNESS_TO_GO, E_TagType.RULES_OF_ENGAGEMENT,
+            ].includes(type)) {
+                const tagCount = await mongooseCtr.count({ type, isCustom: true });
 
-            if (tagCount.success && tagCount.result === 10) {
-                throwError({
-                    message: `Maximum custom tags reached for type ${type}. Only 10 tags allowed.`,
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                if (tagCount.success && tagCount.result === 10) {
+                    throwError({
+                        message: `Maximum custom tags reached for type ${type}. Only 10 tags allowed.`,
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
             }
-
             if ([E_TagType.BODY_TYPE, E_TagType.HEIGHT, E_TagType.HAIR_COLOR, E_TagType.EYE_COLOR, E_TagType.SKIN_TONE].includes(type)) {
                 const customTagCount = await mongooseCtr.count({ type, isCustom: true });
 

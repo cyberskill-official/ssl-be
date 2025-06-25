@@ -15,6 +15,11 @@ export interface I_Location {
     state?: I_State;
     cityId?: string;
     city?: I_City;
+    coordinates?: {
+        latitude: number;
+        longitude: number;
+    };
+    address?: string;
     raw?: Record<string, any>;
 }
 

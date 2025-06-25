@@ -1,0 +1,354 @@
+import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateMany, I_Input_UpdateOne, T_PaginateResult, T_UpdateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Return } from '@cyberskill/shared/typescript';
+
+import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
+import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { differenceInHours, isAfter, parse, set } from 'date-fns';
+
+import type { I_Context } from '#shared/typescript/index.js';
+
+// import { pricingCtr } from '#modules/pricing/pricing.controller.js';
+// import { E_PricingType } from '#modules/pricing/pricing.type.js';
+import { userCtr, E_UserGroup } from '#modules/user/index.js';
+
+import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
+
+import { EventModel } from './event.model.js';
+import { E_EventType } from './event.type.js';
+
+const mongooseCtr = new MongooseController<I_Event>(EventModel);
+
+export const eventCtr = {
+    getEvent: async (
+        _context: I_Context,
+        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
+    ): Promise<I_Return<I_Event>> => {
+        return mongooseCtr.findOne(filter, projection, options, populate);
+    },
+    getEvents: async (
+        _context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
+    ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
+        return mongooseCtr.findPaging(filter, options);
+    },
+    createEvent: async (
+        context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreateEvent>,
+    ): Promise<I_Return<I_Event>> => {
+        const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
+        const eventFound = await eventCtr.getEvent(context, { filter: { title } });
+
+        const userId = context.req?.session?.user?.id;
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { id: userId },
+        });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        doc.createdById = userFound.result.id;
+
+        if (eventFound.success) {
+            throwError({
+                message: 'Event title already exist',
+                status: RESPONSE_STATUS.BAD_GATEWAY,
+            });
+        }
+
+        if (!type) {
+            throwError({
+                message: 'Event type is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (!image) {
+            throwError({
+                message: 'Image upload is required for all events.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const eventActiveCountResult = await mongooseCtr.count({
+            isActive: true,
+            createdById: userId,
+        });
+
+        if (eventActiveCountResult.success && eventActiveCountResult.result >= 10) {
+            throwError({
+                message: 'Maximum of 10 active announcements per user at the same time.',
+                status: RESPONSE_STATUS.BAD_GATEWAY,
+            });
+        }
+
+        if (type === E_EventType.CLUB_VISIT) {
+            if (!destinationId) {
+                throwError({
+                    message: 'Club/Resort selection is required.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            // TODO: Tìm club cho loại CLUB_VISIT
+            // const destinationFound = await destinationCtr.getDestination({
+            //     filter: {
+            //         id: destinationId,
+            //         type: E_DestinationType.CLUB,
+            //         isActive: true,
+            //     },
+            // });
+            // if (!destinationFound.success) {
+            //     throwError({
+            //         message: 'Selected club/resort not found or is not active.',
+            //         status: RESPONSE_STATUS.BAD_REQUEST,
+            //     });
+            // }
+            // const destination = destinationFound.result;
+
+            // TODO: Set club's image, location, and fee (sẽ implement sau)
+            // doc.image = (destination.images && destination.images[0]);
+            // doc.location = destination.location; // Pin fixed to club location
+        }
+
+        if (type === E_EventType.TRAVEL) {
+            if (!description || description.trim().length === 0) {
+                throwError({
+                    message: 'Description is required for Travel Announcements',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!location) {
+                throwError({
+                    message: 'Location is required for Travel Announcements',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!startDate || !endDate) {
+                throwError({
+                    message: 'Arrival and departure dates are required for Travel Announcements',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        if (type === E_EventType.BOOTY_CALL) {
+            if (!description || description.trim().length === 0) {
+                throwError({
+                    message: 'Text description is required for Booty Calls.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!startDate || !startTime || !endTime) {
+                throwError({
+                    message: 'Start date, start time, and end time are required for Booty Calls.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            const startTimeParsed = parse(startTime, 'hh:mm a', new Date());
+            const endTimeParsed = parse(endTime, 'hh:mm a', new Date());
+
+            const startDateTime = set(startDate, {
+                hours: startTimeParsed.getHours(),
+                minutes: startTimeParsed.getMinutes(),
+                seconds: 0,
+                milliseconds: 0
+            });
+
+            const startTimeHours = startTimeParsed.getHours();
+            const endTimeHours = endTimeParsed.getHours();
+
+            const isOvernight = endTimeHours < startTimeHours ||
+                (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+
+            let endDateTime;
+
+            if (isOvernight) {
+                const nextDay = new Date(startDate);
+                nextDay.setDate(nextDay.getDate() + 1);
+                endDateTime = set(nextDay, {
+                    hours: endTimeParsed.getHours(),
+                    minutes: endTimeParsed.getMinutes(),
+                    seconds: 0,
+                    milliseconds: 0
+                });
+            } else {
+                endDateTime = set(startDate, {
+                    hours: endTimeParsed.getHours(),
+                    minutes: endTimeParsed.getMinutes(),
+                    seconds: 0,
+                    milliseconds: 0
+                });
+            }
+
+            const currentTime = new Date();
+
+            if (isAfter(currentTime, startDateTime)) {
+                throwError({
+                    message: 'Cannot create Booty Call for a time that has already passed.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            const durationInHours = differenceInHours(endDateTime, startDateTime);
+
+            if (durationInHours > 24) {
+                throwError({
+                    message: 'Booty Calls can only last a maximum of 24 hours.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!location) {
+                throwError({
+                    message: 'Location is required for Booty Calls.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!endDate) {
+                throwError({
+                    message: 'End time is required for Booty Calls.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        if (type === E_EventType.PRIVATE) {
+            if (!description || description.length < 50) {
+                throwError({
+                    message: 'Description minimum: 50 characters.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (!location) {
+                throwError({
+                    message: 'Event location is required for Event Announcements.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            // TODO: Tạo group chat cho event
+            // const createdConversation = await conversationCtr.createConversation(context, {
+            //     name: title,
+            //     type: E_ConversationType.GROUP,
+            //     createdById: userId,
+            // });
+            // if (!createdConversation.success) {
+            //     throwError({
+            //         message: 'Failed to create conversation for event',
+            //         status: RESPONSE_STATUS.BAD_REQUEST,
+            //     });
+            // }
+
+            // TODO: Thêm event user tạo event vào group chat với vai trò ADMIN
+            // const createdParticipant = await participantCtr.createParticipant(context, {
+            //     conversationId: createdConversation.result.id,
+            //     userId: userId,
+            //     role: E_ParticipantRole.ADMIN,
+            // });
+            // if(!createdParticipant.success){
+            //     throwError({
+            //         message: 'Failed to add creator to event conversation',
+            //         status: RESPONSE_STATUS.BAD_REQUEST
+            //     })
+            // }
+        }
+
+        if (isAfter(startDate, endDate)) {
+            throwError({
+                message: 'Start date cannot be after end date.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (location?.coordinates) {
+            const { latitude, longitude } = location.coordinates;
+
+            if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+                throwError({
+                    message: 'Coordinates must be valid numbers',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        const userGroup = userFound.result.userGroup;
+
+        if (userGroup === E_UserGroup.FREE_MEMBERS) {
+            if (type === E_EventType.BOOTY_CALL || type === E_EventType.TRAVEL || type === E_EventType.PRIVATE) {
+                // TODO: Pricing
+                // const pricingFound = await pricingCtr.calculatePricing(context, {
+                //     filter: {
+                //         type: E_PricingType.ANNOUNCEMENT,
+                //         location,
+                //         isActive: true,
+                //     },
+                // });
+
+                // if (!pricingFound.success) {
+                //     throwError({
+                //         message: 'Can not found pricing for event',
+                //         status: RESPONSE_STATUS.NOT_FOUND,
+                //     });
+                // }
+
+                // const basePrice = pricingFound.result.price || 0;
+                // const taxRate = pricingFound.result.taxRate || 0;
+                // const totalFee = basePrice + (basePrice * taxRate / 100);
+
+                // doc.fee = totalFee;
+            }
+            else {
+                // CLUB_VISIT: Free for all profiles
+                doc.fee = 0;
+            }
+        }
+        else {
+            // Premium users
+            doc.fee = 0;
+        }
+
+        return mongooseCtr.createOne(doc);
+    },
+    updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
+        const eventFound = await eventCtr.getEvent(context, { filter });
+
+        if (!eventFound.success) {
+            throwError({
+                message: 'Event not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        return mongooseCtr.updateOne(filter, update, options);
+    },
+    updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
+        return mongooseCtr.updateMany(filter, update, options);
+    },
+    deleteEvent: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryEvent>,
+    ): Promise<I_Return<I_Event>> => {
+        const eventFound = await eventCtr.getEvent(context, { filter });
+
+        if (!eventFound.success) {
+            throwError({
+                message: 'Event not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        return mongooseCtr.deleteOne(filter, options);
+    },
+};

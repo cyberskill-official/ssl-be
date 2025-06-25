@@ -3,6 +3,19 @@ import mongoose from 'mongoose';
 
 import type { I_Location } from './location.type.js';
 
+export const CoordinatesSchema = mongo.createSchema({
+    standalone: true,
+    mongoose,
+    schema: {
+        latitude: {
+            type: Number,
+        },
+        longitude: {
+            type: Number,
+        },
+    },
+});
+
 export const LocationSchema = mongo.createSchema<I_Location>({
     standalone: true,
     mongoose,
@@ -20,6 +33,12 @@ export const LocationSchema = mongo.createSchema<I_Location>({
             type: String,
         },
         cityId: {
+            type: String,
+        },
+        coordinates: {
+            type: CoordinatesSchema,
+        },
+        address: {
             type: String,
         },
         raw: {
