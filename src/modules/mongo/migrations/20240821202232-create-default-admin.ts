@@ -22,8 +22,12 @@ export async function up(db: C_Db) {
     const adminUser = {
         username: 'admin',
         email: 'admin@secretswingerlust.com',
-        password: bcrypt.hashSync('123456', 10),
+        password: bcrypt.hashSync('123123', 10),
         rolesIds: [adminRoleFound.result.id],
+        isActive: true,
+        isEmailVerified: true,
+        displayName: 'Admin',
+        flagCount: 0,
     };
 
     const adminCreated = await userCtr.createOne(adminUser);

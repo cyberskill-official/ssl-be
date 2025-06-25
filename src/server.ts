@@ -27,6 +27,7 @@ const env = getEnv();
         saveUninitialized: false,
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
+            stringify: false,
         }),
         cookie: {
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),

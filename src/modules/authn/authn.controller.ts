@@ -6,11 +6,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
+import type { I_Input_CreateUser } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/authz/index.js';
 import { getEnv } from '#modules/env/index.js';
-import { type I_Input_CreateUser, userCtr } from '#modules/user/index.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type {
     I_Input_CheckAuth,
@@ -69,7 +70,7 @@ export const authnCtr = {
                         id: context.req.session.user.id,
                     },
                     populate: {
-                        path: 'role',
+                        path: 'roles',
                     },
                 },
             );
@@ -82,10 +83,33 @@ export const authnCtr = {
                 });
             }
 
+            if (userFound.result.isDel) {
+                return {
+                    success: false,
+                    message: 'Account has been deleted.',
+                };
+            }
+
+            if (!userFound.result.isActive) {
+                return {
+                    success: false,
+                    message: 'Account is not active. Please contact support.',
+                };
+            }
+
+            if (!userFound.result.isEmailVerified) {
+                return {
+                    success: false,
+                    message: 'Email not verified.',
+                };
+            }
+
+            context.req.session.user = omit(userFound.result, 'password');
+
             return {
                 success: true,
                 result: {
-                    user: userFound.result,
+                    user: context.req.session.user,
                     ...(args?.token && { token: args.token }),
                 },
             };
@@ -163,7 +187,10 @@ export const authnCtr = {
             { req },
             {
                 filter: {
-                    $or: [{ email: identity }, { phoneNumber: identity }],
+                    email: identity,
+                },
+                populate: {
+                    path: 'roles',
                 },
             },
         );
@@ -184,7 +211,29 @@ export const authnCtr = {
             });
         }
 
+        if (userFound.result.isDel) {
+            throwError({
+                message: 'Account has been deleted.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (!userFound.result.isActive) {
+            throwError({
+                message: 'Account is not active. Please contact support.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (!userFound.result.isEmailVerified) {
+            throwError({
+                message: 'Email not verified.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         const token = rememberMe ? authnCtr.generateToken({ req }, userFound.result.id) : '';
+
         req.session.user = omit(userFound.result, 'password');
 
         return {

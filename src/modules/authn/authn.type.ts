@@ -17,7 +17,6 @@ export interface I_Input_Login {
     identity: string;
     password: string;
     rememberMe?: boolean;
-    phone?: number;
 }
 
 export interface I_Response_Auth {
