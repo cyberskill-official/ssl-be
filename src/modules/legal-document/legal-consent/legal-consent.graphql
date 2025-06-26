@@ -22,7 +22,6 @@ input Input_QueryLegalConsent {
 
 input Input_CreateLegalConsent {
     legalDocumentId: String!
-    userId: String!
     version: Int!
 }
 
@@ -51,4 +50,12 @@ type T_Response_LegalConsents {
     success: Boolean
     message: String
     result: T_LegalConsents
+}
+
+type Query {
+    checkLegalConsents: [T_LegalDocument]!
+}
+
+type Mutation {
+    createLegalConsent(doc: Input_CreateLegalConsent!): T_Response_LegalConsent!
 }

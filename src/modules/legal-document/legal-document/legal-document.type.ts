@@ -50,3 +50,18 @@ export interface I_Input_CreateLegalDocument extends Omit<I_LegalDocument, T_Omi
 export interface I_Input_UpdateLegalDocument extends Omit<I_LegalDocument, T_Omit_Update> {
     history?: I_Input_MutateLegalDocumentHistory[];
 }
+
+export interface I_Input_SaveDraftLegalDocument {
+    type: E_LegalDocumentType;
+    content: string;
+    version?: number;
+}
+
+export interface I_Input_PublishLegalDocument {
+    type: E_LegalDocumentType;
+}
+
+export interface I_Input_RestoreLegalDocument {
+    id: string;
+    version: number;
+}

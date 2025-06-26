@@ -60,21 +60,19 @@ input Input_QueryLegalDocument {
     history: [Input_QueryLegalDocumentHistory]
 }
 
-input Input_CreateLegalDocument {
+input Input_SaveDraftLegalDocument {
     type: E_LegalDocumentType!
     content: String!
-    status: E_LegalDocumentStatus
     version: Int
-    history: [Input_MutateLegalDocumentHistory]
 }
 
-input Input_UpdateLegalDocument {
-    isDel: Boolean
-    type: E_LegalDocumentType
-    content: String
-    status: E_LegalDocumentStatus
-    version: Int
-    history: [Input_MutateLegalDocumentHistory]
+input Input_PublishLegalDocument {
+    type: E_LegalDocumentType!
+}
+
+input Input_RestoreLegalDocument {
+    id: String!
+    version: Int!
 }
 
 type T_Response_LegalDocument {
@@ -102,4 +100,15 @@ type T_Response_LegalDocuments {
     success: Boolean
     message: String
     result: T_LegalDocuments
+}
+
+type Query {
+    getLegalDocument(filter: Input_QueryLegalDocument!, projection: JSON, options: JSON, populate: JSON): T_Response_LegalDocument!
+    getLegalDocuments(filter: Input_QueryLegalDocument, options: JSON): T_Response_LegalDocuments!
+}
+
+type Mutation {
+    saveDraftLegalDocument(doc: Input_SaveDraftLegalDocument!): T_Response_LegalDocument!
+    publishLegalDocument(doc: Input_PublishLegalDocument!): T_Response_LegalDocument!
+    restoreLegalDocument(doc: Input_RestoreLegalDocument!): T_Response_LegalDocument!
 }
