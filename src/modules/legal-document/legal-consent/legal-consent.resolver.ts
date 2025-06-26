@@ -1,5 +1,8 @@
+import type { I_Input_CreateOne } from '@cyberskill/shared/node/mongo';
+
 import type { I_Context } from '#shared/typescript/index.js';
 import type { I_Input_CreateLegalConsent } from './legal-consent.type.js';
+
 import { legalConsentCtr } from './legal-consent.controller.js';
 
 const legalConsentResolver = {
@@ -7,7 +10,7 @@ const legalConsentResolver = {
         checkLegalConsents: (_parent: unknown, _args: unknown, context: I_Context) => legalConsentCtr.checkLegalConsents(context),
     },
     Mutation: {
-        createLegalConsent: (_parent: unknown, args: { doc: I_Input_CreateLegalConsent }, context: I_Context) => legalConsentCtr.createLegalConsent(context, args),
+        createLegalConsent: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateLegalConsent>, context: I_Context) => legalConsentCtr.createLegalConsent(context, args),
     },
 };
 

@@ -1,13 +1,17 @@
-import type { I_Context } from '#shared/typescript/index.js';
-import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
-import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 import type { I_Input_FindOne } from '@cyberskill/shared/node/mongo';
 
+import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
+import { MongooseController } from '@cyberskill/shared/node/mongo';
+
+import type { I_Context } from '#shared/typescript/index.js';
+
 import { LegalConsentModel } from './legal-consent.model.js';
+
 import type { I_Input_CreateLegalConsent, I_LegalConsent, I_Input_QueryLegalConsent } from './legal-consent.type.js';
 import type { I_LegalDocument } from '../legal-document/legal-document.type.js';
+
 import { E_LegalDocumentStatus, legalDocumentCtr } from '../legal-document/index.js';
 
 const mongooseCtr = new MongooseController<I_LegalConsent>(LegalConsentModel);
