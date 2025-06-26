@@ -63,7 +63,6 @@ input Input_QueryLegalDocument {
 input Input_SaveDraftLegalDocument {
     type: E_LegalDocumentType!
     content: String!
-    version: Int
 }
 
 input Input_PublishLegalDocument {

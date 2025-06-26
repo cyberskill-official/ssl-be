@@ -48,7 +48,7 @@ export const legalDocumentCtr = {
         return mongooseCtr.updateOne(filter, update, options);
     },
     saveDraftLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_SaveDraftLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const { type, content, version } = doc;
+        const { type, content } = doc;
         // 1. Ensure the user is authenticated
         const userId = context.req?.session?.user?.id;
 
@@ -70,21 +70,16 @@ export const legalDocumentCtr = {
         if (existingLegalDocument.status === E_LegalDocumentStatus.PUBLISHED) {
             throwError({ message: 'Cannot edit published document. Please restore or create a draft.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 6. Optimistic locking: check version
-        if (version && version !== existingLegalDocument.version) {
-            throwError({ message: 'Version conflict. Please reload and try again.', status: RESPONSE_STATUS.CONFLICT });
-        }
-        // 7. Content must be different from previous
+        // 6. Content must be different from previous
         if (existingLegalDocument.content === content) {
             throwError({ message: 'Content must be different from previous version.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 8. If version already exists in history and content is different, increase version
+        // 7. Auto-increment version only if content changed
         let newVersion = existingLegalDocument.version || 1;
-
-        if ((existingLegalDocument.history || []).some((h: I_LegalDocumentHistory) => h.version === newVersion && h.content !== content)) {
+        if (existingLegalDocument.content !== content) {
             newVersion += 1;
         }
-        // 9. Update the draft document with new content, version, and updatedAt
+        // 8. Update the draft document with new content, version, and updatedAt
         return legalDocumentCtr.updateLegalDocument(context, {
             filter: { id: existingLegalDocument.id },
             update: {

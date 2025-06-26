@@ -54,7 +54,6 @@ export interface I_Input_UpdateLegalDocument extends Omit<I_LegalDocument, T_Omi
 export interface I_Input_SaveDraftLegalDocument {
     type: E_LegalDocumentType;
     content: string;
-    version?: number;
 }
 
 export interface I_Input_PublishLegalDocument {
