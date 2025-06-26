@@ -4,18 +4,19 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
-import { differenceInHours, isAfter, parse, set } from 'date-fns';
+import { isAfter } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 // import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 // import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { userCtr, E_UserGroup } from '#modules/user/index.js';
+import { E_UserGroup, userCtr } from '#modules/user/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
+import { validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
@@ -149,64 +150,15 @@ export const eventCtr = {
 
             if (!startDate || !startTime || !endTime) {
                 throwError({
-                    message: 'Start date, start time, and end time are required for Booty Calls.',
+                    message: 'Start date, start time, and end time are required for time-based events.',
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
 
-            const startTimeParsed = parse(startTime, 'hh:mm a', new Date());
-            const endTimeParsed = parse(endTime, 'hh:mm a', new Date());
-
-            const startDateTime = set(startDate, {
-                hours: startTimeParsed.getHours(),
-                minutes: startTimeParsed.getMinutes(),
-                seconds: 0,
-                milliseconds: 0
-            });
-
-            const startTimeHours = startTimeParsed.getHours();
-            const endTimeHours = endTimeParsed.getHours();
-
-            const isOvernight = endTimeHours < startTimeHours ||
-                (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
-
-            let endDateTime;
-
-            if (isOvernight) {
-                const nextDay = new Date(startDate);
-                nextDay.setDate(nextDay.getDate() + 1);
-                endDateTime = set(nextDay, {
-                    hours: endTimeParsed.getHours(),
-                    minutes: endTimeParsed.getMinutes(),
-                    seconds: 0,
-                    milliseconds: 0
-                });
-            } else {
-                endDateTime = set(startDate, {
-                    hours: endTimeParsed.getHours(),
-                    minutes: endTimeParsed.getMinutes(),
-                    seconds: 0,
-                    milliseconds: 0
-                });
-            }
-
-            const currentTime = new Date();
-
-            if (isAfter(currentTime, startDateTime)) {
-                throwError({
-                    message: 'Cannot create Booty Call for a time that has already passed.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-
-            const durationInHours = differenceInHours(endDateTime, startDateTime);
-
-            if (durationInHours > 24) {
-                throwError({
-                    message: 'Booty Calls can only last a maximum of 24 hours.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
+            validateTimeBasedEvent(
+                { startDate, startTime, endTime },
+                E_EventType.BOOTY_CALL,
+            );
 
             if (!location) {
                 throwError({
@@ -234,6 +186,19 @@ export const eventCtr = {
             if (!location) {
                 throwError({
                     message: 'Event location is required for Event Announcements.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            if (startDate && startTime && endTime) {
+                validateTimeBasedEvent(
+                    { startDate, startTime, endTime },
+                    E_EventType.PRIVATE,
+                );
+            }
+            else {
+                throwError({
+                    message: 'Event startDate, startTime, and endTime are required for PRIVATE events.',
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
