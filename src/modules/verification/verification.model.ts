@@ -51,7 +51,6 @@ export const VerificationModel = mongo.createModel<I_Verification>({
         identifier: {
             type: String,
             required: true,
-            index: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
@@ -116,4 +115,3 @@ export const VerificationModel = mongo.createModel<I_Verification>({
         },
     },
 });
-VerificationModel.schema.index({ identifier: 1, method: 1 }, { unique: true });
