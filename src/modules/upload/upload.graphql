@@ -13,46 +13,6 @@ enum E_UploadModule {
     CONVERSATION
 }
 
-enum E_AllowExtensions {
-    # Images
-    JPG
-    JPEG
-    PNG
-    GIF
-    WEBP
-    SVG
-    
-    # Videos
-    MP4
-    AVI
-    MOV
-    WMV
-    FLV
-    WEBM
-    
-    # Documents
-    PDF
-    DOC
-    DOCX
-    TXT
-    RTF
-    
-    # Archives
-    ZIP
-    RAR
-    TAR
-    GZ
-}
-
-enum E_SizeLimit {
-    SMALL    # 1MB
-    MEDIUM   # 5MB
-    LARGE    # 10MB
-    XLARGE   # 50MB
-    XXLARGE  # 100MB
-    XXXLARGE # 500MB
-}
-
 type T_Response_Upload {
     success: Boolean!
     message: String

@@ -2,7 +2,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
-import fs from 'node:fs';
+import { upload } from '@cyberskill/shared/node/upload';
 import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -11,7 +11,8 @@ import { getEnv } from '#modules/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
-import { generateUploadPath, validateUpload } from './upload.util.js';
+import { generateUploadPath } from './upload.util.js';
+import { UPLOAD_CONFIG } from './upload.constant.js';
 
 const env = getEnv();
 
@@ -21,36 +22,24 @@ export const uploadCtr = {
         const { type, module, file, entityId } = args;
 
         const uploadDir = env.UPLOAD_FOLDER;
-        const { createReadStream, filename } = (await (await file).file);
+        const { filename } = (await (await file).file);
 
-        const validation = validateUpload({
-            type,
-            module,
-            filename,
-        });
+        const lastDotIndex = filename.lastIndexOf('.');
 
-        if (!validation.isValid) {
+        if (lastDotIndex === -1) {
             throwError({
-                message: validation.error || 'File validation failed',
+                message: 'File must have an extension',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const lastDotIndex = filename.lastIndexOf('.');
-        let fileExtension = 'jpeg';
-        let fileWithoutExtension;
-
-        if (lastDotIndex !== -1) {
-            fileWithoutExtension = filename.substring(0, lastDotIndex);
-            fileExtension = filename.substring(lastDotIndex + 1);
-        }
-
+        const extension = filename.substring(lastDotIndex);
+        const nameWithoutExtension = filename.substring(0, lastDotIndex);
         const timestamp = new Date().getTime();
-        const fullName = fileWithoutExtension != null
-            ? `${fileWithoutExtension}${timestamp}.${fileExtension}`
-            : `${timestamp}.${fileExtension}`;
+        const fullName = `${nameWithoutExtension}-${timestamp}${extension}`;
 
         let folderPath: string;
+
         try {
             folderPath = generateUploadPath(uploadDir, {
                 module,
@@ -66,25 +55,27 @@ export const uploadCtr = {
             });
         }
 
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
+        const uploadPath = path.join(folderPath, fullName);
+
+        const result = await upload({
+            file,
+            path: uploadPath,
+            type,
+            config: UPLOAD_CONFIG,
+        })
+
+        if (!result.success) {
+            throwError({
+                message: result.message,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const filePath = path.join(folderPath, fullName);
-        const stream = createReadStream();
-        const out = fs.createWriteStream(filePath);
-        stream.pipe(out);
-
-        await new Promise((resolve, reject) => {
-            out.on('finish', () => resolve(undefined));
-            out.on('error', reject);
-        });
-
-        const relativePath = path.relative(uploadDir, filePath).replace(/\\/g, '/');
+        const relativePath = path.relative(uploadDir, uploadPath).replace(/\\/g, '/');
 
         return {
-            message: 'File uploaded successfully',
-            success: true,
+            message: result.message,
+            success: result.success,
             result: `/${uploadDir}/${relativePath}`,
         };
     },
