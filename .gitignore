@@ -1,9 +1,8 @@
-node_modules
-build
-uploads
-backup
 .DS_Store
+backup
+build
+node_modules
+uploads
 .env
 .simple-git-hooks.json
 .migrate-mongo.config.js
-.vscode
