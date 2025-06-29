@@ -4,5 +4,5 @@ build
 node_modules
 uploads
 .env
-.simple-git-hooks.json
 .migrate-mongo.config.js
+.simple-git-hooks.json
