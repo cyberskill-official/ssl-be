@@ -3,7 +3,6 @@ import { createCors, createExpress, createSession, express } from '@cyberskill/s
 import { log } from '@cyberskill/shared/node/log';
 import { createWSServer, initGraphQLWS } from '@cyberskill/shared/node/ws';
 import mongoStore from 'connect-mongo';
-import graphqlUploadExpress from 'graphql-upload/graphqlUploadExpress.mjs';
 import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
@@ -20,7 +19,6 @@ const env = getEnv();
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
-    app.use(graphqlUploadExpress());
 
     app.use(createSession({
         name: env.SESSION_NAME,
