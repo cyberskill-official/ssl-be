@@ -15,7 +15,7 @@ export interface I_PromoCode extends I_GenericDocument {
     isActive?: boolean;
     isLimit?: boolean;
     usageLimit?: number;
-    usageCount?: number;
+    expiresAt?: Date;
 }
 
 export interface I_Input_QueryPromoCode extends I_PromoCode { }
@@ -25,4 +25,9 @@ export interface I_Input_CreatePromoCode extends Omit<I_PromoCode, T_Omit_Create
     benefit: E_PromoCodeBenefit;
 }
 
-export interface I_Input_UpdatePromoCode extends Omit<I_PromoCode, T_Omit_Update> {}
+export interface I_Input_UpdatePromoCode extends Omit<I_PromoCode, T_Omit_Update> { }
+
+export interface I_Input_ApplyPromoCode {
+    code: string;
+    userId: string;
+}
