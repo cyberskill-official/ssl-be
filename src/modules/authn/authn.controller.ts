@@ -10,6 +10,7 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/authz/index.js';
+import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { E_RegisterStep, userCtr } from '#modules/user/index.js';
 import {
@@ -319,7 +320,15 @@ export const authnCtr = {
             });
         }
 
-        // TODO: Logic to send email with the OTP
+        await emailCtr.sendEmail(
+            EMAIL_VERIFICATION,
+            email,
+            {
+                otp,
+                expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
+                email,
+            },
+        );
     },
     verifyEmail: async (
         { req }: I_Context,

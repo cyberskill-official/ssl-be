@@ -8,6 +8,21 @@ export const EmailTemplateModel = mongo.createModel<I_EmailTemplate>({
     name: 'EmailTemplate',
     pagination: true,
     schema: {
+        templateKey: {
+            type: String,
+            required: true,
+            unique: true,
+            validate: [
+                {
+                    validator: mongo.validator.isUnique(['templateKey']),
+                    message: 'Template key must be unique',
+                },
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter template key (unique identifier)',
+                },
+            ],
+        },
         name: {
             type: String,
             required: true,
@@ -37,6 +52,10 @@ export const EmailTemplateModel = mongo.createModel<I_EmailTemplate>({
                     message: 'Please enter content for email template',
                 },
             ],
+        },
+        variables: {
+            type: [String],
+            default: [],
         },
     },
 });

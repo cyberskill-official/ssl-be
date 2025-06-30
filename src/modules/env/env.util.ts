@@ -6,7 +6,21 @@ import process from 'node:process';
 
 import type { I_Environment } from './env.type.js';
 
-import { BODY_PARSER_LIMIT, ENDPOINT_GRAPHQL, ENDPOINT_RESTAPI, ENDPOINT_WS, MONGO_BACKUP_FOLDER, MONGO_HOST, MONGO_PORT, PORT, STATIC_FOLDER, UPLOAD_FOLDER } from './env.constant.js';
+import {
+    BODY_PARSER_LIMIT,
+    ENDPOINT_GRAPHQL,
+    ENDPOINT_RESTAPI,
+    ENDPOINT_WS,
+    MONGO_BACKUP_FOLDER,
+    MONGO_HOST,
+    MONGO_PORT,
+    PORT,
+    REDIS_HOST,
+    REDIS_PORT,
+    SENDGRID_FROM,
+    STATIC_FOLDER,
+    UPLOAD_FOLDER,
+} from './env.constant.js';
 
 export function getEnv(): I_Environment {
     loadEnvFile();
@@ -38,13 +52,22 @@ export function getEnv(): I_Environment {
         JWT_SECRET: str(),
         IPINFO_TOKEN: str(),
         UPLOAD_FOLDER: str({ default: UPLOAD_FOLDER }),
+        REDIS_HOST: str({ default: REDIS_HOST }),
+        REDIS_PORT: port({ default: REDIS_PORT }),
+        REDIS_PASSWORD: str({ default: '' }),
+        SENDGRID_API_KEY: str(),
+        SENDGRID_FROM: str({ default: SENDGRID_FROM }),
     });
 
     const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;
 
-    const MONGO_URI = `mongodb://${haveAuth ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@` : ''}${cleanedEnv.MONGO_HOST}:${cleanedEnv.MONGO_PORT}/${cleanedEnv.MONGO_NAME}${haveAuth ? '?authSource=admin' : ''}`;
+    const MONGO_URI = `mongodb://${
+        haveAuth
+            ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@`
+            : ''
+    }${cleanedEnv.MONGO_HOST}:${cleanedEnv.MONGO_PORT}/${cleanedEnv.MONGO_NAME}${haveAuth ? '?authSource=admin' : ''}`;
 
     return {
         ...cleanedEnv,

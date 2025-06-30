@@ -26,4 +26,9 @@ export interface I_Environment {
     JWT_SECRET: string;
     IPINFO_TOKEN: string;
     UPLOAD_FOLDER: string;
+    REDIS_HOST: string;
+    REDIS_PORT: number;
+    REDIS_PASSWORD: string;
+    SENDGRID_API_KEY: string;
+    SENDGRID_FROM: string;
 }

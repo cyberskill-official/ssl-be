@@ -3,9 +3,11 @@ type T_EmailTemplate {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    templateKey: String
     name: String
     subject: String
     content: String
+    variables: [String]
 }
 
 input Input_QueryEmailTemplate {
@@ -13,22 +15,28 @@ input Input_QueryEmailTemplate {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    templateKey: String
     name: String
     subject: String
     content: String
+    variables: [String]
 }
 
 input Input_CreateEmailTemplate {
+    templateKey: String!
     name: String!
     subject: String!
     content: String!
+    variables: [String]
 }
 
 input Input_UpdateEmailTemplate {
     isDel: Boolean
+    templateKey: String
     name: String
     subject: String
     content: String
+    variables: [String]
 }
 
 type T_Response_EmailTemplate {
@@ -56,4 +64,32 @@ type T_Response_EmailTemplates {
     success: Boolean
     message: String
     result: T_EmailTemplates
+}
+
+extend type Query {
+    getEmailTemplate(
+        filter: Input_QueryEmailTemplate!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_EmailTemplate!
+    getEmailTemplates(
+        filter: Input_QueryEmailTemplate
+        options: JSON
+    ): T_Response_EmailTemplates!
+}
+
+extend type Mutation {
+    createEmailTemplate(
+        doc: Input_CreateEmailTemplate!
+    ): T_Response_EmailTemplate!
+    updateEmailTemplate(
+        filter: Input_QueryEmailTemplate!
+        update: Input_UpdateEmailTemplate!
+        options: JSON
+    ): T_Response_EmailTemplate!
+    deleteEmailTemplate(
+        filter: Input_QueryEmailTemplate!
+        options: JSON
+    ): T_Response_EmailTemplate!
 }
