@@ -17,10 +17,10 @@ export enum E_DestinationRating {
 }
 
 export enum E_DestinationAgeGroup {
-    A18_25 = '18-25',
-    A26_35 = '26-35',
-    A36_45 = '36-45',
-    A45_PLUS = '45+',
+    A18_25 = 'A18_25',
+    A26_35 = 'A26_35',
+    A36_45 = 'A36_45',
+    A45_PLUS = 'A45_PLUS',
 }
 
 export interface I_Hotel {

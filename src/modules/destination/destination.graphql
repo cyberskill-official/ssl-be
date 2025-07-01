@@ -218,3 +218,14 @@ type T_Response_Destinations {
     message: String
     result: T_Destinations
 }
+
+type Query {
+    getDestinations(filter: Input_QueryDestination): T_Response_Destinations!
+    getDestination(filter: Input_QueryDestination, options: JSON): T_Response_Destination!
+}
+
+type Mutation {
+    createDestination(doc: Input_CreateDestination!): T_Response_Destination!
+    updateDestination(filter: Input_QueryDestination!, update: Input_UpdateDestination!): T_Response_Destination!
+    deleteDestination(filter: Input_QueryDestination!): T_Response_Destination!
+}
