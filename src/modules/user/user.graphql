@@ -120,6 +120,8 @@ type T_User {
     updatedAt: DateTime
     username: String
     email: String
+    rolesIds: [String]
+    registerStep: E_RegisterStep
     isEmailVerified: Boolean
     displayName: String
     accountType: E_AccountType
@@ -139,7 +141,6 @@ type T_User {
     willingnessToGo: [T_Tag]
     rulesOfEngagementIds: [String]
     rulesOfEngagement: [T_Tag]
-    rolesId: [String]
     roles: [T_Role]
     isActive: Boolean
     isOnline: Boolean
@@ -147,7 +148,6 @@ type T_User {
     settings: T_UserSettings
     flagCount: Int
     userGroup: E_UserGroup
-    registerStep: E_RegisterStep
 }
 
 input Input_QueryUser {
@@ -157,6 +157,8 @@ input Input_QueryUser {
     updatedAt: DateTime
     username: String
     email: String
+    rolesIds: [String]
+    registerStep: E_RegisterStep
     isEmailVerified: Boolean
     displayName: String
     accountType: E_AccountType
@@ -170,21 +172,21 @@ input Input_QueryUser {
     profilePurposeIds: [String]
     willingnessToGoIds: [String]
     rulesOfEngagementIds: [String]
-    rolesIds: [String]
     isActive: Boolean
     isOnline: Boolean
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
     userGroup: E_UserGroup
-    registerStep: E_RegisterStep
 }
 
 input Input_CreateUser {
     username: String!
     email: String!
-    isEmailVerified: Boolean
     password: String!
+    rolesIds: [String]!
+    registerStep: E_RegisterStep!
+    isEmailVerified: Boolean
     displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner
@@ -197,7 +199,6 @@ input Input_CreateUser {
     profilePurposeIds: [String]
     willingnessToGoIds: [String]
     rulesOfEngagementIds: [String]
-    rolesIds: [String]
     isActive: Boolean
     isOnline: Boolean
     lastOnline: DateTime
@@ -210,8 +211,10 @@ input Input_UpdateUser {
     isDel: Boolean
     username: String
     email: String
-    isEmailVerified: Boolean
     password: String
+    rolesIds: [String]
+    registerStep: E_RegisterStep
+    isEmailVerified: Boolean
     displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner
@@ -224,7 +227,6 @@ input Input_UpdateUser {
     profilePurposeIds: [String]
     willingnessToGoIds: [String]
     rulesOfEngagementIds: [String]
-    rolesIds: [String]
     isActive: Boolean
     isOnline: Boolean
     lastOnline: DateTime

@@ -100,8 +100,10 @@ export interface I_Input_UserSettings {
 export interface I_User extends I_GenericDocument {
     username?: string;
     email?: string;
-    isEmailVerified?: boolean;
     password?: string;
+    rolesIds?: string[];
+    registerStep?: E_RegisterStep;
+    isEmailVerified?: boolean;
     displayName?: string;
     accountType?: E_AccountType;
     partner1?: I_UserPartner;
@@ -120,7 +122,6 @@ export interface I_User extends I_GenericDocument {
     willingnessToGo?: I_Tag[];
     rulesOfEngagementIds?: string[];
     rulesOfEngagement?: I_Tag[];
-    rolesIds?: string[];
     roles?: I_Role[];
     isActive?: boolean;
     isOnline?: boolean;
@@ -128,7 +129,6 @@ export interface I_User extends I_GenericDocument {
     settings?: I_UserSettings;
     flagCount?: number;
     userGroup?: E_UserGroup;
-    registerStep?: E_RegisterStep;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';

@@ -102,3 +102,13 @@ export interface I_Input_ChooseMembership {
     type: E_MembershipType;
     promoCode?: string;
 }
+
+export interface I_Input_ForgotPasswordRequest {
+    email: string;
+}
+
+export interface I_Input_ResetPassword {
+    email: string;
+    otp: string;
+    newPassword: string;
+}

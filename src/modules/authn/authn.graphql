@@ -99,4 +99,10 @@ type Mutation {
         type: E_MembershipType!
         promoCode: String
     ): T_Response_User!
+    forgotPasswordRequest(email: String!): T_Response_Auth!
+    resetPassword(
+        email: String!
+        otp: String!
+        newPassword: String!
+    ): T_Response_Auth!
 }

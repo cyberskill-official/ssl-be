@@ -2,8 +2,10 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
+
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/index.js';
-import { EMAIL_VERIFICATION } from '#modules/authn/index.js';
+
+import { EMAIL_VERIFICATION, FORGOT_PASSWORD } from '#modules/authn/index.js';
 
 interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 }
@@ -21,6 +23,21 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
             <p>The Support Team</p>`,
         variables: ['email', 'otp', 'expireIn'],
     },
+    {
+        templateKey: FORGOT_PASSWORD,
+        name: 'Forgot Password',
+        subject: '[Secret Swinger Lust] Reset Your Password',
+        content: `<h1>Hello <a href="mailto:<%= email %>" target="_blank"><%= email %></a></h1>
+        <p>We received a request to reset your password for your account.</p>
+        <p>Your OTP code is: <strong><%= otp %></strong></p>
+        <p>Please enter this code to reset your password.</p>
+        <p>This code will expire in <%= expireIn %> minutes.</p>
+        <p>If you didn’t request a password reset, please ignore this email.</p>
+        <p>Best regards,</p>
+        <p>The Support Team</p>`,
+        variables: ['email', 'otp', 'expireIn'],
+    },
+
 ];
 export async function up(db: C_Db) {
     const emailTplCtr = new MongoController<I_EmailTemplate>(db, 'emailtemplates');

@@ -322,10 +322,6 @@ export const UserModel = mongo.createModel<I_User>({
                 validate.email.format,
             ],
         },
-        isEmailVerified: {
-            type: Boolean,
-            default: false,
-        },
         password: {
             type: String,
             required: true,
@@ -338,6 +334,31 @@ export const UserModel = mongo.createModel<I_User>({
                 validate.password.alphanumeric,
                 validate.password.specialChar,
             ],
+        },
+        rolesIds: {
+            type: [String],
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select at least one role for the user',
+                },
+            ],
+        },
+        registerStep: {
+            type: String,
+            enum: Object.values(E_RegisterStep),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select a register step',
+                },
+            ],
+        },
+        isEmailVerified: {
+            type: Boolean,
+            default: false,
         },
         displayName: {
             type: String,
@@ -378,16 +399,6 @@ export const UserModel = mongo.createModel<I_User>({
         rulesOfEngagementIds: {
             type: [String],
         },
-        rolesIds: {
-            type: [String],
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select at least one role for the user',
-                },
-            ],
-        },
         isActive: {
             type: Boolean,
             default: false,
@@ -405,17 +416,6 @@ export const UserModel = mongo.createModel<I_User>({
         flagCount: {
             type: Number,
             default: 0,
-        },
-        registerStep: {
-            type: String,
-            enum: Object.values(E_RegisterStep),
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please select a register step',
-                },
-            ],
         },
     },
     virtuals: [

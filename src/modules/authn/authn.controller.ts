@@ -14,6 +14,7 @@ import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { E_RegisterStep, userCtr } from '#modules/user/index.js';
 import {
+    E_VerificationContext,
     E_VerificationMethod,
     verificationCtr,
 } from '#modules/verification/index.js';
@@ -25,14 +26,16 @@ import type {
     I_Input_ChooseMembership,
     I_Input_CompleteProfileS2,
     I_Input_CompleteProfileS3,
+    I_Input_ForgotPasswordRequest,
     I_Input_InitiateRegister,
     I_Input_Login,
+    I_Input_ResetPassword,
     I_Input_VerifyEmail,
     I_Response_Auth,
     I_SessionPayload,
 } from './authn.type.js';
 
-import { EMAIL_VERIFICATION, VERIFICATION_EXPIRES } from './authn.constant.js';
+import { EMAIL_VERIFICATION, FORGOT_PASSWORD, VERIFICATION_EXPIRES } from './authn.constant.js';
 
 const env = getEnv();
 
@@ -553,5 +556,134 @@ export const authnCtr = {
                 registerStep: nextStep,
             },
         });
+    },
+    forgotPasswordRequest: async (
+        context: I_Context,
+        args: I_Input_ForgotPasswordRequest,
+    ): Promise<I_Response_Auth> => {
+        args.email = args.email.toLowerCase();
+
+        validate.email.validate(args.email);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { email: args.email },
+            projection: { id: 1, email: 1 },
+        });
+
+        if (!userFound.success || !userFound.result) {
+            throwError({
+                message: 'Email not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        await authnCtr.sendForgotPasswordEmail(context, args.email);
+
+        return {
+            success: true,
+            message: 'OTP sent to email.',
+        };
+    },
+
+    resetPassword: async (
+        context: I_Context,
+        { email, otp, newPassword }: I_Input_ResetPassword,
+    ): Promise<I_Response_Auth> => {
+        validate.email.validate(email);
+        validate.password.validate(newPassword);
+
+        const checkResult = await verificationCtr.checkVerification(
+            context,
+            {
+                identifier: `${FORGOT_PASSWORD}:${email}`,
+                value: otp,
+                method: E_VerificationMethod.EMAIL_OTP,
+            },
+        );
+
+        if (!checkResult.success) {
+            throwError({
+                message: checkResult.message || 'Invalid OTP.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { email },
+            projection: { id: 1, email: 1 },
+        });
+
+        if (!userFound.success || !userFound.result) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const updateResult = await userCtr.updateUser(context, {
+            filter: { id: userFound.result.id },
+            update: { password: newPassword },
+        });
+
+        if (!updateResult.success) {
+            throwError({
+                message: updateResult.message || 'Failed to reset password.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        await verificationCtr.deleteVerification(
+            context,
+            {
+                filter: { id: checkResult.result.verification?.id },
+            },
+        );
+
+        return {
+            success: true,
+            message: 'Password reset successfully.',
+        };
+    },
+    sendForgotPasswordEmail: async (context: I_Context, email: string) => {
+        validate.email.validate(email);
+
+        const otp = helper.generateOTP();
+
+        const expiresAt = date.getDate(VERIFICATION_EXPIRES.FORGOT_PASSWORD, 'sec');
+
+        const verificationCreated = await verificationCtr.createVerification(
+            context,
+            {
+                doc: {
+                    identifier: `${FORGOT_PASSWORD}:${email}`,
+                    value: otp,
+                    expiresAt,
+                    maxAttempts: 5,
+                    method: E_VerificationMethod.EMAIL_OTP,
+                    meta: {
+                        context: E_VerificationContext.RESET_PASSWORD,
+                    },
+                },
+            },
+        );
+
+        if (!verificationCreated.success) {
+            throwError({
+                message:
+                    verificationCreated.message
+                    || 'Failed to create verification.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        await emailCtr.sendEmail(
+            FORGOT_PASSWORD,
+            email,
+            {
+                otp,
+                expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
+                email,
+            },
+        );
     },
 };
