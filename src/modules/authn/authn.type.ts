@@ -54,7 +54,7 @@ export interface I_Input_UserSettingsS2 extends Pick<I_Input_UserSettings, 'time
 
 export interface I_Input_CompleteProfileS2 extends Pick<
     I_Input_UpdateUser,
-    'partner1' | 'partner2' | 'location' | 'nativeLanguageId' | 'otherLanguagesIds' | 'settings' | 'pinStyle'
+    'partner1' | 'partner2' | 'nativeLanguageId' | 'otherLanguagesIds' | 'settings' | 'pinStyle'
 > {
     partner1: I_Input_PartnerInfoS2;
     partner2?: I_Input_PartnerInfoS2;

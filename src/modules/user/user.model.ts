@@ -29,7 +29,16 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                 },
             ],
         },
-        dateOfBirth: { type: Date },
+        dateOfBirth: {
+            type: Date,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select a date of birth',
+                },
+            ],
+        },
         relationshipStatusIds: {
             type: [String],
             required: true,
@@ -139,6 +148,9 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                     message: 'Please upload a picture',
                 },
             ],
+        },
+        location: {
+            type: LocationSchema,
         },
         bio: {
             type: String,
@@ -373,9 +385,6 @@ export const UserModel = mongo.createModel<I_User>({
         },
         partner2: {
             type: UserPartnerSchema,
-        },
-        location: {
-            type: LocationSchema,
         },
         nativeLanguageId: {
             type: String,

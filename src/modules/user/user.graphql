@@ -48,6 +48,7 @@ type T_UserPartner {
     skinToneId: String
     skinTone: T_Tag
     picture: String
+    location: T_Location
     bio: String
 }
 
@@ -65,6 +66,7 @@ input Input_UserPartner {
     eyeColorId: String
     skinToneId: String
     picture: String
+    location: Input_Location
     bio: String
 }
 
@@ -127,7 +129,6 @@ type T_User {
     accountType: E_AccountType
     partner1: T_UserPartner
     partner2: T_UserPartner
-    location: T_Location
     nativeLanguageId: String
     nativeLanguage: T_Language
     otherLanguagesIds: [String]
@@ -164,7 +165,6 @@ input Input_QueryUser {
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner
-    location: Input_Location
     nativeLanguageId: String
     otherLanguagesIds: [String]
     pinStyle: E_PinStyle
@@ -191,7 +191,6 @@ input Input_CreateUser {
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner
-    location: Input_Location
     nativeLanguageId: String
     otherLanguagesIds: [String]
     pinStyle: E_PinStyle
@@ -219,7 +218,6 @@ input Input_UpdateUser {
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner
-    location: Input_Location
     nativeLanguageId: String
     otherLanguagesIds: [String]
     pinStyle: E_PinStyle

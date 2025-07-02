@@ -54,12 +54,15 @@ export interface I_UserPartner {
     skinToneId?: string;
     skinTone?: I_Tag;
     picture?: string;
+    location?: I_Location;
     bio?: string;
 }
 
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
 
-export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> { }
+export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> {
+    location?: I_Input_Location;
+}
 
 export enum E_PinStyle {
     MALE = 'MALE',
@@ -108,7 +111,6 @@ export interface I_User extends I_GenericDocument {
     accountType?: E_AccountType;
     partner1?: I_UserPartner;
     partner2?: I_UserPartner;
-    location?: I_Location;
     nativeLanguageId?: string;
     nativeLanguage?: I_Language;
     otherLanguagesIds?: string[];
@@ -136,7 +138,6 @@ export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor'
 export interface I_Input_QueryUser extends Omit<I_User, 'password' | T_User_Populate> {
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
-    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }
 
@@ -146,13 +147,11 @@ export interface I_Input_CreateUser extends Omit<I_User, T_Omit_Create | T_User_
     password: string;
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
-    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }
 
 export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_Populate> {
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
-    location?: I_Input_Location;
     settings?: I_Input_UserSettings;
 }

@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
+import { MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/index.js';
 
@@ -65,12 +65,7 @@ export async function up(db: C_Db) {
         return;
     }
 
-    const emailTplsCreated = await emailTplCtr.createMany(
-        newTemplates.map(template => ({
-            ...template,
-            ...mongo.createGenericFields({ returnDateAs: 'date' }),
-        })),
-    );
+    const emailTplsCreated = await emailTplCtr.createMany(newTemplates);
 
     if (!emailTplsCreated.success) {
         log.error('Failed to create some email templates.');
