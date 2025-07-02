@@ -32,7 +32,7 @@ input Input_CompleteProfileS2Settings {
 
 input Input_CompleteProfileS2 {
     partner1: Input_CompleteProfileS2Partner!
-    partner2: Input_CompleteProfileS2Partner!
+    partner2: Input_CompleteProfileS2Partner
     location: Input_CompleteProfileS2Location!
     nativeLanguageId: String!
     otherLanguagesIds: [String!]!
@@ -62,7 +62,7 @@ input Input_CompleteProfileS3 {
     willingnessToGoIds: [String!]!
     rulesOfEngagementIds: [String!]!
     partner1: Input_CompleteProfileS3Partner!
-    partner2: Input_CompleteProfileS3Partner!
+    partner2: Input_CompleteProfileS3Partner
 }
 
 type T_Auth {
@@ -82,27 +82,12 @@ type Query {
 
 type Mutation {
     initiateRegister(email: String!, username: String!): T_Response_Auth!
-    login(
-        identity: String!
-        password: String!
-        rememberMe: Boolean
-    ): T_Response_Auth!
+    login(identity: String!, password: String!, rememberMe: Boolean): T_Response_Auth!
     logout: T_Response_Auth!
-    verifyEmail(
-        email: String!
-        otp: String!
-        userData: Input_VerifyUserData!
-    ): T_Response_Auth!
+    verifyEmail(email: String!, otp: String!, userData: Input_VerifyUserData!): T_Response_Auth!
     completeProfileStep2(update: Input_CompleteProfileS2!): T_Response_User!
     completeProfileStep3(update: Input_CompleteProfileS3!): T_Response_User!
-    chooseMembership(
-        type: E_MembershipType!
-        promoCode: String
-    ): T_Response_User!
+    chooseMembership(type: E_MembershipType!, promoCode: String): T_Response_User!
     forgotPasswordRequest(email: String!): T_Response_Auth!
-    resetPassword(
-        email: String!
-        otp: String!
-        newPassword: String!
-    ): T_Response_Auth!
+    resetPassword(email: String!, otp: String!, newPassword: String!): T_Response_Auth!
 }
