@@ -1,4 +1,13 @@
-import type { E_AccountType, E_PinStyle, I_Input_UpdateUser, I_Input_UserPartner, I_Input_UserSettings, I_User } from '#modules/user/index.js';
+import type { I_Input_Location } from '#modules/location/index.js';
+import type { E_AccountType, E_PinStyle, I_Input_UserPartner, I_Input_UserSettings, I_User } from '#modules/user/index.js';
+
+export enum E_RegisterStep {
+    VERIFY_EMAIL = 'VERIFY_EMAIL', // Step 2
+    PERSONAL_INFO = 'PERSONAL_INFO', // Step 3
+    PREFERENCES = 'PREFERENCES', // Step 4
+    MEMBERSHIP = 'MEMBERSHIP', // Step 5
+    COMPLETE = 'COMPLETE', // Step 6
+}
 
 export interface I_SessionPayload {
     createdAt: number;
@@ -10,7 +19,7 @@ export interface I_Input_CheckToken {
 }
 
 export interface I_Input_CheckAuth {
-    token: string;
+    token?: string;
 }
 
 export interface I_Input_Login {
@@ -28,6 +37,7 @@ export interface I_Response_Auth {
     };
 }
 
+// Step 1
 export interface I_Input_Register {
     displayName: string;
     username: string;
@@ -36,69 +46,67 @@ export interface I_Input_Register {
     accountType: E_AccountType;
 }
 
-export interface I_Input_InitiateRegister extends Pick<I_Input_Register, 'email' | 'username'> { }
+// Step 2
+export interface I_Input_Register_SendVerifyEmail {
+    email: string;
+}
 
-export interface I_Input_VerifyEmail {
+export interface I_Input_Register_VerifyEmail {
     email: string;
     otp: string;
-    userData: Omit<I_Input_Register, 'email'>;
 }
 
-export interface I_Input_PartnerInfoS2 extends Pick<I_Input_UserPartner, 'gender' | 'dateOfBirth'> { }
+// Step 3
+export interface I_Input_Register_Location extends Pick<I_Input_Location, 'countryId' | 'raw'> { }
 
-export interface I_Input_LocationInfoS2 {
-    countryId: string;
+export interface I_Input_Register_PersonalInfo_Partner extends Pick<I_Input_UserPartner, 'gender' | 'dateOfBirth' | 'location'> {
+    location: I_Input_Register_Location;
 }
 
-export interface I_Input_UserSettingsS2 extends Pick<I_Input_UserSettings, 'timeFormat'> { }
+export interface I_Input_Register_Settings extends Pick<I_Input_UserSettings, 'timeFormat'> { }
 
-export interface I_Input_CompleteProfileS2 extends Pick<
-    I_Input_UpdateUser,
-    'partner1' | 'partner2' | 'nativeLanguageId' | 'otherLanguagesIds' | 'settings' | 'pinStyle'
-> {
-    partner1: I_Input_PartnerInfoS2;
-    partner2?: I_Input_PartnerInfoS2;
-    location: I_Input_LocationInfoS2;
+export interface I_Input_Register_PersonalInfo {
+    partner1: I_Input_Register_PersonalInfo_Partner;
+    partner2?: I_Input_Register_PersonalInfo_Partner;
     nativeLanguageId: string;
-    otherLanguagesIds: string[];
-    settings: I_Input_UserSettingsS2;
+    otherLanguagesIds?: string[];
+    settings: I_Input_Register_Settings;
     pinStyle: E_PinStyle;
 }
 
-export interface I_Input_PartnerInfoS3 extends Pick<
-    I_Input_UserPartner,
-    | 'relationshipStatusIds'
-    | 'sexualOrientationIds'
-    | 'sexualPreferencesIds'
-    | 'smokingHabitsIds'
-    | 'preferredDrinksIds'
-    | 'bodyTypeId'
-    | 'heightId'
-    | 'hairColorId'
-    | 'eyeColorId'
-    | 'skinToneId'
-    | 'picture'
-    | 'bio'
-> { }
+// Step 4
+export interface I_Input_Register_Preferences_Partner {
+    relationshipStatusIds: string[];
+    sexualOrientationIds: string[];
+    sexualPreferencesIds: string[];
+    smokingHabitsIds: string[];
+    preferredDrinksIds: string[];
+    bodyTypeId: string;
+    heightId: string;
+    hairColorId: string;
+    eyeColorId: string;
+    skinToneId: string;
+    picture: string;
+    bio?: string;
+}
 
-export interface I_Input_CompleteProfileS3 extends Pick<
-    I_Input_UpdateUser,
-    'lookingForIds' | 'profilePurposeIds' | 'willingnessToGoIds' | 'rulesOfEngagementIds' | 'partner1' | 'partner2'
-> {
+export interface I_Input_Register_Preferences {
     lookingForIds: string[];
     profilePurposeIds: string[];
     willingnessToGoIds: string[];
     rulesOfEngagementIds: string[];
-    partner1: I_Input_PartnerInfoS3;
-    partner2?: I_Input_PartnerInfoS3;
+    partner1: I_Input_Register_Preferences_Partner;
+    partner2?: I_Input_Register_Preferences_Partner;
 }
+
+// Step 5
 export enum E_MembershipType {
     FREE = 'FREE',
     PAID = 'PAID',
     PROMO = 'PROMO',
 }
 
-export interface I_Input_ChooseMembership {
+export interface I_Input_Register_Membership {
     type: E_MembershipType;
     promoCode?: string;
 }

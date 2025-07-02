@@ -1,9 +1,10 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { E_RegisterStep } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Language } from '#modules/language/index.js';
-import type { I_Input_Location, I_Location } from '#modules/location/location/index.js';
-import type { I_Tag } from '#modules/tag/tag.type.js';
+import type { I_Input_Location, I_Location } from '#modules/location/index.js';
+import type { I_Tag } from '#modules/tag/index.js';
 
 export enum E_AccountType {
     SINGLE = 'SINGLE',
@@ -22,14 +23,11 @@ export enum E_UserGroup {
     CUSTOM_RECIPIENTS = 'CUSTOM_RECIPIENTS',
 }
 
-export enum E_RegisterStep {
-    CREDENTIALS = 'CREDENTIALS', // Step 1
-    PERSONAL_INFO = 'PERSONAL_INFO', // Step 2
-    PREFERENCES = 'PREFERENCES', // Step 3
-    CHOOSE_MEMBERSHIP = 'CHOOSE_MEMBERSHIP',
-    PAYMENT = 'PAYMENT',
-    COMPLETE = 'COMPLETE',
+export enum E_UserSettings_TimeFormat {
+    H24 = 'H24',
+    H12 = 'H12',
 }
+
 export interface I_UserPartner {
     gender?: E_Gender;
     dateOfBirth?: Date;
@@ -89,13 +87,13 @@ export interface I_UserSettings_Notification {
 }
 
 export interface I_UserSettings {
-    timeFormat?: string;
+    timeFormat?: E_UserSettings_TimeFormat;
     temporaryLocation?: I_UserSettings_TemporaryLocation;
     notification?: I_UserSettings_Notification;
 }
 
 export interface I_Input_UserSettings {
-    timeFormat?: string;
+    timeFormat?: E_UserSettings_TimeFormat;
     temporaryLocation?: I_Input_UserSettings_TemporaryLocation;
     notification?: I_UserSettings_Notification;
 }

@@ -52,8 +52,8 @@ export interface I_EmailJobResult {
 
 export interface I_EmailJobResponse {
     success: boolean;
+    message?: string;
     jobId?: string;
-    error?: string;
 }
 
 export interface I_BulkEmailJobData {

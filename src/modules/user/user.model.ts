@@ -1,6 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { E_RegisterStep } from '#modules/authn/index.js';
 import { LocationSchema } from '#modules/location/location/index.js';
 import { validate } from '#shared/util/index.js';
 
@@ -10,7 +11,7 @@ import {
     E_AccountType,
     E_Gender,
     E_PinStyle,
-    E_RegisterStep,
+    E_UserSettings_TimeFormat,
 } from './user.type.js';
 
 export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
@@ -290,7 +291,10 @@ export const UserSettingsSchema = mongo.createSchema<I_UserSettings>({
     standalone: true,
     mongoose,
     schema: {
-        timeFormat: { type: String },
+        timeFormat: {
+            type: String,
+            enum: Object.values(E_UserSettings_TimeFormat),
+        },
         temporaryLocation: { type: UserSettingsTemporaryLocationSchema },
         notification: { type: UserSettingsNotificationSchema },
     },

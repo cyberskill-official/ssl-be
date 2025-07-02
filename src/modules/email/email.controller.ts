@@ -88,7 +88,7 @@ export const emailCtr = {
 
             return {
                 success: false,
-                error: errorMessage,
+                message: errorMessage,
             };
         }
     },
@@ -122,7 +122,7 @@ export const emailCtr = {
 
             return {
                 success: false,
-                error: errorMessage,
+                message: errorMessage,
             };
         }
     },
@@ -166,7 +166,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: errorMessage };
+            return { success: false, message: errorMessage };
         }
     },
 
@@ -178,14 +178,14 @@ export const emailCtr = {
             const removed = await emailQueue.removeJob(jobId);
 
             if (!removed) {
-                return { success: false, error: 'Job not found' };
+                return { success: false, message: 'Job not found' };
             }
 
             return { success: true };
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: errorMessage };
+            return { success: false, message: errorMessage };
         }
     },
 
@@ -199,7 +199,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: errorMessage };
+            return { success: false, message: errorMessage };
         }
     },
 
@@ -213,7 +213,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: errorMessage };
+            return { success: false, message: errorMessage };
         }
     },
 
@@ -227,7 +227,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            return { success: false, error: errorMessage };
+            return { success: false, message: errorMessage };
         }
     },
 };

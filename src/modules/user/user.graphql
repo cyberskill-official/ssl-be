@@ -15,15 +15,6 @@ enum E_UserGroup {
     CUSTOM_RECIPIENTS
 }
 
-enum E_RegisterStep {
-    CREDENTIALS
-    PERSONAL_INFO
-    PREFERENCES
-    CHOOSE_MEMBERSHIP
-    PAYMENT
-    COMPLETE
-}
-
 type T_UserPartner {
     gender: E_Gender
     dateOfBirth: DateTime
@@ -103,14 +94,19 @@ input Input_UserSettings_Notification {
     sound: Boolean!
 }
 
+enum E_UserSettings_TimeFormat {
+    H24
+    H12
+}
+
 type T_UserSettings {
-    timeFormat: String
+    timeFormat: E_UserSettings_TimeFormat
     temporaryLocation: T_UserSettings_TemporaryLocation
     notification: T_UserSettings_Notification
 }
 
 input Input_UserSettings {
-    timeFormat: String
+    timeFormat: E_UserSettings_TimeFormat
     temporaryLocation: Input_UserSettings_TemporaryLocation
     notification: Input_UserSettings_Notification
 }
@@ -272,10 +268,6 @@ type Query {
 
 type Mutation {
     createUser(doc: Input_CreateUser!): T_Response_User!
-    updateUser(
-        filter: Input_QueryUser!
-        update: Input_UpdateUser!
-        options: JSON
-    ): T_Response_User!
+    updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
     deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
 }

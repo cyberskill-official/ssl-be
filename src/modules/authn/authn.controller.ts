@@ -1,4 +1,4 @@
-import type { I_Return } from '@cyberskill/shared/typescript';
+import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -6,13 +6,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
-import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, roleCtr } from '#modules/authz/index.js';
+import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
-import { E_RegisterStep, userCtr } from '#modules/user/index.js';
+import { userCtr } from '#modules/user/index.js';
 import {
     E_VerificationContext,
     E_VerificationMethod,
@@ -23,19 +22,21 @@ import { date, helper, validate } from '#shared/util/index.js';
 import type {
     I_Input_CheckAuth,
     I_Input_CheckToken,
-    I_Input_ChooseMembership,
-    I_Input_CompleteProfileS2,
-    I_Input_CompleteProfileS3,
     I_Input_ForgotPasswordRequest,
-    I_Input_InitiateRegister,
     I_Input_Login,
+    I_Input_Register,
+    I_Input_Register_Membership,
+    I_Input_Register_PersonalInfo,
+    I_Input_Register_Preferences,
+    I_Input_Register_SendVerifyEmail,
+    I_Input_Register_VerifyEmail,
     I_Input_ResetPassword,
-    I_Input_VerifyEmail,
     I_Response_Auth,
     I_SessionPayload,
 } from './authn.type.js';
 
 import { EMAIL_VERIFICATION, FORGOT_PASSWORD, VERIFICATION_EXPIRES } from './authn.constant.js';
+import { E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
 
@@ -90,120 +91,469 @@ export const authnCtr = {
         context: I_Context,
         args?: I_Input_CheckAuth,
     ): Promise<I_Response_Auth> => {
-        if (context?.req?.session?.user) {
-            const userFound = await userCtr.getUser(
-                context,
-                {
-                    filter: {
-                        id: context.req.session.user.id,
-                    },
-                    populate: {
-                        path: 'roles',
-                    },
-                },
-            );
-
-            if (!userFound.success) {
-                context.req.session.destroy(() => { });
-                throwError({
-                    message: 'Session expired.',
-                    status: RESPONSE_STATUS.UNAUTHORIZED,
-                });
-            }
-
-            if (userFound.result.isDel) {
-                return {
-                    success: false,
-                    message: 'Account has been deleted.',
-                };
-            }
-
-            if (!userFound.result.isActive) {
-                return {
-                    success: false,
-                    message: 'Account is not active. Please contact support.',
-                };
-            }
-
-            if (!userFound.result.isEmailVerified) {
-                return {
-                    success: false,
-                    message: 'Email not verified.',
-                };
-            }
-
-            context.req.session.user = omit(userFound.result, 'password');
-
-            return {
-                success: true,
-                result: {
-                    user: context.req.session.user,
-                    ...(args?.token && { token: args.token }),
-                },
-            };
-        }
-
         if (args?.token) {
             return authnCtr.checkToken(context, { token: args.token });
         }
 
-        return {
-            success: false,
-        };
-    },
-    initiateRegister: async (
-        { req }: I_Context,
-        args: I_Input_InitiateRegister,
-    ): Promise<I_Response_Auth> => {
-        const emailLowerCase = args.email.toLowerCase();
-        args.email = emailLowerCase;
+        if (!context?.req?.session?.user) {
+            return {
+                success: false,
+                message: 'Session not found.',
+            };
+        }
 
-        validate.email.validate(args.email);
-        validate.username.validate(args.username);
-
-        const existingUser = await userCtr.getUser(
-            { req },
+        const userFound = await userCtr.getUser(
+            context,
             {
                 filter: {
-                    $or: [{ email: args.email }, { username: args.username }],
+                    id: context.req.session.user.id,
+                },
+                populate: ['roles'],
+            },
+        );
+
+        if (!userFound.success) {
+            context.req.session.destroy(() => { });
+            throwError({
+                message: 'Session expired.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        if (userFound.result.isDel) {
+            return {
+                success: false,
+                message: 'Account has been deleted.',
+            };
+        }
+
+        if (!userFound.result.isActive) {
+            return {
+                success: false,
+                message: 'Account is not active. Please contact support.',
+            };
+        }
+
+        if (!userFound.result.isEmailVerified) {
+            return {
+                success: false,
+                message: 'Email not verified.',
+            };
+        }
+
+        context.req.session.user = omit(userFound.result, 'password');
+
+        return {
+            success: true,
+            result: {
+                user: context.req.session.user,
+            },
+        };
+    },
+    checkSession: async (context: I_Context): Promise<void> => {
+        if (!context.req?.session) {
+            throwError({
+                message: 'Session not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const userId = context.req?.session?.user?.id;
+
+        if (!userId) {
+            throwError({
+                message: 'User not authenticated.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+    },
+    register: async (
+        context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_Register>,
+    ): Promise<I_Response_Auth> => {
+        if (!context.req?.session) {
+            throwError({
+                message: 'Session not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const { email, username, password, displayName, accountType } = doc;
+        const emailLowerCase = email.toLowerCase();
+
+        validate.email.validate(email);
+        validate.username.validate(username);
+
+        const existingUserFound = await userCtr.getUser(
+            context,
+            {
+                filter: {
+                    $or: [{ email: emailLowerCase }, { username }],
                 },
             },
         );
 
-        if (existingUser.success) {
-            const isEmail = existingUser.result?.email === args.email;
-            const isUsername = existingUser.result?.username === args.username;
-
-            const errorField = isEmail
-                ? 'Email'
-                : isUsername
-                    ? 'Username'
-                    : 'Email or username';
+        if (existingUserFound.success) {
             throwError({
-                message: `${errorField} already exists.`,
+                message: `Email or username already exists.`,
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        await authnCtr.sendVerificationEmail({ req }, args.email);
+        const roleFound = await roleCtr.getRole(
+            context,
+            {
+                filter: {
+                    name: E_Role.USER,
+                },
+            },
+        );
+
+        if (!roleFound.success) {
+            throwError({
+                message: 'Role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const userCreated = await userCtr.createUser(
+            context,
+            {
+                doc: {
+                    email: emailLowerCase,
+                    username,
+                    password: bcrypt.hashSync(password),
+                    ...(accountType && { accountType }),
+                    ...(displayName && { displayName }),
+                    rolesIds: [roleFound.result.id],
+                    registerStep: E_RegisterStep.VERIFY_EMAIL,
+                    isActive: true,
+                },
+            },
+        );
+
+        if (!userCreated.success) {
+            throwError({
+                message: userCreated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        context.req.session.user = omit(userCreated.result, 'password');
 
         return {
             success: true,
-            message: 'Verification email sent successfully.',
+            result: {
+                user: context.req.session.user,
+            },
         };
     },
-    login: async (
-        { req }: I_Context,
-        args: I_Input_Login,
-    ): Promise<I_Response_Auth> => {
-        if (!req?.session) {
+    registerSendVerifyEmail: async (context: I_Context, { email }: I_Input_Register_SendVerifyEmail) => {
+        await authnCtr.checkSession(context);
+        const emailLowerCase = email.toLowerCase();
+
+        validate.email.validate(emailLowerCase);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { email: emailLowerCase },
+        });
+
+        if (!userFound.success) {
             throwError({
-                message: 'Login failed.',
+                message: 'User not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const authChecked = await authnCtr.checkAuth({ req });
+        const otp = helper.generateOTP();
+
+        const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
+
+        const verificationCreated = await verificationCtr.createVerification(
+            context,
+            {
+                doc: {
+                    identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
+                    value: otp,
+                    expiresAt,
+                    maxAttempts: 5,
+                    method: E_VerificationMethod.EMAIL_OTP,
+                },
+            },
+        );
+
+        if (!verificationCreated.success) {
+            throwError({
+                message: verificationCreated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const emailResult = await emailCtr.sendEmail(
+            EMAIL_VERIFICATION,
+            emailLowerCase,
+            {
+                otp,
+                expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
+                email: emailLowerCase,
+            },
+        );
+
+        if (!emailResult.success) {
+            throwError({
+                message: emailResult.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: omit(userFound.result, 'password'),
+            },
+        };
+    },
+    registerVerifyEmail: async (
+        context: I_Context,
+        { email, otp }: I_Input_Register_VerifyEmail,
+    ): Promise<I_Response_Auth> => {
+        await authnCtr.checkSession(context);
+        const emailLowerCase = email.toLowerCase();
+
+        validate.email.validate(emailLowerCase);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { email: emailLowerCase },
+        });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const checkResult = await verificationCtr.checkVerification(
+            context,
+            {
+                identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
+                value: otp,
+                method: E_VerificationMethod.EMAIL_OTP,
+            },
+        );
+
+        if (!checkResult.success) {
+            throwError({
+                message: checkResult.message,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        await verificationCtr.deleteVerification(
+            context,
+            {
+                filter: { id: checkResult.result.verification?.id },
+            },
+        );
+
+        const userUpdated = await userCtr.updateUser(context, {
+            filter: { id: userFound.result.id },
+            update: {
+                isEmailVerified: true,
+                registerStep: E_RegisterStep.PERSONAL_INFO,
+            },
+        });
+
+        if (!userUpdated.success) {
+            throwError({
+                message: userUpdated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: omit(userUpdated.result, 'password'),
+            },
+        };
+    },
+    registerPersonalInfo: async (
+        context: I_Context,
+        { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
+    ): Promise<I_Response_Auth> => {
+        await authnCtr.checkSession(context);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { id: context.req?.session?.user?.id },
+        });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
+
+        const userUpdated = await userCtr.updateUser(context, {
+            filter: { id: context.req?.session?.user?.id },
+            update: {
+                ...update,
+                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.PREFERENCES }),
+            },
+        });
+
+        if (!userUpdated.success) {
+            throwError({
+                message: userUpdated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: omit(userUpdated.result, 'password'),
+            },
+        };
+    },
+    registerPreferences: async (
+        context: I_Context,
+        { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
+    ): Promise<I_Response_Auth> => {
+        await authnCtr.checkSession(context);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { id: context.req?.session?.user?.id },
+        });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
+
+        const userUpdated = await userCtr.updateUser(context, {
+            filter: { id: context.req?.session?.user?.id },
+            update: {
+                ...update,
+                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.MEMBERSHIP }),
+            },
+        });
+
+        if (!userUpdated.success) {
+            throwError({
+                message: userUpdated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: omit(userUpdated.result, 'password'),
+            },
+        };
+    },
+    registerMembership: async (
+        context: I_Context,
+        { type }: I_Input_Register_Membership,
+    ): Promise<I_Response_Auth> => {
+        await authnCtr.checkSession(context);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { id: context.req?.session?.user?.id },
+        });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        let roleId;
+
+        switch (type) {
+            case 'FREE': {
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_Role_User.FREE_MEMBER,
+                    },
+                });
+
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
+            }
+            case 'PROMO':
+            case 'PAID': {
+                // TODO: Handle payment/promo logic
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_Role_User.PAID_MEMBER,
+                    },
+                });
+
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
+            }
+        }
+
+        const stepsAfter = [E_RegisterStep.COMPLETE];
+
+        const userUpdated = await userCtr.updateUser(context, {
+            filter: { id: userFound.result.id },
+            update: {
+                rolesIds: [roleId],
+                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.COMPLETE }),
+            },
+        });
+
+        if (!userUpdated.success) {
+            throwError({
+                message: userUpdated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: omit(userUpdated.result, 'password'),
+            },
+        };
+    },
+    login: async (
+        context: I_Context,
+        args: I_Input_Login,
+    ): Promise<I_Response_Auth> => {
+        if (!context?.req?.session) {
+            throwError({
+                message: 'Session not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const authChecked = await authnCtr.checkAuth(context);
 
         if (authChecked.success) {
             return authChecked;
@@ -212,7 +562,7 @@ export const authnCtr = {
         const { identity, password, rememberMe } = args;
 
         const userFound = await userCtr.getUser(
-            { req },
+            context,
             {
                 filter: {
                     email: identity,
@@ -268,294 +618,31 @@ export const authnCtr = {
             });
         }
 
-        const token = rememberMe ? authnCtr.generateToken({ req }, userFound.result.id) : '';
+        const token = rememberMe ? authnCtr.generateToken(context, userFound.result.id) : '';
 
-        req.session.user = omit(userFound.result, 'password');
+        context.req.session.user = omit(userFound.result, 'password');
 
         return {
             success: true,
             result: {
-                user: req.session.user,
+                user: context.req.session.user,
                 ...(token && { token }),
             },
         };
     },
-    logout: async ({ req }: I_Context): Promise<I_Response_Auth> => {
-        if (!req?.session?.user) {
-            return {
-                success: false,
-                message: 'Logout failed.',
-            };
-        }
-
-        req.session.destroy(() => { });
-
-        return {
-            success: true,
-        };
-    },
-    sendVerificationEmail: async (context: I_Context, email: string) => {
-        validate.email.validate(email);
-
-        const otp = helper.generateOTP();
-
-        const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
-
-        const verificationCreated = await verificationCtr.createVerification(
-            context,
-            {
-                doc: {
-                    identifier: `${EMAIL_VERIFICATION}:${email}`,
-                    value: otp,
-                    expiresAt,
-                    maxAttempts: 5,
-                    method: E_VerificationMethod.EMAIL_OTP,
-                },
-            },
-        );
-
-        if (!verificationCreated.success) {
-            throwError({
-                message:
-                    verificationCreated.message
-                    || 'Failed to create verification.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        await emailCtr.sendEmail(
-            EMAIL_VERIFICATION,
-            email,
-            {
-                otp,
-                expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
-                email,
-            },
-        );
-    },
-    verifyEmail: async (
-        { req }: I_Context,
-        args: I_Input_VerifyEmail,
-    ): Promise<I_Response_Auth> => {
-        if (!req?.session) {
+    logout: async (context: I_Context): Promise<I_Response_Auth> => {
+        if (!context.req?.session) {
             throwError({
                 message: 'Session not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        validate.email.validate(args.email);
-        validate.password.validate(args.userData.password);
-        validate.username.validate(args.userData.username);
-
-        const lowerEmail = args.email.toLowerCase();
-        args.email = lowerEmail;
-
-        const checkResult = await verificationCtr.checkVerification(
-            { req },
-            {
-                identifier: `${EMAIL_VERIFICATION}:${args.email}`,
-                value: args.otp,
-                method: E_VerificationMethod.EMAIL_OTP,
-            },
-        );
-        if (!checkResult.success) {
-            throwError({
-                message: checkResult.message || 'Invalid OTP.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        // Get role for new user
-        const roleFound = await roleCtr.getRole(
-            { req },
-            {
-                filter: {
-                    name: E_Role.USER,
-                },
-            },
-        );
-
-        if (!roleFound.success) {
-            throwError({
-                message: 'Role not found.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        // Create verified user
-        const userCreated = await userCtr.createUser(
-            { req },
-            {
-                doc: {
-                    ...args.userData,
-                    email: args.email,
-                    isActive: true,
-                    isEmailVerified: true,
-                    registerStep: E_RegisterStep.CREDENTIALS,
-                    rolesIds: [roleFound.result.id],
-                },
-            },
-        );
-
-        if (!userCreated.success) {
-            throwError({
-                message: userCreated.message || 'Registration failed.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        await verificationCtr.deleteVerification(
-            { req },
-            {
-                filter: { id: checkResult.result.verification?.id },
-            },
-        );
-
-        req.session.user = omit(userCreated.result, 'password');
+        context.req.session.destroy(() => { });
 
         return {
             success: true,
-            message: 'Email verified and account created successfully.',
-            result: {
-                user: omit(userCreated.result, 'password'),
-            },
         };
-    },
-    completeProfileStep2: async (
-        context: I_Context,
-        { update }: { update: I_Input_CompleteProfileS2 },
-    ): Promise<I_Return<I_User>> => {
-        const userId = context.req?.session?.user?.id;
-
-        if (!userId) {
-            throwError({
-                message: 'User not authenticated.',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
-        }
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: userId },
-            projection: { id: 1, registerStep: 1 },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-        if (userFound.result.registerStep !== E_RegisterStep.CREDENTIALS) {
-            throwError({
-                message: 'User has completed this registration step.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        // TODO: check nativeLanguageId and otherLanguagesIds are valid language IDs
-
-        return userCtr.updateUser(context, {
-            filter: { id: userId },
-            update: {
-                ...update,
-                registerStep: E_RegisterStep.PERSONAL_INFO,
-            },
-            options: {},
-        });
-    },
-    completeProfileStep3: async (
-        context: I_Context,
-        { update }: { update: I_Input_CompleteProfileS3 },
-    ): Promise<I_Return<I_User>> => {
-        const userId = context.req?.session?.user?.id;
-
-        if (!userId) {
-            throwError({
-                message: 'User not authenticated.',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
-        }
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: userId },
-            projection: { id: 1, registerStep: 1 },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-        if (userFound.result.registerStep !== E_RegisterStep.PERSONAL_INFO) {
-            throwError({
-                message: 'User has completed this registration step.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        return userCtr.updateUser(context, {
-            filter: { id: userId },
-            update: {
-                ...update,
-                registerStep: E_RegisterStep.PREFERENCES,
-            },
-            options: {},
-        });
-    },
-    chooseMembership: async (
-        context: I_Context,
-        { type }: I_Input_ChooseMembership,
-    ): Promise<I_Return<I_User>> => {
-        const userId = context.req?.session?.user?.id;
-
-        if (!userId) {
-            throwError({
-                message: 'User not authenticated.',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
-        }
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: userId },
-            projection: { id: 1, registerStep: 1 },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        if (userFound.result.registerStep !== E_RegisterStep.PREFERENCES) {
-            throwError({
-                message: 'This step has already been completed.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        let nextStep = E_RegisterStep.CHOOSE_MEMBERSHIP;
-
-        switch (type) {
-            case 'FREE':
-                nextStep = E_RegisterStep.COMPLETE;
-                break;
-            case 'PAID':
-                nextStep = E_RegisterStep.PAYMENT;
-                // TODO: Handle payment logic
-                break;
-            case 'PROMO':
-                // TODO: Handle promo code logic
-                break;
-        }
-
-        return userCtr.updateUser(context, {
-            filter: { id: userId },
-            update: {
-                registerStep: nextStep,
-            },
-        });
     },
     forgotPasswordRequest: async (
         context: I_Context,
@@ -567,7 +654,6 @@ export const authnCtr = {
 
         const userFound = await userCtr.getUser(context, {
             filter: { email: args.email },
-            projection: { id: 1, email: 1 },
         });
 
         if (!userFound.success || !userFound.result) {
@@ -584,7 +670,6 @@ export const authnCtr = {
             message: 'OTP sent to email.',
         };
     },
-
     resetPassword: async (
         context: I_Context,
         { email, otp, newPassword }: I_Input_ResetPassword,
@@ -603,14 +688,13 @@ export const authnCtr = {
 
         if (!checkResult.success) {
             throwError({
-                message: checkResult.message || 'Invalid OTP.',
+                message: checkResult.message,
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
         const userFound = await userCtr.getUser(context, {
             filter: { email },
-            projection: { id: 1, email: 1 },
         });
 
         if (!userFound.success || !userFound.result) {

@@ -1,6 +1,8 @@
+import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CheckAuth, I_Input_ChooseMembership, I_Input_CompleteProfileS2, I_Input_CompleteProfileS3, I_Input_ForgotPasswordRequest, I_Input_InitiateRegister, I_Input_Login, I_Input_ResetPassword, I_Input_VerifyEmail } from './authn.type.js';
+import type { I_Input_CheckAuth, I_Input_ForgotPasswordRequest, I_Input_Login, I_Input_Register, I_Input_Register_Membership, I_Input_Register_PersonalInfo, I_Input_Register_Preferences, I_Input_Register_SendVerifyEmail, I_Input_Register_VerifyEmail, I_Input_ResetPassword } from './authn.type.js';
 
 import { authnCtr } from './authn.controller.js';
 
@@ -9,13 +11,14 @@ const authResolver = {
         checkAuth: (_parent: unknown, args: I_Input_CheckAuth, context: I_Context) => authnCtr.checkAuth(context, args),
     },
     Mutation: {
-        initiateRegister: (_parent: unknown, args: I_Input_InitiateRegister, context: I_Context) => authnCtr.initiateRegister(context, args),
+        register: (_parent: unknown, args: I_Input_CreateOne<I_Input_Register>, context: I_Context) => authnCtr.register(context, args),
+        registerSendVerifyEmail: (_parent: unknown, args: I_Input_Register_SendVerifyEmail, context: I_Context) => authnCtr.registerSendVerifyEmail(context, args),
+        registerVerifyEmail: (_parent: unknown, args: I_Input_Register_VerifyEmail, context: I_Context) => authnCtr.registerVerifyEmail(context, args),
+        registerPersonalInfo: (_parent: unknown, args: I_Input_UpdateOne<I_Input_Register_PersonalInfo>, context: I_Context) => authnCtr.registerPersonalInfo(context, args),
+        registerPreferences: (_parent: unknown, args: I_Input_UpdateOne<I_Input_Register_Preferences>, context: I_Context) => authnCtr.registerPreferences(context, args),
+        registerMembership: (_parent: unknown, args: I_Input_Register_Membership, context: I_Context) => authnCtr.registerMembership(context, args),
         login: (_parent: unknown, args: I_Input_Login, context: I_Context) => authnCtr.login(context, args),
         logout: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.logout(context),
-        verifyEmail: (_parent: unknown, args: I_Input_VerifyEmail, context: I_Context) => authnCtr.verifyEmail(context, args),
-        completeProfileStep2: (_parent: unknown, args: { update: I_Input_CompleteProfileS2 }, context: I_Context) => authnCtr.completeProfileStep2(context, args),
-        completeProfileStep3: (_parent: unknown, args: { update: I_Input_CompleteProfileS3 }, context: I_Context) => authnCtr.completeProfileStep3(context, args),
-        chooseMembership: (_parent: unknown, args: I_Input_ChooseMembership, context: I_Context) => authnCtr.chooseMembership(context, args),
         forgotPasswordRequest: (_parent: unknown, args: I_Input_ForgotPasswordRequest, context: I_Context) => authnCtr.forgotPasswordRequest(context, args),
         resetPassword: (_parent: unknown, args: I_Input_ResetPassword, context: I_Context) => authnCtr.resetPassword(context, args),
     },
