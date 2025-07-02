@@ -11,8 +11,8 @@ import { getEnv } from '#modules/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
-import { generateUploadPath } from './upload.util.js';
 import { UPLOAD_CONFIG } from './upload.constant.js';
+import { generateUploadPath } from './upload.util.js';
 
 const env = getEnv();
 
@@ -62,7 +62,7 @@ export const uploadCtr = {
             path: uploadPath,
             type,
             config: UPLOAD_CONFIG,
-        })
+        });
 
         if (!result.success) {
             throwError({

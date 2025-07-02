@@ -7,16 +7,16 @@ import { permissionCtr } from './permission/permission.controller.js';
 import { E_PermissionType } from './permission/permission.type.js';
 import { rolePermissionCtr } from './role-permission/role-permission.controller.js';
 
-export const authz = {
+export const authzMiddleware = {
     checkAuthorizedGraphql: async (context: I_Context) => {
-        const user = context?.req?.session?.user!;
-        const roleIds: string[] = user.rolesIds!;
-        const info = context?.info!;
+        const user = context?.req?.session?.user;
+        const roleIds: string[] = user?.rolesIds ?? [];
+        const info = context?.info;
 
         // Auto-detect the target from GraphQL operation info
-        const operationType = info.operation.operation; // 'query', 'mutation', 'subscription'
-        const fieldName = info.fieldName; // The actual field being called
-        const target = `${operationType.toUpperCase()}_${fieldName}`;
+        const operationType = info?.operation.operation; // 'query', 'mutation', 'subscription'
+        const fieldName = info?.fieldName; // The actual field being called
+        const target = `${operationType?.toUpperCase()}_${fieldName}`;
 
         const rolesPermissionFound = await rolePermissionCtr.getRolePermissions({}, {
             filter: { roleId: { $in: roleIds } },

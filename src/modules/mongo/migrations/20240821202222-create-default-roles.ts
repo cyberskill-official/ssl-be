@@ -17,17 +17,17 @@ const roles: I_RoleExtended[] = [
         children: [
             { name: 'ADMIN' },
             { name: 'MODERATOR' },
-            { name: 'VIEWER' }
+            { name: 'VIEWER' },
         ],
     },
     {
         name: 'USER',
         children: [
             { name: 'FREE_MEMBER' },
-            { name: 'PAID_MEMBER' }
+            { name: 'PAID_MEMBER' },
         ],
-    }
-]
+    },
+];
 
 export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Role>(db, 'roles');
@@ -44,26 +44,26 @@ export async function up(db: C_Db) {
             ...roleData,
             parentId,
             ancestors,
-        })
+        });
 
         if (!createdRole.success) {
-            return log.error(`Failed to create menu, ${role.name}`)
+            return log.error(`Failed to create menu, ${role.name}`);
         }
 
-        log.info(`Role created: ${role.name} with ancestors: [${ancestors.join(', ')}]`)
+        log.info(`Role created: ${role.name} with ancestors: [${ancestors.join(', ')}]`);
 
         if (children) {
             for (const child of children) {
-                await createRole(child, createdRole.result.id)
+                await createRole(child, createdRole.result.id);
             }
         }
     }
 
     for (const role of roles) {
-        await createRole(role)
+        await createRole(role);
     }
 
-    log.success('All roles created successfully')
+    log.success('All roles created successfully');
 }
 
 export async function down(db: C_Db) {

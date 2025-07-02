@@ -1,7 +1,8 @@
-import { E_PermissionMethodGraphQL, E_PermissionMethodRest, E_PermissionType } from './permission.type.js';
+import { allResolvers } from '#modules/graphql/schema.js';
 
 import type { I_Response_ScanPermission } from './permission.type.js';
-import { allResolvers } from '#modules/graphql/schema.js';
+
+import { E_PermissionMethodGraphQL, E_PermissionMethodRest, E_PermissionType } from './permission.type.js';
 
 export function scanGraphqlResolvers(): I_Response_ScanPermission[] {
     const permissions: I_Response_ScanPermission[] = [];
@@ -42,4 +43,3 @@ export function scanRestApiEndpoints(): I_Response_ScanPermission[] {
         },
     ];
 }
-

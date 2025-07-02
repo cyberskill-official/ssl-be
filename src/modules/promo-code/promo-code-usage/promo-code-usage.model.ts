@@ -47,5 +47,5 @@ export const PromoCodeUsageModel = mongo.createModel<I_PromoCodeUsage>({
                 justOne: true,
             },
         },
-    ]
+    ],
 });

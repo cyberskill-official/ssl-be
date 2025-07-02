@@ -1,7 +1,8 @@
 import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
-import type { I_Input_SaveDraftLegalDocument, I_Input_PublishLegalDocument, I_Input_QueryLegalDocument, I_Input_RestoreLegalDocument } from './legal-document.type.js';
+
+import type { I_Input_PublishLegalDocument, I_Input_QueryLegalDocument, I_Input_RestoreLegalDocument, I_Input_SaveDraftLegalDocument } from './legal-document.type.js';
 
 import { legalDocumentCtr } from './legal-document.controller.js';
 
@@ -17,4 +18,4 @@ const legalDocumentResolver = {
     },
 };
 
-export default legalDocumentResolver; 
+export default legalDocumentResolver;

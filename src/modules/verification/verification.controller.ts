@@ -38,23 +38,9 @@ export const verificationCtr = {
     },
 
     createVerification: async (
-        context: I_Context,
+        _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateVerification>,
     ): Promise<I_Return<I_Verification>> => {
-        const existingVerification = await verificationCtr.getVerification(context, {
-            filter: {
-                identifier: doc.identifier,
-            },
-        });
-
-        if (existingVerification.success) {
-            const verificationType = doc.identifier.split(':')[0]?.replace(/-/g, ' ') || 'verification';
-            throwError({
-                message: `An active ${verificationType} request already exists. Please wait before requesting another one.`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
         return mongooseCtr.createOne(doc);
     },
 
@@ -104,6 +90,7 @@ export const verificationCtr = {
                 identifier,
                 ...(method && { method }),
             },
+            options: { sort: { createdAt: -1 } },
         });
 
         if (!verificationFound.success) {

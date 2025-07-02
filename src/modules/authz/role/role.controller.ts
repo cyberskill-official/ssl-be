@@ -15,8 +15,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_CreateRole, I_Input_QueryRole, I_Input_UpdateRole, I_Role } from './role.type.js';
 
-import { RoleModel } from './role.model.js';
 import { rolePermissionCtr } from '../role-permission/role-permission.controller.js';
+import { RoleModel } from './role.model.js';
 
 const mongooseCtr = new MongooseController<I_Role>(RoleModel);
 
@@ -49,7 +49,7 @@ export const roleCtr = {
         }
 
         let ancestors: string[] = [];
-        
+
         if (parentId) {
             const newParentFound = await roleCtr.getRole(context, { filter: { id: parentId } });
 
@@ -61,10 +61,11 @@ export const roleCtr = {
             }
 
             const parentRole = newParentFound.result;
-            
+
             if (parentRole.ancestors && parentRole.ancestors.length > 0) {
                 ancestors = [...(parentRole.ancestors ?? []), parentId];
-            } else {
+            }
+            else {
                 ancestors = [parentId];
             }
         }
@@ -145,7 +146,7 @@ export const roleCtr = {
 
         const rolePermissions = await rolePermissionCtr.getRolePermissions(context, {
             filter: { roleId: roleFound.result.id },
-            options: { pagination: false }
+            options: { pagination: false },
         });
 
         if (rolePermissions.success && rolePermissions.result && rolePermissions.result.docs.length > 0) {

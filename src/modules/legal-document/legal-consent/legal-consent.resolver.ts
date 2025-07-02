@@ -1,6 +1,7 @@
 import type { I_Input_CreateOne } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
+
 import type { I_Input_CreateLegalConsent } from './legal-consent.type.js';
 
 import { legalConsentCtr } from './legal-consent.controller.js';
@@ -14,4 +15,4 @@ const legalConsentResolver = {
     },
 };
 
-export default legalConsentResolver; 
+export default legalConsentResolver;

@@ -1,22 +1,23 @@
-import type { I_Return } from '@cyberskill/shared/typescript';
 import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Return } from '@cyberskill/shared/typescript';
+
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
-
 import type { I_Context } from '#shared/typescript/index.js';
+
 import type {
-    I_Input_SaveDraftLegalDocument,
     I_Input_PublishLegalDocument,
     I_Input_QueryLegalDocument,
+    I_Input_RestoreLegalDocument,
+    I_Input_SaveDraftLegalDocument,
     I_LegalDocument,
     I_LegalDocumentHistory,
-    I_Input_RestoreLegalDocument,
 } from './legal-document.type.js';
 
-import { E_LegalDocumentStatus } from './legal-document.type.js';
 import { LegalDocumentModel } from './legal-document.model.js';
+import { E_LegalDocumentStatus } from './legal-document.type.js';
 
 const mongooseCtr = new MongooseController<I_LegalDocument>(LegalDocumentModel);
 
@@ -143,7 +144,7 @@ export const legalDocumentCtr = {
                     updatedAt: new Date(),
                     history: newHistory,
                 },
-            }
+            },
         );
     },
     restoreLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_RestoreLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
@@ -188,7 +189,7 @@ export const legalDocumentCtr = {
                     updatedAt: new Date(),
                     history: newHistory,
                 },
-            }
+            },
         );
     },
-}; 
+};

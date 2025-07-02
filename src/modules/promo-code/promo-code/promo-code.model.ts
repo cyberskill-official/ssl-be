@@ -47,6 +47,9 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         usageLimit: {
             type: Number,
         },
+        globalUsageLimit: {
+            type: Number,
+        },
         expiresAt: {
             type: Date,
         },

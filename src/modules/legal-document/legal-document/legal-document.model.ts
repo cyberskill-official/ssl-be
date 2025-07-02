@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import { mongo } from '@cyberskill/shared/node/mongo';
+import mongoose from 'mongoose';
 
 import type { I_LegalDocument, I_LegalDocumentHistory } from './legal-document.type.js';
 

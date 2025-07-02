@@ -32,7 +32,7 @@ export const RoleModel = mongo.createModel<I_Role>({
         ancestorsIds: {
             type: [String],
             default: [],
-        }
+        },
     },
     virtuals: [
         {

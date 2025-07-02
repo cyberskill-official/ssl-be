@@ -8,9 +8,10 @@ import { omit } from 'lodash-es';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { E_Role, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
+import { promoCodeCtr } from '#modules/promo-code/promo-code/index.js';
 import { userCtr } from '#modules/user/index.js';
 import {
     E_VerificationContext,
@@ -36,7 +37,7 @@ import type {
 } from './authn.type.js';
 
 import { EMAIL_VERIFICATION, FORGOT_PASSWORD, VERIFICATION_EXPIRES } from './authn.constant.js';
-import { E_RegisterStep } from './authn.type.js';
+import { E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
 
@@ -462,7 +463,7 @@ export const authnCtr = {
     },
     registerMembership: async (
         context: I_Context,
-        { type }: I_Input_Register_Membership,
+        { type, promoCode }: I_Input_Register_Membership,
     ): Promise<I_Response_Auth> => {
         await authnCtr.checkSession(context);
 
@@ -483,7 +484,7 @@ export const authnCtr = {
             case 'FREE': {
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_Role_User.FREE_MEMBER,
+                        name: E_MembershipType.FREE,
                     },
                 });
 
@@ -497,12 +498,50 @@ export const authnCtr = {
                 roleId = roleFound.result.id;
                 break;
             }
-            case 'PROMO':
-            case 'PAID': {
-                // TODO: Handle payment/promo logic
+            case 'PROMO': {
+                if (!promoCode) {
+                    throwError({
+                        message: 'Promo code is required for this membership type.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+
+                const applyPromo = await promoCodeCtr.applyPromoCode(
+                    context,
+                    {
+                        userId: userFound.result.id,
+                        code: promoCode,
+                    },
+                );
+
+                if (!applyPromo.success) {
+                    throwError({
+                        message: applyPromo.message,
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_Role_User.PAID_MEMBER,
+                        name: E_MembershipType.PAID,
+                    },
+                });
+
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
+            }
+            case 'PAID': {
+                // TODO: Handle payment logic
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_MembershipType.PAID,
                     },
                 });
 

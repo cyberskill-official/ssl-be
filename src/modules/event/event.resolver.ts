@@ -6,7 +6,7 @@ import type { I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } fro
 
 import { eventCtr } from './event.controller.js';
 
-const EventResolver = {
+const eventResolver = {
     Query: {
         getEvent: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryEvent>, context: I_Context) => eventCtr.getEvent(context, args),
         getEvents: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryEvent>, context: I_Context) => eventCtr.getEvents(context, args),
@@ -18,4 +18,4 @@ const EventResolver = {
     },
 };
 
-export default EventResolver;
+export default eventResolver;

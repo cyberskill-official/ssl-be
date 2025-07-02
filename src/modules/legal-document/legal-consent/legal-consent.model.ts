@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import { mongo } from '@cyberskill/shared/node/mongo';
+import mongoose from 'mongoose';
 
 import type { I_LegalConsent } from './legal-consent.type.js';
 

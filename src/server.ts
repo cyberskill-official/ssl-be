@@ -7,12 +7,12 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
-// import { authCtr } from '#modules/auth/index.js';
+// import type { I_Context } from '#shared/typescript/index.js';
+import { permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { schema } from '#modules/graphql/schema.js';
 import { mainRouter } from '#modules/rest-api/index.js';
-import { permissionCtr } from '#modules/authz/index.js';
 
 const env = getEnv();
 
@@ -81,16 +81,16 @@ const env = getEnv();
         }),
         express.json({ limit: env.BODY_PARSER_LIMIT }),
         expressMiddleware(apolloServer, {
-            context: async ({ req }) => {
+            context: async (context) => {
                 const indexes = await mongoose.connection.db?.collection('sessions').indexes();
 
                 if (indexes?.some(idx => idx.name === 'expires_1')) {
                     await mongoose.connection.db?.collection('sessions').dropIndex('expires_1');
                 }
-                // await authCtr.checkAuthorizedGraphql({ req: req as unknown as I_Context['req'] });
-                return {
-                    req,
-                };
+
+                // await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
+
+                return context;
             },
         }) as unknown as express.RequestHandler,
     );
@@ -108,7 +108,7 @@ const env = getEnv();
             whiteList: env.CORS_WHITELIST,
         }),
         // (req, res, next) => {
-        //     authCtr.checkAuthorizedRest(req as I_Context, res, next).catch(next);
+        //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
         // },
         mainRouter,
     );

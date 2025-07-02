@@ -17,6 +17,7 @@ input Input_QueryPromoCode {
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
+    globalUsageLimit: Int
     expiresAt: DateTime
 }
 
@@ -26,6 +27,7 @@ input Input_CreatePromoCode {
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
+    globalUsageLimit: Int
     expiresAt: DateTime
 }
 
@@ -36,6 +38,7 @@ input Input_UpdatePromoCode {
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
+    globalUsageLimit: Int
     expiresAt: DateTime
 }
 
@@ -49,6 +52,7 @@ type T_PromoCode {
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
+    globalUsageLimit: Int
     expiresAt: DateTime
 }
 

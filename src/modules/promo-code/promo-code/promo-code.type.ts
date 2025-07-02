@@ -15,6 +15,7 @@ export interface I_PromoCode extends I_GenericDocument {
     isActive?: boolean;
     isLimit?: boolean;
     usageLimit?: number;
+    globalUsageLimit?: number;
     expiresAt?: Date;
 }
 
