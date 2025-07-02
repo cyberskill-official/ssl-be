@@ -24,7 +24,8 @@ const resolversArray: IResolvers[] = loadFilesSync<T_ResolverObject>(path.join(c
 });
 
 const allTypes = mergeTypeDefs(typesArray);
-const allResolvers: IResolvers = mergeResolvers(resolversArray);
+export const allResolvers: IResolvers = mergeResolvers(resolversArray);
+
 
 export const schema = makeExecutableSchema({
     typeDefs: allTypes,

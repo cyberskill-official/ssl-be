@@ -1,10 +1,12 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-export interface I_Role extends I_GenericDocument {
+export interface  I_Role extends I_GenericDocument {
     name?: string;
     description?: string;
     parentId?: string;
     parent?: I_Role;
+    ancestors?: string[];
+    ancestorsIds?: I_Role,
 }
 
 export type T_Role_Populate = 'parent';

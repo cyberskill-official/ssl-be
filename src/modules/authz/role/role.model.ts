@@ -29,6 +29,10 @@ export const RoleModel = mongo.createModel<I_Role>({
         parentId: {
             type: String,
         },
+        ancestorsIds: {
+            type: [String],
+            default: [],
+        }
     },
     virtuals: [
         {
@@ -36,6 +40,15 @@ export const RoleModel = mongo.createModel<I_Role>({
             options: {
                 ref: 'Role',
                 localField: 'parentId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'ancestors',
+            options: {
+                ref: 'Role',
+                localField: 'ancestorsIds',
                 foreignField: 'id',
                 justOne: true,
             },

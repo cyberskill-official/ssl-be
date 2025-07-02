@@ -31,9 +31,18 @@ export interface I_Permission extends I_GenericDocument {
 export interface I_Input_QueryPermission extends I_Permission { }
 
 export interface I_Input_CreatePermission extends Omit<I_Permission, T_Omit_Create> {
+    target?: string;
+    name?: string;
+}
+
+export interface I_Input_UpdatePermission extends Omit<I_Permission, T_Omit_Update> {
+    name?: string;
+    target?: string;
+}
+
+export interface I_Response_ScanPermission {
     target: string;
     name: string;
     type: E_PermissionType;
+    method?: E_PermissionMethodGraphQL | E_PermissionMethodRest;
 }
-
-export interface I_Input_UpdatePermission extends Omit<I_Permission, T_Omit_Update> { }

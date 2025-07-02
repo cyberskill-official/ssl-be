@@ -1,0 +1,162 @@
+import type {
+    I_Input_CreateOne,
+    I_Input_FindOne,
+    I_Input_FindPaging,
+    I_Input_UpdateOne,
+    T_PaginateResult,
+} from '@cyberskill/shared/node/mongo';
+import type { I_Return } from '@cyberskill/shared/typescript';
+
+import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
+import { MongooseController } from '@cyberskill/shared/node/mongo';
+
+import type { I_Context } from '#shared/typescript/index.js';
+
+import type { I_Input_CreatePermission, I_Input_QueryPermission, I_Input_UpdatePermission, I_Permission } from './permission.type.js';
+
+import { PermissionModel } from './permission.model.js';
+import { E_PermissionType } from './permission.type.js';
+
+import { scanGraphqlResolvers, scanRestApiEndpoints } from './permission.scan.js';
+
+const mongooseCtr = new MongooseController<I_Permission>(PermissionModel);
+
+export const permissionCtr = {
+    getPermission: async (
+        _context: I_Context,
+        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryPermission>,
+    ): Promise<I_Return<I_Permission>> => {
+        return mongooseCtr.findOne(filter, projection, options, populate);
+    },
+    getPermissions: async (
+        _context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_QueryPermission>,
+    ): Promise<I_Return<T_PaginateResult<I_Permission>>> => {
+        return mongooseCtr.findPaging(filter, options);
+    },
+    createPermission: async (
+        _context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreatePermission>,
+    ): Promise<I_Return<I_Permission>> => {
+        return mongooseCtr.createOne(doc);
+    },
+    updatePermission: async (
+        context: I_Context,
+        { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePermission>,
+    ): Promise<I_Return<I_Permission>> => {
+        const permissionFound = await permissionCtr.getPermission(context, { filter });
+
+        if (!permissionFound.success) {
+            throwError({
+                message: 'Permission not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const type = permissionFound.result.type;
+
+        if (type === E_PermissionType.ROUTE) {
+            const allowedFields = ['name', 'target', 'isPublic'];
+            const updateKeys = Object.keys(update);
+
+            const hasInvalidFields = updateKeys.some(key => !allowedFields.includes(key));
+
+            if (hasInvalidFields) {
+                throwError({
+                    message: 'For ROUTE type permissions, only name and target fields can be updated.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+        else {
+            const allowedFields = ['name', 'isPublic'];
+            const updateKeys = Object.keys(update);
+
+            const hasInvalidFields = updateKeys.some(key => !allowedFields.includes(key));
+
+            if (hasInvalidFields) {
+                throwError({
+                    message: 'For GRAPHQL and REST type permissions, only name and isPublic fields can be updated.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        return mongooseCtr.updateOne(filter, update, options);
+    },
+    syncPermissions: async () => {
+        try {
+            console.log('Starting permission synchronization...');
+            
+            // 1. Scan permissions từ code
+            const graphqlPermissions = scanGraphqlResolvers();
+            const restPermissions = scanRestApiEndpoints();
+            const allPermissions = [...graphqlPermissions, ...restPermissions];
+            
+            console.log(`Found ${graphqlPermissions.length} GraphQL permissions and ${restPermissions.length} REST permissions`);
+
+            // 2. Lấy toàn bộ permission hiện tại trong DB
+            const dbPermissionsResult = await mongooseCtr.findPaging({}, { pagination: false });
+
+            if (!dbPermissionsResult.success) {
+                throwError({
+                    message: 'Failed to fetch existing permissions from database.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            let dbPermissions: I_Permission[] = [];
+            if (dbPermissionsResult.result) {
+                dbPermissions = dbPermissionsResult.result.docs || [];
+            }
+            const dbPermissionKeys = dbPermissions.map(p => `${p.type}_${p.method}_${p.target}`);
+
+            console.log(`Found ${dbPermissions.length} existing permissions in database`);
+
+            // 3. Thêm permission mới
+            const newPermissions = allPermissions.filter(perm => {
+                const key = `${perm.type}_${perm.method}_${perm.target}`;
+                return !dbPermissionKeys.includes(key);
+            });
+
+            if (newPermissions.length > 0) {
+                const createResult = await mongooseCtr.createMany(newPermissions);
+                if (!createResult.success) {
+                    throwError({
+                        message: 'Failed to create new permissions.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+                console.log(`Created ${newPermissions.length} new permissions`);
+            } else {
+                console.log('No new permissions to create');
+            }
+
+            // 4. Xóa permission thừa
+            const obsoletePermissions = dbPermissions.filter(dbPerm => {
+                const key = `${dbPerm.type}_${dbPerm.method}_${dbPerm.target}`;
+                return !allPermissions.find(p => `${p.type}_${p.method}_${p.target}` === key);
+            });
+
+            if (obsoletePermissions.length > 0) {
+                const obsoleteIds = obsoletePermissions.map(p => p.id);
+                const deleteResult = await mongooseCtr.deleteMany({ id: { $in: obsoleteIds } });
+                if (!deleteResult.success) {
+                    throwError({
+                        message: 'Failed to delete obsolete permissions.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+                console.log(`Deleted ${obsoletePermissions.length} obsolete permissions`);
+            } else {
+                console.log('No obsolete permissions to delete');
+            }
+            
+            console.log('Permission synchronization completed successfully!');
+        } catch (error) {
+            console.error('Permission synchronization failed:', error);
+            throw error;
+        }
+    },
+};

@@ -12,6 +12,7 @@ import { cron } from '#modules/cron/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { schema } from '#modules/graphql/schema.js';
 import { mainRouter } from '#modules/rest-api/index.js';
+import { permissionCtr } from '#modules/authz/index.js';
 
 const env = getEnv();
 
@@ -48,6 +49,8 @@ const env = getEnv();
 
     await mongoose.connect(env.MONGO_URI);
     log.info(`Running MongoDb at ${env.MONGO_URI}`);
+
+    await permissionCtr.syncPermissions();
 
     mongoose.connection.once('error', (err) => {
         log.error('Mongoose connection error:', err);

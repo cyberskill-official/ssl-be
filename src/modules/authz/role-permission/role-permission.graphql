@@ -56,3 +56,12 @@ type T_Response_RolePermissions {
     message: String
     result: T_RolePermissions
 }
+
+type Query {
+    getRolePermissions(filter: Input_QueryRolePermission, projection: JSON, options: JSON, populate: JSON): T_Response_RolePermissions!
+}
+
+type Mutation {
+    createRolePermission(doc: Input_CreateRolePermission!): T_Response_RolePermission!
+    deleteRolePermission(filter: Input_QueryRolePermission!, options: JSON): T_Response_RolePermission!
+}

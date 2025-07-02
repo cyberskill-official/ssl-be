@@ -7,6 +7,7 @@ type T_Role {
     description: String
     parentId: String
     parent: T_Role
+    ancestors: [String]
 }
 
 input Input_QueryRole {
@@ -66,4 +67,6 @@ type Query {
 
 type Mutation {
     createRole(doc: Input_CreateRole!): T_Response_Role!
+    updateRole(filter: Input_QueryRole!, update: Input_UpdateRole, options: JSON): T_Response_Role!
+    deleteRole(filter: Input_QueryRole!, options: JSON): T_Response_Role!
 }

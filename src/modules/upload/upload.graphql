@@ -1,4 +1,3 @@
-scalar Upload
 
 enum E_UploadType {
     IMAGE

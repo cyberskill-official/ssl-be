@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from '@cyberskill/shared/node/express';
 import type { Session, SessionData } from 'express-session';
+import type { GraphQLResolveInfo } from 'graphql';
 
 import type { I_User } from '#modules/user/index.js';
 
@@ -16,4 +17,5 @@ export interface I_NextFunction extends NextFunction { }
 
 export interface I_Context {
     req?: I_Request;
+    info?: GraphQLResolveInfo;
 }
