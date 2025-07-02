@@ -57,7 +57,7 @@ export interface I_Input_CompleteProfileS2 extends Pick<
     'partner1' | 'partner2' | 'location' | 'nativeLanguageId' | 'otherLanguagesIds' | 'settings' | 'pinStyle'
 > {
     partner1: I_Input_PartnerInfoS2;
-    partner2: I_Input_PartnerInfoS2;
+    partner2?: I_Input_PartnerInfoS2;
     location: I_Input_LocationInfoS2;
     nativeLanguageId: string;
     otherLanguagesIds: string[];
@@ -90,7 +90,7 @@ export interface I_Input_CompleteProfileS3 extends Pick<
     willingnessToGoIds: string[];
     rulesOfEngagementIds: string[];
     partner1: I_Input_PartnerInfoS3;
-    partner2: I_Input_PartnerInfoS3;
+    partner2?: I_Input_PartnerInfoS3;
 }
 export enum E_MembershipType {
     FREE = 'FREE',
