@@ -6,50 +6,42 @@ import { addMonths, addYears } from 'date-fns';
 
 import type { I_Input_CreatePromoCode, I_PromoCode } from '#modules/promo-code/index.js';
 
-import { E_PromoCodeBenefit } from '#modules/promo-code/index.js';
-
 interface I_PromoCodeRaw extends I_Input_CreatePromoCode {
 }
 
 const defaultPromoCodes: I_PromoCodeRaw[] = [
     {
         code: 'FREE1MONTH',
-        benefit: E_PromoCodeBenefit.ONE_MONTH,
         isActive: true,
         isLimit: false,
         expiresAt: addMonths(new Date(), 1), // Expires in 1 month
     },
     {
         code: 'FREE2MONTHS',
-        benefit: E_PromoCodeBenefit.TWO_MONTH,
         isActive: true,
         isLimit: false,
         expiresAt: addMonths(new Date(), 2), // Expires in 2 months
     },
     {
         code: 'FREE3MONTHS',
-        benefit: E_PromoCodeBenefit.THREE_MONTH,
         isActive: true,
         isLimit: false,
         expiresAt: addMonths(new Date(), 3), // Expires in 3 months
     },
     {
         code: 'FREE6MONTHS',
-        benefit: E_PromoCodeBenefit.SIX_MONTH,
         isActive: true,
         isLimit: false,
         expiresAt: addMonths(new Date(), 6), // Expires in 6 months
     },
     {
         code: 'FREE12MONTHS',
-        benefit: E_PromoCodeBenefit.TWELVE_MONTH,
         isActive: true,
         isLimit: false,
         expiresAt: addMonths(new Date(), 12), // Expires in 12 months
     },
     {
         code: 'FREELIFETIME',
-        benefit: E_PromoCodeBenefit.LIFETIME,
         isActive: true,
         isLimit: false,
         expiresAt: addYears(new Date(), 100), // Expires in 100 years

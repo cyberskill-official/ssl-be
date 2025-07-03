@@ -1,45 +1,33 @@
-enum E_PromoCodeBenefit {
-    ONE_MONTH
-    TWO_MONTH
-    THREE_MONTH
-    SIX_MONTH
-    TWELVE_MONTH
-    LIFETIME
-}
-
 input Input_QueryPromoCode {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
     code: String
-    benefit: E_PromoCodeBenefit
+    expiresAt: DateTime
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
-    expiresAt: DateTime
 }
 
 input Input_CreatePromoCode {
     code: String!
-    benefit: E_PromoCodeBenefit!
+    expiresAt: DateTime!
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
-    expiresAt: DateTime
 }
 
 input Input_UpdatePromoCode {
     isDel: Boolean
     code: String
-    benefit: E_PromoCodeBenefit
+    expiresAt: DateTime
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
-    expiresAt: DateTime
 }
 
 type T_PromoCode {
@@ -48,12 +36,11 @@ type T_PromoCode {
     createdAt: DateTime
     updatedAt: DateTime
     code: String
-    benefit: E_PromoCodeBenefit
+    expiresAt: DateTime
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
-    expiresAt: DateTime
 }
 
 type T_PromoCodes {

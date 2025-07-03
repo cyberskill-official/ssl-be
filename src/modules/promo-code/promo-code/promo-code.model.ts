@@ -3,8 +3,6 @@ import mongoose from 'mongoose';
 
 import type { I_PromoCode } from './promo-code.type.js';
 
-import { E_PromoCodeBenefit } from './promo-code.type.js';
-
 export const PromoCodeModel = mongo.createModel<I_PromoCode>({
     mongoose,
     name: 'PromoCode',
@@ -25,14 +23,13 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
                 },
             ],
         },
-        benefit: {
-            type: String,
-            enum: Object.values(E_PromoCodeBenefit),
+        expiresAt: {
+            type: Date,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select benefit type for promo code',
+                    message: 'Please enter expires at for promo code',
                 },
             ],
         },
@@ -49,9 +46,6 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         },
         globalUsageLimit: {
             type: Number,
-        },
-        expiresAt: {
-            type: Date,
         },
     },
 });

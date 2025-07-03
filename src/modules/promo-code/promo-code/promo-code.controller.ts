@@ -48,7 +48,7 @@ export const promoCodeCtr = {
     ): Promise<I_Return<I_PromoCode>> => {
         await authnCtr.checkAuthStrict(context);
 
-        const requiredFields: Array<keyof I_Input_CreatePromoCode> = ['code', 'benefit'];
+        const requiredFields: Array<keyof I_Input_CreatePromoCode> = ['code'];
 
         for (const field of requiredFields) {
             if (!doc[field]) {
