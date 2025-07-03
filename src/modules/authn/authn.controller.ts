@@ -382,7 +382,7 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
     ): Promise<I_Response_Auth> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
@@ -412,7 +412,7 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
     ): Promise<I_Response_Auth> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
@@ -442,7 +442,7 @@ export const authnCtr = {
         context: I_Context,
         { type, promoCode }: I_Input_Register_Membership,
     ): Promise<I_Response_Auth> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         let roleId;
 
