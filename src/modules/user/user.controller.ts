@@ -69,8 +69,6 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const { password } = update;
 
         if (password) {
