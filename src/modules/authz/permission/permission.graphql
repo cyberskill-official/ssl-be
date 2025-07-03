@@ -42,11 +42,13 @@ input Input_QueryPermission {
 input Input_CreatePermission {
     target: String!
     name: String!
+    isPublic: Boolean
 }
 
 input Input_UpdatePermission {
     target: String
     name: String
+    isPublic: Boolean
 }
 
 type T_Response_Permission {

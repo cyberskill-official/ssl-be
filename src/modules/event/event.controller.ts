@@ -8,9 +8,10 @@ import { isAfter } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
 // import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 // import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { E_UserGroup, userCtr } from '#modules/user/index.js';
+import { E_UserGroup } from '#modules/user/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
 
@@ -37,23 +38,11 @@ export const eventCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateEvent>,
     ): Promise<I_Return<I_Event>> => {
+        const user = await authnCtr.getUserFromSession(context);
         const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
         const eventFound = await eventCtr.getEvent(context, { filter: { title } });
 
-        const userId = context.req?.session?.user?.id;
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: userId },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        doc.createdById = userFound.result.id;
+        doc.createdById = user.id;
 
         if (eventFound.success) {
             throwError({
@@ -78,7 +67,7 @@ export const eventCtr = {
 
         const eventActiveCountResult = await mongooseCtr.count({
             isActive: true,
-            createdById: userId,
+            createdById: user.id,
         });
 
         if (eventActiveCountResult.success && eventActiveCountResult.result >= 10) {
@@ -248,7 +237,7 @@ export const eventCtr = {
             }
         }
 
-        const userGroup = userFound.result.userGroup;
+        const userGroup = user.userGroup;
 
         if (userGroup === E_UserGroup.FREE_MEMBERS) {
             if (type === E_EventType.BOOTY_CALL || type === E_EventType.TRAVEL || type === E_EventType.PRIVATE) {
@@ -287,6 +276,8 @@ export const eventCtr = {
         return mongooseCtr.createOne(doc);
     },
     updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {
@@ -298,13 +289,17 @@ export const eventCtr = {
 
         return mongooseCtr.updateOne(filter, update, options);
     },
-    updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
+    updateEvents: async (context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
+        await authnCtr.checkAuthStrict(context);
+
         return mongooseCtr.updateMany(filter, update, options);
     },
     deleteEvent: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {

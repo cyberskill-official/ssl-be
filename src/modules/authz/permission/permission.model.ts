@@ -38,6 +38,7 @@ export const PermissionModel = mongo.createModel<I_Permission>({
         type: {
             type: String,
             enum: Object.values(E_PermissionType),
+            default: E_PermissionType.ROUTE,
             required: true,
             validate: [
                 {

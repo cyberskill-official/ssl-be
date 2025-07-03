@@ -14,6 +14,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type {
     I_EmailTemplate,
     I_Input_CreateEmailTemplate,
@@ -33,18 +35,18 @@ export const emailTemplateCtr = {
     ): Promise<I_Return<I_EmailTemplate>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
-
     getEmailTemplates: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEmailTemplate>,
     ): Promise<I_Return<T_PaginateResult<I_EmailTemplate>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
-
     createEmailTemplate: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateEmailTemplate>,
     ): Promise<I_Return<I_EmailTemplate>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const existingTemplate = await emailTemplateCtr.getEmailTemplate(context, {
             filter: { templateKey: doc.templateKey },
             projection: { id: 1, templateKey: 1 },
@@ -69,6 +71,8 @@ export const emailTemplateCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEmailTemplate>,
     ): Promise<I_Return<I_EmailTemplate>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const templateFound = await emailTemplateCtr.getEmailTemplate(context, { filter });
 
         if (!templateFound.success) {
@@ -100,11 +104,12 @@ export const emailTemplateCtr = {
 
         return mongooseCtr.updateOne(filter, update, options);
     },
-
     deleteEmailTemplate: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryEmailTemplate>,
     ): Promise<I_Return<I_EmailTemplate>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const templateFound = await emailTemplateCtr.getEmailTemplate(context, { filter });
 
         if (!templateFound.success) {

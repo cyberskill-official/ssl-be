@@ -7,6 +7,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type {
     I_Input_PublishLegalDocument,
     I_Input_QueryLegalDocument,
@@ -35,6 +37,8 @@ export const legalDocumentCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createLegalDocument: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_SaveDraftLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const existing = await legalDocumentCtr.getLegalDocument(context, { filter: { type: doc.type } });
 
         if (existing.success && existing.result) {
@@ -45,42 +49,42 @@ export const legalDocumentCtr = {
         }
         return mongooseCtr.createOne(doc);
     },
-    updateLegalDocument: async (_context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_PublishLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+    updateLegalDocument: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_PublishLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+        await authnCtr.checkAuthStrict(context);
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     saveDraftLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_SaveDraftLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const { type, content } = doc;
-        // 1. Ensure the user is authenticated
-        const userId = context.req?.session?.user?.id;
+        await authnCtr.checkAuthStrict(context);
 
-        if (!userId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
-        // 2. Validate required input
+        const { type, content } = doc;
+
         if (!content || !type) {
             throwError({ message: 'Content and type are required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 3. Find existing document by type
+
         const legalDocumentFound = await legalDocumentCtr.getLegalDocument(context, { filter: { type } });
-        // 4. If not found, create a new draft document (version 1, status DRAFT, empty history)
+
         if (!legalDocumentFound.success) {
             return legalDocumentCtr.createLegalDocument(context, { doc });
         }
-        // 5. If found, only allow edits if status is DRAFT
+
         const existingLegalDocument = legalDocumentFound.result;
+
         if (existingLegalDocument.status === E_LegalDocumentStatus.PUBLISHED) {
             throwError({ message: 'Cannot edit published document. Please restore or create a draft.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 6. Content must be different from previous
+
         if (existingLegalDocument.content === content) {
             throwError({ message: 'Content must be different from previous version.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 7. Auto-increment version only if content changed
+
         let newVersion = existingLegalDocument.version || 1;
+
         if (existingLegalDocument.content !== content) {
             newVersion += 1;
         }
-        // 8. Update the draft document with new content, version, and updatedAt
+
         return legalDocumentCtr.updateLegalDocument(context, {
             filter: { id: existingLegalDocument.id },
             update: {
@@ -91,18 +95,14 @@ export const legalDocumentCtr = {
         });
     },
     publishLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_PublishLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const { type } = doc;
-        // 1. Ensure the user is authenticated
-        const userId = context.req?.session?.user?.id;
+        const user = await authnCtr.getUserFromSession(context);
 
-        if (!userId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
-        // 2. Validate required input
+        const { type } = doc;
+
         if (!type) {
             throwError({ message: 'Type is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 3. Find the draft document by type
+
         const legalDocumentFound = await legalDocumentCtr.getLegalDocument(context, { filter: { type } });
 
         if (!legalDocumentFound.success) {
@@ -110,16 +110,17 @@ export const legalDocumentCtr = {
         }
 
         const legalDocument = legalDocumentFound.result;
-        // 4. Only allow publishing if the document is in DRAFT status
+
         if (legalDocument.status === E_LegalDocumentStatus.PUBLISHED) {
             throwError({ message: 'Document is already published', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        // 5. Check if the current version/content is already in history
+
         let alreadyInHistory = false;
+
         if ((legalDocument.history || []).some((h: I_LegalDocumentHistory) => h.version === legalDocument.version && h.content === legalDocument.content)) {
             alreadyInHistory = true;
         }
-        // 6. If not in history, add the current version/content to history
+
         let newHistory = legalDocument.history || [];
 
         if (!alreadyInHistory) {
@@ -130,11 +131,11 @@ export const legalDocumentCtr = {
                     content: legalDocument.content,
                     version: legalDocument.version,
                     updatedAt: new Date(),
-                    updatedById: userId,
+                    updatedById: user.id,
                 },
             ];
         }
-        // 7. Update the document: set status to PUBLISHED, update updatedAt, and update history
+
         return legalDocumentCtr.updateLegalDocument(
             context,
             {
@@ -148,25 +149,23 @@ export const legalDocumentCtr = {
         );
     },
     restoreLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_RestoreLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const { id, version } = doc;
-        // 1. Ensure the user is authenticated
-        const userId = context.req?.session?.user?.id;
+        const user = await authnCtr.getUserFromSession(context);
 
-        if (!userId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
-        // 2. Find the document by id
+        const { id, version } = doc;
+
         const legalDocumentFound = await legalDocumentCtr.getLegalDocument(context, { filter: { id } });
+
         if (!legalDocumentFound.success) {
             throwError({ message: 'Document not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
         const legalDocument = legalDocumentFound.result;
-        // 3. Find the requested version in the document's history
+
         const history = (legalDocument.history || []).find((h: I_LegalDocumentHistory) => h.version === version);
+
         if (!history) {
             throwError({ message: 'Version not found in history', status: RESPONSE_STATUS.NOT_FOUND });
         }
-        // 4. Add a new history entry for the restore action
+
         const newHistory = [
             ...(legalDocument.history || []),
             {
@@ -174,10 +173,10 @@ export const legalDocumentCtr = {
                 content: history.content,
                 version: history.version,
                 updatedAt: new Date(),
-                updatedById: userId,
+                updatedById: user.id,
             },
         ];
-        // 5. Update the document: set content/version to the restored version, set status to PUBLISHED, update updatedAt, and update history
+
         return legalDocumentCtr.updateLegalDocument(
             context,
             {

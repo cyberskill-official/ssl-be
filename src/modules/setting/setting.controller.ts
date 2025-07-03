@@ -7,6 +7,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type { I_AdminNotification, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_Setting } from './setting.type.js';
 
 import { SettingsModel } from './setting.model.js';
@@ -78,9 +80,11 @@ export const settingCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createSetting: async (
-        _context: I_Context,
+        context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateSettingGraphQL>,
     ): Promise<I_Return<I_Setting>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const transformedDoc = transformGraphQLInput(doc);
 
         if (transformedDoc.type === E_SettingType.FOOTER) {
@@ -102,6 +106,8 @@ export const settingCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateSettingGraphQL>,
     ): Promise<I_Return<I_Setting>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const settingFound = await settingCtr.getSetting(context, { filter });
 
         if (!settingFound.success) {
@@ -130,6 +136,8 @@ export const settingCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QuerySetting>,
     ): Promise<I_Return<I_Setting>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const settingFound = await settingCtr.getSetting(context, { filter });
 
         if (!settingFound.success) {

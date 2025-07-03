@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
 import { getEnv } from '#modules/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
@@ -18,7 +19,7 @@ const env = getEnv();
 
 export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<string>> => {
-        const currentUser = context.req?.session?.user;
+        const user = await authnCtr.getUserFromSession(context);
         const { type, module, file, entityId } = args;
 
         const uploadDir = env.UPLOAD_FOLDER;
@@ -45,7 +46,7 @@ export const uploadCtr = {
                 module,
                 type,
                 entityId,
-                userId: currentUser?.id,
+                userId: user.id,
             });
         }
         catch (error) {

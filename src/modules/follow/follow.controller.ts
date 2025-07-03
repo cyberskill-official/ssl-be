@@ -13,6 +13,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
 import { FollowModel } from './follow.model.js';
@@ -36,15 +38,11 @@ export const followCtr = {
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const currentUserId = context.req?.session?.user?.id;
-
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const userId = await authnCtr.getUserFromSession(context);
 
         return followCtr.getFollows(context, {
             filter: {
-                followId: currentUserId,
+                followId: userId.id,
             },
             options,
         });
@@ -53,15 +51,11 @@ export const followCtr = {
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const currentUserId = context.req?.session?.user?.id;
-
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const userId = await authnCtr.getUserFromSession(context);
 
         return followCtr.getFollows(context, {
             filter: {
-                userId: currentUserId,
+                userId: userId.id,
             },
             options,
         });
@@ -70,6 +64,8 @@ export const followCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateFollow>,
     ): Promise<I_Return<I_Follow>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const userFound = await followCtr.getFollow(context, {
             filter: { userId: doc.userId, followId: doc.followId },
         });
@@ -87,6 +83,8 @@ export const followCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryFollow>,
     ): Promise<I_Return<I_Follow>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const followFound = await followCtr.getFollow(context, { filter });
 
         if (!followFound.success) {
@@ -102,12 +100,9 @@ export const followCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Follow>,
     ): Promise<I_Return<I_Follow>> => {
-        const currentUserId = context.req?.session?.user?.id;
-        const { followId } = doc;
+        const user = await authnCtr.getUserFromSession(context);
 
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const { followId } = doc;
 
         if (!followId) {
             throwError({
@@ -116,24 +111,20 @@ export const followCtr = {
             });
         }
 
-        if (currentUserId === followId) {
+        if (user.id === followId) {
             throwError({
                 message: 'You cannot follow yourself',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        return followCtr.createFollow(context, { doc: { userId: currentUserId, followId } });
+        return followCtr.createFollow(context, { doc: { userId: user.id, followId } });
     },
     unFollow: async (
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_UnFollow>,
     ): Promise<I_Return<I_Follow>> => {
-        const currentUserId = context.req?.session?.user?.id;
-
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const user = await authnCtr.getUserFromSession(context);
 
         if (!filter?.followId) {
             throwError({
@@ -142,6 +133,6 @@ export const followCtr = {
             });
         }
 
-        return followCtr.deleteFollow(context, { filter: { userId: currentUserId, followId: filter.followId } });
+        return followCtr.deleteFollow(context, { filter: { userId: user.id, followId: filter.followId } });
     },
 };

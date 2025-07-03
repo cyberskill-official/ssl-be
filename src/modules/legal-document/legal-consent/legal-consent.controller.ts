@@ -7,6 +7,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type { I_LegalDocument } from '../legal-document/legal-document.type.js';
 import type { I_Input_CreateLegalConsent, I_Input_QueryLegalConsent, I_LegalConsent } from './legal-consent.type.js';
 
@@ -23,11 +25,8 @@ export const legalConsentCtr = {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     checkLegalConsents: async (context: I_Context): Promise<I_Return<I_LegalDocument[]>> => {
-        const userId = context.req?.session?.user?.id;
+        const userId = await authnCtr.getUserFromSession(context);
 
-        if (!userId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
         const legalDocumentsFound = await legalDocumentCtr.getLegalDocuments(context, {
             filter: {
                 status: E_LegalDocumentStatus.PUBLISHED,
@@ -64,16 +63,12 @@ export const legalConsentCtr = {
         };
     },
     createLegalConsent: async (context: I_Context, { doc }: { doc: I_Input_CreateLegalConsent }) => {
-        const userId = context.req?.session?.user?.id;
-
-        if (!userId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const user = await authnCtr.getUserFromSession(context);
 
         const { legalDocumentId, version } = doc;
         const legalConsentFound = await legalConsentCtr.getLegalConsent(context, {
             filter: {
-                userId,
+                userId: user.id,
                 legalDocumentId,
                 version,
             },
@@ -83,6 +78,6 @@ export const legalConsentCtr = {
             throwError({ message: 'Already consented to this version', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.createOne({ ...doc, userId });
+        return mongooseCtr.createOne({ ...doc, userId: user.id });
     },
 };

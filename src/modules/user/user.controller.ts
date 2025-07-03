@@ -15,6 +15,7 @@ import bcrypt from 'bcryptjs';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
@@ -40,6 +41,8 @@ export const userCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateUser>,
     ): Promise<I_Return<I_User>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const { username, email, password } = doc;
 
         validate.email.validate(email);
@@ -68,6 +71,8 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const { password } = update;
 
         if (password) {
@@ -90,6 +95,8 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const userFound = await userCtr.getUser(context, { filter });
 
         if (!userFound.success) {

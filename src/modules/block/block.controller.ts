@@ -13,6 +13,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type { I_Block, I_Input_Block, I_Input_CreateBlock, I_Input_QueryBlock, I_Input_UnBlock } from './block.type.js';
 
 import { BlockModel } from './block.model.js';
@@ -26,24 +28,21 @@ export const blockCtr = {
     ): Promise<I_Return<I_Block>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
-
     getBlocks: async (
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Block>>> => {
-        const currentUserId = context.req?.session?.user?.id;
+        const authChecked = await authnCtr.checkAuth(context);
+        const userId = authChecked.result?.user?.id;
 
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
-
-        return mongooseCtr.findPaging({ userId: currentUserId }, options);
+        return mongooseCtr.findPaging({ userId }, options);
     },
-
     createBlock: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateBlock>,
     ): Promise<I_Return<I_Block>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const existed = await blockCtr.getBlock(context, {
             filter: { userId: doc.userId, blockId: doc.blockId },
         });
@@ -58,6 +57,8 @@ export const blockCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const existed = await blockCtr.getBlock(context, { filter });
 
         if (!existed.success) {
@@ -70,37 +71,30 @@ export const blockCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Block>,
     ): Promise<I_Return<I_Block>> => {
-        const currentUserId = context.req?.session?.user?.id;
-        const { blockId } = doc;
+        const userId = await authnCtr.getUserFromSession(context);
 
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const { blockId } = doc;
 
         if (!blockId) {
             throwError({ message: 'Missing blockId', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (currentUserId === blockId) {
+        if (userId.id === blockId) {
             throwError({ message: 'You cannot block yourself', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return blockCtr.createBlock(context, { doc: { userId: currentUserId, blockId } });
+        return blockCtr.createBlock(context, { doc: { userId: userId.id, blockId } });
     },
     unBlock: async (
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
-        const currentUserId = context.req?.session?.user?.id;
-
-        if (!currentUserId) {
-            throwError({ message: 'Unauthenticated', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
+        const userId = await authnCtr.getUserFromSession(context);
 
         if (!filter?.blockId) {
             throwError({ message: 'Missing blockId', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return blockCtr.deleteBlock(context, { filter: { userId: currentUserId, blockId: filter.blockId } });
+        return blockCtr.deleteBlock(context, { filter: { userId: userId.id, blockId: filter.blockId } });
     },
 };

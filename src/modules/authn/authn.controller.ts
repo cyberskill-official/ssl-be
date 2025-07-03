@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/authz/index.js';
@@ -151,22 +152,22 @@ export const authnCtr = {
             },
         };
     },
-    checkSession: async (context: I_Context): Promise<void> => {
-        if (!context.req?.session) {
-            throwError({
-                message: 'Session not found.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
+    checkAuthStrict: async (context: I_Context): Promise<I_Response_Auth> => {
+        const result = await authnCtr.checkAuth(context);
 
-        const userId = context.req?.session?.user?.id;
-
-        if (!userId) {
+        if (!result.success) {
             throwError({
-                message: 'User not authenticated.',
+                message: result.message,
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
+
+        return result;
+    },
+    getUserFromSession: async (context: I_Context): Promise<I_User> => {
+        const authChecked = await authnCtr.checkAuthStrict(context);
+
+        return authChecked.result!.user!;
     },
     register: async (
         context: I_Context,
@@ -250,7 +251,8 @@ export const authnCtr = {
         };
     },
     registerSendVerifyEmail: async (context: I_Context, { email }: I_Input_Register_SendVerifyEmail) => {
-        await authnCtr.checkSession(context);
+        await authnCtr.checkAuthStrict(context);
+
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -318,7 +320,7 @@ export const authnCtr = {
         context: I_Context,
         { email, otp }: I_Input_Register_VerifyEmail,
     ): Promise<I_Response_Auth> => {
-        await authnCtr.checkSession(context);
+        await authnCtr.checkAuthStrict(context);
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -383,26 +385,15 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
     ): Promise<I_Response_Auth> => {
-        await authnCtr.checkSession(context);
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: context.req?.session?.user?.id },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
+        const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: context.req?.session?.user?.id },
+            filter: { id: user.id },
             update: {
                 ...update,
-                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.PREFERENCES }),
+                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.PREFERENCES }),
             },
         });
 
@@ -424,26 +415,15 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
     ): Promise<I_Response_Auth> => {
-        await authnCtr.checkSession(context);
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: context.req?.session?.user?.id },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
+        const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: context.req?.session?.user?.id },
+            filter: { id: user.id },
             update: {
                 ...update,
-                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.MEMBERSHIP }),
+                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.MEMBERSHIP }),
             },
         });
 
@@ -465,18 +445,7 @@ export const authnCtr = {
         context: I_Context,
         { type, promoCode }: I_Input_Register_Membership,
     ): Promise<I_Response_Auth> => {
-        await authnCtr.checkSession(context);
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { id: context.req?.session?.user?.id },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
+        const user = await authnCtr.getUserFromSession(context);
 
         let roleId;
 
@@ -509,7 +478,7 @@ export const authnCtr = {
                 const applyPromo = await promoCodeCtr.applyPromoCode(
                     context,
                     {
-                        userId: userFound.result.id,
+                        userId: user.id,
                         code: promoCode,
                     },
                 );
@@ -560,10 +529,10 @@ export const authnCtr = {
         const stepsAfter = [E_RegisterStep.COMPLETE];
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: userFound.result.id },
+            filter: { id: user.id },
             update: {
                 rolesIds: [roleId],
-                ...(!stepsAfter.includes(userFound.result.registerStep!) && { registerStep: E_RegisterStep.COMPLETE }),
+                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.COMPLETE }),
             },
         });
 
