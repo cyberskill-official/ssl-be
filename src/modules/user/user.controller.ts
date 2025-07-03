@@ -41,8 +41,6 @@ export const userCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateUser>,
     ): Promise<I_Return<I_User>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const { username, email, password } = doc;
 
         validate.email.validate(email);
