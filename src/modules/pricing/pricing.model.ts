@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { LocationSchema } from '#modules/location/location/index.js';
+import { LocationSchema } from '#modules/location/index.js';
 
 import type { I_Pricing } from './pricing.type.js';
 

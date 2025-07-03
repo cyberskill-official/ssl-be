@@ -8,7 +8,6 @@ import { isAfter } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
 // import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 // import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { E_UserGroup } from '#modules/user/index.js';
@@ -38,7 +37,7 @@ export const eventCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateEvent>,
     ): Promise<I_Return<I_Event>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
         const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
         const eventFound = await eventCtr.getEvent(context, { filter: { title } });
 
@@ -276,8 +275,6 @@ export const eventCtr = {
         return mongooseCtr.createOne(doc);
     },
     updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {
@@ -289,17 +286,13 @@ export const eventCtr = {
 
         return mongooseCtr.updateOne(filter, update, options);
     },
-    updateEvents: async (context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
-        await authnCtr.checkAuthStrict(context);
-
+    updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
         return mongooseCtr.updateMany(filter, update, options);
     },
     deleteEvent: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {

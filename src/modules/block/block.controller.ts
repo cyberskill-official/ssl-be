@@ -41,8 +41,6 @@ export const blockCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateBlock>,
     ): Promise<I_Return<I_Block>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const existed = await blockCtr.getBlock(context, {
             filter: { userId: doc.userId, blockId: doc.blockId },
         });
@@ -57,8 +55,6 @@ export const blockCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const existed = await blockCtr.getBlock(context, { filter });
 
         if (!existed.success) {

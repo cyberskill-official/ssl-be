@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { LocationSchema } from '#modules/location/location/index.js';
+import { LocationSchema } from '#modules/location/index.js';
 import { RatingSchema } from '#modules/rating/index.js';
 import { SeoSchema } from '#modules/seo/index.js';
 

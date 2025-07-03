@@ -16,8 +16,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
-
 import type { I_Input_CheckVerification, I_Input_CreateVerification, I_Input_QueryVerification, I_Input_UpdateVerification, I_Result_CheckVerification, I_Verification } from './verification.type.js';
 
 import { VerificationModel } from './verification.model.js';
@@ -38,19 +36,15 @@ export const verificationCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createVerification: async (
-        context: I_Context,
+        _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateVerification>,
     ): Promise<I_Return<I_Verification>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.createOne(doc);
     },
     updateVerification: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateVerification>,
     ): Promise<I_Return<I_Verification>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const verificationFound = await verificationCtr.getVerification(context, { filter });
 
         if (!verificationFound.success) {
@@ -66,8 +60,6 @@ export const verificationCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryVerification>,
     ): Promise<I_Return<I_Verification>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const verificationFound = await verificationCtr.getVerification(context, { filter });
 
         if (!verificationFound.success) {
@@ -80,19 +72,15 @@ export const verificationCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     deleteVerifications: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, options }: I_Input_DeleteMany<I_Input_QueryVerification>,
     ): Promise<I_Return<T_DeleteResult>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.deleteMany(filter, options);
     },
     checkVerification: async (
         context: I_Context,
         { identifier, value, method }: I_Input_CheckVerification,
     ): Promise<I_Return<I_Result_CheckVerification>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const verificationFound = await verificationCtr.getVerification(context, {
             filter: {
                 identifier,

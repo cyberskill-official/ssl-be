@@ -63,7 +63,7 @@ export const legalConsentCtr = {
         };
     },
     createLegalConsent: async (context: I_Context, { doc }: { doc: I_Input_CreateLegalConsent }) => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
 
         const { legalDocumentId, version } = doc;
         const legalConsentFound = await legalConsentCtr.getLegalConsent(context, {

@@ -6,14 +6,15 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
-import type { I_User } from '#modules/user/index.js';
+// don't change this import to index.js
+import type { I_User } from '#modules/user/user.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { promoCodeCtr } from '#modules/promo-code/promo-code/index.js';
-import { userCtr } from '#modules/user/index.js';
+import { userCtr } from '#modules/user/user.controller.js';
 import {
     E_VerificationContext,
     E_VerificationMethod,
@@ -251,8 +252,6 @@ export const authnCtr = {
         };
     },
     registerSendVerifyEmail: async (context: I_Context, { email }: I_Input_Register_SendVerifyEmail) => {
-        await authnCtr.checkAuthStrict(context);
-
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -320,7 +319,6 @@ export const authnCtr = {
         context: I_Context,
         { email, otp }: I_Input_Register_VerifyEmail,
     ): Promise<I_Response_Auth> => {
-        await authnCtr.checkAuthStrict(context);
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -385,7 +383,7 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
     ): Promise<I_Response_Auth> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
 
         const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
@@ -415,7 +413,7 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
     ): Promise<I_Response_Auth> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
 
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
 
@@ -445,7 +443,7 @@ export const authnCtr = {
         context: I_Context,
         { type, promoCode }: I_Input_Register_Membership,
     ): Promise<I_Response_Auth> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
 
         let roleId;
 

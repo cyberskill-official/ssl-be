@@ -2,7 +2,7 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { E_RegisterStep } from '#modules/authn/index.js';
-import { LocationSchema } from '#modules/location/location/index.js';
+import { LocationSchema } from '#modules/location/index.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';

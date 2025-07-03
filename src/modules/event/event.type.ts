@@ -1,7 +1,7 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/index.js';
-import type { I_Input_Location, I_Location } from '#modules/location/location/index.js';
+import type { I_Input_Location, I_Location } from '#modules/location/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_EventType {

@@ -15,8 +15,6 @@ import validator from 'validator';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
-
 import type { I_Destination, I_Input_CreateDestination, I_Input_QueryDestination, I_Input_UpdateDestination } from './destination.type.js';
 
 import { DestinationModel } from './destination.model.js';
@@ -41,7 +39,7 @@ export const destinationCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const user = context!.req!.session!.user!;
 
         if (!doc.type || !Object.values(E_DestinationType).includes(doc.type)) {
             throwError({ message: 'Invalid or missing destination type', status: RESPONSE_STATUS.BAD_REQUEST });
@@ -82,11 +80,9 @@ export const destinationCtr = {
         return mongooseCtr.createOne({ ...doc, createdById: user.id });
     },
     updateDestination: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        await authnCtr.checkAuthStrict(context);
-
         if (update.type && !Object.values(E_DestinationType).includes(update.type)) {
             throwError({ message: 'Invalid destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
@@ -126,11 +122,9 @@ export const destinationCtr = {
         return mongooseCtr.updateOne(filter, update);
     },
     deleteDestination: async (
-        context: I_Context,
+        _context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_QueryDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.deleteOne(filter);
     },
 };

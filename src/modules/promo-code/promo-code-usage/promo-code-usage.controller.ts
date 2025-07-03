@@ -10,8 +10,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
-
 import type { I_Input_CreatePromoCodeUsage, I_Input_QueryPromoCodeUsage, I_PromoCodeUsage } from './promo-code-usage.type.js';
 
 import { PromoCodeUsageModel } from './promo-code-usage.model.js';
@@ -32,11 +30,9 @@ export const promoCodeUsageCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createPromoCodeUsage: async (
-        context: I_Context,
+        _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreatePromoCodeUsage>,
     ): Promise<I_Return<I_PromoCodeUsage>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.createOne(doc);
     },
 };

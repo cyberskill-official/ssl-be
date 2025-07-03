@@ -23,8 +23,8 @@ input Input_Register_Coordinates {
 
 input Input_Register_Location {
     countryId: String!
-    cityId: String!
-    coordinates: Input_Register_Coordinates!
+    cityId: String
+    coordinates: Input_Register_Coordinates
     raw: JSON
 }
 
