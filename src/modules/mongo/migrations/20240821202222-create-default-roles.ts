@@ -35,22 +35,23 @@ export async function up(db: C_Db) {
     async function createRole(role: I_RoleExtended, parentId?: string, parentAncestors: string[] = []) {
         const { children, ...roleData } = role;
 
-        let ancestors: string[] = [];
+        let ancestorsIds: string[] = [];
+
         if (parentId) {
-            ancestors = [...parentAncestors, parentId];
+            ancestorsIds = [...parentAncestors, parentId];
         }
 
         const createdRole = await roleCtr.createOne({
             ...roleData,
             parentId,
-            ancestors,
+            ancestorsIds,
         });
 
         if (!createdRole.success) {
             return log.error(`Failed to create menu, ${role.name}`);
         }
 
-        log.info(`Role created: ${role.name} with ancestors: [${ancestors.join(', ')}]`);
+        log.info(`Role created: ${role.name} with ancestors: [${ancestorsIds.join(', ')}]`);
 
         if (children) {
             for (const child of children) {

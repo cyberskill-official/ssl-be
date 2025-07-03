@@ -5,8 +5,8 @@ export interface I_Role extends I_GenericDocument {
     description?: string;
     parentId?: string;
     parent?: I_Role;
-    ancestors?: string[];
-    ancestorsIds?: I_Role;
+    ancestorsIds?: string[];
+    ancestors?: I_Role[];
 }
 
 export type T_Role_Populate = 'parent';

@@ -7,7 +7,8 @@ type T_Role {
     description: String
     parentId: String
     parent: T_Role
-    ancestors: [String]
+    ancestorsIds: [String]
+    ancestors: [T_Role]
 }
 
 input Input_QueryRole {

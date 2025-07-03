@@ -53,7 +53,7 @@ export const roleCtr = {
             });
         }
 
-        let ancestors: string[] = [];
+        let ancestorsIds: string[] = [];
 
         if (parentId) {
             const newParentFound = await roleCtr.getRole(context, { filter: { id: parentId } });
@@ -67,17 +67,17 @@ export const roleCtr = {
 
             const parentRole = newParentFound.result;
 
-            if (parentRole.ancestors && parentRole.ancestors.length > 0) {
-                ancestors = [...(parentRole.ancestors ?? []), parentId];
+            if (parentRole.ancestorsIds && parentRole.ancestorsIds.length > 0) {
+                ancestorsIds = [...(parentRole.ancestorsIds ?? []), parentId];
             }
             else {
-                ancestors = [parentId];
+                ancestorsIds = [parentId];
             }
         }
 
         const roleData = {
             ...doc,
-            ancestors,
+            ancestorsIds,
         };
 
         return mongooseCtr.createOne(roleData);
@@ -146,8 +146,9 @@ export const roleCtr = {
             });
         }
 
-        const childRole = await mongooseCtr.findOne({ parentId: roleFound.result.id });
-        if (childRole) {
+        const childRole = await roleCtr.getRole(context, { filter: { parentId: roleFound.result.id } });
+
+        if (childRole.success && childRole.result) {
             throwError({
                 message: 'Cannot delete a role that has children.',
                 status: RESPONSE_STATUS.BAD_REQUEST,

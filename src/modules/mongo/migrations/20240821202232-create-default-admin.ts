@@ -27,7 +27,6 @@ export async function up(db: C_Db) {
         isActive: true,
         isEmailVerified: true,
         displayName: 'Admin',
-        flagCount: 0,
     };
 
     const adminCreated = await userCtr.createOne(adminUser);

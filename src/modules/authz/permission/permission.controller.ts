@@ -1,5 +1,6 @@
 import type {
     I_Input_CreateOne,
+    I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateOne,
@@ -18,6 +19,8 @@ import { authnCtr } from '#modules/authn/authn.controller.js';
 
 import type { I_Input_CreatePermission, I_Input_QueryPermission, I_Input_UpdatePermission, I_Permission } from './permission.type.js';
 
+import { rolePermissionCtr } from '../role-permission/index.js';
+import { roleCtr } from '../role/index.js';
 import { PermissionModel } from './permission.model.js';
 import { scanGraphqlResolvers, scanRestApiEndpoints } from './permission.scan.js';
 import { E_PermissionType } from './permission.type.js';
@@ -91,18 +94,26 @@ export const permissionCtr = {
 
         return mongooseCtr.updateOne(filter, update, options);
     },
+    deletePermission: async (
+        context: I_Context,
+        { filter }: I_Input_DeleteOne<I_Input_QueryPermission>,
+    ): Promise<I_Return<I_Permission>> => {
+        await authnCtr.checkAuthStrict(context);
+
+        return mongooseCtr.deleteOne(filter);
+    },
     syncPermissions: async () => {
         try {
             log.info('Starting permission synchronization...');
 
-            // 1. Scan permissions từ code
+            // 1. Scan permissions from code
             const graphqlPermissions = scanGraphqlResolvers();
             const restPermissions = scanRestApiEndpoints();
             const allPermissions = [...graphqlPermissions, ...restPermissions];
 
             log.info(`Found ${graphqlPermissions.length} GraphQL permissions and ${restPermissions.length} REST permissions`);
 
-            // 2. Lấy toàn bộ permission hiện tại trong DB
+            // 2. Get all permissions in database
             const dbPermissionsResult = await mongooseCtr.findPaging({}, { pagination: false });
 
             if (!dbPermissionsResult.success) {
@@ -120,7 +131,7 @@ export const permissionCtr = {
 
             log.info(`Found ${dbPermissions.length} existing permissions in database`);
 
-            // 3. Thêm permission mới
+            // 3. Create new permissions
             const newPermissions = allPermissions.filter((perm) => {
                 const key = `${perm.type}_${perm.method}_${perm.target}`;
                 return !dbPermissionKeys.includes(key);
@@ -140,7 +151,7 @@ export const permissionCtr = {
                 log.info('No new permissions to create');
             }
 
-            // 4. Xóa permission thừa
+            // 4. Delete obsolete permissions
             const obsoletePermissions = dbPermissions.filter((dbPerm) => {
                 const key = `${dbPerm.type}_${dbPerm.method}_${dbPerm.target}`;
                 return !allPermissions.find(p => `${p.type}_${p.method}_${p.target}` === key);
@@ -161,11 +172,74 @@ export const permissionCtr = {
                 log.info('No obsolete permissions to delete');
             }
 
+            // 5. Assign all permissions to ADMIN role
+            await permissionCtr.assignAllPermissionsToAdmin();
+
             log.info('Permission synchronization completed successfully!');
         }
         catch (error) {
             log.error('Permission synchronization failed:', error);
             throw error;
+        }
+    },
+    assignAllPermissionsToAdmin: async () => {
+        try {
+            const adminRoleResult = await roleCtr.getRole({}, {
+                filter: { name: 'ADMIN' },
+            });
+
+            if (!adminRoleResult.success || !adminRoleResult.result) {
+                log.warn('ADMIN role not found, skipping permission assignment');
+                return;
+            }
+
+            const allPermissionsResult = await mongooseCtr.findPaging({}, { pagination: false });
+
+            if (!allPermissionsResult.success || !allPermissionsResult.result) {
+                log.warn('No permissions found, skipping ADMIN assignment');
+                return;
+            }
+
+            const existingRolePermissionsResult = await rolePermissionCtr.getRolePermissions({}, {
+                filter: { roleId: adminRoleResult.result.id },
+                options: { pagination: false },
+            });
+
+            const existingPermissionIds = new Set<string>();
+
+            if (existingRolePermissionsResult.success && existingRolePermissionsResult.result) {
+                existingRolePermissionsResult.result.docs.forEach((rp) => {
+                    if (rp.permissionId) {
+                        existingPermissionIds.add(rp.permissionId);
+                    }
+                });
+            }
+
+            const newRolePermissions = allPermissionsResult.result.docs
+                .filter(permission => !existingPermissionIds.has(permission.id!))
+                .map(permission => ({
+                    roleId: adminRoleResult.result.id,
+                    permissionId: permission.id,
+                }));
+
+            if (newRolePermissions.length > 0) {
+                const createResult = await rolePermissionCtr.createRolePermissions({}, {
+                    docs: newRolePermissions,
+                });
+
+                if (!createResult.success) {
+                    log.error('Failed to assign permissions to ADMIN role');
+                    return;
+                }
+
+                log.info(`Assigned ${newRolePermissions.length} permissions to ADMIN role`);
+            }
+            else {
+                log.info('ADMIN role already has all permissions');
+            }
+        }
+        catch (error) {
+            log.error('Failed to assign permissions to ADMIN role:', error);
         }
     },
 };
