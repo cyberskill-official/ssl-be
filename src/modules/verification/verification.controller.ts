@@ -80,11 +80,9 @@ export const verificationCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     deleteVerifications: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, options }: I_Input_DeleteMany<I_Input_QueryVerification>,
     ): Promise<I_Return<T_DeleteResult>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.deleteMany(filter, options);
     },
     checkVerification: async (

@@ -290,8 +290,6 @@ export const eventCtr = {
         return mongooseCtr.updateOne(filter, update, options);
     },
     updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
-        await authnCtr.checkAuthStrict(_context);
-
         return mongooseCtr.updateMany(filter, update, options);
     },
     deleteEvent: async (
