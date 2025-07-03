@@ -16,8 +16,15 @@ input Input_Register {
 }
 
 # Step 3
+input Input_Register_Coordinates {
+    latitude: Float!
+    longitude: Float!
+}
+
 input Input_Register_Location {
     countryId: String!
+    cityId: String!
+    coordinates: Input_Register_Coordinates!
     raw: JSON
 }
 

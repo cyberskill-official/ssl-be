@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cyberskill/shared':
-        specifier: 1.205.0
-        version: 1.205.0(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
+        specifier: 1.205.1
+        version: 1.205.1(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
       '@graphql-tools/load-files':
         specifier: 7.0.1
         version: 7.0.1(graphql@16.11.0)
@@ -509,8 +509,8 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@cyberskill/shared@1.205.0':
-    resolution: {integrity: sha512-aroOZKyaRBdej6eh1iDVkUZjI0e0GMUPOf1Iwbfb9xFHZmqOkdZLayGDRICimFtaWHcRrpct046JLbVfMhcrug==}
+  '@cyberskill/shared@1.205.1':
+    resolution: {integrity: sha512-HYZmuPgD5gkPBsIdn5yzC38ISfoOhgMsdteX2u9O9SpG9c0PeQROlzP1zPc1N9f9SRv52/fbUXj1JuPU2Yu9Vw==}
     hasBin: true
 
   '@dotenvx/dotenvx@1.45.2':
@@ -5414,8 +5414,8 @@ packages:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
-  vite@7.0.0:
-    resolution: {integrity: sha512-ixXJB1YRgDIw2OszKQS9WxGHKwLdCsbQNkpJN171udl6szi/rIySHL6/Os3s2+oE4P/FLD4dxg4mD7Wust+u5g==}
+  vite@7.0.1:
+    resolution: {integrity: sha512-BiKOQoW5HGR30E6JDeNsati6HnSPMVEKbkIWbCiol+xKeu3g5owrjy7kbk/QEMuzCV87dSUTvycYKmlcfGKq3Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -6117,7 +6117,7 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@cyberskill/shared@1.205.0(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
+  '@cyberskill/shared@1.205.1(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
     dependencies:
       '@antfu/eslint-config': 4.16.2(@eslint-react/eslint-plugin@1.52.2(eslint@9.30.1(jiti@2.4.2))(ts-api-utils@2.1.0(typescript@5.8.3))(typescript@5.8.3))(@vue/compiler-sfc@3.5.17)(eslint-plugin-format@1.0.1(eslint@9.30.1(jiti@2.4.2)))(eslint-plugin-react-hooks@5.2.0(eslint@9.30.1(jiti@2.4.2)))(eslint-plugin-react-refresh@0.4.20(eslint@9.30.1(jiti@2.4.2)))(eslint@9.30.1(jiti@2.4.2))(typescript@5.8.3)
       '@apollo/client': 3.13.8(@types/react@19.1.8)(graphql-ws@6.0.5(crossws@0.3.5)(graphql@16.11.0)(ws@8.18.3))(graphql@16.11.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -6131,7 +6131,7 @@ snapshots:
       '@nestjs/common': 11.1.3(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/core': 11.1.3(@nestjs/common@11.1.3(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@userback/widget': 0.3.11
-      '@vitejs/plugin-react-swc': 3.10.2(vite@7.0.0(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0))
+      '@vitejs/plugin-react-swc': 3.10.2(vite@7.0.1(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0))
       body-parser: 2.2.0
       chalk: 5.4.1
       clsx: 2.1.1
@@ -6172,7 +6172,7 @@ snapshots:
       slugify: 1.6.6
       unorm: 1.6.0
       uuid: 11.1.0
-      vite: 7.0.0(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0)
+      vite: 7.0.1(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0)
       ws: 8.18.3
       yargs: 18.0.0
     transitivePeerDependencies:
@@ -7837,11 +7837,11 @@ snapshots:
 
   '@userback/widget@0.3.11': {}
 
-  '@vitejs/plugin-react-swc@3.10.2(vite@7.0.0(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0))':
+  '@vitejs/plugin-react-swc@3.10.2(vite@7.0.1(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.0-beta.11
       '@swc/core': 1.12.6
-      vite: 7.0.0(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0)
+      vite: 7.0.1(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0)
     transitivePeerDependencies:
       - '@swc/helpers'
 
@@ -11649,7 +11649,7 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite@7.0.0(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0):
+  vite@7.0.1(@types/node@24.0.10)(jiti@2.4.2)(sass@1.89.2)(tsx@4.20.3)(yaml@2.8.0):
     dependencies:
       esbuild: 0.25.5
       fdir: 6.4.6(picomatch@4.0.2)
