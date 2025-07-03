@@ -3,13 +3,15 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import type { I_Context, I_NextFunction } from '#shared/typescript/express.js';
 
-import { permissionCtr } from './permission/permission.controller.js';
-import { E_PermissionType } from './permission/permission.type.js';
-import { rolePermissionCtr } from './role-permission/role-permission.controller.js';
+// don't update this import to index.js because it will cause circular dependency
+import { authnCtr } from '#modules/authn/authn.controller.js';
+
+import { E_PermissionType, permissionCtr } from './permission/index.js';
+import { rolePermissionCtr } from './role-permission/index.js';
 
 export const authzMiddleware = {
     checkAuthorizedGraphql: async (context: I_Context) => {
-        const user = context?.req?.session?.user;
+        const user = await authnCtr.getUserFromSession(context);
         const roleIds: string[] = user?.rolesIds ?? [];
         const info = context?.info;
 
@@ -48,7 +50,7 @@ export const authzMiddleware = {
     },
     checkAuthorizedRest: async (context: I_Context, next: I_NextFunction) => {
         const path = context?.req?.path;
-        const currentUser = context?.req?.session?.user;
+        const user = await authnCtr.getUserFromSession(context);
 
         if (path === '/') {
             return next();
@@ -71,21 +73,21 @@ export const authzMiddleware = {
             return next();
         }
 
-        if (!currentUser) {
+        if (!user) {
             throwError({
                 message: 'Unauthorized: You must be logged in to use this API.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
 
-        if (!currentUser.rolesIds || currentUser.rolesIds.length === 0) {
+        if (!user.rolesIds || user.rolesIds.length === 0) {
             throwError({
                 message: 'Unauthorized: No roles assigned.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
 
-        const roleIds: string[] = currentUser.rolesIds;
+        const roleIds: string[] = user.rolesIds;
 
         const rolesPermissionFound = await rolePermissionCtr.getRolePermissions({}, {
             filter: { roleId: { $in: roleIds } },

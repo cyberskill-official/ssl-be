@@ -6,15 +6,14 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
-// don't change this import to index.js
-import type { I_User } from '#modules/user/user.type.js';
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
-import { promoCodeCtr } from '#modules/promo-code/promo-code/index.js';
-import { userCtr } from '#modules/user/user.controller.js';
+import { promoCodeCtr } from '#modules/promo-code/index.js';
+import { userCtr } from '#modules/user/index.js';
 import {
     E_VerificationContext,
     E_VerificationMethod,

@@ -7,6 +7,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type {
     I_Input_PublishLegalDocument,
     I_Input_QueryLegalDocument,
@@ -35,6 +37,8 @@ export const legalDocumentCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createLegalDocument: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_SaveDraftLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const existing = await legalDocumentCtr.getLegalDocument(context, { filter: { type: doc.type } });
 
         if (existing.success && existing.result) {
@@ -45,10 +49,14 @@ export const legalDocumentCtr = {
         }
         return mongooseCtr.createOne(doc);
     },
-    updateLegalDocument: async (_context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_PublishLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+    updateLegalDocument: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_PublishLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
+        await authnCtr.checkAuthStrict(context);
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     saveDraftLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_SaveDraftLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const { type, content } = doc;
 
         if (!content || !type) {
@@ -87,7 +95,7 @@ export const legalDocumentCtr = {
         });
     },
     publishLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_PublishLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const { type } = doc;
 
@@ -141,7 +149,7 @@ export const legalDocumentCtr = {
         );
     },
     restoreLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_RestoreLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const { id, version } = doc;
 

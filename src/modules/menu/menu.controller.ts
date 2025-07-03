@@ -14,6 +14,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type { I_Input_CreateMenu, I_Input_QueryMenu, I_Input_UpdateMenu, I_Menu } from './menu.type.js';
 
 import { MenuModel } from './menu.model.js';
@@ -34,9 +36,11 @@ export const menuCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createMenu: async (
-        _context: I_Context,
+        context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateMenu>,
     ): Promise<I_Return<I_Menu>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const { text, url } = doc;
 
         if (!text || !url) {
@@ -54,6 +58,8 @@ export const menuCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateMenu>,
     ): Promise<I_Return<I_Menu>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const menuFound = await menuCtr.getMenu(context, { filter });
 
         if (!menuFound.success) {
@@ -69,6 +75,8 @@ export const menuCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryMenu>,
     ): Promise<I_Return<I_Menu>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const menuFound = await menuCtr.getMenu(context, { filter });
 
         if (!menuFound.success) {

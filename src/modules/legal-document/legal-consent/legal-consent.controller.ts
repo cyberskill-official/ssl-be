@@ -9,7 +9,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 
-import type { I_LegalDocument } from '../legal-document/legal-document.type.js';
+import type { I_LegalDocument } from '../legal-document/index.js';
 import type { I_Input_CreateLegalConsent, I_Input_QueryLegalConsent, I_LegalConsent } from './legal-consent.type.js';
 
 import { E_LegalDocumentStatus, legalDocumentCtr } from '../legal-document/index.js';
@@ -63,7 +63,7 @@ export const legalConsentCtr = {
         };
     },
     createLegalConsent: async (context: I_Context, { doc }: { doc: I_Input_CreateLegalConsent }) => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const { legalDocumentId, version } = doc;
         const legalConsentFound = await legalConsentCtr.getLegalConsent(context, {

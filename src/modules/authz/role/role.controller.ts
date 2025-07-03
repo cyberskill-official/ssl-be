@@ -13,9 +13,12 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+// don't update this import to index.js because it will cause circular dependency
+import { authnCtr } from '#modules/authn/authn.controller.js';
+
 import type { I_Input_CreateRole, I_Input_QueryRole, I_Input_UpdateRole, I_Role } from './role.type.js';
 
-import { rolePermissionCtr } from '../role-permission/role-permission.controller.js';
+import { rolePermissionCtr } from '../role-permission/index.js';
 import { RoleModel } from './role.model.js';
 
 const mongooseCtr = new MongooseController<I_Role>(RoleModel);
@@ -37,6 +40,8 @@ export const roleCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateRole>,
     ): Promise<I_Return<I_Role>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const { name, parentId } = doc;
 
         const roleFound = await roleCtr.getRole(context, { filter: { name } });
@@ -81,7 +86,10 @@ export const roleCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateRole>,
     ): Promise<I_Return<I_Role>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const roleFound = await roleCtr.getRole(context, { filter });
+
         if (!roleFound.success) {
             throwError({
                 message: 'Role not found.',
@@ -127,6 +135,8 @@ export const roleCtr = {
         context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryRole>,
     ): Promise<I_Return<I_Role>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const roleFound = await roleCtr.getRole(context, { filter });
 
         if (!roleFound.success) {

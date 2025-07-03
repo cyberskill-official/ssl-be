@@ -13,6 +13,9 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+// don't update this import to index.js because it will cause circular dependency
+import { authnCtr } from '#modules/authn/authn.controller.js';
+
 import type { I_Input_CreatePermission, I_Input_QueryPermission, I_Input_UpdatePermission, I_Permission } from './permission.type.js';
 
 import { PermissionModel } from './permission.model.js';
@@ -38,12 +41,16 @@ export const permissionCtr = {
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreatePermission>,
     ): Promise<I_Return<I_Permission>> => {
+        await authnCtr.checkAuthStrict(_context);
+
         return mongooseCtr.createOne(doc);
     },
     updatePermission: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePermission>,
     ): Promise<I_Return<I_Permission>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const permissionFound = await permissionCtr.getPermission(context, { filter });
 
         if (!permissionFound.success) {

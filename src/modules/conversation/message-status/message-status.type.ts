@@ -1,6 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_User } from '#modules/user/user.type.js';
+import type { I_User } from '#modules/user/index.js';
 
 import type { I_Message } from '../message/index.js';
 

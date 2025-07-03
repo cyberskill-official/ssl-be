@@ -14,6 +14,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+
 import type {
     I_Input_ApplyPromoCode,
     I_Input_CreatePromoCode,
@@ -44,6 +46,8 @@ export const promoCodeCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreatePromoCode>,
     ): Promise<I_Return<I_PromoCode>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const requiredFields: Array<keyof I_Input_CreatePromoCode> = ['code', 'benefit'];
 
         for (const field of requiredFields) {
@@ -70,15 +74,19 @@ export const promoCodeCtr = {
     },
 
     updatePromoCode: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePromoCode>,
     ): Promise<I_Return<I_PromoCode>> => {
+        await authnCtr.checkAuthStrict(context);
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     deletePromoCode: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryPromoCode>,
     ): Promise<I_Return<I_PromoCode>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const promoCodeFound = await promoCodeCtr.getPromoCode(context, { filter });
 
         if (!promoCodeFound.success) {
@@ -91,6 +99,8 @@ export const promoCodeCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     applyPromoCode: async (context: I_Context, doc: I_Input_ApplyPromoCode): Promise<I_Return<I_PromoCode>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const requiredFields: Array<keyof I_Input_ApplyPromoCode> = ['code', 'userId'];
 
         for (const field of requiredFields) {

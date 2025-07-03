@@ -64,6 +64,8 @@ export const followCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateFollow>,
     ): Promise<I_Return<I_Follow>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const userFound = await followCtr.getFollow(context, {
             filter: { userId: doc.userId, followId: doc.followId },
         });
@@ -81,6 +83,8 @@ export const followCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryFollow>,
     ): Promise<I_Return<I_Follow>> => {
+        await authnCtr.checkAuthStrict(context);
+
         const followFound = await followCtr.getFollow(context, { filter });
 
         if (!followFound.success) {
@@ -96,7 +100,7 @@ export const followCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Follow>,
     ): Promise<I_Return<I_Follow>> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         const { followId } = doc;
 
@@ -120,7 +124,7 @@ export const followCtr = {
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_UnFollow>,
     ): Promise<I_Return<I_Follow>> => {
-        const user = context!.req!.session!.user!;
+        const user = await authnCtr.getUserFromSession(context);
 
         if (!filter?.followId) {
             throwError({
