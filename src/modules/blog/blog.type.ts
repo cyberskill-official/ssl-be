@@ -44,6 +44,7 @@ export interface I_Blog extends I_GenericDocument {
     authorId?: string;
     author?: I_User;
     seo?: I_Seo;
+    isActive?: boolean;
 }
 
 export type T_Blog_Populate = 'relatedBlogs' | 'language' | 'author';

@@ -128,6 +128,10 @@ export const BlogModel = mongo.createModel<I_Blog>({
         seo: {
             type: [SeoSchema],
         },
+        isActive: {
+            type: Boolean,
+            default: false,
+        },
     },
     virtuals: [
         {

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cyberskill/shared':
-        specifier: 1.205.1
-        version: 1.205.1(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
+        specifier: 1.205.3
+        version: 1.205.3(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
       '@graphql-tools/load-files':
         specifier: 7.0.1
         version: 7.0.1(graphql@16.11.0)
@@ -509,8 +509,8 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@cyberskill/shared@1.205.1':
-    resolution: {integrity: sha512-HYZmuPgD5gkPBsIdn5yzC38ISfoOhgMsdteX2u9O9SpG9c0PeQROlzP1zPc1N9f9SRv52/fbUXj1JuPU2Yu9Vw==}
+  '@cyberskill/shared@1.205.3':
+    resolution: {integrity: sha512-7PBt7zGcPp+7Itb+qDyfya5Rvn3TSfumblTyx3KUZpFMLo3Hl1P3zCy2cZm9McOSgwe1+Lf+rQW7lUiQmfa4lw==}
     hasBin: true
 
   '@dotenvx/dotenvx@1.45.2':
@@ -6117,7 +6117,7 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@cyberskill/shared@1.205.1(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
+  '@cyberskill/shared@1.205.3(@parcel/watcher@2.5.1)(@types/express@5.0.3)(@types/node@24.0.10)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.17)(crossws@0.3.5)(eslint@9.30.1(jiti@2.4.2))(jiti@2.4.2)(next@15.3.4(@babel/core@7.27.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(sass@1.89.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)(sass@1.89.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
     dependencies:
       '@antfu/eslint-config': 4.16.2(@eslint-react/eslint-plugin@1.52.2(eslint@9.30.1(jiti@2.4.2))(ts-api-utils@2.1.0(typescript@5.8.3))(typescript@5.8.3))(@vue/compiler-sfc@3.5.17)(eslint-plugin-format@1.0.1(eslint@9.30.1(jiti@2.4.2)))(eslint-plugin-react-hooks@5.2.0(eslint@9.30.1(jiti@2.4.2)))(eslint-plugin-react-refresh@0.4.20(eslint@9.30.1(jiti@2.4.2)))(eslint@9.30.1(jiti@2.4.2))(typescript@5.8.3)
       '@apollo/client': 3.13.8(@types/react@19.1.8)(graphql-ws@6.0.5(crossws@0.3.5)(graphql@16.11.0)(ws@8.18.3))(graphql@16.11.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)

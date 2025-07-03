@@ -36,6 +36,7 @@ type T_Blog {
     authorId: String
     author: T_User
     seo: T_Seo
+    isActive: Boolean
 }
 
 input Input_QueryBlog {
@@ -62,6 +63,7 @@ input Input_QueryBlog {
     socialURL: String
     authorId: String
     seo: Input_Seo
+    isActive: Boolean
 }
 
 input Input_CreateBlog {
@@ -84,6 +86,7 @@ input Input_CreateBlog {
     socialURL: String
     authorId: String
     seo: Input_Seo
+    isActive: Boolean
 }
 
 input Input_UpdateBlog {
@@ -107,6 +110,7 @@ input Input_UpdateBlog {
     socialURL: String
     authorId: String
     seo: Input_Seo
+    isActive: Boolean
 }
 
 type T_Response_Blog {

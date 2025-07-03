@@ -26,7 +26,7 @@
         "copy:graphql": "tsx src/modules/graphql/copy.ts"
     },
     "dependencies": {
-        "@cyberskill/shared": "1.205.1",
+        "@cyberskill/shared": "1.205.3",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.0.24",
         "@graphql-tools/schema": "10.0.23",
