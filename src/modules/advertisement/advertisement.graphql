@@ -16,7 +16,8 @@ type T_Advertisement {
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
-    clickCount: Float
+    clickCount: Float    
+    viewCount: Int
     isActive: Boolean
 }
 
@@ -42,7 +43,6 @@ input Input_CreateAdvertisement {
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
-    clickCount: Float
     isActive: Boolean
 }
 
@@ -54,7 +54,6 @@ input Input_UpdateAdvertisement {
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
-    clickCount: Float
     isActive: Boolean
 }
 
@@ -83,4 +82,17 @@ type T_Response_Advertisements {
     success: Boolean
     message: String
     result: T_Advertisements
+}
+
+type Query {
+    getAdvertisement(filter: Input_QueryAdvertisement): T_Response_Advertisement!
+    getAdvertisements(filter: Input_QueryAdvertisement, options: JSON): T_Response_Advertisements!
+}
+
+type Mutation {
+    createAdvertisement(doc: Input_CreateAdvertisement!): T_Response_Advertisement!
+    updateAdvertisement(filter: Input_QueryAdvertisement!, update: Input_UpdateAdvertisement!): T_Response_Advertisement!
+    deleteAdvertisement(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
+    trackAdvertisementClick(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
+    trackAdvertisementView(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
 }

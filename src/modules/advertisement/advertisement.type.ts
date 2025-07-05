@@ -16,6 +16,7 @@ export interface I_Advertisement extends I_GenericDocument {
     endDate?: Date;
     clickCount?: number;
     isActive?: boolean;
+    viewCount?: number;
 }
 
 export interface I_Input_QueryAdvertisement extends I_Advertisement { }

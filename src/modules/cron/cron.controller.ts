@@ -8,6 +8,7 @@ import { eventCtr } from '#modules/event/index.js';
 import { mongoBackup } from '#modules/mongo/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
 
+import { AdvertisementModel } from '../advertisement/advertisement.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
@@ -17,6 +18,7 @@ const cron = {
         cron.backupDB().start();
         cron.checkExpiredEvents().start();
         cron.cleanupVerification().start();
+        cron.disableExpiredAds().start();
     },
     backupDB: () => {
         return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
@@ -175,6 +177,27 @@ const cron = {
                     expiresAt: { $lt: new Date() },
                 },
             });
+        });
+    },
+    disableExpiredAds: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.DISABLE_EXPIRED_ADS, async () => {
+            try {
+                const now = new Date();
+                const result = await AdvertisementModel.updateMany(
+                    { isActive: true, endDate: { $lt: now } },
+                    { $set: { isActive: false } },
+                );
+
+                if (result.modifiedCount > 0) {
+                    log.success(`[CRON] Deactivated ${result.modifiedCount} expired advertisements.`);
+                }
+                else {
+                    log.info(`[CRON] No expired advertisements found.`);
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Failed to disable expired advertisements:', error);
+            }
         });
     },
 };

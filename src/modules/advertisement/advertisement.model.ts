@@ -54,6 +54,10 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
             type: Number,
             default: 0,
         },
+        viewCount: {
+            type: Number,
+            default: 0,
+        },
         isActive: {
             type: Boolean,
             default: false,
