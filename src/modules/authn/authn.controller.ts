@@ -9,7 +9,7 @@ import { omit } from 'lodash-es';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, roleCtr } from '#modules/authz/index.js';
+import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { getEnv } from '#modules/env/index.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
@@ -447,10 +447,10 @@ export const authnCtr = {
         let roleId;
 
         switch (type) {
-            case 'FREE': {
+            case E_MembershipType.FREE: {
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_MembershipType.FREE,
+                        name: E_Role_User.FREE_MEMBER,
                     },
                 });
 
@@ -464,7 +464,7 @@ export const authnCtr = {
                 roleId = roleFound.result.id;
                 break;
             }
-            case 'PROMO': {
+            case E_MembershipType.PROMO: {
                 if (!promoCode) {
                     throwError({
                         message: 'Promo code is required for this membership type.',
@@ -489,7 +489,7 @@ export const authnCtr = {
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_MembershipType.PAID,
+                        name: E_Role_User.PAID_MEMBER,
                     },
                 });
 
@@ -503,11 +503,11 @@ export const authnCtr = {
                 roleId = roleFound.result.id;
                 break;
             }
-            case 'PAID': {
+            case E_MembershipType.PAID: {
                 // TODO: Handle payment logic
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_MembershipType.PAID,
+                        name: E_Role_User.PAID_MEMBER,
                     },
                 });
 
