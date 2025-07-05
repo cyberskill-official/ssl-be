@@ -69,3 +69,13 @@ type T_Response_Participants {
     message: String
     result: T_Participants
 }
+
+type Query {
+    getParticipants(filter: Input_QueryParticipant, options: JSON): T_Response_Participants!
+}
+
+type Mutation {
+    createParticipant(doc: Input_CreateParticipant!): T_Response_Participant!
+    updateParticipant(filter: Input_QueryParticipant!, update: Input_UpdateParticipant, options: JSON): T_Response_Participant!
+    deleteParticipant(filter: Input_QueryParticipant!, options: JSON): T_Response_Participant!
+}

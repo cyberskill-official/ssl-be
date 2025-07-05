@@ -64,3 +64,13 @@ type T_Response_Messages {
     message: String
     result: T_Messages
 }
+
+type Query {
+    getMessages(filter: Input_QueryMessage, options: JSON): T_Response_Messages!
+}
+
+type Mutation {
+    createMessage(doc: Input_CreateMessage!): T_Response_Message!
+    updateMessage(filter: Input_QueryMessage!, update: Input_UpdateMessage, options: JSON): T_Response_Message!
+    deleteMessage(filter: Input_QueryMessage!, options: JSON): T_Response_Message!
+}

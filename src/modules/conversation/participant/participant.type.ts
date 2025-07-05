@@ -29,4 +29,5 @@ export interface I_Input_CreateParticipant extends Omit<I_Participant, T_Omit_Cr
     userId: string;
 }
 
-export interface I_Input_UpdateParticipant extends Omit<I_Participant, T_Omit_Update | T_Participant_Populate> { }
+export interface I_Input_UpdateParticipant extends Omit<I_Participant, T_Omit_Update | T_Participant_Populate> {
+}

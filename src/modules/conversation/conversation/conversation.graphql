@@ -71,3 +71,12 @@ type T_Response_Conversations {
     message: String
     result: T_Conversations
 }
+
+type Query {
+    getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
+}
+
+type Mutation {
+    createConversation(doc: Input_CreateConversation!): T_Response_Conversation!
+    deleteConversation(filter: Input_QueryConversation!, options: JSON): T_Response_Conversation!
+}
