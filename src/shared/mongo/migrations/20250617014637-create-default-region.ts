@@ -71,7 +71,10 @@ export async function up(db: C_Db) {
             const region = regionMap.get(regionId);
 
             if (region) {
-                const subregionCreated = await subregionCtr.createMany(subregionList.map(sub => ({ ...sub, regionId: region.id })));
+                const subregionCreated = await subregionCtr.createMany(subregionList.map(sub => ({
+                    ...sub,
+                    regionId: `${region.id}`,
+                })));
 
                 if (!subregionCreated.success) {
                     log.error(`Failed to create subregions for region: ${region.name}`);
@@ -93,7 +96,11 @@ export async function up(db: C_Db) {
             const subregion = subregions.find(s => s.id === subregionId);
 
             if (subregion) {
-                const countryCreated = await countryCtr.createMany(countryList.map(country => ({ ...country, regionId: subregion.region_id, subRegionId: subregion.id })));
+                const countryCreated = await countryCtr.createMany(countryList.map(country => ({
+                    ...country,
+                    regionId: `${subregion.region_id}`,
+                    subRegionId: `${subregion.id}`,
+                })));
 
                 if (!countryCreated.success) {
                     log.error(`Failed to create countries for subregion: ${subregion.name}`);
@@ -115,7 +122,10 @@ export async function up(db: C_Db) {
             const country = countries.find(c => c.id === countryId);
 
             if (country) {
-                const stateCreated = await stateCtr.createMany(stateList.map(state => ({ ...state, countryId: country.id })));
+                const stateCreated = await stateCtr.createMany(stateList.map(state => ({
+                    ...state,
+                    countryId: `${country.id}`,
+                })));
 
                 if (!stateCreated.success) {
                     log.error(`Failed to create states for country: ${country.name}`);
@@ -139,8 +149,8 @@ export async function up(db: C_Db) {
             if (state) {
                 const cityCreated = await cityCtr.createMany(cityList.map(city => ({
                     ...city,
-                    stateId: state.id,
-                    countryId: city.country_id,
+                    stateId: `${state.id}`,
+                    countryId: `${city.country_id}`,
                 })));
 
                 if (!cityCreated.success) {
