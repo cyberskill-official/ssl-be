@@ -6,7 +6,7 @@ import { MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_City, I_Country, I_Region, I_State, I_SubRegion } from '#modules/location/index.js';
 
-const PATH = `./src/modules/mongo/migrations/location`;
+const PATH = `./src/shared/mongo/migrations/location`;
 
 interface I_RegionRaw extends I_Region {
     translations: Record<string, string>;
@@ -93,7 +93,7 @@ export async function up(db: C_Db) {
             const subregion = subregions.find(s => s.id === subregionId);
 
             if (subregion) {
-                const countryCreated = await countryCtr.createMany(countryList.map(country => ({ ...country, subRegionId: subregion.id })));
+                const countryCreated = await countryCtr.createMany(countryList.map(country => ({ ...country, regionId: subregion.region_id, subRegionId: subregion.id })));
 
                 if (!countryCreated.success) {
                     log.error(`Failed to create countries for subregion: ${subregion.name}`);
@@ -137,7 +137,11 @@ export async function up(db: C_Db) {
             const state = states.find(s => s.id === stateId);
 
             if (state) {
-                const cityCreated = await cityCtr.createMany(cityList.map(city => ({ ...city, stateId: state.id })));
+                const cityCreated = await cityCtr.createMany(cityList.map(city => ({
+                    ...city,
+                    stateId: state.id,
+                    countryId: city.country_id,
+                })));
 
                 if (!cityCreated.success) {
                     log.error(`Failed to create cities for state: ${state.name}`);

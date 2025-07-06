@@ -1,4 +1,4 @@
-import { allResolvers } from '#modules/graphql/schema.js';
+import { allResolvers } from '#shared/graphql/schema.js';
 
 import type { I_Response_ScanPermission } from './permission.type.js';
 

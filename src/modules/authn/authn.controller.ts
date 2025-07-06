@@ -11,7 +11,6 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { emailCtr } from '#modules/email/index.js';
-import { getEnv } from '#modules/env/index.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { userCtr } from '#modules/user/index.js';
 import {
@@ -19,6 +18,7 @@ import {
     E_VerificationMethod,
     verificationCtr,
 } from '#modules/verification/index.js';
+import { getEnv } from '#shared/env/index.js';
 import { date, helper, validate } from '#shared/util/index.js';
 
 import type {

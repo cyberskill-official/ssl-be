@@ -3,10 +3,10 @@ import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
 
-import { getEnv } from '#modules/env/index.js';
 import { eventCtr } from '#modules/event/index.js';
-import { mongoBackup } from '#modules/mongo/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
+import { getEnv } from '#shared/env/index.js';
+import { mongoBackup } from '#shared/mongo/index.js';
 
 import { AdvertisementModel } from '../advertisement/advertisement.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';

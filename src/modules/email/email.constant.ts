@@ -1,4 +1,4 @@
-import { getEnv } from '#modules/env/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
 

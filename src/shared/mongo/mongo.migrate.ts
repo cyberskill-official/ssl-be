@@ -11,7 +11,7 @@ if (!pathExistsSync(PATH.MIGRATE_MONGO_CONFIG)) {
         mongodb: {
             url: env.MONGO_URI,
         },
-        migrationsDir: 'src/modules/mongo/migrations',
+        migrationsDir: 'src/shared/mongo/migrations',
         changelogCollectionName: 'migrations',
         migrationFileExtension: '.ts',
         moduleSystem: 'esm',

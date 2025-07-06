@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 
 import type { I_Request, I_Response } from '#shared/typescript/index.js';
 
-import { getEnv } from '#modules/env/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
 

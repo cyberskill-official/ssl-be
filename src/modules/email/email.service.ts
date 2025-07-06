@@ -1,6 +1,6 @@
 import sgMail from '@sendgrid/mail';
 
-import { getEnv } from '#modules/env/env.util.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_EmailJobData } from './email.type.js';
 

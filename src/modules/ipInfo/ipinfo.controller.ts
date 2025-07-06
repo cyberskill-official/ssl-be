@@ -2,7 +2,7 @@ import axios from 'axios';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { getEnv } from '#modules/env/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Response_Ip, I_Response_MyIp } from './ipinfo.type.js';
 

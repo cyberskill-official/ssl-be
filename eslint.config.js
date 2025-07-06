@@ -1,5 +1,5 @@
 import { mergeConfigs } from '@cyberskill/shared/config';
 
 export default mergeConfigs('eslint', {
-    ignores: ['src/modules/mongo/migrations/location/*.json'],
+    ignores: ['src/shared/mongo/migrations/location/*.json'],
 });

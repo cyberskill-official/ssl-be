@@ -10,9 +10,9 @@ import process from 'node:process';
 // import type { I_Context } from '#shared/typescript/index.js';
 import { permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
-import { getEnv } from '#modules/env/index.js';
-import { schema } from '#modules/graphql/schema.js';
 import { mainRouter } from '#modules/rest-api/index.js';
+import { getEnv } from '#shared/env/index.js';
+import { schema } from '#shared/graphql/schema.js';
 
 const env = getEnv();
 

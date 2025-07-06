@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { getEnv } from '#modules/env/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
