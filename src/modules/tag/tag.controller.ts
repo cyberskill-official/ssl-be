@@ -37,11 +37,11 @@ export const tagCtr = {
 
         const { name, isCustom, type } = doc;
 
-        const tagFound = await tagCtr.getTag(context, { filter: { name } });
+        const tagFound = await tagCtr.getTag(context, { filter: { name, type } });
 
         if (tagFound.success) {
             throwError({
-                message: 'Tag name already exist',
+                message: 'Tag already exist',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
