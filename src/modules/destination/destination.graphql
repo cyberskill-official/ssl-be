@@ -220,12 +220,27 @@ type T_Response_Destinations {
 }
 
 type Query {
-    getDestinations(filter: Input_QueryDestination): T_Response_Destinations!
-    getDestination(filter: Input_QueryDestination, options: JSON): T_Response_Destination!
+    getDestination(
+        filter: Input_QueryDestination!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Destination!
+    getDestinations(
+        filter: Input_QueryDestination
+        options: JSON
+    ): T_Response_Destinations!
 }
 
 type Mutation {
     createDestination(doc: Input_CreateDestination!): T_Response_Destination!
-    updateDestination(filter: Input_QueryDestination!, update: Input_UpdateDestination!): T_Response_Destination!
-    deleteDestination(filter: Input_QueryDestination!): T_Response_Destination!
+    updateDestination(
+        filter: Input_QueryDestination!
+        update: Input_UpdateDestination!
+        options: JSON
+    ): T_Response_Destination!
+    deleteDestination(
+        filter: Input_QueryDestination!
+        options: JSON
+    ): T_Response_Destination!
 }

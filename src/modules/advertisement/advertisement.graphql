@@ -85,14 +85,33 @@ type T_Response_Advertisements {
 }
 
 type Query {
-    getAdvertisement(filter: Input_QueryAdvertisement): T_Response_Advertisement!
-    getAdvertisements(filter: Input_QueryAdvertisement, options: JSON): T_Response_Advertisements!
+    getAdvertisement(
+        filter: Input_QueryAdvertisement!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Advertisement!
+    getAdvertisements(
+        filter: Input_QueryAdvertisement
+        options: JSON
+    ): T_Response_Advertisements!
 }
 
 type Mutation {
     createAdvertisement(doc: Input_CreateAdvertisement!): T_Response_Advertisement!
-    updateAdvertisement(filter: Input_QueryAdvertisement!, update: Input_UpdateAdvertisement!): T_Response_Advertisement!
-    deleteAdvertisement(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
-    trackAdvertisementClick(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
-    trackAdvertisementView(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
+    updateAdvertisement(
+        filter: Input_QueryAdvertisement!
+        update: Input_UpdateAdvertisement!
+        options: JSON
+    ): T_Response_Advertisement!
+    deleteAdvertisement(
+        filter: Input_QueryAdvertisement!
+        options: JSON
+    ): T_Response_Advertisement!
+    trackAdvertisementClick(
+        filter: Input_QueryAdvertisement!
+    ): T_Response_Advertisement!
+    trackAdvertisementView(
+        filter: Input_QueryAdvertisement!
+    ): T_Response_Advertisement!    
 }
