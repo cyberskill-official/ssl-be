@@ -8,6 +8,12 @@ export enum E_ReportType {
     USER = 'USER',
 }
 
+export enum E_ReportStatus {
+    PENDING = 'PENDING',
+    APPROVED = 'APPROVED',
+    CLOSED = 'CLOSED',
+}
+
 export interface I_Report extends I_GenericDocument {
     type?: E_ReportType;
     reportedByIds?: string[];
@@ -15,6 +21,7 @@ export interface I_Report extends I_GenericDocument {
     targetId?: string;
     target?: I_User;
     content?: string;
+    status: E_ReportStatus;
     notes?: I_Note[];
 }
 

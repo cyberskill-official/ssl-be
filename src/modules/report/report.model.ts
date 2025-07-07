@@ -5,7 +5,7 @@ import { NoteSchema } from '#modules/note/index.js';
 
 import type { I_Report } from './report.type.js';
 
-import { E_ReportType } from './report.type.js';
+import { E_ReportStatus, E_ReportType } from './report.type.js';
 
 export const ReportModel = mongo.createModel<I_Report>({
     mongoose,
@@ -50,6 +50,18 @@ export const ReportModel = mongo.createModel<I_Report>({
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter content for report',
+                },
+            ],
+        },
+        status: {
+            type: String,
+            enum: Object.values(E_ReportStatus),
+            default: E_ReportStatus.PENDING,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select status for report',
                 },
             ],
         },

@@ -3,6 +3,12 @@ enum E_ReportType {
     USER
 }
 
+enum E_ReportStatus {
+    PENDING
+    APPROVED
+    CLOSED
+}
+
 type T_Report {
     id:	String
     isDel: Boolean
@@ -14,6 +20,7 @@ type T_Report {
     targetId: String
     target: T_User
     content: String
+    status: E_ReportStatus
     notes: [T_Note]
 }
 
@@ -26,6 +33,7 @@ input Input_QueryReport {
     reportedByIds: [String]
     targetId: String
     content: String
+    status: E_ReportStatus
     notes: [Input_Note]
 }
 
@@ -34,6 +42,7 @@ input Input_CreateReport {
     reportedByIds: [String]!
     targetId: String!
     content: String!
+    status: E_ReportStatus!
     notes: [Input_Note]
 }
 
@@ -42,6 +51,7 @@ input Input_UpdateReport {
     reportedByIds: [String]
     targetId: String
     content: String
+    status: E_ReportStatus
     notes: [Input_Note]
 }
 
