@@ -33,6 +33,10 @@ export const NoteSchema = mongo.createSchema<I_Note>({
         createdById: {
             type: String,
         },
+        createdAt: {
+            type: Date,
+            default: Date.now,
+        },
     },
     virtuals: [
         {

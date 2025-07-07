@@ -12,6 +12,7 @@ export interface I_Note {
     content?: string;
     createdById?: string;
     createdBy?: I_User;
+    createdAt?: Date;
 }
 
 export type T_Note_Populate = 'createdBy';

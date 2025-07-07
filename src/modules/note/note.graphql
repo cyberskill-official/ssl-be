@@ -10,6 +10,7 @@ type T_Note {
     content: String
     createdById: String
     createdBy: T_User
+    createdAt: DateTime
 }
 
 input Input_Note {
