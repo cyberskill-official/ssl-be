@@ -210,7 +210,7 @@ export const authnCtr = {
                 doc: {
                     email: emailLowerCase,
                     username,
-                    password: bcrypt.hashSync(password),
+                    password,
                     ...(accountType && { accountType }),
                     ...(displayName && { displayName }),
                     rolesIds: [roleFound.result.id],
