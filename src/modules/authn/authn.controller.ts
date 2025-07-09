@@ -558,12 +558,6 @@ export const authnCtr = {
             });
         }
 
-        const authChecked = await authnCtr.checkAuth(context);
-
-        if (authChecked.success) {
-            return authChecked;
-        }
-
         const { identity, password, rememberMe } = args;
 
         const userFound = await userCtr.getUser(
