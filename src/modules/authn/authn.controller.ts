@@ -129,20 +129,6 @@ export const authnCtr = {
             };
         }
 
-        if (!userFound.result.isActive) {
-            return {
-                success: false,
-                message: 'Account is not active. Please contact support.',
-            };
-        }
-
-        if (!userFound.result.isEmailVerified) {
-            return {
-                success: false,
-                message: 'Email not verified.',
-            };
-        }
-
         context.req.session.user = omit(userFound.result, 'password');
 
         return {
@@ -556,6 +542,12 @@ export const authnCtr = {
                 message: 'Session not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        const authChecked = await authnCtr.checkAuth(context);
+
+        if (authChecked.success) {
+            return authChecked;
         }
 
         const { identity, password, rememberMe } = args;
