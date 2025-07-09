@@ -570,7 +570,10 @@ export const authnCtr = {
             context,
             {
                 filter: {
-                    email: identity,
+                    $or: [
+                        { email: identity },
+                        { username: identity },
+                    ],
                 },
                 populate: {
                     path: 'roles',
@@ -578,12 +581,7 @@ export const authnCtr = {
             },
         );
 
-        if (
-            !userFound.success
-            || !userFound.result
-            || !userFound.result.password
-            || !userFound.result.id
-        ) {
+        if (!userFound.success) {
             throwError({
                 message: 'Invalid login information.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -592,12 +590,12 @@ export const authnCtr = {
 
         const isPasswordMatched = bcrypt.compareSync(
             password,
-            userFound.result.password,
+            userFound.result.password!,
         );
 
         if (!isPasswordMatched) {
             throwError({
-                message: 'Invalid login information.',
+                message: 'Invalid password.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
