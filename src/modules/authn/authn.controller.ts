@@ -607,20 +607,6 @@ export const authnCtr = {
             });
         }
 
-        if (!userFound.result.isActive) {
-            throwError({
-                message: 'Account is not active. Please contact support.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        if (!userFound.result.isEmailVerified) {
-            throwError({
-                message: 'Email not verified.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
         const token = rememberMe ? authnCtr.generateToken(context, userFound.result.id) : '';
 
         context.req.session.user = omit(userFound.result, 'password');
