@@ -63,28 +63,18 @@ export const legalDocumentCtr = {
             return legalDocumentCtr.createLegalDocument(context, { doc });
         }
 
-        const existingLegalDocument = legalDocumentFound.result;
-
-        if (existingLegalDocument.status === E_LegalDocumentStatus.PUBLISHED) {
-            throwError({ message: 'Cannot edit published document. Please restore or create a draft.', status: RESPONSE_STATUS.BAD_REQUEST });
-        }
-
-        if (existingLegalDocument.content === content) {
+        if (legalDocumentFound.result.content === content) {
             throwError({ message: 'Content must be different from previous version.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        let newVersion = existingLegalDocument.version || 1;
-
-        if (existingLegalDocument.content !== content) {
-            newVersion += 1;
-        }
-
         return legalDocumentCtr.updateLegalDocument(context, {
-            filter: { id: existingLegalDocument.id },
+            filter: { id: legalDocumentFound.result.id },
             update: {
                 content,
-                version: newVersion,
-                updatedAt: new Date(),
+                status: E_LegalDocumentStatus.DRAFT,
+                ...(legalDocumentFound.result.status === E_LegalDocumentStatus.PUBLISHED && {
+                    version: legalDocumentFound.result.history!.length + 1,
+                }),
             },
         });
     },
@@ -136,15 +126,12 @@ export const legalDocumentCtr = {
                 filter: { id: legalDocument.id },
                 update: {
                     status: E_LegalDocumentStatus.PUBLISHED,
-                    updatedAt: new Date(),
                     history: newHistory,
                 },
             },
         );
     },
     restoreLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_RestoreLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const user = await authnCtr.getUserFromSession(context);
-
         const { id, version } = doc;
 
         const legalDocumentFound = await legalDocumentCtr.getLegalDocument(context, { filter: { id } });
@@ -152,35 +139,21 @@ export const legalDocumentCtr = {
         if (!legalDocumentFound.success) {
             throwError({ message: 'Document not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
-        const legalDocument = legalDocumentFound.result;
 
-        const history = (legalDocument.history || []).find((h: I_LegalDocumentHistory) => h.version === version);
+        const restoreDocumentFound = (legalDocumentFound.result.history || []).find((h: I_LegalDocumentHistory) => h.version === version);
 
-        if (!history) {
+        if (!restoreDocumentFound) {
             throwError({ message: 'Version not found in history', status: RESPONSE_STATUS.NOT_FOUND });
         }
-
-        const newHistory = [
-            ...(legalDocument.history || []),
-            {
-                type: legalDocument.type,
-                content: history.content,
-                version: history.version,
-                updatedAt: new Date(),
-                updatedById: user.id,
-            },
-        ];
 
         return legalDocumentCtr.updateLegalDocument(
             context,
             {
-                filter: { id: legalDocument.id },
+                filter: { id },
                 update: {
-                    content: legalDocument.content,
-                    version: legalDocument.version,
+                    content: restoreDocumentFound.content,
+                    version: restoreDocumentFound.version,
                     status: E_LegalDocumentStatus.PUBLISHED,
-                    updatedAt: new Date(),
-                    history: newHistory,
                 },
             },
         );

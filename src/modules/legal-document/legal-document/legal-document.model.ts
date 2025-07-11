@@ -106,7 +106,7 @@ export const LegalDocumentModel = mongo.createModel<I_LegalDocument>({
         },
         version: {
             type: Number,
-            default: 0,
+            default: 1,
         },
         history: {
             type: [LegalDocumentHistorySchema],
