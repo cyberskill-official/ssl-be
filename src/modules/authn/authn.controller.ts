@@ -1,4 +1,7 @@
-import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type {
+    I_Input_CreateOne,
+    I_Input_UpdateOne,
+} from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -38,7 +41,11 @@ import type {
     I_SessionPayload,
 } from './authn.type.js';
 
-import { EMAIL_VERIFICATION, FORGOT_PASSWORD, VERIFICATION_EXPIRES } from './authn.constant.js';
+import {
+    EMAIL_VERIFICATION,
+    FORGOT_PASSWORD,
+    VERIFICATION_EXPIRES,
+} from './authn.constant.js';
 import { E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
@@ -108,18 +115,15 @@ export const authnCtr = {
             };
         }
 
-        const userFound = await userCtr.getUser(
-            context,
-            {
-                filter: {
-                    id: context.req.session.user.id,
-                },
-                populate: ['roles'],
+        const userFound = await userCtr.getUser(context, {
+            filter: {
+                id: context.req.session.user.id,
             },
-        );
+            populate: ['roles'],
+        });
 
         if (!userFound.success) {
-            context.req.session.destroy(() => { });
+            context.req.session.destroy(() => {});
             throwError({
                 message: 'Session expired.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
@@ -188,14 +192,11 @@ export const authnCtr = {
         validate.email.validate(email);
         validate.username.validate(username);
 
-        const existingUserFound = await userCtr.getUser(
-            context,
-            {
-                filter: {
-                    $or: [{ email: emailLowerCase }, { username }],
-                },
+        const existingUserFound = await userCtr.getUser(context, {
+            filter: {
+                $or: [{ email: emailLowerCase }, { username }],
             },
-        );
+        });
 
         if (existingUserFound.success) {
             throwError({
@@ -204,14 +205,11 @@ export const authnCtr = {
             });
         }
 
-        const roleFound = await roleCtr.getRole(
-            context,
-            {
-                filter: {
-                    name: E_Role.USER,
-                },
+        const roleFound = await roleCtr.getRole(context, {
+            filter: {
+                name: E_Role.USER,
             },
-        );
+        });
 
         if (!roleFound.success) {
             throwError({
@@ -220,21 +218,18 @@ export const authnCtr = {
             });
         }
 
-        const userCreated = await userCtr.createUser(
-            context,
-            {
-                doc: {
-                    email: emailLowerCase,
-                    username,
-                    password,
-                    ...(accountType && { accountType }),
-                    ...(displayName && { displayName }),
-                    rolesIds: [roleFound.result.id],
-                    registerStep: E_RegisterStep.VERIFY_EMAIL,
-                    isActive: true,
-                },
+        const userCreated = await userCtr.createUser(context, {
+            doc: {
+                email: emailLowerCase,
+                username,
+                password,
+                ...(accountType && { accountType }),
+                ...(displayName && { displayName }),
+                rolesIds: [roleFound.result.id],
+                registerStep: E_RegisterStep.VERIFY_EMAIL,
+                isActive: true,
             },
-        );
+        });
 
         if (!userCreated.success) {
             throwError({
@@ -252,7 +247,10 @@ export const authnCtr = {
             },
         };
     },
-    registerSendVerifyEmail: async (context: I_Context, { email }: I_Input_Register_SendVerifyEmail) => {
+    registerSendVerifyEmail: async (
+        context: I_Context,
+        { email }: I_Input_Register_SendVerifyEmail,
+    ) => {
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -337,14 +335,11 @@ export const authnCtr = {
 
         const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
 
-        const checkResult = await verificationCtr.checkVerification(
-            context,
-            {
-                identifier,
-                value: otp,
-                method: E_VerificationMethod.EMAIL_OTP,
-            },
-        );
+        const checkResult = await verificationCtr.checkVerification(context, {
+            identifier,
+            value: otp,
+            method: E_VerificationMethod.EMAIL_OTP,
+        });
 
         if (!checkResult.success) {
             throwError({
@@ -353,12 +348,9 @@ export const authnCtr = {
             });
         }
 
-        await verificationCtr.deleteVerifications(
-            context,
-            {
-                filter: { identifier },
-            },
-        );
+        await verificationCtr.deleteVerifications(context, {
+            filter: { identifier },
+        });
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: userFound.result.id },
@@ -388,13 +380,19 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const user = await authnCtr.getUserFromSession(context);
 
-        const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
+        const stepsAfter = [
+            E_RegisterStep.PREFERENCES,
+            E_RegisterStep.MEMBERSHIP,
+            E_RegisterStep.COMPLETE,
+        ];
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: user.id },
             update: {
                 ...update,
-                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.PREFERENCES }),
+                ...(!stepsAfter.includes(user.registerStep!) && {
+                    registerStep: E_RegisterStep.PREFERENCES,
+                }),
             },
         });
 
@@ -423,8 +421,19 @@ export const authnCtr = {
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: user.id },
             update: {
-                ...update,
-                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.MEMBERSHIP }),
+                partner1: {
+                    ...user.partner1,
+                    ...update.partner1,
+                },
+                ...(update.partner2 && {
+                    partner2: {
+                        ...(user.partner2 || {}),
+                        ...update.partner2,
+                    },
+                }),
+                ...(!stepsAfter.includes(user.registerStep!) && {
+                    registerStep: E_RegisterStep.MEMBERSHIP,
+                }),
             },
         });
 
@@ -471,18 +480,16 @@ export const authnCtr = {
             case E_MembershipType.PROMO: {
                 if (!promoCode) {
                     throwError({
-                        message: 'Promo code is required for this membership type.',
+                        message:
+                            'Promo code is required for this membership type.',
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
                 }
 
-                const applyPromo = await promoCodeCtr.applyPromoCode(
-                    context,
-                    {
-                        userId: user.id,
-                        code: promoCode,
-                    },
-                );
+                const applyPromo = await promoCodeCtr.applyPromoCode(context, {
+                    userId: user.id,
+                    code: promoCode,
+                });
 
                 if (!applyPromo.success) {
                     throwError({
@@ -533,7 +540,9 @@ export const authnCtr = {
             filter: { id: user.id },
             update: {
                 rolesIds: [roleId],
-                ...(!stepsAfter.includes(user.registerStep!) && { registerStep: E_RegisterStep.COMPLETE }),
+                ...(!stepsAfter.includes(user.registerStep!) && {
+                    registerStep: E_RegisterStep.COMPLETE,
+                }),
             },
         });
 
@@ -570,20 +579,14 @@ export const authnCtr = {
 
         const { identity, password, rememberMe } = args;
 
-        const userFound = await userCtr.getUser(
-            context,
-            {
-                filter: {
-                    $or: [
-                        { email: identity },
-                        { username: identity },
-                    ],
-                },
-                populate: {
-                    path: 'roles',
-                },
+        const userFound = await userCtr.getUser(context, {
+            filter: {
+                $or: [{ email: identity }, { username: identity }],
             },
-        );
+            populate: {
+                path: 'roles',
+            },
+        });
 
         if (!userFound.success) {
             throwError({
@@ -611,7 +614,9 @@ export const authnCtr = {
             });
         }
 
-        const token = rememberMe ? authnCtr.generateToken(context, userFound.result.id) : '';
+        const token = rememberMe
+            ? authnCtr.generateToken(context, userFound.result.id)
+            : '';
 
         context.req.session.user = omit(userFound.result, 'password');
 
@@ -631,7 +636,7 @@ export const authnCtr = {
             });
         }
 
-        context.req.session.destroy(() => { });
+        context.req.session.destroy(() => {});
 
         return {
             success: true,
@@ -680,14 +685,11 @@ export const authnCtr = {
 
         const identifier = `${FORGOT_PASSWORD}:${email}`;
 
-        const checkResult = await verificationCtr.checkVerification(
-            context,
-            {
-                identifier,
-                value: otp,
-                method: E_VerificationMethod.EMAIL_OTP,
-            },
-        );
+        const checkResult = await verificationCtr.checkVerification(context, {
+            identifier,
+            value: otp,
+            method: E_VerificationMethod.EMAIL_OTP,
+        });
 
         if (!checkResult.success) {
             throwError({
@@ -719,12 +721,9 @@ export const authnCtr = {
             });
         }
 
-        await verificationCtr.deleteVerifications(
-            context,
-            {
-                filter: { identifier },
-            },
-        );
+        await verificationCtr.deleteVerifications(context, {
+            filter: { identifier },
+        });
 
         return {
             success: true,
@@ -740,7 +739,10 @@ export const authnCtr = {
 
         const otp = helper.generateOTP();
 
-        const expiresAt = date.getDate(VERIFICATION_EXPIRES.FORGOT_PASSWORD, 'sec');
+        const expiresAt = date.getDate(
+            VERIFICATION_EXPIRES.FORGOT_PASSWORD,
+            'sec',
+        );
 
         const verificationCreated = await verificationCtr.createVerification(
             context,
@@ -767,14 +769,10 @@ export const authnCtr = {
             });
         }
 
-        await emailCtr.sendEmail(
-            FORGOT_PASSWORD,
+        await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
+            otp,
+            expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
             email,
-            {
-                otp,
-                expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
-                email,
-            },
-        );
+        });
     },
 };
