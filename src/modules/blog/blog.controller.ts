@@ -81,8 +81,6 @@ export const blogCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>,
     ): Promise<I_Return<I_Blog>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const blogFound = await blogCtr.getBlog(context, { filter });
 
         if (!blogFound.success) {
@@ -137,8 +135,6 @@ export const blogCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>,
     ): Promise<I_Return<I_Blog>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const blogFound = await blogCtr.getBlog(context, { filter });
 
         if (!blogFound.success) {

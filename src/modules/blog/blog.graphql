@@ -1,3 +1,8 @@
+enum E_BlogType {
+    BLOG
+    PODCAST
+}
+
 enum E_BlogCategory {
     TRAVELS
     SWINGER_CLUB
@@ -18,6 +23,7 @@ type T_Blog {
     authorName: String
     websiteName: String
     websiteURL: String
+    type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
     contentHeadline: String
@@ -47,6 +53,7 @@ input Input_QueryBlog {
     authorName: String
     websiteName: String
     websiteURL: String
+    type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
     contentHeadline: String
@@ -69,6 +76,7 @@ input Input_CreateBlog {
     authorName: String!
     websiteName: String!
     websiteURL: String!
+    type: E_BlogType!
     category: E_BlogCategory!
     featuredImage: String!
     contentHeadline: String!
@@ -91,6 +99,7 @@ input Input_UpdateBlog {
     authorName: String
     websiteName: String
     websiteURL: String
+    type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
     contentHeadline: String

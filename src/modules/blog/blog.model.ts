@@ -6,7 +6,7 @@ import { SocialLinkSchema } from '#modules/setting/index.js';
 
 import type { I_Blog } from './blog.type.js';
 
-import { E_BlogCategory_Blog, E_BlogCategory_Podcast } from './blog.type.js';
+import { E_BlogCategory, E_BlogType } from './blog.type.js';
 
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,
@@ -45,11 +45,21 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 message: 'Please enter website URL for blog',
             },
         },
+        type: {
+            type: String,
+            enum: [
+                ...Object.values(E_BlogType),
+            ],
+            required: true,
+            validate: {
+                validator: mongo.validator.isRequired(),
+                message: 'Please select type for blog',
+            },
+        },
         category: {
             type: String,
             enum: [
-                ...Object.values(E_BlogCategory_Blog),
-                ...Object.values(E_BlogCategory_Podcast),
+                ...Object.values(E_BlogCategory),
             ],
             required: true,
             validate: {

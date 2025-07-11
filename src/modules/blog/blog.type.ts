@@ -5,18 +5,18 @@ import type { I_Seo } from '#modules/seo/index.js';
 import type { I_SocialLink } from '#modules/setting/index.js';
 import type { I_User } from '#modules/user/index.js';
 
-export enum E_BlogCategory_Blog {
+export enum E_BlogType {
+    BLOG = 'BLOG',
+    PODCAST = 'PODCAST',
+}
+
+export enum E_BlogCategory {
     TRAVELS = 'TRAVELS',
     SWINGER_CLUB = 'SWINGER_CLUB',
     SEX = 'SEX',
     DATING = 'DATING',
     LIFESTYLE = 'LIFESTYLE',
-}
-
-export enum E_BlogCategory_Podcast {
-    LIFESTYLE = 'LIFESTYLE',
     RELATIONSHIPS = 'RELATIONSHIPS',
-    DATING = 'DATING',
     SEXUALITY = 'SEXUALITY',
     TRAVEL = 'TRAVEL',
 }
@@ -26,7 +26,8 @@ export interface I_Blog extends I_GenericDocument {
     authorName?: string;
     websiteName?: string;
     websiteURL?: string;
-    category?: E_BlogCategory_Blog | E_BlogCategory_Podcast;
+    type?: E_BlogType;
+    category?: E_BlogCategory;
     featuredImage?: string;
     contentHeadline?: string;
     contentSubHeadline?: string;
@@ -55,7 +56,8 @@ export interface I_Input_CreateBlog extends Omit<I_Blog, T_Omit_Create | T_Blog_
     authorName: string;
     websiteName: string;
     websiteURL: string;
-    category: E_BlogCategory_Blog | E_BlogCategory_Podcast;
+    type: E_BlogType;
+    category: E_BlogCategory;
     featuredImage: string;
     contentHeadline: string;
     contentSubHeadline: string;
