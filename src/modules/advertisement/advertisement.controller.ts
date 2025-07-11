@@ -15,8 +15,6 @@ import validator from 'validator';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/authn.controller.js';
-
 import type { I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement } from './advertisement.type.js';
 
 import { AdvertisementModel } from './advertisement.model.js';
@@ -37,11 +35,9 @@ export const advertisementCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createAdvertisement: async (
-        context: I_Context,
+        _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        await authnCtr.checkAuthStrict(context);
-
         if (!doc.name?.trim()) {
             throwError({ message: 'Advertisement name is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
@@ -70,11 +66,9 @@ export const advertisementCtr = {
     },
 
     updateAdvertisement: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        await authnCtr.checkAuthStrict(context);
-
         if (update.name !== undefined && !update.name.trim()) {
             throwError({ message: 'Advertisement name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
@@ -105,19 +99,15 @@ export const advertisementCtr = {
         return mongooseCtr.updateOne(filter, update);
     },
     deleteAdvertisement: async (
-        context: I_Context,
+        _context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.updateOne(filter, { isDel: true });
     },
     trackAdvertisementClick: async (
-        context: I_Context,
+        _context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.updateOne(
             { id: filter.id },
             { $inc: { clickCount: 1 } },
@@ -125,11 +115,9 @@ export const advertisementCtr = {
         );
     },
     trackAdvertisementView: async (
-        context: I_Context,
+        _context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        await authnCtr.checkAuthStrict(context);
-
         return mongooseCtr.updateOne(
             { id: filter.id },
             { $inc: { viewCount: 1 } },

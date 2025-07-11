@@ -276,8 +276,6 @@ export const eventCtr = {
         return mongooseCtr.createOne(doc);
     },
     updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {
@@ -296,8 +294,6 @@ export const eventCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {

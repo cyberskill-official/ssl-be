@@ -23,6 +23,9 @@ type T_ModerationMedia {
     moderatedBy: T_User
     reason: String
     notes: [T_Note]
+    module: E_UploadModule
+    tagId: String
+    tag: T_Tag
 }
 
 input Input_QueryModerationMedia {
@@ -37,27 +40,31 @@ input Input_QueryModerationMedia {
     moderatedById: String
     reason: String
     notes: [Input_Note]
+    module: E_UploadModule
+    tagId: String
 }
 
 input Input_CreateModerationMedia {
     type: E_ModerationMediaType!
-    uploadedById: String!
     url: String!
     status: E_ModerationMediaStatus
     moderatedById: String
     reason: String
     notes: [Input_Note]
+    module: E_UploadModule!
+    tagId: String
 }
 
 input Input_UpdateModerationMedia {
     isDel: Boolean
     type: E_ModerationMediaType
-    uploadedById: String
     url: String
     status: E_ModerationMediaStatus
     moderatedById: String
     reason: String
     notes: [Input_Note]
+    module: E_UploadModule
+    tagId: String
 }
 
 type T_Response_ModerationMedia {
@@ -85,4 +92,25 @@ type T_Response_ModerationMedias {
     success: Boolean
     message: String
     result: T_ModerationMedias
+}
+type Query {
+    getModerationMedia(
+        filter: Input_QueryModerationMedia!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_ModerationMedia!
+    getModerationMedias(filter: Input_QueryModerationMedia, options: JSON): T_Response_ModerationMedias!
+}
+
+type Mutation {
+    createModerationMedia(doc: Input_CreateModerationMedia!): T_Response_ModerationMedia!
+    updateModerationMedia(
+        filter: Input_QueryModerationMedia!
+        update: Input_UpdateModerationMedia!
+        options: JSON
+    ): T_Response_ModerationMedia!
+    approveModerationMedia(id: String!): T_Response_ModerationMedia!
+    rejectModerationMedia(id: String!, notes: [Input_Note!]!): T_Response_ModerationMedia!
+    deleteModerationMedia(filter: Input_QueryModerationMedia!, options: JSON): T_Response_ModerationMedia!
 }

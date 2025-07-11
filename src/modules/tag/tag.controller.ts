@@ -7,8 +7,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
-
 import type { I_Input_CreateTag, I_Input_QueryTag, I_Input_UpdateTag, I_Tag } from './tag.type.js';
 
 import { TagModel } from './tag.model.js';
@@ -33,8 +31,6 @@ export const tagCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateTag>,
     ): Promise<I_Return<I_Tag>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const { name, isCustom, type } = doc;
 
         const tagFound = await tagCtr.getTag(context, { filter: { name, type } });
@@ -76,8 +72,6 @@ export const tagCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateTag>,
     ): Promise<I_Return<I_Tag>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const tagFound = await tagCtr.getTag(context, { filter });
 
         if (!tagFound.success) {
@@ -93,8 +87,6 @@ export const tagCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryTag>,
     ): Promise<I_Return<I_Tag>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const tagFound = await tagCtr.getTag(context, { filter });
 
         if (!tagFound.success) {

@@ -23,6 +23,12 @@ export function generateUploadPath(baseDir: string, config: I_UploadPathConfig):
             }
             return path.join(baseDir, 'event', entityId, type.toLowerCase());
 
+        case E_UploadModule.CATALOGUE:
+            if (!entityId) {
+                throw new Error('Entity ID is required for catalogue uploads');
+            }
+            return path.join(baseDir, 'catalogue', entityId, type.toLowerCase());
+
         default:
             return path.join(baseDir, String(module).toLowerCase(), entityId || 'general', type.toLowerCase());
     }

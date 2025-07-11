@@ -32,17 +32,14 @@ export const blockCtr = {
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Block>>> => {
-        const authChecked = await authnCtr.checkAuth(context);
-        const userId = authChecked.result?.user?.id;
+        const currentUser = await authnCtr.getUserFromSession(context);
 
-        return mongooseCtr.findPaging({ userId }, options);
+        return mongooseCtr.findPaging({ userId: currentUser.id }, options);
     },
     createBlock: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateBlock>,
     ): Promise<I_Return<I_Block>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const existed = await blockCtr.getBlock(context, {
             filter: { userId: doc.userId, blockId: doc.blockId },
         });
@@ -57,8 +54,6 @@ export const blockCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
-        await authnCtr.checkAuthStrict(context);
-
         const existed = await blockCtr.getBlock(context, { filter });
 
         if (!existed.success) {

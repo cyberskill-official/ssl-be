@@ -2,6 +2,7 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { NoteSchema } from '#modules/note/index.js';
+import { E_UploadModule } from '#modules/upload/index.js';
 
 import type { I_ModerationMedia } from './moderation-media.type.js';
 
@@ -55,7 +56,21 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
             type: String,
         },
         notes: {
-            type: NoteSchema,
+            type: [NoteSchema],
+        },
+        module: {
+            type: String,
+            enum: Object.values(E_UploadModule),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select the module',
+                },
+            ],
+        },
+        tagId: {
+            type: String,
         },
     },
     virtuals: [
@@ -73,6 +88,15 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
             options: {
                 ref: 'User',
                 localField: 'moderatedById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'tag',
+            options: {
+                ref: 'Tag',
+                localField: 'tagId',
                 foreignField: 'id',
                 justOne: true,
             },

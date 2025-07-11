@@ -29,12 +29,8 @@ export interface I_Input_Login {
 }
 
 export interface I_Response_Auth {
-    success: boolean;
-    message?: string;
-    result?: {
-        user?: Omit<I_User, 'password'>;
-        token?: string;
-    };
+    user?: Omit<I_User, 'password'>;
+    token?: string;
 }
 
 // Step 1

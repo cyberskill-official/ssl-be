@@ -63,3 +63,14 @@ type T_Response_Catalogues {
     message: String
     result: T_Catalogues
 }
+
+type Query {
+    getCatalogue(filter: Input_QueryCatalogue!, projection: JSON, options: JSON, populate: JSON): T_Response_Catalogue!
+    getCatalogues(filter: Input_QueryCatalogue, options: JSON): T_Response_Catalogues!
+}
+
+type Mutation {
+    createCatalogue(doc: Input_CreateCatalogue!): T_Response_Catalogue!
+    updateCatalogue(filter: Input_QueryCatalogue!, update: Input_UpdateCatalogue!, options: JSON): T_Response_Catalogue!
+    deleteCatalogue(filter: Input_QueryCatalogue!, options: JSON): T_Response_Catalogue!
+}

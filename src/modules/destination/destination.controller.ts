@@ -85,8 +85,6 @@ export const destinationCtr = {
         _context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        await authnCtr.checkAuthStrict(_context);
-
         if (update.type && !Object.values(E_DestinationType).includes(update.type)) {
             throwError({ message: 'Invalid destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
@@ -129,8 +127,6 @@ export const destinationCtr = {
         _context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_QueryDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        await authnCtr.checkAuthStrict(_context);
-
         return mongooseCtr.deleteOne(filter);
     },
 };

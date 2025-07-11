@@ -104,6 +104,11 @@ function initializeQueues(): void {
         defaultJobOptions: config.defaultJobOptions,
     });
 
+    // Handle Redis connection errors for clearer logs
+    bulkQueue.on('error', (err) => {
+        log.error('Redis connection error in email queue:', err);
+    });
+
     // Process bulk emails with concurrency
     bulkQueue.process(config.concurrency!, async (job) => {
         return processBulkEmailJob(job);
@@ -310,6 +315,7 @@ export const emailQueue = {
 
 // Initialize on creation
 initializeQueues();
+
 setupEventListeners();
 
 // Legacy functions for backward compatibility

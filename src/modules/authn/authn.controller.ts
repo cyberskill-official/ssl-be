@@ -1,4 +1,5 @@
 import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -52,7 +53,7 @@ export const authnCtr = {
     checkToken: async (
         context: I_Context,
         args: I_Input_CheckToken,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         const { token } = args;
 
         try {
@@ -71,6 +72,7 @@ export const authnCtr = {
                 return {
                     success: false,
                     message: 'Token invalid.',
+                    code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
                 };
             }
 
@@ -86,13 +88,14 @@ export const authnCtr = {
             return {
                 success: false,
                 message: 'Token invalid.',
+                code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
             };
         }
     },
     checkAuth: async (
         context: I_Context,
         args?: I_Input_CheckAuth,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         if (args?.token) {
             return authnCtr.checkToken(context, { token: args.token });
         }
@@ -101,6 +104,7 @@ export const authnCtr = {
             return {
                 success: false,
                 message: 'Session not found.',
+                code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
             };
         }
 
@@ -126,6 +130,23 @@ export const authnCtr = {
             return {
                 success: false,
                 message: 'Account has been deleted.',
+                code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
+            };
+        }
+
+        if (!userFound.result.isActive) {
+            return {
+                success: false,
+                message: 'Account is not active.',
+                code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
+            };
+        }
+
+        if (!userFound.result.isEmailVerified) {
+            return {
+                success: false,
+                message: 'Email not verified.',
+                code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
             };
         }
 
@@ -138,27 +159,22 @@ export const authnCtr = {
             },
         };
     },
-    checkAuthStrict: async (context: I_Context): Promise<I_Response_Auth> => {
-        const result = await authnCtr.checkAuth(context);
+    getUserFromSession: async (context: I_Context): Promise<I_User> => {
+        const authChecked = await authnCtr.checkAuth(context);
 
-        if (!result.success) {
+        if (!authChecked.success) {
             throwError({
-                message: result.message,
+                message: 'User not authenticated.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
 
-        return result;
-    },
-    getUserFromSession: async (context: I_Context): Promise<I_User> => {
-        const authChecked = await authnCtr.checkAuthStrict(context);
-
-        return authChecked.result!.user!;
+        return omit(authChecked.result.user, 'password');
     },
     register: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Register>,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         if (!context.req?.session) {
             throwError({
                 message: 'Session not found.',
@@ -303,7 +319,7 @@ export const authnCtr = {
     registerVerifyEmail: async (
         context: I_Context,
         { email, otp }: I_Input_Register_VerifyEmail,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(emailLowerCase);
@@ -319,10 +335,12 @@ export const authnCtr = {
             });
         }
 
+        const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
+
         const checkResult = await verificationCtr.checkVerification(
             context,
             {
-                identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
+                identifier,
                 value: otp,
                 method: E_VerificationMethod.EMAIL_OTP,
             },
@@ -335,10 +353,10 @@ export const authnCtr = {
             });
         }
 
-        await verificationCtr.deleteVerification(
+        await verificationCtr.deleteVerifications(
             context,
             {
-                filter: { id: checkResult.result.verification?.id },
+                filter: { identifier },
             },
         );
 
@@ -367,7 +385,7 @@ export const authnCtr = {
     registerPersonalInfo: async (
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.PREFERENCES, E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
@@ -397,7 +415,7 @@ export const authnCtr = {
     registerPreferences: async (
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         const user = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
@@ -427,7 +445,7 @@ export const authnCtr = {
     registerMembership: async (
         context: I_Context,
         { type, promoCode }: I_Input_Register_Membership,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         const user = await authnCtr.getUserFromSession(context);
 
         let roleId;
@@ -536,7 +554,7 @@ export const authnCtr = {
     login: async (
         context: I_Context,
         args: I_Input_Login,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         if (!context?.req?.session) {
             throwError({
                 message: 'Session not found.',
@@ -605,7 +623,7 @@ export const authnCtr = {
             },
         };
     },
-    logout: async (context: I_Context): Promise<I_Response_Auth> => {
+    logout: async (context: I_Context): Promise<I_Return<I_Response_Auth>> => {
         if (!context.req?.session) {
             throwError({
                 message: 'Session not found.',
@@ -617,12 +635,15 @@ export const authnCtr = {
 
         return {
             success: true,
+            result: {
+                user: undefined,
+            },
         };
     },
     forgotPasswordRequest: async (
         context: I_Context,
         args: I_Input_ForgotPasswordRequest,
-    ): Promise<I_Response_Auth> => {
+    ): Promise<I_Return<I_Response_Auth>> => {
         args.email = args.email.toLowerCase();
 
         validate.email.validate(args.email);
@@ -643,19 +664,26 @@ export const authnCtr = {
         return {
             success: true,
             message: 'OTP sent to email.',
+            result: {
+                user: omit(userFound.result, 'password'),
+            },
         };
     },
     resetPassword: async (
         context: I_Context,
-        { email, otp, newPassword }: I_Input_ResetPassword,
-    ): Promise<I_Response_Auth> => {
+        { email: inputEmail, otp, newPassword }: I_Input_ResetPassword,
+    ): Promise<I_Return<I_Response_Auth>> => {
+        const email = inputEmail.toLowerCase();
+
         validate.email.validate(email);
         validate.password.validate(newPassword);
+
+        const identifier = `${FORGOT_PASSWORD}:${email}`;
 
         const checkResult = await verificationCtr.checkVerification(
             context,
             {
-                identifier: `${FORGOT_PASSWORD}:${email}`,
+                identifier,
                 value: otp,
                 method: E_VerificationMethod.EMAIL_OTP,
             },
@@ -691,19 +719,23 @@ export const authnCtr = {
             });
         }
 
-        await verificationCtr.deleteVerification(
+        await verificationCtr.deleteVerifications(
             context,
             {
-                filter: { id: checkResult.result.verification?.id },
+                filter: { identifier },
             },
         );
 
         return {
             success: true,
             message: 'Password reset successfully.',
+            result: {
+                user: omit(updateResult.result, 'password'),
+            },
         };
     },
-    sendForgotPasswordEmail: async (context: I_Context, email: string) => {
+    sendForgotPasswordEmail: async (context: I_Context, inputEmail: string) => {
+        const email = inputEmail.toLowerCase();
         validate.email.validate(email);
 
         const otp = helper.generateOTP();

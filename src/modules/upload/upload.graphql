@@ -1,4 +1,3 @@
-
 enum E_UploadType {
     IMAGE
     VIDEO
@@ -10,6 +9,7 @@ enum E_UploadModule {
     USER
     EVENT
     CONVERSATION
+    CATALOGUE
 }
 
 type T_Response_Upload {
