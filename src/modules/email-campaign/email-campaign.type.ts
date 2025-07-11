@@ -1,6 +1,13 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { E_UserGroup, I_User } from '#modules/user/index.js';
+import type { I_User } from '#modules/user/index.js';
+
+export enum E_UserGroup {
+    ALL_SUBSCRIBERS = 'ALL_SUBSCRIBERS',
+    PAID_MEMBERS = 'PAID_MEMBERS',
+    FREE_MEMBERS = 'FREE_MEMBERS',
+    CUSTOM_RECIPIENTS = 'CUSTOM_RECIPIENTS',
+}
 
 export interface I_EmailCampaign extends I_GenericDocument {
     name?: string;

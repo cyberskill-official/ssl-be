@@ -16,13 +16,6 @@ export enum E_Gender {
     FEMALE = 'FEMALE',
 }
 
-export enum E_UserGroup {
-    ALL_SUBSCRIBERS = 'ALL_SUBSCRIBERS',
-    PAID_MEMBERS = 'PAID_MEMBERS',
-    FREE_MEMBERS = 'FREE_MEMBERS',
-    CUSTOM_RECIPIENTS = 'CUSTOM_RECIPIENTS',
-}
-
 export enum E_UserSettings_TimeFormat {
     H24 = 'H24',
     H12 = 'H12',
@@ -128,7 +121,6 @@ export interface I_User extends I_GenericDocument {
     lastOnline?: Date;
     settings?: I_UserSettings;
     flagCount?: number;
-    userGroup?: E_UserGroup;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';

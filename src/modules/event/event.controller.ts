@@ -11,7 +11,6 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 // import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 // import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { E_UserGroup } from '#modules/user/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
 
@@ -237,41 +236,39 @@ export const eventCtr = {
             }
         }
 
-        const userGroup = user.userGroup;
+        // TODO: Pricing
+        // if (userGroup === E_UserGroup.FREE_MEMBERS) {
+        //     if (type === E_EventType.BOOTY_CALL || type === E_EventType.TRAVEL || type === E_EventType.PRIVATE) {
+        //         const pricingFound = await pricingCtr.calculatePricing(context, {
+        //             filter: {
+        //                 type: E_PricingType.ANNOUNCEMENT,
+        //                 location,
+        //                 isActive: true,
+        //             },
+        //         });
 
-        if (userGroup === E_UserGroup.FREE_MEMBERS) {
-            if (type === E_EventType.BOOTY_CALL || type === E_EventType.TRAVEL || type === E_EventType.PRIVATE) {
-                // TODO: Pricing
-                // const pricingFound = await pricingCtr.calculatePricing(context, {
-                //     filter: {
-                //         type: E_PricingType.ANNOUNCEMENT,
-                //         location,
-                //         isActive: true,
-                //     },
-                // });
+        //         if (!pricingFound.success) {
+        //             throwError({
+        //                 message: 'Can not found pricing for event',
+        //                 status: RESPONSE_STATUS.NOT_FOUND,
+        //             });
+        //         }
 
-                // if (!pricingFound.success) {
-                //     throwError({
-                //         message: 'Can not found pricing for event',
-                //         status: RESPONSE_STATUS.NOT_FOUND,
-                //     });
-                // }
+        //         const basePrice = pricingFound.result.price || 0;
+        //         const taxRate = pricingFound.result.taxRate || 0;
+        //         const totalFee = basePrice + (basePrice * taxRate / 100);
 
-                // const basePrice = pricingFound.result.price || 0;
-                // const taxRate = pricingFound.result.taxRate || 0;
-                // const totalFee = basePrice + (basePrice * taxRate / 100);
-
-                // doc.fee = totalFee;
-            }
-            else {
-                // CLUB_VISIT: Free for all profiles
-                doc.fee = 0;
-            }
-        }
-        else {
-            // Premium users
-            doc.fee = 0;
-        }
+        //         doc.fee = totalFee;
+        //     }
+        //     else {
+        //         // CLUB_VISIT: Free for all profiles
+        //         doc.fee = 0;
+        //     }
+        // }
+        // else {
+        //     // Premium users
+        //     doc.fee = 0;
+        // }
 
         return mongooseCtr.createOne(doc);
     },

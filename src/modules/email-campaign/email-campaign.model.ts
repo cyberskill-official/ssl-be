@@ -1,9 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_UserGroup } from '#modules/user/user.type.js';
-
 import type { I_EmailCampaign } from './email-campaign.type.js';
+
+import { E_UserGroup } from './email-campaign.type.js';
 
 export const EmailCampaignModel = mongo.createModel<I_EmailCampaign>({
     mongoose,

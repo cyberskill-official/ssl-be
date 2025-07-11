@@ -8,13 +8,6 @@ enum E_Gender {
     FEMALE
 }
 
-enum E_UserGroup {
-    ALL_SUBSCRIBERS
-    PAID_MEMBERS
-    FREE_MEMBERS
-    CUSTOM_RECIPIENTS
-}
-
 type T_UserPartner {
     gender: E_Gender
     dateOfBirth: DateTime
@@ -144,7 +137,6 @@ type T_User {
     lastOnline: DateTime
     settings: T_UserSettings
     flagCount: Int
-    userGroup: E_UserGroup
 }
 
 input Input_QueryUser {
@@ -173,7 +165,6 @@ input Input_QueryUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
-    userGroup: E_UserGroup
 }
 
 input Input_CreateUser {
@@ -199,7 +190,6 @@ input Input_CreateUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
-    userGroup: E_UserGroup
 }
 
 input Input_UpdateUser {
@@ -226,7 +216,6 @@ input Input_UpdateUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
-    userGroup: E_UserGroup
 }
 
 type T_Response_User {

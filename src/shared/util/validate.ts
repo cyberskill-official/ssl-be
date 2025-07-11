@@ -1,12 +1,13 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 
+// NOTE: don't change import to index.js because it will cause circular dependency
 import {
     PASSWORD_MIN_LENGTH,
     PASSWORD_REGEX,
     USERNAME_MAX_LENGTH,
     USERNAME_MIN_LENGTH,
-} from '#modules/user/index.js';
+} from '#modules/user/user.constant.js';
 
 export const validate = {
     email: {
@@ -27,7 +28,6 @@ export const validate = {
             }
         },
     },
-
     username: {
         length: {
             validator: (username: string) =>
@@ -66,7 +66,6 @@ export const validate = {
             }
         },
     },
-
     password: {
         minLength: {
             validator: (password: string) =>
@@ -85,7 +84,6 @@ export const validate = {
             message:
                 'Password must contain at least one special character (e.g., @, #, $, %, etc.)',
         },
-
         validate: (password: string): void => {
             const errors: string[] = [];
 
