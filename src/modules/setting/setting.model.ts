@@ -8,7 +8,7 @@ import type { I_AdminNotification, I_Footer, I_Setting, I_SocialLink } from './s
 import { E_SettingType } from './setting.type.js';
 import { validateSettingValue } from './setting.validation.js';
 
-export const SocialLinksSchema = mongo.createSchema<I_SocialLink>({
+export const SocialLinkSchema = mongo.createSchema<I_SocialLink>({
     standalone: true,
     mongoose,
     schema: {
@@ -41,7 +41,7 @@ export const FooterSchema = mongo.createSchema<I_Footer>({
     mongoose,
     schema: {
         socialLinks: {
-            type: [SocialLinksSchema],
+            type: [SocialLinkSchema],
         },
     },
 });

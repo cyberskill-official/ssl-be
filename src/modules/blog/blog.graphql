@@ -31,8 +31,7 @@ type T_Blog {
     logo: String
     cover: String
     file: String
-    socialPlatform: E_SocialPlatform
-    socialURL: String
+    socialLinks: [T_SocialLink]
     authorId: String
     author: T_User
     seo: T_Seo
@@ -59,8 +58,7 @@ input Input_QueryBlog {
     logo: String
     cover: String
     file: String
-    socialPlatform: E_SocialPlatform
-    socialURL: String
+    socialLinks: [Input_SocialLink]
     authorId: String
     seo: Input_Seo
     isActive: Boolean
@@ -82,9 +80,7 @@ input Input_CreateBlog {
     logo: String
     cover: String
     file: String
-    socialPlatform: E_SocialPlatform
-    socialURL: String
-    authorId: String
+    socialLinks: [Input_SocialLink]
     seo: Input_Seo
     isActive: Boolean
 }
@@ -106,9 +102,7 @@ input Input_UpdateBlog {
     logo: String
     cover: String
     file: String
-    socialPlatform: E_SocialPlatform
-    socialURL: String
-    authorId: String
+    socialLinks: [Input_SocialLink]
     seo: Input_Seo
     isActive: Boolean
 }
@@ -138,4 +132,15 @@ type T_Response_Blogs {
     success: Boolean
     message: String
     result: T_Blogs
+}
+
+type Query {
+    getBlog(filter: Input_QueryBlog!, projection: JSON, options: JSON, populate: JSON): T_Response_Blog!
+    getBlogs(filter: Input_QueryBlog, options: JSON): T_Response_Blogs!
+}
+
+type Mutation {
+    createBlog(doc: Input_CreateBlog!): T_Response_Blog!
+    updateBlog(filter: Input_QueryBlog!, update: Input_UpdateBlog, options: JSON): T_Response_Blog!
+    deleteBlog(filter: Input_QueryBlog!, options: JSON): T_Response_Blog!
 }

@@ -2,7 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
-import type { E_SocialPlatform } from '#modules/social-platform/index.js';
+import type { I_SocialLink } from '#modules/setting/index.js';
 import type { I_User } from '#modules/user/index.js';
 
 export enum E_BlogCategory_Blog {
@@ -39,8 +39,7 @@ export interface I_Blog extends I_GenericDocument {
     logo?: string;
     cover?: string;
     file?: string;
-    socialPlatform?: E_SocialPlatform;
-    socialURL?: string;
+    socialLinks?: I_SocialLink[];
     authorId?: string;
     author?: I_User;
     seo?: I_Seo;

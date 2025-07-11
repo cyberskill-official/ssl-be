@@ -2,7 +2,7 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { SeoSchema } from '#modules/seo/index.js';
-import { E_SocialPlatform } from '#modules/social-platform/index.js';
+import { SocialLinkSchema } from '#modules/setting/index.js';
 
 import type { I_Blog } from './blog.type.js';
 
@@ -115,12 +115,8 @@ export const BlogModel = mongo.createModel<I_Blog>({
         file: {
             type: String,
         },
-        socialPlatform: {
-            type: String,
-            enum: Object.values(E_SocialPlatform),
-        },
-        socialURL: {
-            type: String,
+        socialLinks: {
+            type: [SocialLinkSchema],
         },
         authorId: {
             type: String,
