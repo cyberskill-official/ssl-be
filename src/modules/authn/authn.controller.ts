@@ -23,6 +23,7 @@ import {
     verificationCtr,
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { deepMergeIgnoreUndefined } from '#shared/util/deep-merge.js';
 import { date, helper, validate } from '#shared/util/index.js';
 
 import type {
@@ -415,22 +416,22 @@ export const authnCtr = {
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
     ): Promise<I_Return<I_Response_Auth>> => {
         const user = await authnCtr.getUserFromSession(context);
-
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
+        const mergedPartner1 = deepMergeIgnoreUndefined(
+            user.partner1 || {},
+            update.partner1 || {},
+        );
+
+        const mergedPartner2 = update.partner2
+            ? deepMergeIgnoreUndefined(user.partner2 || {}, update.partner2)
+            : undefined;
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: user.id },
             update: {
-                partner1: {
-                    ...user.partner1,
-                    ...update.partner1,
-                },
-                ...(update.partner2 && {
-                    partner2: {
-                        ...(user.partner2 || {}),
-                        ...update.partner2,
-                    },
-                }),
+                ...update,
+                partner1: mergedPartner1,
+                ...(mergedPartner2 && { partner2: mergedPartner2 }),
                 ...(!stepsAfter.includes(user.registerStep!) && {
                     registerStep: E_RegisterStep.MEMBERSHIP,
                 }),
