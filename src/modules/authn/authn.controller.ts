@@ -584,9 +584,7 @@ export const authnCtr = {
             filter: {
                 $or: [{ email: identity }, { username: identity }],
             },
-            populate: {
-                path: 'roles',
-            },
+            populate: ['roles'],
         });
 
         if (!userFound.success) {
