@@ -179,7 +179,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             type: String,
         },
         seo: {
-            type: [SeoSchema],
+            type: SeoSchema,
         },
         linkTo: {
             type: String,
