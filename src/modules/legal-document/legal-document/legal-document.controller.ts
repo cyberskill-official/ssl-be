@@ -79,7 +79,7 @@ export const legalDocumentCtr = {
         });
     },
     publishLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_PublishLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const { type } = doc;
 
@@ -115,7 +115,7 @@ export const legalDocumentCtr = {
                     content: legalDocument.content,
                     version: legalDocument.version,
                     updatedAt: new Date(),
-                    updatedById: user.id,
+                    updatedById: currentUser.id,
                 },
             ];
         }

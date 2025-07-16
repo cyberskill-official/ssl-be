@@ -19,7 +19,7 @@ const env = getEnv();
 
 export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<string>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
         const { type, module, file, entityId } = args;
 
         const uploadDir = env.UPLOAD_FOLDER;
@@ -46,7 +46,7 @@ export const uploadCtr = {
                 module,
                 type,
                 entityId,
-                userId: user.id,
+                userId: currentUser.id,
             });
         }
         catch (error) {

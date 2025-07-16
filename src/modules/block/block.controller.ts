@@ -66,7 +66,7 @@ export const blockCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Block>,
     ): Promise<I_Return<I_Block>> => {
-        const userId = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const { blockId } = doc;
 
@@ -74,22 +74,22 @@ export const blockCtr = {
             throwError({ message: 'Missing blockId', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (userId.id === blockId) {
+        if (currentUser.id === blockId) {
             throwError({ message: 'You cannot block yourself', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return blockCtr.createBlock(context, { doc: { userId: userId.id, blockId } });
+        return blockCtr.createBlock(context, { doc: { userId: currentUser.id, blockId } });
     },
     unBlock: async (
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
-        const userId = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         if (!filter?.blockId) {
             throwError({ message: 'Missing blockId', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return blockCtr.deleteBlock(context, { filter: { userId: userId.id, blockId: filter.blockId } });
+        return blockCtr.deleteBlock(context, { filter: { userId: currentUser.id, blockId: filter.blockId } });
     },
 };

@@ -124,7 +124,7 @@ export const authnCtr = {
         });
 
         if (!userFound.success) {
-            context.req.session.destroy(() => {});
+            context.req.session.destroy(() => { });
             throwError({
                 message: 'Session expired.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
@@ -175,6 +175,48 @@ export const authnCtr = {
         }
 
         return omit(authChecked.result.user, 'password');
+    },
+    isStaff: async (context: I_Context): Promise<boolean> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const staffRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role.STAFF },
+        });
+
+        if (!staffRole.success) {
+            throwError({
+                message: 'Staff role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const staffRoleId = staffRole.result.id;
+
+        return !!currentUser.roles?.some(role =>
+            (role.id === staffRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(staffRoleId)),
+        );
+    },
+    isUser: async (context: I_Context): Promise<boolean> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const userRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role.USER },
+        });
+
+        if (!userRole.success) {
+            throwError({
+                message: 'User role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const userRoleId = userRole.result.id;
+
+        return !!currentUser.roles?.some(role =>
+            (role.id === userRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(userRoleId)),
+        );
     },
     register: async (
         context: I_Context,
@@ -379,7 +421,7 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
     ): Promise<I_Return<I_Response_Auth>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const stepsAfter = [
             E_RegisterStep.PREFERENCES,
@@ -388,10 +430,10 @@ export const authnCtr = {
         ];
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: user.id },
+            filter: { id: currentUser.id },
             update: {
                 ...update,
-                ...(!stepsAfter.includes(user.registerStep!) && {
+                ...(!stepsAfter.includes(currentUser.registerStep!) && {
                     registerStep: E_RegisterStep.PREFERENCES,
                 }),
             },
@@ -415,24 +457,24 @@ export const authnCtr = {
         context: I_Context,
         { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
     ): Promise<I_Return<I_Response_Auth>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
         const mergedPartner1 = deepMergeIgnoreUndefined(
-            user.partner1 || {},
+            currentUser.partner1 || {},
             update.partner1 || {},
         );
 
         const mergedPartner2 = update.partner2
-            ? deepMergeIgnoreUndefined(user.partner2 || {}, update.partner2)
+            ? deepMergeIgnoreUndefined(currentUser.partner2 || {}, update.partner2)
             : undefined;
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: user.id },
+            filter: { id: currentUser.id },
             update: {
                 ...update,
                 partner1: mergedPartner1,
                 ...(mergedPartner2 && { partner2: mergedPartner2 }),
-                ...(!stepsAfter.includes(user.registerStep!) && {
+                ...(!stepsAfter.includes(currentUser.registerStep!) && {
                     registerStep: E_RegisterStep.MEMBERSHIP,
                 }),
             },
@@ -456,7 +498,7 @@ export const authnCtr = {
         context: I_Context,
         { type, promoCode }: I_Input_Register_Membership,
     ): Promise<I_Return<I_Response_Auth>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         let roleId;
 
@@ -488,7 +530,7 @@ export const authnCtr = {
                 }
 
                 const applyPromo = await promoCodeCtr.applyPromoCode(context, {
-                    userId: user.id,
+                    userId: currentUser.id,
                     code: promoCode,
                 });
 
@@ -538,10 +580,10 @@ export const authnCtr = {
         const stepsAfter = [E_RegisterStep.COMPLETE];
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: user.id },
+            filter: { id: currentUser.id },
             update: {
                 rolesIds: [roleId],
-                ...(!stepsAfter.includes(user.registerStep!) && {
+                ...(!stepsAfter.includes(currentUser.registerStep!) && {
                     registerStep: E_RegisterStep.COMPLETE,
                 }),
             },
@@ -635,7 +677,7 @@ export const authnCtr = {
             });
         }
 
-        context.req.session.destroy(() => {});
+        context.req.session.destroy(() => { });
 
         return {
             success: true,

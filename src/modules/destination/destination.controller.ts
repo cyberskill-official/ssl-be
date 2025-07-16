@@ -41,7 +41,7 @@ export const destinationCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         if (!doc.type || !Object.values(E_DestinationType).includes(doc.type)) {
             throwError({ message: 'Invalid or missing destination type', status: RESPONSE_STATUS.BAD_REQUEST });
@@ -79,7 +79,7 @@ export const destinationCtr = {
             throwError({ message: 'Invalid or missing age group', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.createOne({ ...doc, createdById: user.id });
+        return mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
     },
     updateDestination: async (
         _context: I_Context,

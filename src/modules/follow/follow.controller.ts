@@ -38,11 +38,11 @@ export const followCtr = {
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const userId = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         return followCtr.getFollows(context, {
             filter: {
-                followId: userId.id,
+                followId: currentUser.id,
             },
             options,
         });
@@ -51,11 +51,11 @@ export const followCtr = {
         context: I_Context,
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const userId = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         return followCtr.getFollows(context, {
             filter: {
-                userId: userId.id,
+                userId: currentUser.id,
             },
             options,
         });
@@ -96,7 +96,7 @@ export const followCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Follow>,
     ): Promise<I_Return<I_Follow>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const { followId } = doc;
 
@@ -107,20 +107,20 @@ export const followCtr = {
             });
         }
 
-        if (user.id === followId) {
+        if (currentUser.id === followId) {
             throwError({
                 message: 'You cannot follow yourself',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        return followCtr.createFollow(context, { doc: { userId: user.id, followId } });
+        return followCtr.createFollow(context, { doc: { userId: currentUser.id, followId } });
     },
     unFollow: async (
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_UnFollow>,
     ): Promise<I_Return<I_Follow>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         if (!filter?.followId) {
             throwError({
@@ -129,6 +129,6 @@ export const followCtr = {
             });
         }
 
-        return followCtr.deleteFollow(context, { filter: { userId: user.id, followId: filter.followId } });
+        return followCtr.deleteFollow(context, { filter: { userId: currentUser.id, followId: filter.followId } });
     },
 };

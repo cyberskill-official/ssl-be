@@ -11,8 +11,8 @@ import { rolePermissionCtr } from './role-permission/index.js';
 
 export const authzMiddleware = {
     checkAuthorizedGraphql: async (context: I_Context) => {
-        const user = await authnCtr.getUserFromSession(context);
-        const roleIds: string[] = user?.rolesIds ?? [];
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const roleIds: string[] = currentUser?.rolesIds ?? [];
         const info = context?.info;
 
         // Auto-detect the target from GraphQL operation info
@@ -50,7 +50,7 @@ export const authzMiddleware = {
     },
     checkAuthorizedRest: async (context: I_Context, next: I_NextFunction) => {
         const path = context?.req?.path;
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         if (path === '/') {
             return next();
@@ -73,21 +73,21 @@ export const authzMiddleware = {
             return next();
         }
 
-        if (!user) {
+        if (!currentUser) {
             throwError({
                 message: 'Unauthorized: You must be logged in to use this API.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
 
-        if (!user.rolesIds || user.rolesIds.length === 0) {
+        if (!currentUser.rolesIds || currentUser.rolesIds.length === 0) {
             throwError({
                 message: 'Unauthorized: No roles assigned.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
 
-        const roleIds: string[] = user.rolesIds;
+        const roleIds: string[] = currentUser.rolesIds;
 
         const rolesPermissionFound = await rolePermissionCtr.getRolePermissions({}, {
             filter: { roleId: { $in: roleIds } },

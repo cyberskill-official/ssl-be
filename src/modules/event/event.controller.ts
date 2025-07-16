@@ -37,11 +37,11 @@ export const eventCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateEvent>,
     ): Promise<I_Return<I_Event>> => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
         const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
         const eventFound = await eventCtr.getEvent(context, { filter: { title } });
 
-        doc.createdById = user.id;
+        doc.createdById = currentUser.id;
 
         if (eventFound.success) {
             throwError({
@@ -66,7 +66,7 @@ export const eventCtr = {
 
         const eventActiveCountResult = await mongooseCtr.count({
             isActive: true,
-            createdById: user.id,
+            createdById: currentUser.id,
         });
 
         if (eventActiveCountResult.success && eventActiveCountResult.result >= 10) {

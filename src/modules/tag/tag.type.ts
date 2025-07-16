@@ -33,8 +33,8 @@ export type T_Tag_Populate = 'createdBy';
 
 export interface I_Input_QueryTag extends Omit<I_Tag, T_Tag_Populate> { }
 
-export interface I_Input_CreateTag extends Omit<I_Tag, T_Omit_Create | T_Tag_Populate> {
+export interface I_Input_CreateTag extends Omit<I_Tag, T_Omit_Create | T_Tag_Populate | 'isCustom' | 'createdById' | 'usageCount'> {
     name: string;
 }
 
-export interface I_Input_UpdateTag extends Omit<I_Tag, T_Omit_Update | T_Tag_Populate> { }
+export interface I_Input_UpdateTag extends Omit<I_Tag, T_Omit_Update | T_Tag_Populate | 'isCustom' | 'createdById'> { }

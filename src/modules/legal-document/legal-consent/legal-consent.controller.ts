@@ -25,7 +25,7 @@ export const legalConsentCtr = {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     checkLegalConsents: async (context: I_Context): Promise<I_Return<I_LegalDocument[]>> => {
-        const userId = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const legalDocumentsFound = await legalDocumentCtr.getLegalDocuments(context, {
             filter: {
@@ -46,7 +46,7 @@ export const legalConsentCtr = {
 
             const consentResult = await legalConsentCtr.getLegalConsent(context, {
                 filter: {
-                    userId,
+                    userId: currentUser.id,
                     legalDocumentId: doc.id,
                     version: doc.version,
                 },
@@ -63,12 +63,12 @@ export const legalConsentCtr = {
         };
     },
     createLegalConsent: async (context: I_Context, { doc }: { doc: I_Input_CreateLegalConsent }) => {
-        const user = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const { legalDocumentId, version } = doc;
         const legalConsentFound = await legalConsentCtr.getLegalConsent(context, {
             filter: {
-                userId: user.id,
+                userId: currentUser.id,
                 legalDocumentId,
                 version,
             },
@@ -78,6 +78,6 @@ export const legalConsentCtr = {
             throwError({ message: 'Already consented to this version', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.createOne({ ...doc, userId: user.id });
+        return mongooseCtr.createOne({ ...doc, userId: currentUser.id });
     },
 };
