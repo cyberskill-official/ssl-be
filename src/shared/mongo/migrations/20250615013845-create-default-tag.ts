@@ -3,8 +3,10 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
 
+import type { I_Role } from '#modules/authz/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
 
+import { E_Role_Staff } from '#modules/authz/index.js';
 import { E_TagType } from '#modules/tag/index.js';
 
 const tags = [
@@ -122,8 +124,14 @@ const tags = [
 
 export async function up(db: C_Db) {
     const tagCtr = new MongoController<I_Tag>(db, 'tags');
+    const roleCtr = new MongoController<I_Role>(db, 'roles');
+    const admin = await roleCtr.findOne({ name: E_Role_Staff.ADMIN });
 
-    const createdTag = await tagCtr.createMany(tags);
+    if (!admin.success) {
+        return log.error('Admin role not found.');
+    }
+
+    const createdTag = await tagCtr.createMany(tags.map(tag => ({ ...tag, createdById: admin.result.id })));
 
     if (!createdTag.success) {
         return log.error('Failed to create some tags.');
