@@ -14,6 +14,14 @@ input Input_Follow {
     followId: String!
 }
 
+input Input_GetFollowers {
+    followId: String!
+}
+
+input Input_GetFollowings {
+    userId: String!
+}
+
 input Input_UnFollow {
     followId: String!
 }
@@ -52,8 +60,8 @@ type T_Response_Follows {
 }
 
 type Query {
-    getFollowers(options: JSON): T_Response_Follows!
-    getFollowings(options: JSON): T_Response_Follows!
+    getFollowers(filter: Input_GetFollowers, options: JSON): T_Response_Follows!
+    getFollowings(filter: Input_GetFollowings, options: JSON): T_Response_Follows!
 }
 
 type Mutation {

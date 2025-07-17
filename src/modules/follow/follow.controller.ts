@@ -15,7 +15,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 
-import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
+import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
 import { FollowModel } from './follow.model.js';
 
@@ -36,26 +36,22 @@ export const followCtr = {
     },
     getFollowers: async (
         context: I_Context,
-        { options }: I_Input_FindPaging,
+        { filter, options }: I_Input_FindPaging<I_Input_GetFollowers>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const currentUser = await authnCtr.getUserFromSession(context);
-
         return followCtr.getFollows(context, {
             filter: {
-                followId: currentUser.id,
+                followId: filter?.followId,
             },
             options,
         });
     },
     getFollowings: async (
         context: I_Context,
-        { options }: I_Input_FindPaging,
+        { filter, options }: I_Input_FindPaging<I_Input_GetFollowings>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        const currentUser = await authnCtr.getUserFromSession(context);
-
         return followCtr.getFollows(context, {
             filter: {
-                userId: currentUser.id,
+                userId: filter?.userId,
             },
             options,
         });

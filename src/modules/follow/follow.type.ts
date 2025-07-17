@@ -22,6 +22,14 @@ export interface I_Input_Follow {
     followId: string;
 }
 
+export interface I_Input_GetFollowers {
+    followId: string;
+}
+
+export interface I_Input_GetFollowings {
+    userId: string;
+}
+
 export interface I_Input_UnFollow {
     followId: string;
 }
