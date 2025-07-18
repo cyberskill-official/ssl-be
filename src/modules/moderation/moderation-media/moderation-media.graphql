@@ -26,6 +26,7 @@ type T_ModerationMedia {
     module: E_UploadModule
     tagId: String
     tag: T_Tag
+    isPublished: Boolean
 }
 
 input Input_QueryModerationMedia {
@@ -42,6 +43,7 @@ input Input_QueryModerationMedia {
     notes: [Input_Note]
     module: E_UploadModule
     tagId: String
+    isPublished: Boolean
 }
 
 input Input_CreateModerationMedia {
@@ -53,6 +55,7 @@ input Input_CreateModerationMedia {
     notes: [Input_Note]
     module: E_UploadModule!
     tagId: String
+    isPublished: Boolean
 }
 
 input Input_UpdateModerationMedia {
@@ -65,6 +68,7 @@ input Input_UpdateModerationMedia {
     notes: [Input_Note]
     module: E_UploadModule
     tagId: String
+    isPublished: Boolean
 }
 
 type T_Response_ModerationMedia {

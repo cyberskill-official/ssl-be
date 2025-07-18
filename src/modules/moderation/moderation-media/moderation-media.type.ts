@@ -27,8 +27,11 @@ export interface I_ModerationMedia extends I_GenericDocument {
     reason?: string;
     notes?: I_Note[];
     module?: E_UploadModule;
+    // Optional, used for specific modules like catalogue
     tagId?: string;
     tag?: I_Tag;
+    // Optional, used for specific modules like gallery
+    isPublished?: boolean;
 }
 
 export type T_ModerationMedia_Populate = 'uploadedBy' | 'moderatedBy' | 'notes' | 'tag';
@@ -41,12 +44,9 @@ export interface I_Input_CreateModerationMedia extends Omit<I_ModerationMedia, T
     type: E_ModerationMediaType;
     uploadedById: string;
     url: string;
-    notes?: I_Input_Note[];
 }
 
-export interface I_Input_UpdateModerationMedia extends Omit<I_ModerationMedia, T_Omit_Update | T_ModerationMedia_Populate> {
-    notes?: I_Input_Note[];
-}
+export interface I_Input_UpdateModerationMedia extends Omit<I_ModerationMedia, T_Omit_Update | T_ModerationMedia_Populate> { }
 
 export interface I_Input_ApproveModerationMedia extends Pick<I_ModerationMedia, 'id'> {
     id: string;

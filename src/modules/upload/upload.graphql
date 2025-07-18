@@ -10,6 +10,7 @@ enum E_UploadModule {
     EVENT
     CONVERSATION
     CATALOGUE
+    GALLERY
 }
 
 type T_Response_Upload {

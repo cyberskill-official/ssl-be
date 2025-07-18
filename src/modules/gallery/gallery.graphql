@@ -3,10 +3,10 @@ enum E_GalleryType {
     VIDEO
 }
 
-enum E_GalleryStatus {
-    PENDING 
-    ACCEPTED 
-    REJECTED 
+type T_GalleryView {
+    viewById: String
+    viewCount: Int
+    viewBy: T_User
 }
 
 type T_Gallery {
@@ -14,11 +14,16 @@ type T_Gallery {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
     type: E_GalleryType
     url: String
-    likeCount: Int
-    viewCount: Int
-    status: E_GalleryStatus
+    uploadedById: String
+    uploadedBy: T_User
+    likedByIds: [String]
+    likedBy: [T_User]
+    views: [T_GalleryView]
+    status: E_ModerationMediaStatus
     isPublished: Boolean
 }
 
@@ -27,30 +32,27 @@ input Input_QueryGallery {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    moderationMediaId: String
     type: E_GalleryType
     url: String
-    likeCount: Int
+    uploadedById: String
+    likedByIds: [String]
     viewCount: Int
-    status: E_GalleryStatus
+    status: E_ModerationMediaStatus
     isPublished: Boolean
 }
 
 input Input_CreateGallery {
     type: E_GalleryType!
     url: String!
-    likeCount: Int
-    viewCount: Int
-    status: E_GalleryStatus
+    uploadedById: String!
     isPublished: Boolean
 }
 
 input Input_UpdateGallery {
-    isDel: Boolean
     type: E_GalleryType
     url: String
-    likeCount: Int
-    viewCount: Int
-    status: E_GalleryStatus
+    uploadedById: String
     isPublished: Boolean
 }
 
@@ -79,4 +81,15 @@ type T_Response_Galleries {
     success: Boolean
     message: String
     result: T_Galleries
+}
+
+type Query {
+    getGallery(filter: Input_QueryGallery!, projection: JSON, options: JSON, populate: JSON): T_Response_Gallery!
+    getGalleries(filter: Input_QueryGallery, options: JSON): T_Response_Galleries!
+}
+
+type Mutation {
+    likeGallery(id: String!): T_Response_Gallery!
+    unlikeGallery(id: String!): T_Response_Gallery!
+    increaseGalleryViewCount(id: String!): T_Response_Gallery!
 }

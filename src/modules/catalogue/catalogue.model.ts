@@ -1,18 +1,28 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Catalogue } from './catalogue.type.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/index.js';
 
-import { E_CatalogueType } from './catalogue.type.js';
+import type { I_Catalogue } from './catalogue.type.js';
 
 export const CatalogueModel = mongo.createModel<I_Catalogue>({
     mongoose,
     name: 'Catalogue',
     pagination: true,
     schema: {
+        moderationMediaId: {
+            type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please provide moderationMediaId',
+                },
+            ],
+        },
         type: {
             type: String,
-            enum: Object.values(E_CatalogueType),
+            enum: Object.values(E_ModerationMediaType),
             required: true,
             validate: [
                 {
@@ -41,6 +51,11 @@ export const CatalogueModel = mongo.createModel<I_Catalogue>({
                 },
             ],
         },
+        status: {
+            type: String,
+            enum: Object.values(E_ModerationMediaStatus),
+            default: E_ModerationMediaStatus.PENDING,
+        },
     },
     virtuals: [
         {
@@ -48,6 +63,15 @@ export const CatalogueModel = mongo.createModel<I_Catalogue>({
             options: {
                 ref: 'Tag',
                 localField: 'tagId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'moderationMedia',
+            options: {
+                ref: 'ModerationMedia',
+                localField: 'moderationMediaId',
                 foreignField: 'id',
                 justOne: true,
             },

@@ -48,7 +48,7 @@ export const catalogueCtr = {
         const { tagId } = doc;
 
         const tagFound = await tagCtr.getTag(context, {
-            filter: { id: tagId, type: E_TagType.CATALOGUE },
+            filter: { id: tagId, type: E_TagType.CATALOGUE, isDel: false },
         });
         if (!tagFound.success) {
             throwError({

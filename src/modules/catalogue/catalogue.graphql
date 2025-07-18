@@ -8,10 +8,13 @@ type T_Catalogue {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
     type: E_CatalogueType
     tagId: String
     tag: T_Tag
     url: String
+    status: E_ModerationMediaStatus
 }
 
 input Input_QueryCatalogue {
@@ -28,6 +31,7 @@ input Input_CreateCatalogue {
     type: E_CatalogueType!
     tagId: String!
     url: String!
+    isDel: Boolean
 }
 
 input Input_UpdateCatalogue {

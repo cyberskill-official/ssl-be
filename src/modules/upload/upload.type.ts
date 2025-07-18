@@ -10,6 +10,7 @@ export enum E_UploadModule {
     EVENT = 'EVENT',
     CONVERSATION = 'CONVERSATION',
     CATALOGUE = 'CATALOGUE',
+    GALLERY = 'GALLERY',
 }
 
 export interface I_Input_Upload {

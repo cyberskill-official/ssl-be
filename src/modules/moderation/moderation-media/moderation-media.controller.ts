@@ -11,17 +11,30 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { GraphQLError } from 'graphql';
 
+import type { I_Input_Note } from '#modules/note/note.type.js';
+import type { I_User } from '#modules/user/user.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
+import { galleryCtr } from '#modules/gallery/gallery.controller.js';
+import { E_GalleryType } from '#modules/gallery/gallery.type.js';
 import { E_UploadModule } from '#modules/upload/upload.type.js';
 
-import type { I_Input_ApproveModerationMedia, I_Input_CreateModerationMedia, I_Input_QueryModerationMedia, I_Input_RejectModerationMedia, I_Input_UpdateModerationMedia, I_ModerationMedia } from './moderation-media.type.js';
+import type {
+    I_Input_ApproveModerationMedia,
+    I_Input_CreateModerationMedia,
+    I_Input_QueryModerationMedia,
+    I_Input_RejectModerationMedia,
+    I_Input_UpdateModerationMedia,
+    I_ModerationMedia,
+} from './moderation-media.type.js';
 
 import { ModerationMediaModel } from './moderation-media.model.js';
-import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
+import { E_ModerationMediaStatus } from './moderation-media.type.js';
+import { mapModerationMediaTypeTo } from './moderation.util.js';
 
 const mongooseCtr = new MongooseController<I_ModerationMedia>(ModerationMediaModel);
 
@@ -44,17 +57,158 @@ export const moderationMediaCtr = {
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        return mongooseCtr.createOne({
-            ...doc,
-            uploadedById: currentUser.id,
-            status: E_ModerationMediaStatus.PENDING,
-        });
+        const { module } = doc;
+
+        let moderationCreatedId: string = undefined!;
+        try {
+            const moderationCreated = await mongooseCtr.createOne({
+                ...doc,
+                uploadedById: currentUser.id,
+                status: E_ModerationMediaStatus.PENDING,
+            });
+
+            if (!moderationCreated.success) {
+                throwError({
+                    message: 'Failed to create moderation media.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            moderationCreatedId = moderationCreated.result.id;
+
+            switch (module) {
+                case E_UploadModule.GALLERY: {
+                    await galleryCtr.createGallery(context, {
+                        doc: {
+                            moderationMediaId: moderationCreatedId,
+                            type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
+                            url: moderationCreated.result.url!,
+                            uploadedById: moderationCreated.result.uploadedById!,
+                            status: moderationCreated.result.status,
+                            isPublished: moderationCreated.result.isPublished,
+                        },
+                    });
+                    break;
+                }
+
+                case E_UploadModule.CATALOGUE: {
+                    if (!moderationCreated.result.tagId) {
+                        throwError({
+                            message: 'Tag ID is required for catalogue module.',
+                            status: RESPONSE_STATUS.BAD_REQUEST,
+                        });
+                    }
+
+                    await catalogueCtr.createCatalogue(context, {
+                        doc: {
+                            moderationMediaId: moderationCreatedId,
+                            type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_CatalogueType),
+                            url: moderationCreated.result.url!,
+                            tagId: moderationCreated.result.tagId,
+                            status: moderationCreated.result.status,
+                        },
+                    });
+                    break;
+                }
+
+                default:
+                    throwError({
+                        message: `Unsupported module: ${module}`,
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+            }
+
+            return moderationCreated;
+        }
+        catch (error) {
+            await mongooseCtr.deleteOne({ id: moderationCreatedId });
+
+            if (error instanceof GraphQLError) {
+                throwError({
+                    message: error.message,
+                    status: {
+                        CODE: error.extensions['code'] as string | number,
+                        MESSAGE: error.message,
+                    },
+                });
+            }
+
+            throwError({
+                message: (error as Error).message || 'Failed to create moderation media.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
     },
+
     updateModerationMedia: async (
         _context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
         return mongooseCtr.updateOne(filter, update, options);
+    },
+    _updateModerationMediaStatus: async (
+        context: I_Context,
+        moderation: I_ModerationMedia,
+        currentUser: I_User,
+        status: E_ModerationMediaStatus,
+        notes?: I_Input_Note[],
+    ): Promise<I_Return<I_ModerationMedia>> => {
+        const currentStatus = moderation.status;
+        const currentModule = moderation.module;
+
+        const isAfterRejectToApprove = currentStatus === E_ModerationMediaStatus.REJECTED && status === E_ModerationMediaStatus.APPROVED;
+
+        try {
+            switch (currentModule) {
+                case E_UploadModule.CATALOGUE:
+                    await catalogueCtr.updateCatalogue(context, {
+                        filter: {
+                            moderationMediaId: moderation.id,
+                        },
+                        update: {
+                            status,
+                        },
+                    });
+                    break;
+
+                case E_UploadModule.GALLERY:
+                    await galleryCtr.updateGallery(context, {
+                        filter: {
+                            moderationMediaId: moderation.id,
+                        },
+                        update: {
+                            status,
+                        },
+                    });
+                    break;
+
+                default:
+                    throwError({
+                        message: `Unsupported module type: ${currentModule}`,
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+            }
+
+            return mongooseCtr.updateOne(
+                { id: moderation.id },
+                {
+                    status,
+                    moderatedById: currentUser.id,
+                    ...isAfterRejectToApprove ? { notes: [] } : { notes },
+                },
+            );
+        }
+        catch (error) {
+            await mongooseCtr.updateOne(
+                { id: moderation.id },
+                { status: currentStatus },
+            );
+
+            throwError({
+                message: (error as Error).message || 'Failed to update moderation media status.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
     },
     approveModerationMedia: async (
         context: I_Context,
@@ -62,7 +216,12 @@ export const moderationMediaCtr = {
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const currentModerationMedia = await mongooseCtr.findOne({ id });
+        const currentModerationMedia = await moderationMediaCtr.getModerationMedia(
+            context,
+            {
+                filter: { id },
+            },
+        );
 
         if (!currentModerationMedia.success) {
             throwError({
@@ -77,53 +236,14 @@ export const moderationMediaCtr = {
             });
         }
 
-        const moderationMedia = await mongooseCtr.updateOne(
-            { id },
-            {
-                status: E_ModerationMediaStatus.APPROVED,
-                moderatedById: currentUser.id,
-                notes: [],
-            },
+        const moderationMediaUpdated = await moderationMediaCtr._updateModerationMediaStatus(
+            context,
+            currentModerationMedia.result,
+            currentUser,
+            E_ModerationMediaStatus.APPROVED,
         );
 
-        if (!moderationMedia.success || !moderationMedia.result) {
-            throwError({
-                message: 'ModerationMedia not found or update failed.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        const mediaTypeToCatalogueType = {
-            [E_ModerationMediaType.IMAGE]: E_CatalogueType.IMAGE,
-            [E_ModerationMediaType.VIDEO]: E_CatalogueType.VIDEO,
-        };
-
-        const mediaType = moderationMedia.result.type;
-        if (mediaType === undefined) {
-            throwError({
-                message: 'ModerationMedia type is undefined.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        switch (moderationMedia.result.module) {
-            case E_UploadModule.CATALOGUE:
-                await catalogueCtr.createCatalogue(
-                    context,
-                    {
-                        doc: {
-                            type: mediaTypeToCatalogueType[mediaType],
-                            tagId: moderationMedia.result.tagId || '',
-                            url: moderationMedia.result.url || '',
-                        },
-                    },
-                );
-                break;
-
-            default:
-                break;
-        }
-
-        return moderationMedia;
+        return moderationMediaUpdated;
     },
     rejectModerationMedia: async (
         context: I_Context,
@@ -137,55 +257,69 @@ export const moderationMediaCtr = {
             });
         }
 
-        const current = await mongooseCtr.findOne({ id });
-        if (!current.success || !current.result) {
+        const currentModerationMedia = await mongooseCtr.findOne({ id });
+        if (!currentModerationMedia.success || !currentModerationMedia.result) {
             throwError({
                 message: 'ModerationMedia not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
-        if (current.result.status === E_ModerationMediaStatus.REJECTED) {
+        if (currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED) {
             throwError({
                 message: 'ModerationMedia already rejected.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const oldStatus = current.result.status;
-
-        const moderationMedia = await mongooseCtr.updateOne(
-            { id },
-            {
-                status: E_ModerationMediaStatus.REJECTED,
-                moderatedById: currentUser.id,
-                notes,
-            },
+        const moderationMediaUpdated = await moderationMediaCtr._updateModerationMediaStatus(
+            context,
+            currentModerationMedia.result,
+            currentUser,
+            E_ModerationMediaStatus.REJECTED,
+            notes,
         );
 
-        if (oldStatus === E_ModerationMediaStatus.APPROVED) {
-            switch (current.result.module) {
-                case E_UploadModule.CATALOGUE:
-                    await catalogueCtr.deleteCatalogue(
-                        context,
-                        {
-                            filter: {
-                                url: current.result.url || '',
-                            },
-                        },
-                    );
-                    break;
+        return moderationMediaUpdated;
+    },
+    deleteModerationMedia: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryModerationMedia>,
+    ): Promise<I_Return<I_ModerationMedia>> => {
+        // Find the moderation media first
+        const moderationMedia = await mongooseCtr.findOne(filter);
+        if (!moderationMedia.success || !moderationMedia.result) {
+            throwError({
+                message: 'ModerationMedia not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
 
+        const { module, id } = moderationMedia.result;
+
+        try {
+            switch (module) {
+                case E_UploadModule.GALLERY:
+                    await galleryCtr.deleteGallery(context, {
+                        filter: { moderationMediaId: id },
+                    });
+                    break;
+                case E_UploadModule.CATALOGUE:
+                    await catalogueCtr.deleteCatalogue(context, {
+                        filter: { moderationMediaId: id },
+                    });
+                    break;
                 default:
+                    // Do nothing for unsupported modules
                     break;
             }
         }
+        catch (error) {
+            throwError({
+                message: (error as Error).message || 'Failed to delete related module.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
 
-        return moderationMedia;
-    },
-    deleteModerationMedia: async (
-        _context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_QueryModerationMedia>,
-    ): Promise<I_Return<I_ModerationMedia>> => {
         return mongooseCtr.deleteOne(filter, options);
     },
 };
