@@ -40,6 +40,16 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
                 },
             ],
         },
+        createdById: {
+            type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter createdById for advertisement',
+                },
+            ],
+        },
         slot: {
             type: String,
             enum: Object.values(E_AdvertisementSlot),
@@ -63,4 +73,15 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
             default: false,
         },
     },
+    virtuals: [
+        {
+            name: 'createdBy',
+            options: {
+                ref: 'User',
+                localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });

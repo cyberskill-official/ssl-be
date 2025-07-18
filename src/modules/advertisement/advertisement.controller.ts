@@ -15,6 +15,8 @@ import validator from 'validator';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/authn.controller.js';
+
 import type { I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement } from './advertisement.type.js';
 
 import { AdvertisementModel } from './advertisement.model.js';
@@ -35,9 +37,11 @@ export const advertisementCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     createAdvertisement: async (
-        _context: I_Context,
+        context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
         if (!doc.name?.trim()) {
             throwError({ message: 'Advertisement name is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
@@ -62,7 +66,7 @@ export const advertisementCtr = {
             }
         }
 
-        return mongooseCtr.createOne(doc);
+        return mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
     },
 
     updateAdvertisement: async (

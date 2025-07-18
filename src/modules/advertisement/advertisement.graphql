@@ -13,6 +13,8 @@ type T_Advertisement {
     name: String
     image: String
     targetURL: String
+    createdById: String
+    createdBy: T_User
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
@@ -29,6 +31,8 @@ input Input_QueryAdvertisement {
     name: String
     image: String
     targetURL: String
+    createdById: String
+    createdBy: T_User
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
@@ -40,6 +44,7 @@ input Input_CreateAdvertisement {
     name: String!
     image: String!
     targetURL: String!
+    createdById: String
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
