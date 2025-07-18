@@ -32,7 +32,6 @@ input Input_QueryAdvertisement {
     image: String
     targetURL: String
     createdById: String
-    createdBy: T_User
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
