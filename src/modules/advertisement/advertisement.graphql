@@ -112,10 +112,10 @@ type Mutation {
         filter: Input_QueryAdvertisement!
         options: JSON
     ): T_Response_Advertisement!
-    trackAdvertisementClick(
+    clickAdvertisement(
         filter: Input_QueryAdvertisement!
     ): T_Response_Advertisement!
-    trackAdvertisementView(
+    viewAdvertisement(
         filter: Input_QueryAdvertisement!
     ): T_Response_Advertisement!    
 }

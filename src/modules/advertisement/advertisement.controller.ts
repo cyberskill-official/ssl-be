@@ -54,48 +54,84 @@ export const advertisementCtr = {
             throwError({ message: 'Valid target URL is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        if (doc.slot) {
+            const existingSlot = await advertisementCtr.getAdvertisement(
+                context,
+                { filter: { slot: doc.slot } },
+            );
+
+            if (existingSlot.success && existingSlot.result) {
+                throwError({ message: `Slot ${doc.slot} is already taken by another advertisement`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (doc.startDate && doc.endDate) {
+            if (new Date(doc.endDate) <= new Date(doc.startDate)) {
+                throwError({ message: 'End date cannot be before or equal to start date', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
         if (doc.isActive) {
-            const activeCount = await mongooseCtr.count({ isActive: true, isDel: false });
+            const activeCount = await advertisementCtr.getAdvertisements(
+                context,
+                { filter: { isActive: true, isDel: false } },
+            );
 
             if (!activeCount.success) {
                 throwError({ message: activeCount.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            if (activeCount.result >= 4) {
+            if (activeCount.result.totalDocs >= 4) {
                 throwError({ message: 'Cannot have more than 4 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
         return mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
     },
-
     updateAdvertisement: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        if (update.name !== undefined && !update.name.trim()) {
+        if (!update?.name?.trim()) {
             throwError({ message: 'Advertisement name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.image !== undefined && !update.image.trim()) {
+        if (!update?.image?.trim()) {
             throwError({ message: 'Advertisement image cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.targetURL !== undefined && (!update.targetURL.trim() || !validator.isURL(update.targetURL))) {
+        if (update?.targetURL?.trim() && !validator.isURL(update?.targetURL)) {
             throwError({ message: 'Invalid target URL format', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        if (update.slot) {
+            const existingSlot = await advertisementCtr.getAdvertisement(
+                context,
+                { filter: { slot: update.slot, id: { $ne: filter['id'] } } },
+            );
+
+            if (existingSlot.success && existingSlot.result) {
+                throwError({ message: `Slot ${update.slot} is already taken by another advertisement`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (update.startDate && update.endDate) {
+            if (new Date(update.endDate) <= new Date(update.startDate)) {
+                throwError({ message: 'End date cannot be before or equal to start date', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
         if (update.isActive) {
-            const activeCount = await mongooseCtr.count({
-                isActive: true,
-                id: { $ne: filter['id'] },
-            });
+            const activeCount = await advertisementCtr.getAdvertisements(
+                context,
+                { filter: { isActive: true, id: { $ne: filter['id'] } } },
+            );
 
             if (!activeCount.success) {
                 throwError({ message: activeCount.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            if (activeCount.result >= 4) {
+            if (activeCount.result.totalDocs >= 4) {
                 throwError({ message: 'Cannot have more than 4 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
@@ -108,7 +144,7 @@ export const advertisementCtr = {
     ): Promise<I_Return<I_Advertisement>> => {
         return mongooseCtr.updateOne(filter, { isDel: true });
     },
-    trackAdvertisementClick: async (
+    clickAdvertisement: async (
         _context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
@@ -118,7 +154,7 @@ export const advertisementCtr = {
             { new: true },
         );
     },
-    trackAdvertisementView: async (
+    viewAdvertisement: async (
         _context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
