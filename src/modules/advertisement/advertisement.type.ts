@@ -21,7 +21,6 @@ export interface I_Advertisement extends I_GenericDocument {
     endDate?: Date;
     clickCount?: number;
     isActive?: boolean;
-    viewCount?: number;
 }
 
 export type T_Destination_Populate = 'createdBy';

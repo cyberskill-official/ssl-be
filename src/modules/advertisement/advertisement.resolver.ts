@@ -16,7 +16,6 @@ const advertisementResolver = {
         updateAdvertisement: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdateAdvertisement>, context: I_Context) => advertisementCtr.updateAdvertisement(context, args),
         deleteAdvertisement: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryAdvertisement>, context: I_Context) => advertisementCtr.deleteAdvertisement(context, args),
         clickAdvertisement: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryAdvertisement>, context: I_Context) => advertisementCtr.clickAdvertisement(context, args),
-        viewAdvertisement: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryAdvertisement>, context: I_Context) => advertisementCtr.viewAdvertisement(context, args),
     },
 };
 

@@ -154,14 +154,4 @@ export const advertisementCtr = {
             { new: true },
         );
     },
-    viewAdvertisement: async (
-        _context: I_Context,
-        { filter }: I_Input_FindOne<I_Input_QueryAdvertisement>,
-    ): Promise<I_Return<I_Advertisement>> => {
-        return mongooseCtr.updateOne(
-            { id: filter.id },
-            { $inc: { viewCount: 1 } },
-            { new: true },
-        );
-    },
 };

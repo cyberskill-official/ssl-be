@@ -19,7 +19,6 @@ type T_Advertisement {
     startDate: DateTime
     endDate: DateTime
     clickCount: Float    
-    viewCount: Int
     isActive: Boolean
 }
 
@@ -114,8 +113,5 @@ type Mutation {
     ): T_Response_Advertisement!
     clickAdvertisement(
         filter: Input_QueryAdvertisement!
-    ): T_Response_Advertisement!
-    viewAdvertisement(
-        filter: Input_QueryAdvertisement!
-    ): T_Response_Advertisement!    
+    ): T_Response_Advertisement!  
 }
