@@ -24,6 +24,7 @@ type T_ModerationMedia {
     reason: String
     notes: [T_Note]
     module: E_UploadModule
+    moduleId: String
     tagId: String
     tag: T_Tag
     isPublished: Boolean
@@ -43,6 +44,7 @@ input Input_QueryModerationMedia {
     reason: String
     notes: [Input_Note]
     module: E_UploadModule
+    moduleId: String
     tagId: String
     isPublished: Boolean
 }

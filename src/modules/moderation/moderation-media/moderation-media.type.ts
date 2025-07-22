@@ -27,6 +27,7 @@ export interface I_ModerationMedia extends I_GenericDocument {
     reason?: string;
     notes?: I_Note[];
     module?: E_UploadModule;
+    moduleId?: string;
     // Optional, used for specific modules like catalogue
     tagId?: string;
     tag?: I_Tag;

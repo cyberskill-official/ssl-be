@@ -69,8 +69,14 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
                 },
             ],
         },
+        moduleId: {
+            type: String,
+        },
         tagId: {
             type: String,
+        },
+        isPublished: {
+            type: Boolean,
         },
     },
     virtuals: [

@@ -15,6 +15,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { userCtr } from '#modules/user/user.controller.js';
 
 import type {
     I_Gallery,
@@ -163,6 +164,22 @@ export const galleryCtr = {
             throwError({
                 status: RESPONSE_STATUS.FORBIDDEN,
                 message: 'You are not the owner of this gallery',
+            });
+        }
+
+        const userUsingGallery = await userCtr.getUser(context, {
+            filter: {
+                $or: [
+                    { 'partner1.galleryId': id },
+                    { 'partner2.galleryId': id },
+                ],
+            },
+        });
+
+        if (userUsingGallery) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'Cannot delete gallery: It is being used by a user partner.',
             });
         }
 

@@ -82,7 +82,7 @@ export interface I_Input_Register_Preferences_Partner {
     hairColorId: string;
     eyeColorId: string;
     skinToneId: string;
-    picture: string;
+    galleryId: string;
     bio?: string;
 }
 

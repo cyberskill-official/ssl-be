@@ -77,7 +77,7 @@ export const moderationMediaCtr = {
 
             switch (module) {
                 case E_UploadModule.GALLERY: {
-                    await galleryCtr.createGallery(context, {
+                    const galleryCreated = await galleryCtr.createGallery(context, {
                         doc: {
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
@@ -87,6 +87,12 @@ export const moderationMediaCtr = {
                             isPublished: moderationCreated.result.isPublished,
                         },
                     });
+                    if (galleryCreated.success && galleryCreated.result?.id) {
+                        await mongooseCtr.updateOne(
+                            { id: moderationCreatedId },
+                            { moduleId: galleryCreated.result.id },
+                        );
+                    }
                     break;
                 }
 
@@ -98,7 +104,7 @@ export const moderationMediaCtr = {
                         });
                     }
 
-                    await catalogueCtr.createCatalogue(context, {
+                    const catalogueCreated = await catalogueCtr.createCatalogue(context, {
                         doc: {
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_CatalogueType),
@@ -107,6 +113,12 @@ export const moderationMediaCtr = {
                             status: moderationCreated.result.status,
                         },
                     });
+                    if (catalogueCreated.success && catalogueCreated.result?.id) {
+                        await mongooseCtr.updateOne(
+                            { id: moderationCreatedId },
+                            { moduleId: catalogueCreated.result.id },
+                        );
+                    }
                     break;
                 }
 
@@ -127,7 +139,7 @@ export const moderationMediaCtr = {
                     });
             }
 
-            return moderationCreated;
+            return mongooseCtr.findOne({ id: moderationCreatedId });
         }
         catch (error) {
             await mongooseCtr.deleteOne({ id: moderationCreatedId });
@@ -189,6 +201,16 @@ export const moderationMediaCtr = {
                             status,
                         },
                     });
+                    break;
+
+                case E_UploadModule.CONVERSATION:
+                    // TODO: Handle conversation module if needed
+                    break;
+                case E_UploadModule.EVENT:
+                    // TODO:Handle event module if needed
+                    break;
+                case E_UploadModule.USER:
+                    // TODO: Handle user module if needed
                     break;
 
                 default:

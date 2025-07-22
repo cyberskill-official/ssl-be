@@ -59,7 +59,7 @@ input Input_Register_Preferences_Partner {
     hairColorId: String!
     eyeColorId: String!
     skinToneId: String!
-    picture: String!
+    galleryId: String!
     bio: String
 }
 
