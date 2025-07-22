@@ -28,6 +28,10 @@ const galleryResolver = {
             galleryCtr.unlikeGallery(context, args),
         increaseGalleryViewCount: (_parent: unknown, args: I_Input_IncreaseGalleryViewCount, context: I_Context) =>
             galleryCtr.increaseGalleryViewCount(context, args),
+        deleteGallery: (_parent: unknown, { id }: { id: string }, context: I_Context) =>
+            galleryCtr.deleteGallery(context, { filter: { id } }),
+        deleteOwnGallery: (_parent: unknown, { id }: { id: string }, context: I_Context) =>
+            galleryCtr.deleteOwnGallery(context, { id }),
     },
 };
 

@@ -27,6 +27,7 @@ type T_ModerationMedia {
     tagId: String
     tag: T_Tag
     isPublished: Boolean
+    moderationLogs: [T_ModerationLog]
 }
 
 input Input_QueryModerationMedia {
@@ -50,7 +51,6 @@ input Input_CreateModerationMedia {
     type: E_ModerationMediaType!
     url: String!
     status: E_ModerationMediaStatus
-    moderatedById: String
     reason: String
     notes: [Input_Note]
     module: E_UploadModule!
@@ -63,7 +63,6 @@ input Input_UpdateModerationMedia {
     type: E_ModerationMediaType
     url: String
     status: E_ModerationMediaStatus
-    moderatedById: String
     reason: String
     notes: [Input_Note]
     module: E_UploadModule
@@ -115,6 +114,6 @@ type Mutation {
         options: JSON
     ): T_Response_ModerationMedia!
     approveModerationMedia(id: String!): T_Response_ModerationMedia!
-    rejectModerationMedia(id: String!, notes: [Input_Note!]!): T_Response_ModerationMedia!
+    rejectModerationMedia(id: String!, reason: String!): T_Response_ModerationMedia!
     deleteModerationMedia(filter: Input_QueryModerationMedia!, options: JSON): T_Response_ModerationMedia!
 }

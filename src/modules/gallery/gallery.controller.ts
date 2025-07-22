@@ -141,4 +141,31 @@ export const galleryCtr = {
             { $push: { views: { viewById: currentUser.id, viewCount: 1 } } },
         );
     },
+    deleteOwnGallery: async (
+        context: I_Context,
+        { id }: { id: string },
+    ): Promise<I_Return<I_Gallery>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const galleryFound = await galleryCtr.getGallery(context, {
+            filter: { id },
+            projection: { id: 1, uploadedById: 1 },
+        });
+
+        if (!galleryFound.success) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'Gallery not found',
+            });
+        }
+
+        if (galleryFound.result.uploadedById !== currentUser.id) {
+            throwError({
+                status: RESPONSE_STATUS.FORBIDDEN,
+                message: 'You are not the owner of this gallery',
+            });
+        }
+
+        return mongooseCtr.deleteOne({ id });
+    },
 };

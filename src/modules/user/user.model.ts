@@ -140,13 +140,13 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                 },
             ],
         },
-        picture: {
+        galleryId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please upload a picture',
+                    message: 'Please upload a gallery',
                 },
             ],
         },
@@ -244,6 +244,15 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
             options: {
                 ref: 'Tag',
                 localField: 'skinToneId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'gallery',
+            options: {
+                ref: 'Gallery',
+                localField: 'galleryId',
                 foreignField: 'id',
                 justOne: true,
             },

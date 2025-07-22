@@ -92,4 +92,6 @@ type Mutation {
     likeGallery(id: String!): T_Response_Gallery!
     unlikeGallery(id: String!): T_Response_Gallery!
     increaseGalleryViewCount(id: String!): T_Response_Gallery!
+    deleteGallery(id: String!): T_Response_Gallery!
+    deleteOwnGallery(id: String!): T_Response_Gallery!
 }

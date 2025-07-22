@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { E_RegisterStep } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/index.js';
+import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Input_Location, I_Location } from '#modules/location/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
@@ -44,7 +45,8 @@ export interface I_UserPartner {
     eyeColor?: I_Tag;
     skinToneId?: string;
     skinTone?: I_Tag;
-    picture?: string;
+    galleryId?: string;
+    gallery?: I_Gallery;
     location?: I_Location;
     bio?: string;
 }

@@ -31,7 +31,8 @@ type T_UserPartner {
     eyeColor: T_Tag
     skinToneId: String
     skinTone: T_Tag
-    picture: String
+    galleryId: String
+    gallery: T_Gallery
     location: T_Location
     bio: String
 }
@@ -49,7 +50,7 @@ input Input_UserPartner {
     hairColorId: String
     eyeColorId: String
     skinToneId: String
-    picture: String
+    galleryId: String
     location: Input_Location
     bio: String
 }
@@ -246,12 +247,7 @@ type T_Response_Users {
 }
 
 type Query {
-    getUser(
-        filter: Input_QueryUser!
-        projection: JSON
-        options: JSON
-        populate: JSON
-    ): T_Response_User!
+    getUser(filter: Input_QueryUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
     getUsers(filter: Input_QueryUser, options: JSON): T_Response_Users!
 }
 

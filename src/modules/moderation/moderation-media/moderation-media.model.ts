@@ -101,5 +101,14 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
                 justOne: true,
             },
         },
+        {
+            name: 'moderationLogs',
+            options: {
+                ref: 'ModerationLog',
+                localField: 'id',
+                foreignField: 'moderationMediaId',
+                justOne: false,
+            },
+        },
     ],
 });

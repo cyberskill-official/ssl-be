@@ -51,7 +51,7 @@ export interface I_Input_UpdateModerationMedia extends Omit<I_ModerationMedia, T
 export interface I_Input_ApproveModerationMedia extends Pick<I_ModerationMedia, 'id'> {
     id: string;
 }
-export interface I_Input_RejectModerationMedia extends Pick<I_ModerationMedia, 'id' | 'notes'> {
+export interface I_Input_RejectModerationMedia extends Pick<I_ModerationMedia, 'id' | 'reason'> {
     id: string;
-    notes: I_Input_Note[];
+    reason: string;
 }

@@ -13,7 +13,6 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { GraphQLError } from 'graphql';
 
-import type { I_Input_Note } from '#modules/note/note.type.js';
 import type { I_User } from '#modules/user/user.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -111,6 +110,16 @@ export const moderationMediaCtr = {
                     break;
                 }
 
+                case E_UploadModule.CONVERSATION:
+                    // TODO: Handle conversation module if needed
+                    break;
+                case E_UploadModule.EVENT:
+                    // TODO:Handle event module if needed
+                    break;
+                case E_UploadModule.USER:
+                    // TODO: Handle user module if needed
+                    break;
+
                 default:
                     throwError({
                         message: `Unsupported module: ${module}`,
@@ -151,7 +160,7 @@ export const moderationMediaCtr = {
         moderation: I_ModerationMedia,
         currentUser: I_User,
         status: E_ModerationMediaStatus,
-        notes?: I_Input_Note[],
+        reason?: string,
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentStatus = moderation.status;
         const currentModule = moderation.module;
@@ -194,7 +203,7 @@ export const moderationMediaCtr = {
                 {
                     status,
                     moderatedById: currentUser.id,
-                    ...isAfterRejectToApprove ? { notes: [] } : { notes },
+                    reason: isAfterRejectToApprove ? null : reason,
                 },
             );
         }
@@ -247,7 +256,7 @@ export const moderationMediaCtr = {
     },
     rejectModerationMedia: async (
         context: I_Context,
-        { id, notes }: I_Input_RejectModerationMedia,
+        { id, reason }: I_Input_RejectModerationMedia,
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentUser = context.req?.session?.user;
         if (!currentUser?.id) {
@@ -276,7 +285,7 @@ export const moderationMediaCtr = {
             currentModerationMedia.result,
             currentUser,
             E_ModerationMediaStatus.REJECTED,
-            notes,
+            reason,
         );
 
         return moderationMediaUpdated;
@@ -323,3 +332,14 @@ export const moderationMediaCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
 };
+
+// Ví dụ sử dụng moderationLogCtr để ghi log khi duyệt media
+// import { E_ModerationLogAction } from '../moderation-log/moderation-log.type.js';
+//
+// await moderationLogCtr.createModerationLog(context, {
+//   doc: {
+//     action: E_ModerationLogAction.APPROVE,
+//     userId: currentUser.id,
+//     moderationMediaId: moderationMediaId,
+//   }
+// });
