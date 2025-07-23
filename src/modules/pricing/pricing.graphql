@@ -70,3 +70,14 @@ type T_Response_Pricings {
     message: String
     result: T_Pricings
 }
+
+type Query {
+    getPricing(filter: Input_QueryPricing!, projection: JSON, options: JSON, populate: JSON): T_Response_Pricing!
+    getPricings(filter: Input_QueryPricing, options: JSON): T_Response_Pricings!
+}
+
+type Mutation {
+    createPricing(doc: Input_CreatePricing!): T_Response_Pricing!
+    updatePricing(filter: Input_QueryPricing!, update: Input_UpdatePricing, options: JSON): T_Response_Pricing!
+    deletePricing(filter: Input_QueryPricing!, options: JSON): T_Response_Pricing!
+}
