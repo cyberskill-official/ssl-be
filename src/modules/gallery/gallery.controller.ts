@@ -176,7 +176,7 @@ export const galleryCtr = {
             },
         });
 
-        if (userUsingGallery) {
+        if (userUsingGallery.success) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: 'Cannot delete gallery: It is being used by a user partner.',
