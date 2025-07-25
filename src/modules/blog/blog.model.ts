@@ -11,7 +11,6 @@ import { E_BlogCategory, E_BlogType } from './blog.type.js';
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,
     name: 'Blog',
-    pagination: true,
     schema: {
         title: {
             type: String,

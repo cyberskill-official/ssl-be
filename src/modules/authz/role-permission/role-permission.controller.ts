@@ -141,19 +141,19 @@ export const rolePermissionCtr = {
         permissionId: string,
     ): Promise<I_Return<void>> => {
         try {
-            const childrenRolesResult = await roleCtr.getRoles(context, {
+            const rolesFound = await roleCtr.getRoles(context, {
                 filter: { parentId: parentRoleId },
                 options: { pagination: false },
             });
 
-            if (!childrenRolesResult.success || !childrenRolesResult.result) {
+            if (!rolesFound.success) {
                 return {
                     success: true,
                     result: undefined,
                 };
             }
 
-            const childrenRoleIds = childrenRolesResult.result.docs.map(role => role.id!);
+            const childrenRoleIds = rolesFound.result.docs.map(role => role.id!);
 
             for (const childRoleId of childrenRoleIds) {
                 await mongooseCtr.deleteOne({

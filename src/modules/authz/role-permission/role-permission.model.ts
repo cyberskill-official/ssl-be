@@ -6,7 +6,6 @@ import type { I_RolePermission } from './role-permission.type.js';
 export const RolePermissionModel = mongo.createModel<I_RolePermission>({
     mongoose,
     name: 'RolePermission',
-    pagination: true,
     schema: {
         roleId: {
             type: String,

@@ -8,7 +8,6 @@ import { E_ConversationType } from './conversation.type.js';
 export const ConversationModel = mongo.createModel<I_Conversation>({
     mongoose,
     name: 'Conversation',
-    pagination: true,
     schema: {
         type: {
             type: String,

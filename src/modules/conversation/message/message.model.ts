@@ -6,7 +6,6 @@ import type { I_Message } from './message.type.js';
 export const MessageModel = mongo.createModel<I_Message>({
     mongoose,
     name: 'Message',
-    pagination: true,
     schema: {
         senderId: {
             type: String,

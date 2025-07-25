@@ -27,7 +27,6 @@ export const TimeZoneSchema = mongo.createSchema<I_TimeZone>({
 export const CountryModel = mongo.createModel<I_Country>({
     mongoose,
     name: 'Country',
-    pagination: true,
     schema: {
         name: {
             type: String,

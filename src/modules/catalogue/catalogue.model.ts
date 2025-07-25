@@ -8,7 +8,6 @@ import type { I_Catalogue } from './catalogue.type.js';
 export const CatalogueModel = mongo.createModel<I_Catalogue>({
     mongoose,
     name: 'Catalogue',
-    pagination: true,
     schema: {
         moderationMediaId: {
             type: String,

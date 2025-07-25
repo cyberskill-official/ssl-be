@@ -40,7 +40,6 @@ export const GalleryViewSchema = mongo.createSchema<I_GalleryView>({
 export const GalleryModel = mongo.createModel<I_Gallery>({
     mongoose,
     name: 'Gallery',
-    pagination: true,
     schema: {
         moderationMediaId: {
             type: String,

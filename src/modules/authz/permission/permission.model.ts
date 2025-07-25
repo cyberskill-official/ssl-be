@@ -8,7 +8,6 @@ import { E_PermissionMethodGraphQL, E_PermissionMethodRest, E_PermissionType } f
 export const PermissionModel = mongo.createModel<I_Permission>({
     mongoose,
     name: 'Permission',
-    pagination: true,
     schema: {
         target: {
             type: String,

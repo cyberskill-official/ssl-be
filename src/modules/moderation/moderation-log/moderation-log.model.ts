@@ -8,7 +8,6 @@ import { E_ModerationLogAction } from './moderation-log.type.js';
 export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
     mongoose,
     name: 'ModerationLog',
-    pagination: true,
     schema: {
         action: {
             type: String,

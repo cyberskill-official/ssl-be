@@ -6,7 +6,6 @@ import type { I_LegalConsent } from './legal-consent.type.js';
 export const LegalConsentModel = mongo.createModel<I_LegalConsent>({
     mongoose,
     name: 'LegalConsent',
-    pagination: true,
     schema: {
         legalDocumentId: {
             type: String,

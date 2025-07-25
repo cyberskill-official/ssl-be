@@ -6,7 +6,6 @@ import type { I_Role } from './role.type.js';
 export const RoleModel = mongo.createModel<I_Role>({
     mongoose,
     name: 'Role',
-    pagination: true,
     schema: {
         name: {
             type: String,

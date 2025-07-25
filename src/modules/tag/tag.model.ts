@@ -8,7 +8,6 @@ import { E_TagType } from './tag.type.js';
 export const TagModel = mongo.createModel<I_Tag>({
     mongoose,
     name: 'Tag',
-    pagination: true,
     schema: {
         name: {
             type: String,

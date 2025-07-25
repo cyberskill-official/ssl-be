@@ -6,7 +6,6 @@ import type { I_Language } from './language.type.js';
 export const LanguageModel = mongo.createModel<I_Language>({
     mongoose,
     name: 'Language',
-    pagination: true,
     schema: {
         code: {
             type: String,

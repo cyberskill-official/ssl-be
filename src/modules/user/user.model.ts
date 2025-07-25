@@ -312,7 +312,6 @@ export const UserSettingsSchema = mongo.createSchema<I_UserSettings>({
 export const UserModel = mongo.createModel<I_User>({
     mongoose,
     name: 'User',
-    pagination: true,
     schema: {
         username: {
             type: String,

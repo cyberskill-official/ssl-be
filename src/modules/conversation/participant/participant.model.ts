@@ -8,7 +8,6 @@ import { E_ParticipantRole } from './participant.type.js';
 export const ParticipantModel = mongo.createModel<I_Participant>({
     mongoose,
     name: 'Participant',
-    pagination: true,
     schema: {
         conversationId: {
             type: String,

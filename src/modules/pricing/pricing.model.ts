@@ -10,7 +10,6 @@ import { E_PricingType } from './pricing.type.js';
 export const PricingModel = mongo.createModel<I_Pricing>({
     mongoose,
     name: 'Pricing',
-    pagination: true,
     schema: {
         type: {
             type: String,

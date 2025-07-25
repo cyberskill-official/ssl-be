@@ -8,7 +8,6 @@ import { E_AdvertisementSlot } from './advertisement.type.js';
 export const AdvertisementModel = mongo.createModel<I_Advertisement>({
     mongoose,
     name: 'Advertisement',
-    pagination: true,
     schema: {
         name: {
             type: String,

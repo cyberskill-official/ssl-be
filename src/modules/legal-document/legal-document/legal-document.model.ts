@@ -76,7 +76,6 @@ export const LegalDocumentHistorySchema = mongo.createSchema<I_LegalDocumentHist
 export const LegalDocumentModel = mongo.createModel<I_LegalDocument>({
     mongoose,
     name: 'LegalDocument',
-    pagination: true,
     schema: {
         type: {
             type: String,

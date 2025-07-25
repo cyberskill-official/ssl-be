@@ -68,7 +68,6 @@ export const AdminNotificationSchema = mongo.createSchema<I_AdminNotification>({
 export const SettingsModel = mongo.createModel<I_Setting>({
     mongoose,
     name: 'Settings',
-    pagination: true,
     schema: {
         type: {
             type: String,

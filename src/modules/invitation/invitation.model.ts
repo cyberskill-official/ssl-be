@@ -8,7 +8,6 @@ import { E_InvitationStatus, E_InvitationType } from './invitation.type.js';
 export const InvitationModel = mongo.createModel<I_Invitation>({
     mongoose,
     name: 'Invitation',
-    pagination: true,
     schema: {
         type: {
             type: String,

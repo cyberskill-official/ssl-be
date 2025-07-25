@@ -6,7 +6,6 @@ import type { I_City } from './city.type.js';
 export const CityModel = mongo.createModel<I_City>({
     mongoose,
     name: 'City',
-    pagination: true,
     schema: {
         name: {
             type: String,

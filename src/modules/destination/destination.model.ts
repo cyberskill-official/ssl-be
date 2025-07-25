@@ -34,7 +34,6 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
 export const DestinationModel = mongo.createModel<I_Destination>({
     mongoose,
     name: 'Destination',
-    pagination: true,
     schema: {
         type: {
             type: String,

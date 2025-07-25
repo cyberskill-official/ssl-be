@@ -10,7 +10,6 @@ import { E_EventType } from './event.type.js';
 export const EventModel = mongo.createModel<I_Event>({
     mongoose,
     name: 'Event',
-    pagination: true,
     schema: {
         type: {
             type: String,

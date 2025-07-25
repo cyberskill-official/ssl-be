@@ -8,7 +8,6 @@ import { E_KeywordCategory } from './keyword.type.js';
 export const KeywordModel = mongo.createModel<I_Keyword>({
     mongoose,
     name: 'Keyword',
-    pagination: true,
     schema: {
         word: {
             type: String,

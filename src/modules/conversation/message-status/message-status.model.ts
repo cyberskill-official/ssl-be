@@ -6,7 +6,6 @@ import type { I_MessageStatus } from './message-status.type.js';
 export const MessageStatusModel = mongo.createModel<I_MessageStatus>({
     mongoose,
     name: 'Message',
-    pagination: true,
     schema: {
         messageId: {
             type: String,

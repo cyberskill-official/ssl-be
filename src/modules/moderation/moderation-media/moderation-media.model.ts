@@ -11,7 +11,6 @@ import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-med
 export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
     mongoose,
     name: 'ModerationMedia',
-    pagination: true,
     schema: {
         type: {
             type: String,

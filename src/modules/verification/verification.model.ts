@@ -46,7 +46,6 @@ export const VerificationMetaSchema = mongo.createSchema<I_VerificationMeta>({
 export const VerificationModel = mongo.createModel<I_Verification>({
     mongoose,
     name: 'Verification',
-    pagination: true,
     schema: {
         identifier: {
             type: String,

@@ -6,7 +6,6 @@ import type { I_State } from './state.type.js';
 export const StateModel = mongo.createModel<I_State>({
     mongoose,
     name: 'State',
-    pagination: true,
     schema: {
         name: {
             type: String,

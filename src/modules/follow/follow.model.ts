@@ -6,7 +6,6 @@ import type { I_Follow } from './follow.type.js';
 export const FollowModel = mongo.createModel<I_Follow>({
     mongoose,
     name: 'Follow',
-    pagination: true,
     schema: {
         userId: {
             type: String,

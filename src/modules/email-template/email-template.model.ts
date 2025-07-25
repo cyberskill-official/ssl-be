@@ -6,7 +6,6 @@ import type { I_EmailTemplate } from './email-template.type.js';
 export const EmailTemplateModel = mongo.createModel<I_EmailTemplate>({
     mongoose,
     name: 'EmailTemplate',
-    pagination: true,
     schema: {
         templateKey: {
             type: String,

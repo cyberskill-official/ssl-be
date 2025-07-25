@@ -6,7 +6,6 @@ import type { I_Menu } from './menu.type.js';
 export const MenuModel = mongo.createModel<I_Menu>({
     mongoose,
     name: 'Menu',
-    pagination: true,
     schema: {
         text: {
             type: String,

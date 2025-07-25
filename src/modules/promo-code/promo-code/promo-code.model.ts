@@ -6,7 +6,6 @@ import type { I_PromoCode } from './promo-code.type.js';
 export const PromoCodeModel = mongo.createModel<I_PromoCode>({
     mongoose,
     name: 'PromoCode',
-    pagination: true,
     schema: {
         code: {
             type: String,

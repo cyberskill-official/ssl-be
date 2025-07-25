@@ -8,7 +8,6 @@ import { E_UserGroup } from './email-campaign.type.js';
 export const EmailCampaignModel = mongo.createModel<I_EmailCampaign>({
     mongoose,
     name: 'EmailCampaign',
-    pagination: true,
     schema: {
         name: {
             type: String,

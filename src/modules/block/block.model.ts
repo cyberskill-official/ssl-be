@@ -6,7 +6,6 @@ import type { I_Block } from './block.type.js';
 export const BlockModel = mongo.createModel<I_Block>({
     mongoose,
     name: 'Block',
-    pagination: true,
     schema: {
         userId: {
             type: String,

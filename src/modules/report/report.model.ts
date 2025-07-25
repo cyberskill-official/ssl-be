@@ -10,7 +10,6 @@ import { E_ReportStatus, E_ReportType } from './report.type.js';
 export const ReportModel = mongo.createModel<I_Report>({
     mongoose,
     name: 'Report',
-    pagination: true,
     schema: {
         type: {
             type: String,
