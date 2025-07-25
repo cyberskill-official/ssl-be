@@ -8,7 +8,7 @@
         "build": "run-s tsc tsc:alias copy:graphql",
         "copy:graphql": "tsx src/shared/graphql/copy.ts",
         "cyberskill:ready": "cyberskill ready",
-        "dev": "run-s ready migrate:up start:dev",
+        "dev": "run-s migrate:up start:dev",
         "inspect": "cyberskill inspect",
         "lint": "cyberskill lint",
         "lint:fix": "cyberskill lint:fix",
@@ -26,7 +26,7 @@
         "tsc:alias": "tsc-alias -p tsconfig.json"
     },
     "dependencies": {
-        "@cyberskill/shared": "2.2.0",
+        "@cyberskill/shared": "2.3.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.1.1",
         "@graphql-tools/schema": "10.0.25",

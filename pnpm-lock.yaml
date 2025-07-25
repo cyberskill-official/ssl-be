@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@cyberskill/shared':
-        specifier: 2.2.0
-        version: 2.2.0(@types/express@5.0.3)(@types/node@24.1.0)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.18)(crossws@0.3.5)(eslint@9.31.0(jiti@2.5.1))(jiti@2.5.1)(next@15.4.4(@babel/core@7.28.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
+        specifier: 2.3.0
+        version: 2.3.0(@types/express@5.0.3)(@types/node@24.1.0)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.18)(crossws@0.3.5)(eslint@9.31.0(jiti@2.5.1))(jiti@2.5.1)(next@15.4.4(@babel/core@7.28.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)
       '@graphql-tools/load-files':
         specifier: 7.0.1
         version: 7.0.1(graphql@16.11.0)
@@ -526,8 +526,8 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@cyberskill/shared@2.2.0':
-    resolution: {integrity: sha512-3IbPxCUzKcySRcnSLDcTM6OuDIDhOQo5yNO8zBWXQ4Cwwu5RRcoZNjJ5xv6a78g3ZvZ2eTtapXmsoqBA2Kk22g==}
+  '@cyberskill/shared@2.3.0':
+    resolution: {integrity: sha512-eWuaMFFFjOLL2/rgrPfuP3nmWf0olvPj39eGGHS3GjZodXS0mRLoXhuoQwpDip8GVWaLXJnBU90EW5/29sS4Yw==}
     hasBin: true
 
   '@dotenvx/dotenvx@1.48.3':
@@ -6059,7 +6059,7 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@cyberskill/shared@2.2.0(@types/express@5.0.3)(@types/node@24.1.0)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.18)(crossws@0.3.5)(eslint@9.31.0(jiti@2.5.1))(jiti@2.5.1)(next@15.4.4(@babel/core@7.28.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
+  '@cyberskill/shared@2.3.0(@types/express@5.0.3)(@types/node@24.1.0)(@types/react@19.1.8)(@vue/compiler-sfc@3.5.18)(crossws@0.3.5)(eslint@9.31.0(jiti@2.5.1))(jiti@2.5.1)(next@15.4.4(@babel/core@7.28.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(reflect-metadata@0.2.2)(rxjs@7.8.2)(ts-api-utils@2.1.0(typescript@5.8.3))(tsx@4.20.3)(typescript@5.8.3)(yaml@2.8.0)':
     dependencies:
       '@antfu/eslint-config': 5.0.0(@eslint-react/eslint-plugin@1.52.3(eslint@9.31.0(jiti@2.5.1))(ts-api-utils@2.1.0(typescript@5.8.3))(typescript@5.8.3))(@vue/compiler-sfc@3.5.18)(eslint-plugin-format@1.0.1(eslint@9.31.0(jiti@2.5.1)))(eslint-plugin-react-hooks@5.2.0(eslint@9.31.0(jiti@2.5.1)))(eslint-plugin-react-refresh@0.4.20(eslint@9.31.0(jiti@2.5.1)))(eslint@9.31.0(jiti@2.5.1))(typescript@5.8.3)
       '@apollo/client': 3.13.8(@types/react@19.1.8)(graphql-ws@6.0.6(crossws@0.3.5)(graphql@16.11.0)(ws@8.18.3))(graphql@16.11.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -6783,7 +6783,7 @@ snapshots:
     dependencies:
       graphql: 16.11.0
       lodash.sortby: 4.7.0
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   '@graphql-tools/executor-common@0.0.4(graphql@16.11.0)':
     dependencies:
@@ -6943,7 +6943,7 @@ snapshots:
   '@graphql-tools/optimize@2.0.0(graphql@16.11.0)':
     dependencies:
       graphql: 16.11.0
-      tslib: 2.6.3
+      tslib: 2.8.1
 
   '@graphql-tools/prisma-loader@8.0.17(@types/node@24.1.0)(crossws@0.3.5)(graphql@16.11.0)':
     dependencies:
@@ -6979,7 +6979,7 @@ snapshots:
       '@ardatan/relay-compiler': 12.0.3(graphql@16.11.0)
       '@graphql-tools/utils': 10.9.1(graphql@16.11.0)
       graphql: 16.11.0
-      tslib: 2.6.3
+      tslib: 2.8.1
     transitivePeerDependencies:
       - encoding
 

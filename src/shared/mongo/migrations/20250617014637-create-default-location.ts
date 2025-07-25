@@ -50,7 +50,10 @@ export async function up(db: C_Db) {
     const cityCtr = new MongoController<I_City>(db, 'cities');
 
     try {
-        const regionCreated = await regionCtr.createMany(regions);
+        const regionCreated = await regionCtr.createMany(regions.map(region => ({
+            ...region,
+            id: `${region.id}`,
+        })));
 
         if (!regionCreated.success) {
             return log.error(`Failed to create regions`);
@@ -73,6 +76,7 @@ export async function up(db: C_Db) {
             if (region) {
                 const subregionCreated = await subregionCtr.createMany(subregionList.map(sub => ({
                     ...sub,
+                    id: `${sub.id}`,
                     regionId: `${region.id}`,
                 })));
 
@@ -98,6 +102,7 @@ export async function up(db: C_Db) {
             if (subregion) {
                 const countryCreated = await countryCtr.createMany(countryList.map(country => ({
                     ...country,
+                    id: `${country.id}`,
                     regionId: `${subregion.region_id}`,
                     subRegionId: `${subregion.id}`,
                 })));
@@ -124,6 +129,7 @@ export async function up(db: C_Db) {
             if (country) {
                 const stateCreated = await stateCtr.createMany(stateList.map(state => ({
                     ...state,
+                    id: `${state.id}`,
                     countryId: `${country.id}`,
                 })));
 
@@ -149,6 +155,7 @@ export async function up(db: C_Db) {
             if (state) {
                 const cityCreated = await cityCtr.createMany(cityList.map(city => ({
                     ...city,
+                    id: `${city.id}`,
                     stateId: `${state.id}`,
                     countryId: `${city.country_id}`,
                 })));
