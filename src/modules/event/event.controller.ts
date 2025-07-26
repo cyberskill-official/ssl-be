@@ -9,8 +9,9 @@ import { isAfter } from 'date-fns';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-// import { pricingCtr } from '#modules/pricing/pricing.controller.js';
-// import { E_PricingType } from '#modules/pricing/pricing.type.js';
+import { E_Role_User } from '#modules/authz/index.js';
+import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
+import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
 
@@ -84,25 +85,23 @@ export const eventCtr = {
                 });
             }
 
-            // TODO: Tìm club cho loại CLUB_VISIT
-            // const destinationFound = await destinationCtr.getDestination({
-            //     filter: {
-            //         id: destinationId,
-            //         type: E_DestinationType.CLUB,
-            //         isActive: true,
-            //     },
-            // });
-            // if (!destinationFound.success) {
-            //     throwError({
-            //         message: 'Selected club/resort not found or is not active.',
-            //         status: RESPONSE_STATUS.BAD_REQUEST,
-            //     });
-            // }
-            // const destination = destinationFound.result;
+            const destinationFound = await destinationCtr.getDestination(context, {
+                filter: {
+                    id: destinationId,
+                    type: E_DestinationType.CLUB,
+                    isActive: true,
+                },
+            });
+            if (!destinationFound.success) {
+                throwError({
+                    message: 'Selected club/resort not found or is not active.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+            const destination = destinationFound.result;
 
-            // TODO: Set club's image, location, and fee (sẽ implement sau)
-            // doc.image = (destination.images && destination.images[0]);
-            // doc.location = destination.location; // Pin fixed to club location
+            doc.image = (destination.images && destination.images[0])!;
+            doc.location = destination.location!;
         }
 
         if (type === E_EventType.TRAVEL) {
@@ -197,6 +196,7 @@ export const eventCtr = {
             //     type: E_ConversationType.GROUP,
             //     createdById: userId,
             // });
+
             // if (!createdConversation.success) {
             //     throwError({
             //         message: 'Failed to create conversation for event',
@@ -210,6 +210,7 @@ export const eventCtr = {
             //     userId: userId,
             //     role: E_ParticipantRole.ADMIN,
             // });
+
             // if(!createdParticipant.success){
             //     throwError({
             //         message: 'Failed to add creator to event conversation',
@@ -236,39 +237,31 @@ export const eventCtr = {
             }
         }
 
-        // TODO: Pricing
-        // if (userGroup === E_UserGroup.FREE_MEMBERS) {
-        //     if (type === E_EventType.BOOTY_CALL || type === E_EventType.TRAVEL || type === E_EventType.PRIVATE) {
-        //         const pricingFound = await pricingCtr.calculatePricing(context, {
-        //             filter: {
-        //                 type: E_PricingType.ANNOUNCEMENT,
-        //                 location,
-        //                 isActive: true,
-        //             },
-        //         });
+        const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
 
-        //         if (!pricingFound.success) {
-        //             throwError({
-        //                 message: 'Can not found pricing for event',
-        //                 status: RESPONSE_STATUS.NOT_FOUND,
-        //             });
-        //         }
+        if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
+            const pricingFound = await pricingCtr.getPricing(context, {
+                filter: {
+                    'type': E_PricingType.ANNOUNCEMENT,
+                    // TODO: Tìm pricing theo location
+                    'location.countryId': location?.countryId,
+                    'isActive': true,
+                },
+            });
 
-        //         const basePrice = pricingFound.result.price || 0;
-        //         const taxRate = pricingFound.result.taxRate || 0;
-        //         const totalFee = basePrice + (basePrice * taxRate / 100);
+            if (!pricingFound.success) {
+                throwError({
+                    message: 'Can not found pricing for event',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                });
+            }
 
-        //         doc.fee = totalFee;
-        //     }
-        //     else {
-        //         // CLUB_VISIT: Free for all profiles
-        //         doc.fee = 0;
-        //     }
-        // }
-        // else {
-        //     // Premium users
-        //     doc.fee = 0;
-        // }
+            const basePrice = pricingFound.result.price ?? 0;
+            const taxRate = pricingFound.result.taxRate ?? 0;
+            const totalFee = Math.ceil((basePrice + (basePrice * taxRate / 100)) * 100) / 100;
+
+            doc.fee = totalFee;
+        }
 
         return mongooseCtr.createOne(doc);
     },

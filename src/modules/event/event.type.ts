@@ -14,6 +14,7 @@ export enum E_EventType {
 export interface I_Event extends I_GenericDocument {
     type?: E_EventType;
     title?: string;
+    slug?: string;
     description?: string;
     startDate?: Date;
     endDate?: Date;

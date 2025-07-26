@@ -12,6 +12,7 @@ type T_Event {
     updatedAt: DateTime
     type: E_EventType
     title: String
+    slug: String
     description: String
     startDate: DateTime
     endDate: DateTime
