@@ -42,6 +42,8 @@ type T_Blog {
     author: T_User
     seo: T_Seo
     isActive: Boolean
+    readCount: Int
+    isLustEditorial: Boolean
 }
 
 input Input_QueryBlog {
@@ -69,6 +71,8 @@ input Input_QueryBlog {
     authorId: String
     seo: Input_Seo
     isActive: Boolean
+    readCount: Int
+    isLustEditorial: Boolean
 }
 
 input Input_CreateBlog {
@@ -91,6 +95,7 @@ input Input_CreateBlog {
     socialLinks: [Input_SocialLink]
     seo: Input_Seo
     isActive: Boolean
+    isLustEditorial: Boolean
 }
 
 input Input_UpdateBlog {
@@ -114,6 +119,7 @@ input Input_UpdateBlog {
     socialLinks: [Input_SocialLink]
     seo: Input_Seo
     isActive: Boolean
+    isLustEditorial: Boolean
 }
 
 type T_Response_Blog {
@@ -152,4 +158,5 @@ type Mutation {
     createBlog(doc: Input_CreateBlog!): T_Response_Blog!
     updateBlog(filter: Input_QueryBlog!, update: Input_UpdateBlog, options: JSON): T_Response_Blog!
     deleteBlog(filter: Input_QueryBlog!, options: JSON): T_Response_Blog!
+    updateReadCount(filter: Input_QueryBlog!): T_Response_Blog!
 }

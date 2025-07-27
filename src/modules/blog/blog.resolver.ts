@@ -16,6 +16,7 @@ const blogResolver = {
         createBlog: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateBlog>, context: I_Context) => blogCtr.createBlog(context, args),
         updateBlog: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdateBlog>, context: I_Context) => blogCtr.updateBlog(context, args),
         deleteBlog: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryBlog>, context: I_Context) => blogCtr.deleteBlog(context, args),
+        updateReadCount: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryBlog>, context: I_Context) => blogCtr.updateReadCount(context, args),
     },
 };
 

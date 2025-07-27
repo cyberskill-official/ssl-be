@@ -45,6 +45,8 @@ export interface I_Blog extends I_GenericDocument {
     author?: I_User;
     seo?: I_Seo;
     isActive?: boolean;
+    readcount: number;
+    isLustEditorial: boolean;
 }
 
 export type T_Blog_Populate = 'relatedBlogs' | 'language' | 'author';

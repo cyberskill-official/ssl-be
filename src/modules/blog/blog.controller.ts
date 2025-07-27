@@ -146,4 +146,23 @@ export const blogCtr = {
 
         return mongooseCtr.deleteOne(filter, options);
     },
+    updateReadCount: async (
+        context: I_Context,
+        { filter }: I_Input_FindOne<I_Input_QueryBlog>,
+    ): Promise<I_Return<I_Blog>> => {
+        const blogFound = await blogCtr.getBlog(context, { filter });
+
+        if (!blogFound.success) {
+            throwError({
+                message: 'Blog not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        return mongooseCtr.updateOne(
+            filter,
+            { $inc: { readcount: 1 } },
+            { new: true },
+        );
+    },
 };

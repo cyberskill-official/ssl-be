@@ -137,6 +137,14 @@ export const BlogModel = mongo.createModel<I_Blog>({
             type: Boolean,
             default: false,
         },
+        readcount: {
+            type: Number,
+            default: 0,
+        },
+        isLustEditorial: {
+            type: Boolean,
+            default: false,
+        },
     },
     virtuals: [
         {
