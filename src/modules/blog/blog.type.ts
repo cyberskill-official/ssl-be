@@ -45,7 +45,7 @@ export interface I_Blog extends I_GenericDocument {
     author?: I_User;
     seo?: I_Seo;
     isActive?: boolean;
-    readcount: number;
+    readCount: number;
     isLustEditorial: boolean;
 }
 

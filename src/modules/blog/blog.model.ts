@@ -137,7 +137,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
             type: Boolean,
             default: false,
         },
-        readcount: {
+        readCount: {
             type: Number,
             default: 0,
         },

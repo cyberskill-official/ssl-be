@@ -161,7 +161,7 @@ export const blogCtr = {
 
         return mongooseCtr.updateOne(
             filter,
-            { $inc: { readcount: 1 } },
+            { $inc: { readCount: 1 } },
             { new: true },
         );
     },
