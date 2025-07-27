@@ -5,7 +5,7 @@ enum E_UploadType {
     OTHER
 }
 
-enum E_UploadModule {
+enum E_Entity {
     USER
     EVENT
     CONVERSATION
@@ -20,5 +20,10 @@ type T_Response_Upload {
 }
 
 type Mutation {
-    upload(type: E_UploadType!, module: E_UploadModule!, entityId: String, file: Upload!): T_Response_Upload!
+    upload(
+        type: E_UploadType!
+        entity: E_Entity!
+        entityId: String
+        file: Upload!
+    ): T_Response_Upload!
 }

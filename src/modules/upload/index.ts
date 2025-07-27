@@ -1,4 +1,3 @@
-export * from './upload.constant.js';
 export * from './upload.controller.js';
 export * from './upload.resolver.js';
 export * from './upload.type.js';

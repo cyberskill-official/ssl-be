@@ -20,7 +20,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
-import { E_UploadModule } from '#modules/upload/upload.type.js';
+import { E_Entity } from '#modules/upload/upload.type.js';
 
 import type {
     I_Input_ApproveModerationMedia,
@@ -56,7 +56,7 @@ export const moderationMediaCtr = {
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const { module } = doc;
+        const { entity } = doc;
 
         let moderationCreatedId: string = undefined!;
         try {
@@ -75,8 +75,8 @@ export const moderationMediaCtr = {
 
             moderationCreatedId = moderationCreated.result.id;
 
-            switch (module) {
-                case E_UploadModule.GALLERY: {
+            switch (entity) {
+                case E_Entity.GALLERY: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
                         doc: {
                             moderationMediaId: moderationCreatedId,
@@ -90,13 +90,13 @@ export const moderationMediaCtr = {
                     if (galleryCreated.success && galleryCreated.result?.id) {
                         await mongooseCtr.updateOne(
                             { id: moderationCreatedId },
-                            { moduleId: galleryCreated.result.id },
+                            { entityId: galleryCreated.result.id },
                         );
                     }
                     break;
                 }
 
-                case E_UploadModule.CATALOGUE: {
+                case E_Entity.CATALOGUE: {
                     if (!moderationCreated.result.tagId) {
                         throwError({
                             message: 'Tag ID is required for catalogue module.',
@@ -116,19 +116,19 @@ export const moderationMediaCtr = {
                     if (catalogueCreated.success && catalogueCreated.result?.id) {
                         await mongooseCtr.updateOne(
                             { id: moderationCreatedId },
-                            { moduleId: catalogueCreated.result.id },
+                            { entityId: catalogueCreated.result.id },
                         );
                     }
                     break;
                 }
 
-                case E_UploadModule.CONVERSATION:
+                case E_Entity.CONVERSATION:
                     // TODO: Handle conversation module if needed
                     break;
-                case E_UploadModule.EVENT:
+                case E_Entity.EVENT:
                     // TODO:Handle event module if needed
                     break;
-                case E_UploadModule.USER:
+                case E_Entity.USER:
                     // TODO: Handle user module if needed
                     break;
 
@@ -175,13 +175,13 @@ export const moderationMediaCtr = {
         reason?: string,
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentStatus = moderation.status;
-        const currentModule = moderation.module;
+        const currentEntity = moderation.entity;
 
         const isAfterRejectToApprove = currentStatus === E_ModerationMediaStatus.REJECTED && status === E_ModerationMediaStatus.APPROVED;
 
         try {
-            switch (currentModule) {
-                case E_UploadModule.CATALOGUE:
+            switch (currentEntity) {
+                case E_Entity.CATALOGUE:
                     await catalogueCtr.updateCatalogue(context, {
                         filter: {
                             moderationMediaId: moderation.id,
@@ -192,7 +192,7 @@ export const moderationMediaCtr = {
                     });
                     break;
 
-                case E_UploadModule.GALLERY:
+                case E_Entity.GALLERY:
                     await galleryCtr.updateGallery(context, {
                         filter: {
                             moderationMediaId: moderation.id,
@@ -203,19 +203,19 @@ export const moderationMediaCtr = {
                     });
                     break;
 
-                case E_UploadModule.CONVERSATION:
+                case E_Entity.CONVERSATION:
                     // TODO: Handle conversation module if needed
                     break;
-                case E_UploadModule.EVENT:
+                case E_Entity.EVENT:
                     // TODO:Handle event module if needed
                     break;
-                case E_UploadModule.USER:
+                case E_Entity.USER:
                     // TODO: Handle user module if needed
                     break;
 
                 default:
                     throwError({
-                        message: `Unsupported module type: ${currentModule}`,
+                        message: `Unsupported module type: ${currentEntity}`,
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
             }
@@ -325,16 +325,16 @@ export const moderationMediaCtr = {
             });
         }
 
-        const { module, id } = moderationMedia.result;
+        const { entity, id } = moderationMedia.result;
 
         try {
-            switch (module) {
-                case E_UploadModule.GALLERY:
+            switch (entity) {
+                case E_Entity.GALLERY:
                     await galleryCtr.deleteGallery(context, {
                         filter: { moderationMediaId: id },
                     });
                     break;
-                case E_UploadModule.CATALOGUE:
+                case E_Entity.CATALOGUE:
                     await catalogueCtr.deleteCatalogue(context, {
                         filter: { moderationMediaId: id },
                     });

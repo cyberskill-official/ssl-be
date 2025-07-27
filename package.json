@@ -27,7 +27,8 @@
     },
     "dependencies": {
         "@aws-sdk/client-sesv2": "3.849.0",
-        "@cyberskill/shared": "2.3.1",
+        "@bunny.net/storage-sdk": "0.3.0",
+        "@cyberskill/shared": "2.4.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.1.1",
         "@graphql-tools/schema": "10.0.25",
@@ -51,6 +52,7 @@
         "mongoose": "8.16.5",
         "mongoose-aggregate-paginate-v2": "1.1.4",
         "mongoose-paginate-v2": "1.9.1",
+        "node-fetch": "3.3.2",
         "npm-run-all2": "8.0.4",
         "tsc-alias": "1.8.16",
         "tsx": "4.20.3",

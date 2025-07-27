@@ -5,18 +5,19 @@ export enum E_UploadType {
     OTHER = 'OTHER',
 }
 
-export enum E_UploadModule {
+export enum E_Entity {
     USER = 'USER',
     EVENT = 'EVENT',
     CONVERSATION = 'CONVERSATION',
     CATALOGUE = 'CATALOGUE',
     GALLERY = 'GALLERY',
+    CLUB = 'CLUB',
 }
 
 export interface I_Input_Upload {
     type: E_UploadType;
-    module: E_UploadModule;
-    entityId?: string;
+    entity: E_Entity;
+    entityId: string;
     file: Promise<{
         file: {
             createReadStream: () => NodeJS.ReadableStream;
@@ -26,8 +27,8 @@ export interface I_Input_Upload {
 }
 
 export interface I_UploadPathConfig {
-    module: E_UploadModule;
     type: E_UploadType;
-    entityId?: string;
-    userId?: string;
+    entity: E_Entity;
+    entityId: string;
+    userId: string;
 }

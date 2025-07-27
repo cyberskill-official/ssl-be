@@ -1,18 +1,20 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
-import { upload } from '@cyberskill/shared/node/upload';
+import { log, throwError } from '@cyberskill/shared/node/log';
+import { getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { storageZone, uploadToBunnyStream } from '#modules/bunny/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
-import { UPLOAD_CONFIG } from './upload.constant.js';
+import { E_UploadType } from './upload.type.js';
 import { generateUploadPath } from './upload.util.js';
 
 const env = getEnv();
@@ -20,16 +22,20 @@ const env = getEnv();
 export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<string>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const { type, module, file, entityId } = args;
+        const { type, entity, file, entityId } = args;
+        const fileData = await getAndValidateFile(type, await file);
 
-        const uploadDir = env.UPLOAD_FOLDER;
-        const { filename } = (await (await file).file);
+        if (!fileData.success) {
+            return fileData;
+        }
+
+        const { filename, createReadStream } = fileData.result;
 
         const lastDotIndex = filename.lastIndexOf('.');
 
         if (lastDotIndex === -1) {
             throwError({
-                message: 'File must have an extension',
+                message: 'Invalid file: no extension provided',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
@@ -37,14 +43,14 @@ export const uploadCtr = {
         const extension = filename.substring(lastDotIndex);
         const nameWithoutExtension = filename.substring(0, lastDotIndex);
         const timestamp = new Date().getTime();
-        const fullName = `${nameWithoutExtension}-${timestamp}${extension}`;
+        const fullPath = `${nameWithoutExtension}-${timestamp}${extension}`;
 
         let folderPath: string;
 
         try {
-            folderPath = generateUploadPath(uploadDir, {
-                module,
+            folderPath = generateUploadPath('', {
                 type,
+                entity,
                 entityId,
                 userId: currentUser.id,
             });
@@ -56,28 +62,46 @@ export const uploadCtr = {
             });
         }
 
-        const uploadPath = path.join(folderPath, fullName);
+        const uploadPath = path.posix.join(folderPath, fullPath);
 
-        const result = await upload({
-            file,
-            path: uploadPath,
-            type,
-            config: UPLOAD_CONFIG,
-        });
+        if (type === E_UploadType.VIDEO) {
+            const videoUploaded = await uploadToBunnyStream(createReadStream(), uploadPath);
 
-        if (!result.success) {
+            if (!videoUploaded.success) {
+                return videoUploaded;
+            }
+
+            return {
+                success: true,
+                result: videoUploaded.result,
+            };
+        }
+
+        const fileWebStream = await getFileWebStream(type, await file);
+
+        if (!fileWebStream.success) {
+            return fileWebStream;
+        }
+
+        try {
+            await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
+        }
+        catch (err) {
+            log.error('Bunny file upload failed', {
+                error: err,
+                stack: err instanceof Error ? err.stack : 'No stack trace available',
+                uploadPath,
+            });
             throwError({
-                message: result.message,
-                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: `Failed to upload file to Bunny storage. Please try again later. Error: ${err instanceof Error ? err.message : String(err)}`,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
 
-        const relativePath = path.relative(uploadDir, uploadPath).replace(/\\/g, '/');
-
         return {
-            message: result.message,
-            success: result.success,
-            result: `/${uploadDir}/${relativePath}`,
+            message: 'Upload successful',
+            success: true,
+            result: `https://${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`,
         };
     },
 };

@@ -2,7 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Input_Note, I_Note } from '#modules/note/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
-import type { E_UploadModule } from '#modules/upload/upload.type.js';
+import type { E_Entity } from '#modules/upload/upload.type.js';
 import type { I_User } from '#modules/user/index.js';
 
 export enum E_ModerationMediaType {
@@ -26,8 +26,8 @@ export interface I_ModerationMedia extends I_GenericDocument {
     moderatedBy?: I_User;
     reason?: string;
     notes?: I_Note[];
-    module?: E_UploadModule;
-    moduleId?: string;
+    entity?: E_Entity;
+    entityId?: string;
     // Optional, used for specific modules like catalogue
     tagId?: string;
     tag?: I_Tag;
