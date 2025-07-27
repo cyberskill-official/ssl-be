@@ -9,7 +9,7 @@ import path from 'node:path';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { storageZone, uploadToBunnyStream } from '#modules/bunny/index.js';
+import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
@@ -65,7 +65,7 @@ export const uploadCtr = {
         const uploadPath = path.posix.join(folderPath, fullPath);
 
         if (type === E_UploadType.VIDEO) {
-            const videoUploaded = await uploadToBunnyStream(createReadStream(), uploadPath);
+            const videoUploaded = await bunnyCtr.uploadToBunnyStream(context, createReadStream(), uploadPath);
 
             if (!videoUploaded.success) {
                 return videoUploaded;
