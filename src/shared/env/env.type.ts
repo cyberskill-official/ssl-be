@@ -29,6 +29,8 @@ export interface I_Environment {
     REDIS_HOST: string;
     REDIS_PORT: number;
     REDIS_PASSWORD: string;
-    SENDGRID_API_KEY: string;
-    SENDGRID_FROM: string;
+    FROM_EMAIL_ADDRESS: string;
+    AWS_ACCESS_KEY_ID: string;
+    AWS_SECRET_ACCESS_KEY: string;
+    AWS_SES_REGION: string;
 }

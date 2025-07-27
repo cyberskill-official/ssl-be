@@ -1,12 +1,9 @@
-import sgMail from '@sendgrid/mail';
-
+import { sesController } from '#modules/aws/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_EmailJobData } from './email.type.js';
 
 const env = getEnv();
-
-sgMail.setApiKey(env.SENDGRID_API_KEY);
 
 export const emailService = {
     /**
@@ -14,17 +11,12 @@ export const emailService = {
      */
     sendEmail: async (data: I_EmailJobData): Promise<void> => {
         try {
-            const msg = {
-                to: data.to,
-                from: data.from || env.SENDGRID_FROM,
+            await sesController.sendEmail({
+                to: Array.isArray(data.to) ? data.to : [data.to],
+                from: data.from || env.FROM_EMAIL_ADDRESS,
                 subject: data.subject,
-                ...(data.html ? { html: data.html } : { text: data.text || '' }),
-                ...(data.attachments && { attachments: data.attachments }),
-                ...(data.categories && { categories: data.categories }),
-                ...(data.customArgs && { customArgs: data.customArgs }),
-            };
-
-            await sgMail.send(msg);
+                body: data.html || data.text || '',
+            });
         }
         catch (error) {
             console.error('Failed to send email:', error);
@@ -37,24 +29,18 @@ export const emailService = {
      */
     sendBulkEmails: async (emails: I_EmailJobData[]): Promise<void> => {
         try {
-            // Split into smaller chunks to avoid SendGrid limits
-            const chunkSize = 1000; // SendGrid default limit
+            const chunkSize = 1000;
             const chunks = emailService.chunkArray(emails, chunkSize);
 
             for (const chunk of chunks) {
-                const messages = chunk.map(email => ({
-                    to: email.to,
-                    from: email.from || env.SENDGRID_FROM,
-                    subject: email.subject,
-                    ...(email.html ? { html: email.html } : { text: email.text || '' }),
-                    ...(email.attachments && { attachments: email.attachments }),
-                    ...(email.categories && { categories: email.categories }),
-                    ...(email.customArgs && { customArgs: email.customArgs }),
-                }));
-
-                await sgMail.send(messages);
-
-                // Small delay between chunks to avoid rate limiting
+                for (const email of chunk) {
+                    await sesController.sendEmail({
+                        to: Array.isArray(email.to) ? email.to : [email.to],
+                        from: email.from || env.FROM_EMAIL_ADDRESS,
+                        subject: email.subject,
+                        body: email.html || email.text || '',
+                    });
+                }
                 if (chunks.length > 1) {
                     await emailService.delay(100);
                 }

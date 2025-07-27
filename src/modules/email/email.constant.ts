@@ -25,14 +25,6 @@ export const EMAIL_CONSTANTS = {
 } as const;
 
 export const EMAIL_CONFIG = {
-    // Provider settings
-    provider: {
-        sendgrid: {
-            apiKey: env.SENDGRID_API_KEY,
-            defaultFrom: env.SENDGRID_FROM,
-        },
-    },
-
     // Queue settings
     queue: {
         redis: {

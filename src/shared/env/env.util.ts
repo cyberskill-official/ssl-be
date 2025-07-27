@@ -7,17 +7,18 @@ import process from 'node:process';
 import type { I_Environment } from './env.type.js';
 
 import {
+    AWS_SES_REGION,
     BODY_PARSER_LIMIT,
     ENDPOINT_GRAPHQL,
     ENDPOINT_RESTAPI,
     ENDPOINT_WS,
+    FROM_EMAIL_ADDRESS,
     MONGO_BACKUP_FOLDER,
     MONGO_HOST,
     MONGO_PORT,
     PORT,
     REDIS_HOST,
     REDIS_PORT,
-    SENDGRID_FROM,
     STATIC_FOLDER,
     UPLOAD_FOLDER,
 } from './env.constant.js';
@@ -55,8 +56,10 @@ export function getEnv(): I_Environment {
         REDIS_HOST: str({ default: REDIS_HOST }),
         REDIS_PORT: port({ default: REDIS_PORT }),
         REDIS_PASSWORD: str({ default: '' }),
-        SENDGRID_API_KEY: str(),
-        SENDGRID_FROM: str({ default: SENDGRID_FROM }),
+        FROM_EMAIL_ADDRESS: str({ default: FROM_EMAIL_ADDRESS }),
+        AWS_ACCESS_KEY_ID: str(),
+        AWS_SECRET_ACCESS_KEY: str(),
+        AWS_SES_REGION: str({ default: AWS_SES_REGION }),
     });
 
     const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;

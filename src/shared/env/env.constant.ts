@@ -10,4 +10,5 @@ export const ENDPOINT_RESTAPI = '/rest';
 export const UPLOAD_FOLDER = 'uploads';
 export const REDIS_HOST = 'localhost';
 export const REDIS_PORT = 6379;
-export const SENDGRID_FROM = 'hi@l4studio.net';
+export const FROM_EMAIL_ADDRESS = 'no-reply@secretswingerlust.com';
+export const AWS_SES_REGION = 'eu-west-3';

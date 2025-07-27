@@ -3,11 +3,14 @@ import type Bull from 'bull';
 import ejs from 'ejs';
 
 import { emailTemplateCtr } from '#modules/email-template/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_EmailJobData, I_EmailJobInfo, I_EmailJobResponse, I_EmailMetrics } from './email.type.js';
 
 import { emailQueue } from './email.queue.js';
 import { emailTemplateCache } from './email.template-cache.js';
+
+const env = getEnv();
 
 export const emailCtr = {
     /**
@@ -29,6 +32,9 @@ export const emailCtr = {
             let subjectText: string;
 
             subjectText = subject || 'No Subject';
+            if (env.IS_DEV || env.IS_STAG) {
+                subjectText = `[TEST] ${subjectText}`;
+            }
 
             if (templateFromCache) {
                 // Use cached template
@@ -36,6 +42,9 @@ export const emailCtr = {
 
                 if (templateSubject) {
                     subjectText = subject || templateSubject;
+                    if (env.IS_DEV || env.IS_STAG) {
+                        subjectText = `[TEST] ${subjectText}`;
+                    }
                 }
 
                 html = content ? await ejs.render(content, templateData) : emailCtr.generateBasicTemplate(templateData);
@@ -52,6 +61,10 @@ export const emailCtr = {
 
                     if (templateSubject)
                         subjectText = subject || templateSubject;
+
+                    if (env.IS_DEV || env.IS_STAG) {
+                        subjectText = `[TEST] ${subjectText}`;
+                    }
 
                     if (content) {
                         html = await ejs.render(content, templateData);
