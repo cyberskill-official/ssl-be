@@ -15,19 +15,16 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 import { userCtr } from '#modules/user/user.controller.js';
+import { getEnv } from '#shared/env/index.js';
 
-import type {
-    I_Gallery,
-    I_Input_CreateGallery,
-    I_Input_IncreaseGalleryViewCount,
-    I_Input_LikeGallery,
-    I_Input_QueryGallery,
-    I_Input_UnlikeGallery,
-    I_Input_UpdateGallery,
-} from './gallery.type.js';
+import type { I_Gallery, I_Input_CreateGallery, I_Input_IncreaseGalleryViewCount, I_Input_LikeGallery, I_Input_QueryGallery, I_Input_UnlikeGallery, I_Input_UpdateGallery } from './gallery.type.js';
 
 import { GalleryModel } from './gallery.model.js';
+import { E_GalleryType } from './gallery.type.js';
+
+const env = getEnv();
 
 const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
 
@@ -57,9 +54,48 @@ export const galleryCtr = {
         return mongooseCtr.updateOne(filter, update, options);
     },
     deleteGallery: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        const galleryFound = await galleryCtr.getGallery(context, {
+            filter,
+        });
+
+        if (!galleryFound.success) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'Gallery not found',
+            });
+        }
+
+        if (galleryFound.result.url) {
+            switch (galleryFound.result.type) {
+                case E_GalleryType.VIDEO: {
+                    const videoDeleted = await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
+
+                    if (!videoDeleted.success) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: videoDeleted.message,
+                        });
+                    }
+                    break;
+                }
+                case E_GalleryType.IMAGE: {
+                    const imageDeleted = await bunnyCtr.deleteFile(context, galleryFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
+
+                    if (!imageDeleted.success) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: imageDeleted.message,
+                        });
+                    }
+                    break;
+                }
+                default:
+            }
+        }
+
         return mongooseCtr.deleteOne(filter, options);
     },
     likeGallery: async (

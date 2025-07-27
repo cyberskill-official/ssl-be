@@ -101,7 +101,7 @@ export const uploadCtr = {
         return {
             message: 'Upload successful',
             success: true,
-            result: `https://${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`,
+            result: `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`,
         };
     },
 };
