@@ -61,10 +61,11 @@ export function getEnv(): I_Environment {
         AWS_SECRET_ACCESS_KEY: str(),
         AWS_SES_REGION: str({ default: AWS_SES_REGION }),
         BUNNY_CDN_HOSTNAME: str(),
-        BUNNY_STORAGE_API_KEY: str(),
         BUNNY_STORAGE_ZONE_NAME: str(),
-        BUNNY_STREAM_API_KEY: str(),
+        BUNNY_STORAGE_API_KEY: str(),
+        BUNNY_STREAM_HOST_NAME: str(),
         BUNNY_STREAM_LIBRARY_ID: str(),
+        BUNNY_STREAM_API_KEY: str(),
     });
 
     const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;

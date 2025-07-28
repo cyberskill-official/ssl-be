@@ -148,7 +148,7 @@ export const bunnyCtr = {
 
         return {
             success: true,
-            result: `https://iframe.mediadelivery.net/play/${env.BUNNY_STREAM_LIBRARY_ID}/${videoId}`,
+            result: `${env.BUNNY_STREAM_HOST_NAME}/${videoId}`,
         };
     },
     deleteFile: async (_context: I_Context, fileUrl: string): Promise<I_Return<void>> => {

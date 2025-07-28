@@ -36,6 +36,7 @@ export interface I_Environment {
     BUNNY_CDN_HOSTNAME: string;
     BUNNY_STORAGE_ZONE_NAME: string;
     BUNNY_STORAGE_API_KEY: string;
+    BUNNY_STREAM_HOST_NAME: string;
     BUNNY_STREAM_LIBRARY_ID: string;
     BUNNY_STREAM_API_KEY: string;
 }
