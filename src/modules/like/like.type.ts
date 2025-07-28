@@ -24,7 +24,11 @@ export type T_Like_Populate = 'user' | 'entity';
 export interface I_Input_QueryLike extends Omit<I_Like, T_Like_Populate> { }
 
 export interface I_Input_CreateLike extends Omit<I_Like, T_Omit_Create | T_Like_Populate> {
-    userId: string;
     entityType: E_EntityType;
     entityId: string;
+}
+
+export interface I_Input_GetLikeCountBatch {
+    entityType: E_EntityType;
+    entityIds: string[];
 }

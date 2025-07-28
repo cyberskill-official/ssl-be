@@ -6,10 +6,7 @@ import type {
 import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
-    I_Input_IncreaseGalleryViewCount,
-    I_Input_LikeGallery,
     I_Input_QueryGallery,
-    I_Input_UnlikeGallery,
 } from './gallery.type.js';
 
 import { galleryCtr } from './gallery.controller.js';
@@ -22,12 +19,6 @@ const galleryResolver = {
             galleryCtr.getGalleries(context, args),
     },
     Mutation: {
-        likeGallery: (_parent: unknown, args: I_Input_LikeGallery, context: I_Context) =>
-            galleryCtr.likeGallery(context, args),
-        unlikeGallery: (_parent: unknown, args: I_Input_UnlikeGallery, context: I_Context) =>
-            galleryCtr.unlikeGallery(context, args),
-        increaseGalleryViewCount: (_parent: unknown, args: I_Input_IncreaseGalleryViewCount, context: I_Context) =>
-            galleryCtr.increaseGalleryViewCount(context, args),
         deleteGallery: (_parent: unknown, { id }: { id: string }, context: I_Context) =>
             galleryCtr.deleteGallery(context, { filter: { id } }),
         deleteOwnGallery: (_parent: unknown, { id }: { id: string }, context: I_Context) =>

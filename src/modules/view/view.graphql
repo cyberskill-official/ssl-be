@@ -1,46 +1,42 @@
-enum E_EntityType {
+enum E_ViewEntityType {
     GALLERY
     BLOG
-    MESSAGE
 }
 
-union U_Entity = T_Gallery | T_Blog | T_Message
+union U_ViewEntity = T_Gallery | T_Blog
 
-type T_Like {
+type T_View {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
     userId: String
     user: T_User
-    entityType: E_EntityType
+    entityType: E_ViewEntityType
     entityId: String
-    entity: U_Entity
+    entity: U_ViewEntity
+    viewCount: Int
+    lastViewedAt: DateTime
 }
 
-input Input_QueryLike {
+input Input_QueryView {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
     userId: String
-    entityType: E_EntityType
+    entityType: E_ViewEntityType
     entityId: String
 }
 
-input Input_CreateLike {
-    entityType: E_EntityType!
-    entityId: String!
-}
-
-type T_Response_Like {
+type T_Response_View {
     success: Boolean
     message: String
-    result: T_Like
+    result: T_View
 }
 
-type T_Likes {
-    docs: [T_Like]
+type T_Views {
+    docs: [T_View]
     totalDocs: Int
     limit: Int
     hasPrevPage: Boolean
@@ -54,17 +50,16 @@ type T_Likes {
     meta: JSON
 }
 
-type T_Response_Likes {
+type T_Response_Views {
     success: Boolean
     message: String
-    result: T_Likes
+    result: T_Views
 }
 
 type Query {
-    getLikes(filter: Input_QueryLike, options: JSON): T_Response_Likes!
+    getViews(filter: Input_QueryView, options: JSON): T_Response_Views!
 }
 
 type Mutation {
-    createLike(doc: Input_CreateLike!): T_Response_Like!
-    deleteLike(filter: Input_QueryLike!, options: JSON): T_Response_Like!
+    increaseViewCount(entityType: E_ViewEntityType!, entityId: String!): T_Response_View!
 }

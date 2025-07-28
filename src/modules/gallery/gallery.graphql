@@ -3,12 +3,6 @@ enum E_GalleryType {
     VIDEO
 }
 
-type T_GalleryView {
-    viewById: String
-    viewCount: Int
-    viewBy: T_User
-}
-
 type T_Gallery {
     id: String
     isDel: Boolean
@@ -20,11 +14,13 @@ type T_Gallery {
     url: String
     uploadedById: String
     uploadedBy: T_User
-    likedByIds: [String]
-    likedBy: [T_User]
-    views: [T_GalleryView]
     status: E_ModerationMediaStatus
     isPublished: Boolean
+    likes: [T_Like]
+    likeCount: Int
+    isLike: Boolean
+    views: [T_View]
+    viewCount: Int
 }
 
 input Input_QueryGallery {
@@ -36,7 +32,6 @@ input Input_QueryGallery {
     type: E_GalleryType
     url: String
     uploadedById: String
-    likedByIds: [String]
     viewCount: Int
     status: E_ModerationMediaStatus
     isPublished: Boolean
@@ -89,9 +84,6 @@ type Query {
 }
 
 type Mutation {
-    likeGallery(id: String!): T_Response_Gallery!
-    unlikeGallery(id: String!): T_Response_Gallery!
-    increaseGalleryViewCount(id: String!): T_Response_Gallery!
     deleteGallery(id: String!): T_Response_Gallery!
     deleteOwnGallery(id: String!): T_Response_Gallery!
 }

@@ -1,41 +1,10 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { E_EntityType } from '#modules/like/like.type.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/index.js';
 
-import type { I_Gallery, I_GalleryView } from './gallery.type.js';
-
-export const GalleryViewSchema = mongo.createSchema<I_GalleryView>({
-    standalone: true,
-    mongoose,
-    schema: {
-        viewById: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please provide the user ID who viewed the gallery',
-                },
-            ],
-        },
-        viewCount: {
-            type: Number,
-            default: 0,
-        },
-    },
-    virtuals: [
-        {
-            name: 'viewBy',
-            options: {
-                ref: 'User',
-                localField: 'viewById',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-    ],
-});
+import type { I_Gallery } from './gallery.type.js';
 
 export const GalleryModel = mongo.createModel<I_Gallery>({
     mongoose,
@@ -82,14 +51,6 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
                 },
             ],
         },
-        likedByIds: {
-            type: [String],
-            default: [],
-        },
-        views: {
-            type: [GalleryViewSchema],
-            default: [],
-        },
         status: {
             type: String,
             enum: Object.values(E_ModerationMediaStatus),
@@ -120,12 +81,27 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
             },
         },
         {
-            name: 'likedBy',
+            name: 'likes',
             options: {
-                ref: 'User',
-                localField: 'likedByIds',
-                foreignField: 'id',
+                ref: 'Like',
+                localField: 'id',
+                foreignField: 'entityId',
                 justOne: false,
+                options: {
+                    match: { entityType: E_EntityType.GALLERY },
+                },
+            },
+        },
+        {
+            name: 'views',
+            options: {
+                ref: 'View',
+                localField: 'id',
+                foreignField: 'entityId',
+                justOne: false,
+                options: {
+                    match: { entityType: E_EntityType.GALLERY },
+                },
             },
         },
     ],
