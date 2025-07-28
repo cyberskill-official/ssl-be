@@ -1,3 +1,19 @@
+enum E_Role {
+    STAFF
+    USER
+}
+
+enum E_Role_Staff {
+    ADMIN
+    MODERATOR
+    VIEWER
+}
+
+enum E_Role_User {
+    FREE_MEMBER
+    PAID_MEMBER
+}
+
 type T_Role {
     id: String
     isDel: Boolean

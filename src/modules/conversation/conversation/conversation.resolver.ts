@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindPaging } from '@
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateConversation, I_Input_QueryConversation } from './conversation.type.js';
+import type { I_Input_CreateBroadcast, I_Input_CreateConversation, I_Input_QueryConversation } from './conversation.type.js';
 
 import { conversationCtr } from './conversation.controller.js';
 
@@ -14,6 +14,8 @@ const conversationResolver = {
     Mutation: {
         createConversation: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateConversation>, context: I_Context) =>
             conversationCtr.createConversation(context, args),
+        createBroadcast: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateBroadcast>, context: I_Context) =>
+            conversationCtr.createBroadcast(context, args),
         deleteConversation: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryConversation>, context: I_Context) =>
             conversationCtr.deleteConversation(context, args),
     },

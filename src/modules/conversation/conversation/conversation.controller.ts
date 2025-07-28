@@ -15,9 +15,11 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
+import { userCtr } from '#modules/user/index.js';
 
-import type { I_Conversation, I_Input_CreateConversation, I_Input_QueryConversation } from './conversation.type.js';
+import type { I_BroadcastResult, I_Conversation, I_Input_CreateBroadcast, I_Input_CreateConversation, I_Input_QueryConversation } from './conversation.type.js';
 
+import { messageStatusCtr } from '../message-status/message-status.controller.js';
 import { messageCtr } from '../message/message.controller.js';
 import { participantCtr } from '../participant/participant.controller.js';
 import { E_ParticipantRole } from '../participant/participant.type.js';
@@ -90,7 +92,121 @@ export const conversationCtr = {
 
         return conversationResult;
     },
+    createBroadcast: async (
+        context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreateBroadcast>,
+    ): Promise<I_Return<I_BroadcastResult>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
 
+        const isStaff = await authnCtr.isStaff(context);
+
+        if (!isStaff) {
+            throwError({
+                message: 'Only staff can send broadcast messages',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const broadcastConversation = await mongooseCtr.createOne({
+            type: E_ConversationType.ADMIN_BROADCAST,
+            name: `Admin Broadcast - ${new Date().toISOString()}`,
+            createdById: currentUser.id,
+        });
+
+        if (!broadcastConversation.success) {
+            throwError({
+                message: 'Failed to create broadcast conversation',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const message = await messageCtr.createMessage(context, {
+            doc: {
+                conversationId: broadcastConversation.result.id,
+                senderId: currentUser.id,
+                content: doc.content,
+            },
+        });
+
+        if (!message.success) {
+            throwError({
+                message: 'Failed to create broadcast message',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const userFilter: Record<string, unknown> = { isDel: false, isActive: true };
+
+        if (doc.target === E_Role_User.FREE_MEMBER) {
+            const freeMemberRole = await roleCtr.getRole(context, {
+                filter: { name: E_Role_User.FREE_MEMBER },
+            });
+
+            if (freeMemberRole.success) {
+                userFilter['rolesIds'] = { $in: [freeMemberRole.result.id] };
+            }
+        }
+        else if (doc.target === E_Role_User.PAID_MEMBER) {
+            const paidMemberRole = await roleCtr.getRole(context, {
+                filter: { name: E_Role_User.PAID_MEMBER },
+            });
+
+            if (paidMemberRole.success) {
+                userFilter['rolesIds'] = { $in: [paidMemberRole.result.id] };
+            }
+        }
+        else {
+            const allMemberRoles = await roleCtr.getRoles(context, {
+                filter: {
+                    name: {
+                        $in: [E_Role_User.FREE_MEMBER, E_Role_User.PAID_MEMBER],
+                    },
+                },
+            });
+
+            if (allMemberRoles.success) {
+                userFilter['rolesIds'] = { $in: allMemberRoles.result.docs.map(role => role.id) };
+            }
+        }
+
+        const usersFound = await userCtr.getUsers(context, {
+            filter: userFilter,
+            options: { pagination: false },
+        });
+
+        if (!usersFound.success) {
+            throwError({
+                message: 'Failed to get users for broadcast',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const users = usersFound.result.docs;
+
+        const messageStatusDocs = users
+            .filter(user => user.id !== currentUser.id)
+            .map(user => ({
+                messageId: message.result.id,
+                userId: user.id,
+            }));
+
+        const recipientCount = messageStatusDocs.length;
+
+        if (messageStatusDocs.length > 0) {
+            await messageStatusCtr.createMessageStatuses(context, {
+                docs: messageStatusDocs,
+            });
+        }
+
+        return {
+            success: true,
+            message: `Broadcast message sent to ${recipientCount} users`,
+            result: {
+                messageId: message.result.id,
+                recipientCount,
+            },
+        };
+    },
     deleteConversation: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryConversation>,

@@ -4,6 +4,7 @@ enum E_ConversationType {
     PROFILE_COMMENT
     BLOG_COMMENT
     DESTINATION_COMMENT
+    ADMIN_BROADCAST
 }
 
 type T_Conversation {
@@ -17,6 +18,17 @@ type T_Conversation {
     createdBy: T_User
     lastMessageId: String
     lastMessage: T_Message
+}
+
+type T_BroadcastResult {
+    messageId: String
+    recipientCount: Int
+}
+
+type T_Response_BroadcastResult {
+    success: Boolean
+    message: String
+    result: T_BroadcastResult
 }
 
 input Input_QueryConversation {
@@ -43,6 +55,11 @@ input Input_UpdateConversation {
     name: String
     createdById: String
     lastMessageId: String
+}
+
+input Input_CreateBroadcast {
+    content: String!
+    target: E_Role_User
 }
 
 type T_Response_Conversation {
@@ -78,5 +95,6 @@ type Query {
 
 type Mutation {
     createConversation(doc: Input_CreateConversation!): T_Response_Conversation!
+    createBroadcast(doc: Input_CreateBroadcast!): T_Response_BroadcastResult!
     deleteConversation(filter: Input_QueryConversation!, options: JSON): T_Response_Conversation!
 }
