@@ -384,6 +384,10 @@ export const UserModel = mongo.createModel<I_User>({
             type: Boolean,
             default: false,
         },
+        isAgeVerified: {
+            type: Boolean,
+            default: false,
+        },
         displayName: {
             type: String,
         },

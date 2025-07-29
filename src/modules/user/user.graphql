@@ -115,6 +115,7 @@ type T_User {
     rolesIds: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
+    isAgeVerified: Boolean
     displayName: String
     accountType: E_AccountType
     partner1: T_UserPartner
@@ -150,6 +151,7 @@ input Input_QueryUser {
     rolesIds: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
+    isAgeVerified: Boolean
     displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner

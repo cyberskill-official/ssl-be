@@ -14,16 +14,30 @@ export enum E_Entity {
     CLUB = 'CLUB',
 }
 
+export interface I_UploadedFile {
+    createReadStream: () => NodeJS.ReadableStream;
+    filename: string;
+}
+
+export type T_UploadedFilePromise = Promise<{
+    file: I_UploadedFile;
+}>;
+
+export interface I_GraphQLUpload {
+    promise: Promise<I_UploadedFile>;
+    file: Promise<{
+        file: I_UploadedFile;
+    }>;
+}
+
+export interface I_Input_UploadMany {
+    files: I_GraphQLUpload[];
+}
 export interface I_Input_Upload {
     type: E_UploadType;
     entity: E_Entity;
     entityId: string;
-    file: Promise<{
-        file: {
-            createReadStream: () => NodeJS.ReadableStream;
-            filename: string;
-        };
-    }>;
+    file: T_UploadedFilePromise;
 }
 
 export interface I_UploadPathConfig {

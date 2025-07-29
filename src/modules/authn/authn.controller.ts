@@ -6,14 +6,17 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
+import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
+import type { I_Input_UploadMany } from '#modules/upload/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { rekognitionController } from '#modules/aws/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -23,7 +26,6 @@ import {
     verificationCtr,
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
-import { deepMergeIgnoreUndefined } from '#shared/util/deep-merge.js';
 import { date, helper, validate } from '#shared/util/index.js';
 
 import type {
@@ -459,13 +461,13 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
-        const mergedPartner1 = deepMergeIgnoreUndefined(
+        const mergedPartner1 = deepMerge(
             currentUser.partner1 || {},
             update.partner1 || {},
         );
 
         const mergedPartner2 = update.partner2
-            ? deepMergeIgnoreUndefined(currentUser.partner2 || {}, update.partner2)
+            ? deepMerge(currentUser.partner2 || {}, update.partner2)
             : undefined;
 
         const userUpdated = await userCtr.updateUser(context, {
@@ -815,5 +817,23 @@ export const authnCtr = {
             expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
             email,
         });
+    },
+    verifyAge: async (context: I_Context, args: I_Input_UploadMany) => {
+        const user = await authnCtr.getUserFromSession(context);
+
+        const compareFaceResult = await rekognitionController.compareFaces(args);
+
+        if (!compareFaceResult.success) {
+            return compareFaceResult;
+        }
+
+        await userCtr.updateUser(context, {
+            filter: { id: user.id },
+            update: {
+                isAgeVerified: compareFaceResult.result.isAgeVerified,
+            },
+        });
+
+        return compareFaceResult;
     },
 };

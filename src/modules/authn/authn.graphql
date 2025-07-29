@@ -90,6 +90,25 @@ type T_Response_Auth {
     result: T_Auth
 }
 
+type T_AgeRange {
+    high: Int
+    low: Int
+}
+
+type T_VerifyAge {
+    similar: Boolean
+    similarity: Float
+    isAgeVerify: Boolean
+    selfieAgeRange: T_AgeRange
+    documentAge: Int
+}
+
+type T_Response_VerifyAge {
+    success: Boolean!
+    message: String
+    result: T_VerifyAge
+}
+
 type Query {
     checkAuth(token: String): T_Response_Auth!
 }
@@ -105,4 +124,5 @@ type Mutation {
     logout: T_Response_Auth!
     forgotPasswordRequest(email: String!): T_Response_Auth!
     resetPassword(email: String!, otp: String!, newPassword: String!): T_Response_Auth!
+    verifyAge(files: [Upload]!): T_Response_VerifyAge!
 }

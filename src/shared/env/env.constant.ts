@@ -12,3 +12,4 @@ export const REDIS_HOST = 'localhost';
 export const REDIS_PORT = 6379;
 export const FROM_EMAIL_ADDRESS = 'no-reply@secretswingerlust.com';
 export const AWS_SES_REGION = 'eu-west-3';
+export const AWS_REKOGNITION_REGION = 'eu-central-1';

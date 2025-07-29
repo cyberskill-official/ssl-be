@@ -33,6 +33,7 @@ export interface I_Environment {
     AWS_ACCESS_KEY_ID: string;
     AWS_SECRET_ACCESS_KEY: string;
     AWS_SES_REGION: string;
+    AWS_REKOGNITION_REGION: string;
     BUNNY_CDN_HOSTNAME: string;
     BUNNY_STORAGE_ZONE_NAME: string;
     BUNNY_STORAGE_API_KEY: string;

@@ -7,6 +7,7 @@ import process from 'node:process';
 import type { I_Environment } from './env.type.js';
 
 import {
+    AWS_REKOGNITION_REGION,
     AWS_SES_REGION,
     BODY_PARSER_LIMIT,
     ENDPOINT_GRAPHQL,
@@ -60,6 +61,7 @@ export function getEnv(): I_Environment {
         AWS_ACCESS_KEY_ID: str(),
         AWS_SECRET_ACCESS_KEY: str(),
         AWS_SES_REGION: str({ default: AWS_SES_REGION }),
+        AWS_REKOGNITION_REGION: str({ default: AWS_REKOGNITION_REGION }),
         BUNNY_CDN_HOSTNAME: str(),
         BUNNY_STORAGE_ZONE_NAME: str(),
         BUNNY_STORAGE_API_KEY: str(),

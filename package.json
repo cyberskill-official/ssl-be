@@ -26,6 +26,7 @@
         "tsc:alias": "tsc-alias -p tsconfig.json"
     },
     "dependencies": {
+        "@aws-sdk/client-rekognition": "3.848.0",
         "@aws-sdk/client-sesv2": "3.849.0",
         "@bunny.net/storage-sdk": "0.3.0",
         "@cyberskill/shared": "2.4.0",
