@@ -1,12 +1,23 @@
 import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
+import type { I_Location } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
+
+import { E_Entity } from '#shared/typescript/index.js';
 
 import type { I_Input_CreatePricing, I_Input_QueryPricing, I_Input_UpdatePricing } from './pricing.type.js';
 
 import { pricingCtr } from './pricing.controller.js';
 
 const pricingResolver = {
+    T_Pricing: {
+        location: (parent: I_Location) => {
+            return {
+                ...parent,
+                entity: E_Entity.PRICING,
+            };
+        },
+    },
     Query: {
         getPricing: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryPricing>, context: I_Context) => pricingCtr.getPricing(context, args),
         getPricings: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryPricing>, context: I_Context) => pricingCtr.getPricings(context, args),

@@ -226,8 +226,8 @@ export const eventCtr = {
             });
         }
 
-        if (location?.coordinates) {
-            const { latitude, longitude } = location.coordinates;
+        if (location?.map) {
+            const { latitude, longitude } = location.map;
 
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
                 throwError({

@@ -1,0 +1,10 @@
+export enum E_Entity {
+    USER = 'USER',
+    EVENT = 'EVENT',
+    CONVERSATION = 'CONVERSATION',
+    CATALOGUE = 'CATALOGUE',
+    GALLERY = 'GALLERY',
+    CLUB = 'CLUB',
+    DESTINATION = 'DESTINATION',
+    PRICING = 'PRICING',
+}

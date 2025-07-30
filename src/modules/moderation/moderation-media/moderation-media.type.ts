@@ -2,8 +2,8 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Input_Note, I_Note } from '#modules/note/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
-import type { E_Entity } from '#modules/upload/upload.type.js';
 import type { I_User } from '#modules/user/index.js';
+import type { E_Entity } from '#shared/typescript/index.js';
 
 export enum E_ModerationMediaType {
     IMAGE = 'IMAGE',

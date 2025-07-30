@@ -53,7 +53,7 @@ export interface I_Input_Register_VerifyEmail {
 }
 
 // Step 3
-export interface I_Input_Register_Location extends Pick<I_Input_Location, 'countryId' | 'cityId' | 'coordinates' | 'raw'> { }
+export interface I_Input_Register_Location extends Pick<I_Input_Location, 'countryId' | 'cityId' | 'map'> { }
 
 export interface I_Input_Register_PersonalInfo_Partner extends Pick<I_Input_UserPartner, 'gender' | 'dateOfBirth' | 'location'> {
     location: I_Input_Register_Location;

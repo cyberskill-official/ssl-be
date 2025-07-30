@@ -1,8 +1,8 @@
 import { path } from '@cyberskill/shared/node/path';
 
-import type { I_UploadPathConfig } from './upload.type.js';
+import { E_Entity } from '#shared/typescript/index.js';
 
-import { E_Entity } from './upload.type.js';
+import type { I_UploadPathConfig } from './upload.type.js';
 
 export function generateUploadPath(baseDir: string, config: I_UploadPathConfig): string {
     const { entity, type, entityId, userId } = config;

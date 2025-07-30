@@ -1,9 +1,11 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { E_Entity } from '#shared/typescript/index.js';
+
 import type { I_Location } from './location.type.js';
 
-export const CoordinatesSchema = mongo.createSchema({
+export const MapSchema = mongo.createSchema({
     standalone: true,
     mongoose,
     schema: {
@@ -12,6 +14,13 @@ export const CoordinatesSchema = mongo.createSchema({
         },
         longitude: {
             type: Number,
+        },
+        zoomLevel: {
+            type: Number,
+        },
+        entity: {
+            type: String,
+            enum: Object.values(E_Entity),
         },
     },
 });
@@ -35,14 +44,11 @@ export const LocationSchema = mongo.createSchema<I_Location>({
         cityId: {
             type: String,
         },
-        coordinates: {
-            type: CoordinatesSchema,
-        },
         address: {
             type: String,
         },
-        raw: {
-            type: Object,
+        map: {
+            type: MapSchema,
         },
     },
     virtuals: [

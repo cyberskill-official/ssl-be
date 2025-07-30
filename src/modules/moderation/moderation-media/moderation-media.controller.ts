@@ -20,7 +20,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
-import { E_Entity } from '#modules/upload/upload.type.js';
+import { E_Entity } from '#shared/typescript/index.js';
 
 import type {
     I_Input_ApproveModerationMedia,

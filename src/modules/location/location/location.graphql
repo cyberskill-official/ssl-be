@@ -1,6 +1,14 @@
-type T_Coordinates {
+type T_Map {
+    latitude: Float
+    longitude: Float
+    zoomLevel: Int
+    entity: E_Entity
+}
+
+input Input_Map {
     latitude: Float!
     longitude: Float!
+    zoomLevel: Int
 }
 
 type T_Location {
@@ -14,9 +22,8 @@ type T_Location {
     state: T_State
     cityId: String
     city: T_City
-    coordinates: T_Coordinates
     address: String
-    raw: JSON
+    map: T_Map
 }
 
 input Input_Location {
@@ -25,12 +32,7 @@ input Input_Location {
     countryId: String
     stateId: String
     cityId: String
-    coordinates: Input_Coordinates
     address: String
-    raw: JSON
+    map: Input_Map
 }
 
-input Input_Coordinates {
-    latitude: Float!
-    longitude: Float!
-}

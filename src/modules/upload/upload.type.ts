@@ -1,17 +1,10 @@
+import type { E_Entity } from '#shared/typescript/index.js';
+
 export enum E_UploadType {
     IMAGE = 'IMAGE',
     VIDEO = 'VIDEO',
     DOCUMENT = 'DOCUMENT',
     OTHER = 'OTHER',
-}
-
-export enum E_Entity {
-    USER = 'USER',
-    EVENT = 'EVENT',
-    CONVERSATION = 'CONVERSATION',
-    CATALOGUE = 'CATALOGUE',
-    GALLERY = 'GALLERY',
-    CLUB = 'CLUB',
 }
 
 export interface I_UploadedFile {

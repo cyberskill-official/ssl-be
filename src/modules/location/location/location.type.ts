@@ -1,8 +1,17 @@
+import type { E_Entity } from '#shared/typescript/index.js';
+
 import type { I_City } from '../city/index.js';
 import type { I_Country } from '../country/index.js';
 import type { I_Region } from '../region/index.js';
 import type { I_State } from '../state/index.js';
 import type { I_SubRegion } from '../sub-region/index.js';
+
+export interface I_Map {
+    longitude: number;
+    latitude: number;
+    zoomLevel?: number;
+    entity?: E_Entity;
+}
 
 export interface I_Location {
     regionId?: string;
@@ -15,12 +24,8 @@ export interface I_Location {
     state?: I_State;
     cityId?: string;
     city?: I_City;
-    coordinates?: {
-        latitude: number;
-        longitude: number;
-    };
     address?: string;
-    raw?: Record<string, any>;
+    map?: I_Map;
 }
 
 export type T_Location_Populate = 'region' | 'subRegion' | 'country' | 'state' | 'city';
