@@ -3,7 +3,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
-import { getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
+import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -15,7 +15,6 @@ import { getEnv } from '#shared/env/index.js';
 import type { I_Input_Upload } from './upload.type.js';
 
 import { UPLOAD_CONFIG } from './upload.constant.js';
-import { E_UploadType } from './upload.type.js';
 import { generateUploadPath } from './upload.util.js';
 
 const env = getEnv();

@@ -26,10 +26,10 @@
         "tsc:alias": "tsc-alias -p tsconfig.json"
     },
     "dependencies": {
-        "@aws-sdk/client-rekognition": "3.856.0",
-        "@aws-sdk/client-sesv2": "3.856.0",
+        "@aws-sdk/client-rekognition": "3.857.0",
+        "@aws-sdk/client-sesv2": "3.857.0",
         "@bunny.net/storage-sdk": "0.3.0",
-        "@cyberskill/shared": "2.8.1",
+        "@cyberskill/shared": "2.10.0",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.1.1",
         "@graphql-tools/schema": "10.0.25",

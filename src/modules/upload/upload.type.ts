@@ -1,11 +1,6 @@
-import type { E_Entity } from '#shared/typescript/index.js';
+import type { E_UploadType } from '@cyberskill/shared/node/upload';
 
-export enum E_UploadType {
-    IMAGE = 'IMAGE',
-    VIDEO = 'VIDEO',
-    DOCUMENT = 'DOCUMENT',
-    OTHER = 'OTHER',
-}
+import type { E_Entity } from '#shared/typescript/index.js';
 
 export interface I_UploadedFile {
     createReadStream: () => NodeJS.ReadableStream;
