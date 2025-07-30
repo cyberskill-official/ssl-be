@@ -14,6 +14,7 @@ import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
+import { UPLOAD_CONFIG } from './upload.constant.js';
 import { E_UploadType } from './upload.type.js';
 import { generateUploadPath } from './upload.util.js';
 
@@ -23,7 +24,7 @@ export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<string>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const { type, entity, file, entityId } = args;
-        const fileData = await getAndValidateFile(type, await file);
+        const fileData = await getAndValidateFile(type, await file, UPLOAD_CONFIG);
 
         if (!fileData.success) {
             return fileData;
