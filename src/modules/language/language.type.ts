@@ -7,7 +7,6 @@ export interface I_Language extends I_GenericDocument {
     code?: TLanguageCode;
     name?: string;
     native?: string;
-    isRTL?: boolean;
 }
 
 export interface I_Input_QueryLanguage extends I_Language { }

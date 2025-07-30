@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { MongoController } from '@cyberskill/shared/node/mongo';
+import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/index.js';
 
@@ -42,39 +42,26 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
 export async function up(db: C_Db) {
     const emailTplCtr = new MongoController<I_EmailTemplate>(db, 'emailtemplates');
 
-    const templateKeys = defaultEmailTemplates.map(emailTpl => emailTpl.templateKey);
-    const existingTemplates = await emailTplCtr.findAll({
-        templateKey: { $in: templateKeys },
-    });
+    const filteredTemplates = await mongo.getNewRecords(
+        emailTplCtr,
+        defaultEmailTemplates as I_EmailTemplate[],
+        (existingTemplate, newTemplate) =>
+            existingTemplate.templateKey === newTemplate.templateKey,
+    );
 
-    if (!existingTemplates.success) {
-        log.error('Failed to find existing email templates.');
+    if (filteredTemplates.length === 0) {
+        log.info('No new email templates to create. All templates already exist.');
         return;
     }
 
-    const existingTemplateNames = new Set(
-        existingTemplates.result?.map(template => template.name) || [],
-    );
-
-    const newTemplates = defaultEmailTemplates.filter(
-        template => !existingTemplateNames.has(template.name),
-    );
-
-    if (!newTemplates.length) {
-        log.info('No new email templates to create.');
-        return;
-    }
-
-    const emailTplsCreated = await emailTplCtr.createMany(newTemplates);
+    const emailTplsCreated = await emailTplCtr.createMany(filteredTemplates);
 
     if (!emailTplsCreated.success) {
         log.error('Failed to create some email templates.');
         return;
     }
 
-    log.success(
-        `Email templates created successfully: ${newTemplates.map(template => template.name).join(', ')}`,
-    );
+    log.success(`Successfully created ${filteredTemplates.length} new email templates.`);
 }
 
 export async function down(db: C_Db) {
@@ -83,10 +70,22 @@ export async function down(db: C_Db) {
         'emailtemplates',
     );
 
-    const templateNames = defaultEmailTemplates.map(template => template.name);
+    const templatesToDelete = defaultEmailTemplates.map(template => ({ templateKey: template.templateKey }));
+
+    const existingTemplates = await mongo.getExistingRecords(
+        emailTplCtr,
+        templatesToDelete as I_EmailTemplate[],
+        (existingTemplate, deleteTemplate) =>
+            existingTemplate.templateKey === deleteTemplate.templateKey,
+    );
+
+    if (existingTemplates.length === 0) {
+        log.info('No email templates to delete. No matching templates found.');
+        return;
+    }
 
     const deletedTemplates = await emailTplCtr.deleteMany({
-        name: { $in: templateNames },
+        id: { $in: existingTemplates.map(template => template.id) },
     });
 
     if (!deletedTemplates.success) {
@@ -94,7 +93,5 @@ export async function down(db: C_Db) {
         return;
     }
 
-    log.success(
-        `Email templates deleted successfully: ${templateNames.join(', ')}`,
-    );
+    log.success(`Successfully deleted ${existingTemplates.length} email templates.`);
 }

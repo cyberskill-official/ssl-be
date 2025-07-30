@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { MongoController } from '@cyberskill/shared/node/mongo';
+import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 import bcrypt from 'bcryptjs';
 
 import type { I_Role } from '#modules/authz/index.js';
@@ -29,7 +29,18 @@ export async function up(db: C_Db) {
         displayName: 'Admin',
     };
 
-    const adminCreated = await userCtr.createOne(adminUser);
+    const filteredUsers = await mongo.getNewRecords(
+        userCtr,
+        [adminUser] as I_User[],
+        (existingUser, newUser) => existingUser.email === newUser.email,
+    );
+
+    if (filteredUsers.length === 0) {
+        log.info('No new admin user to create. Admin user already exists.');
+        return;
+    }
+
+    const adminCreated = await userCtr.createOne(filteredUsers[0]!);
 
     if (!adminCreated.success) {
         return log.error('Failed to create default admin.');
@@ -41,7 +52,20 @@ export async function up(db: C_Db) {
 export async function down(db: C_Db) {
     const userCtr = new MongoController<I_User>(db, 'users');
 
-    const adminDeleted = await userCtr.deleteOne({ email: 'admin@secretswingerlust.com' });
+    const adminToDelete = { email: 'admin@secretswingerlust.com' };
+
+    const existingAdmins = await mongo.getExistingRecords(
+        userCtr,
+        [adminToDelete] as I_User[],
+        (existingUser, deleteUser) => existingUser.email === deleteUser.email,
+    );
+
+    if (existingAdmins.length === 0) {
+        log.info('No admin user to delete. No matching admin user found.');
+        return;
+    }
+
+    const adminDeleted = await userCtr.deleteOne({ id: existingAdmins[0]!.id });
 
     if (!adminDeleted.success) {
         return log.error('Failed to delete default admin.');

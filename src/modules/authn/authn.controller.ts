@@ -461,13 +461,9 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
-        const mergedPartner1 = deepMerge(
-            currentUser.partner1 || {},
-            update.partner1 || {},
-        );
-
+        const mergedPartner1 = deepMerge(currentUser.partner1, update.partner1);
         const mergedPartner2 = update.partner2
-            ? deepMerge(currentUser.partner2 || {}, update.partner2)
+            ? deepMerge(currentUser.partner2, update.partner2)
             : undefined;
 
         const userUpdated = await userCtr.updateUser(context, {

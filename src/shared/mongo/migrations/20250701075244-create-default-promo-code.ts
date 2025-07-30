@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { MongoController } from '@cyberskill/shared/node/mongo';
+import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 import { addMonths, addYears } from 'date-fns';
 
 import type { I_Input_CreatePromoCode, I_PromoCode } from '#modules/promo-code/index.js';
@@ -51,39 +51,26 @@ const defaultPromoCodes: I_PromoCodeRaw[] = [
 export async function up(db: C_Db) {
     const promoCodeCtr = new MongoController<I_PromoCode>(db, 'promocodes');
 
-    const codes = defaultPromoCodes.map(promoCode => promoCode.code);
-    const existingPromoCodes = await promoCodeCtr.findAll({
-        code: { $in: codes },
-    });
+    const filteredPromoCodes = await mongo.getNewRecords(
+        promoCodeCtr,
+        defaultPromoCodes as I_PromoCode[],
+        (existingPromoCode, newPromoCode) =>
+            existingPromoCode.code === newPromoCode.code,
+    );
 
-    if (!existingPromoCodes.success) {
-        log.error('Failed to find existing promo code.');
+    if (filteredPromoCodes.length === 0) {
+        log.info('No new promo codes to create. All promo codes already exist.');
         return;
     }
 
-    const existingCodes = new Set(
-        existingPromoCodes.result?.map(pc => pc.code) || [],
-    );
-
-    const newPromoCodes = defaultPromoCodes.filter(
-        pc => !existingCodes.has(pc.code),
-    );
-
-    if (!newPromoCodes.length) {
-        log.info('No new promo codes to create.');
-        return;
-    }
-
-    const promoCodesCreated = await promoCodeCtr.createMany(newPromoCodes);
+    const promoCodesCreated = await promoCodeCtr.createMany(filteredPromoCodes);
 
     if (!promoCodesCreated.success) {
         log.error('Failed to create some promo codes.');
         return;
     }
 
-    log.success(
-        `Promo codes created successfully: ${newPromoCodes.map(pc => pc.code).join(', ')}`,
-    );
+    log.success(`Successfully created ${filteredPromoCodes.length} new promo codes.`);
 }
 
 export async function down(db: C_Db) {
@@ -92,10 +79,22 @@ export async function down(db: C_Db) {
         'promocodes',
     );
 
-    const codes = defaultPromoCodes.map(pc => pc.code);
+    const promoCodesToDelete = defaultPromoCodes.map(pc => ({ code: pc.code }));
+
+    const existingPromoCodes = await mongo.getExistingRecords(
+        promoCodeCtr,
+        promoCodesToDelete as I_PromoCode[],
+        (existingPromoCode, deletePromoCode) =>
+            existingPromoCode.code === deletePromoCode.code,
+    );
+
+    if (existingPromoCodes.length === 0) {
+        log.info('No promo codes to delete. No matching promo codes found.');
+        return;
+    }
 
     const deletedPromoCodes = await promoCodeCtr.deleteMany({
-        code: { $in: codes },
+        id: { $in: existingPromoCodes.map(pc => pc.id) },
     });
 
     if (!deletedPromoCodes.success) {
@@ -103,7 +102,5 @@ export async function down(db: C_Db) {
         return;
     }
 
-    log.success(
-        `Promo codes deleted successfully: ${codes.join(', ')}`,
-    );
+    log.success(`Successfully deleted ${existingPromoCodes.length} promo codes.`);
 }

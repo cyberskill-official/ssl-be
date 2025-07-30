@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { MongoController } from '@cyberskill/shared/node/mongo';
+import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Menu } from '#modules/menu/index.js';
 
@@ -66,6 +66,34 @@ const menus: I_MenuExtended[] = [
 export async function up(db: C_Db) {
     const menuCtr = new MongoController<I_Menu>(db, 'menus');
 
+    // Flatten all menus for checking
+    const allMenus: I_MenuExtended[] = [];
+    function flattenMenus(menuList: I_MenuExtended[], parentId?: string) {
+        for (const menu of menuList) {
+            const { children, ...menuData } = menu;
+            allMenus.push({
+                ...menuData,
+                parentId,
+            });
+
+            if (children) {
+                flattenMenus(children, menuData.text);
+            }
+        }
+    }
+    flattenMenus(menus);
+
+    const filteredMenus = await mongo.getNewRecords(
+        menuCtr,
+        allMenus as I_Menu[],
+        (existingMenu, newMenu) => existingMenu.url === newMenu.url,
+    );
+
+    if (filteredMenus.length === 0) {
+        log.info('No new menus to create. All menus already exist.');
+        return;
+    }
+
     async function createMenu(menu: I_MenuExtended, parentId?: string) {
         const { children, ...menuData } = menu;
 
@@ -91,11 +119,38 @@ export async function up(db: C_Db) {
         await createMenu(menu);
     }
 
-    log.success('All menus created successfully.');
+    log.success(`Successfully created ${filteredMenus.length} new menus.`);
 }
 
 export async function down(db: C_Db) {
     const menuCtr = new MongoController<I_Menu>(db, 'menus');
+
+    // Flatten all menus for checking
+    const allMenus: I_MenuExtended[] = [];
+    function flattenMenus(menuList: I_MenuExtended[]) {
+        for (const menu of menuList) {
+            const { children, ...menuData } = menu;
+            allMenus.push(menuData);
+
+            if (children) {
+                flattenMenus(children);
+            }
+        }
+    }
+    flattenMenus(menus);
+
+    const menusToDelete = allMenus.map(menu => ({ url: menu.url }));
+
+    const existingMenus = await mongo.getExistingRecords(
+        menuCtr,
+        menusToDelete as I_Menu[],
+        (existingMenu, deleteMenu) => existingMenu.url === deleteMenu.url,
+    );
+
+    if (existingMenus.length === 0) {
+        log.info('No menus to delete. No matching menus found.');
+        return;
+    }
 
     async function deleteMenu(menuId: string) {
         const childMenus = await menuCtr.findAll({ parentId: menuId });
@@ -117,15 +172,9 @@ export async function down(db: C_Db) {
         log.info(`Menu deleted: ${menuId}`);
     }
 
-    for (const menu of menus) {
-        const topLevelMenu = await menuCtr.findOne({ url: menu.url });
-
-        if (!topLevelMenu.success) {
-            return log.error(`Failed to find menu: ${menu.url}`);
-        }
-
-        await deleteMenu(topLevelMenu.result.id);
+    for (const menu of existingMenus) {
+        await deleteMenu(menu.id);
     }
 
-    log.success('All menus deleted successfully.');
+    log.success(`Successfully deleted ${existingMenus.length} menus.`);
 }

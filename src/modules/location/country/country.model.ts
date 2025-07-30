@@ -34,6 +34,21 @@ export const CountryModel = mongo.createModel<I_Country>({
         iso2: {
             type: String,
         },
+        iso3: {
+            type: String,
+        },
+        numeric_code: {
+            type: String,
+        },
+        phonecode: {
+            type: [String],
+        },
+        capital: {
+            type: String,
+        },
+        currency: {
+            type: String,
+        },
         currency_name: {
             type: String,
         },

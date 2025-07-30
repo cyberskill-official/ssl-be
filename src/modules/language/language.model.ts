@@ -16,9 +16,5 @@ export const LanguageModel = mongo.createModel<I_Language>({
         native: {
             type: String,
         },
-        isRTL: {
-            type: Boolean,
-            default: false,
-        },
     },
 });

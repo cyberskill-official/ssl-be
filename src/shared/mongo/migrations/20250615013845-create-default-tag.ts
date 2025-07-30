@@ -1,7 +1,7 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { MongoController } from '@cyberskill/shared/node/mongo';
+import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
@@ -131,23 +131,53 @@ export async function up(db: C_Db) {
         return log.error('Admin role not found.');
     }
 
-    const createdTag = await tagCtr.createMany(tags.map(tag => ({ ...tag, createdById: admin.result.id })));
+    const tagsToCreate = tags.map(tag => ({ ...tag, createdById: admin.result.id }));
+
+    const filteredTags = await mongo.getNewRecords(
+        tagCtr,
+        tagsToCreate as I_Tag[],
+        (existingTag, newTag) =>
+            existingTag.name === newTag.name && existingTag.type === newTag.type,
+    );
+
+    if (filteredTags.length === 0) {
+        log.info('No new tags to create. All tags already exist.');
+        return;
+    }
+
+    const createdTag = await tagCtr.createMany(filteredTags);
 
     if (!createdTag.success) {
         return log.error('Failed to create some tags.');
     }
 
-    log.info('Tags created successfully.');
+    log.success(`Successfully created ${filteredTags.length} new tags.`);
 }
 
 export async function down(db: C_Db) {
     const tagCtr = new MongoController<I_Tag>(db, 'tags');
 
-    const deleted = await tagCtr.deleteMany({ name: { $in: tags.map(tag => tag.name) } });
+    const tagsToDelete = tags.map(tag => ({ name: tag.name, type: tag.type }));
+
+    const existingTags = await mongo.getExistingRecords(
+        tagCtr,
+        tagsToDelete as I_Tag[],
+        (existingTag, deleteTag) =>
+            existingTag.name === deleteTag.name && existingTag.type === deleteTag.type,
+    );
+
+    if (existingTags.length === 0) {
+        log.info('No tags to delete. No matching tags found.');
+        return;
+    }
+
+    const deleted = await tagCtr.deleteMany({
+        id: { $in: existingTags.map(tag => tag.id) },
+    });
 
     if (!deleted.success) {
         return log.error('Failed to delete tags.');
     }
 
-    log.success('Tags deleted successfully.');
+    log.success(`Successfully deleted ${existingTags.length} tags.`);
 }

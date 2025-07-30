@@ -6,7 +6,8 @@ import { MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_City, I_Country, I_Region, I_State, I_SubRegion } from '#modules/location/index.js';
 
-const PATH = `./src/shared/mongo/migrations/location`;
+const PATH = `./src/shared/mongo/migrations/data`;
+// Source: https://github.com/dr5hn/countries-states-cities-database/tree/master/json
 
 interface I_RegionRaw extends I_Region {
     translations: Record<string, string>;
@@ -59,15 +60,15 @@ export async function up(db: C_Db) {
             return log.error(`Failed to create regions`);
         }
 
-        const regionMap = new Map(regions.map(region => [region.id, regionCreated.result.find(r => r.id === region.id)]));
+        const regionMap = new Map(regions.map(region => [`${region.id}`, regionCreated.result.find(r => `${r.id}` === `${region.id}`)]));
 
         const subregionMap = new Map<string, I_SubRegionRaw[]>();
 
         subregions.forEach((subregion) => {
-            if (!subregionMap.has(subregion.region_id)) {
-                subregionMap.set(subregion.region_id, []);
+            if (!subregionMap.has(`${subregion.region_id}`)) {
+                subregionMap.set(`${subregion.region_id}`, []);
             }
-            subregionMap.get(subregion.region_id)!.push(subregion);
+            subregionMap.get(`${subregion.region_id}`)!.push(subregion);
         });
 
         for (const [regionId, subregionList] of subregionMap.entries()) {
@@ -90,14 +91,14 @@ export async function up(db: C_Db) {
         const countryMap = new Map<string, I_CountryRaw[]>();
 
         countries.forEach((country) => {
-            if (!countryMap.has(country.subregion_id)) {
-                countryMap.set(country.subregion_id, []);
+            if (!countryMap.has(`${country.subregion_id}`)) {
+                countryMap.set(`${country.subregion_id}`, []);
             }
-            countryMap.get(country.subregion_id)!.push(country);
+            countryMap.get(`${country.subregion_id}`)!.push(country);
         });
 
         for (const [subregionId, countryList] of countryMap.entries()) {
-            const subregion = subregions.find(s => s.id === subregionId);
+            const subregion = subregions.find(s => `${s.id}` === `${subregionId}`);
 
             if (subregion) {
                 const countryCreated = await countryCtr.createMany(countryList.map(country => ({
@@ -117,14 +118,14 @@ export async function up(db: C_Db) {
         const stateMap = new Map<string, I_StateRaw[]>();
 
         states.forEach((state) => {
-            if (!stateMap.has(state.country_id)) {
-                stateMap.set(state.country_id, []);
+            if (!stateMap.has(`${state.country_id}`)) {
+                stateMap.set(`${state.country_id}`, []);
             }
-            stateMap.get(state.country_id)!.push(state);
+            stateMap.get(`${state.country_id}`)!.push(state);
         });
 
         for (const [countryId, stateList] of stateMap.entries()) {
-            const country = countries.find(c => c.id === countryId);
+            const country = countries.find(c => `${c.id}` === `${countryId}`);
 
             if (country) {
                 const stateCreated = await stateCtr.createMany(stateList.map(state => ({
@@ -143,14 +144,14 @@ export async function up(db: C_Db) {
         const cityMap = new Map<string, I_CityRaw[]>();
 
         cities.forEach((city) => {
-            if (!cityMap.has(city.state_id)) {
-                cityMap.set(city.state_id, []);
+            if (!cityMap.has(`${city.state_id}`)) {
+                cityMap.set(`${city.state_id}`, []);
             }
-            cityMap.get(city.state_id)!.push(city);
+            cityMap.get(`${city.state_id}`)!.push(city);
         });
 
         for (const [stateId, cityList] of cityMap.entries()) {
-            const state = states.find(s => s.id === stateId);
+            const state = states.find(s => `${s.id}` === `${stateId}`);
 
             if (state) {
                 const cityCreated = await cityCtr.createMany(cityList.map(city => ({

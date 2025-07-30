@@ -6,7 +6,6 @@ type T_Language {
     code: String
     name: String
     native: String
-    isRTL: Boolean
 }
 
 input Input_QueryLanguage {
@@ -17,14 +16,12 @@ input Input_QueryLanguage {
     code: String
     name: String
     native: String
-    isRTL: Boolean
 }
 
 input Input_CreateLanguage {
     code: String
     name: String
     native: String
-    isRTL: Boolean
 }
 
 input Input_UpdateLanguage {
@@ -32,7 +29,6 @@ input Input_UpdateLanguage {
     code: String
     name: String
     native: String
-    isRTL: Boolean
 }
 
 type T_Response_Language {
