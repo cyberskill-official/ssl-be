@@ -16,6 +16,7 @@ import validator from 'validator';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/authn.controller.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 
 import type { I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement, I_Input_UpdateClickCount } from './advertisement.type.js';
 
@@ -136,13 +137,41 @@ export const advertisementCtr = {
             }
         }
 
+        if (update.image) {
+            const existingAdvertisement = await advertisementCtr.getAdvertisement(context, { filter });
+
+            if (existingAdvertisement.success && existingAdvertisement.result.image) {
+                const imageDeleted = await bunnyCtr.deleteFile(context, existingAdvertisement.result.image);
+
+                if (!imageDeleted.success) {
+                    throwError({
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        message: imageDeleted.message,
+                    });
+                }
+            }
+        }
+
         return mongooseCtr.updateOne(filter, update);
     },
     deleteAdvertisement: async (
-        _context: I_Context,
+        context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_QueryAdvertisement>,
     ): Promise<I_Return<I_Advertisement>> => {
-        return mongooseCtr.updateOne(filter, { isDel: true });
+        const advertisementFound = await advertisementCtr.getAdvertisement(context, { filter });
+
+        if (advertisementFound.success && advertisementFound.result.image) {
+            const imageDeleted = await bunnyCtr.deleteFile(context, advertisementFound.result.image);
+
+            if (!imageDeleted.success) {
+                throwError({
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    message: imageDeleted.message,
+                });
+            }
+        }
+
+        return mongooseCtr.deleteOne(filter);
     },
     clickAdvertisement: async (
         _context: I_Context,

@@ -16,6 +16,7 @@ import validator from 'validator';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 
 import type { I_Destination, I_Input_CreateDestination, I_Input_QueryDestination, I_Input_UpdateDestination } from './destination.type.js';
 
@@ -82,7 +83,7 @@ export const destinationCtr = {
         return mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
     },
     updateDestination: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateDestination>,
     ): Promise<I_Return<I_Destination>> => {
         if (update.type && !Object.values(E_DestinationType).includes(update.type)) {
@@ -121,12 +122,80 @@ export const destinationCtr = {
             throwError({ message: 'Invalid age group', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        if (update.images || update.logo || update.wearImage) {
+            const existingDestination = await destinationCtr.getDestination(context, { filter });
+
+            if (existingDestination.success) {
+                const mediaFields: Array<keyof Pick<I_Destination, 'logo' | 'wearImage'>> = ['logo', 'wearImage'];
+
+                for (const field of mediaFields) {
+                    if (update[field] && existingDestination.result[field]) {
+                        const imageDeleted = await bunnyCtr.deleteFile(context, existingDestination.result[field]);
+
+                        if (!imageDeleted.success) {
+                            throwError({
+                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                                message: imageDeleted.message,
+                            });
+                        }
+                    }
+                }
+
+                // Handle images array separately
+                if (update.images && existingDestination.result.images) {
+                    for (const imageUrl of existingDestination.result.images) {
+                        const imageDeleted = await bunnyCtr.deleteFile(context, imageUrl);
+
+                        if (!imageDeleted.success) {
+                            throwError({
+                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                                message: imageDeleted.message,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         return mongooseCtr.updateOne(filter, update);
     },
     deleteDestination: async (
-        _context: I_Context,
+        context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_QueryDestination>,
     ): Promise<I_Return<I_Destination>> => {
+        const destinationFound = await destinationCtr.getDestination(context, { filter });
+
+        if (destinationFound.success) {
+            const mediaFields: Array<keyof Pick<I_Destination, 'logo' | 'wearImage'>> = ['logo', 'wearImage'];
+
+            for (const field of mediaFields) {
+                if (destinationFound.result[field]) {
+                    const imageDeleted = await bunnyCtr.deleteFile(context, destinationFound.result[field]);
+
+                    if (!imageDeleted.success) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: imageDeleted.message,
+                        });
+                    }
+                }
+            }
+
+            // Handle images array
+            if (destinationFound.result.images) {
+                for (const imageUrl of destinationFound.result.images) {
+                    const imageDeleted = await bunnyCtr.deleteFile(context, imageUrl);
+
+                    if (!imageDeleted.success) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: imageDeleted.message,
+                        });
+                    }
+                }
+            }
+        }
+
         return mongooseCtr.deleteOne(filter);
     },
 };

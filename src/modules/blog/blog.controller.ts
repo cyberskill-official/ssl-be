@@ -7,8 +7,9 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/authn.controller.js';
-import { languageCtr } from '#modules/language/language.controller.js';
+import { authnCtr } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
+import { languageCtr } from '#modules/language/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
@@ -129,19 +130,58 @@ export const blogCtr = {
             }
         }
 
-        return await mongooseCtr.updateOne(filter, update, options);
+        if (update.featuredImage || update.logo || update.cover || update.file) {
+            const existingBlog = await blogCtr.getBlog(context, {
+                filter,
+                projection: { featuredImage: 1, logo: 1, cover: 1, file: 1 },
+            });
+
+            if (existingBlog.success) {
+                const mediaFields: Array<keyof Pick<I_Input_UpdateBlog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+
+                for (const field of mediaFields) {
+                    if (update[field] && existingBlog.result[field]) {
+                        const imageDeleted = await bunnyCtr.deleteFile(context, existingBlog.result[field]);
+
+                        if (!imageDeleted.success) {
+                            throwError({
+                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                                message: imageDeleted.message,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        return mongooseCtr.updateOne(filter, update, options);
     },
     deleteBlog: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>,
     ): Promise<I_Return<I_Blog>> => {
-        const blogFound = await blogCtr.getBlog(context, { filter });
+        const blogFound = await blogCtr.getBlog(context, { filter, options });
 
         if (!blogFound.success) {
             throwError({
                 message: 'Blog not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
+        }
+
+        const mediaFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+
+        for (const field of mediaFields) {
+            if (blogFound.result[field]) {
+                const imageDeleted = await bunnyCtr.deleteFile(context, blogFound.result[field]);
+
+                if (!imageDeleted.success) {
+                    throwError({
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        message: imageDeleted.message,
+                    });
+                }
+            }
         }
 
         return mongooseCtr.deleteOne(filter, options);

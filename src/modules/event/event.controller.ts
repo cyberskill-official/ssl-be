@@ -10,6 +10,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 
@@ -275,6 +276,24 @@ export const eventCtr = {
             });
         }
 
+        if (update.image) {
+            const existingEvent = await eventCtr.getEvent(context, {
+                filter,
+                projection: { image: 1 },
+            });
+
+            if (existingEvent.success && existingEvent.result.image) {
+                const imageDeleted = await bunnyCtr.deleteFile(context, existingEvent.result.image);
+
+                if (!imageDeleted.success) {
+                    throwError({
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        message: imageDeleted.message,
+                    });
+                }
+            }
+        }
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
@@ -291,6 +310,17 @@ export const eventCtr = {
                 message: 'Event not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        if (eventFound.result.image) {
+            const imageDeleted = await bunnyCtr.deleteFile(context, eventFound.result.image);
+
+            if (!imageDeleted.success) {
+                throwError({
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    message: imageDeleted.message,
+                });
+            }
         }
 
         return mongooseCtr.deleteOne(filter, options);

@@ -102,9 +102,41 @@ export const galleryCtr = {
         return mongooseCtr.createOne(doc);
     },
     updateGallery: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        if (update.url) {
+            const existingGallery = await galleryCtr.getGallery(context, { filter });
+
+            if (existingGallery.success && existingGallery.result.url) {
+                switch (existingGallery.result.type) {
+                    case E_GalleryType.VIDEO: {
+                        const videoDeleted = await bunnyCtr.deleteVideo(context, existingGallery.result.url.split('/').pop()!);
+
+                        if (!videoDeleted.success) {
+                            throwError({
+                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                                message: videoDeleted.message,
+                            });
+                        }
+                        break;
+                    }
+                    case E_GalleryType.IMAGE: {
+                        const imageDeleted = await bunnyCtr.deleteFile(context, existingGallery.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
+
+                        if (!imageDeleted.success) {
+                            throwError({
+                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                                message: imageDeleted.message,
+                            });
+                        }
+                        break;
+                    }
+                    default:
+                }
+            }
+        }
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     deleteGallery: async (
