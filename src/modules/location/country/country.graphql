@@ -21,6 +21,7 @@ type T_Country {
     createdAt: DateTime
     updatedAt: DateTime
     name: String
+    slug: String
     iso2: String
     iso3: String
     numeric_code: String
@@ -49,6 +50,7 @@ input Input_QueryCountry {
     createdAt: DateTime
     updatedAt: DateTime
     name: String
+    slug: String
     iso2: String
     iso3: String
     numeric_code: String

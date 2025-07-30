@@ -221,6 +221,12 @@ type T_Response_Destinations {
     result: T_Destinations
 }
 
+type T_Response_AvailableCountries {
+    success: Boolean
+    message: String
+    result: [T_Country]
+}
+
 type Query {
     getDestination(
         filter: Input_QueryDestination!
@@ -232,6 +238,7 @@ type Query {
         filter: Input_QueryDestination
         options: JSON
     ): T_Response_Destinations!
+    getDestinationAvailableCountries: T_Response_AvailableCountries!
 }
 
 type Mutation {

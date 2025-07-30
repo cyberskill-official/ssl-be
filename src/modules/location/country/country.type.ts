@@ -13,6 +13,7 @@ export interface I_TimeZone {
 
 export interface I_Country extends I_GenericDocument {
     name?: string;
+    slug?: string;
     iso2?: string;
     iso3?: string;
     numeric_code?: string;

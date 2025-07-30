@@ -13,10 +13,12 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import validator from 'validator';
 
+import type { I_Country } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { countryCtr } from '#modules/location/index.js';
 
 import type { I_Destination, I_Input_CreateDestination, I_Input_QueryDestination, I_Input_UpdateDestination } from './destination.type.js';
 
@@ -37,6 +39,41 @@ export const destinationCtr = {
         { filter, options }: I_Input_FindPaging<I_Input_QueryDestination>,
     ): Promise<I_Return<T_PaginateResult<I_Destination>>> => {
         return mongooseCtr.findPaging(filter, options);
+    },
+    getDestinationAvailableCountries: async (
+        context: I_Context,
+    ): Promise<I_Return<I_Country[]>> => {
+        const destinationCountries = await mongooseCtr.distinct('location.countryId', {
+            isDel: false,
+            isActive: true,
+        });
+
+        if (!destinationCountries.success) {
+            throwError({ message: destinationCountries.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        const countries = await countryCtr.getCountries(
+            context,
+            {
+                filter: {
+                    id: { $in: destinationCountries.result },
+                },
+                options: {
+                    pagination: false,
+                    sort: { name: 1 },
+                },
+            },
+        );
+
+        if (!countries.success) {
+            throwError({ message: countries.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return {
+            success: true,
+            message: 'Available countries retrieved successfully',
+            result: countries.result.docs,
+        };
     },
     createDestination: async (
         context: I_Context,

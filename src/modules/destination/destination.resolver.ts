@@ -23,6 +23,8 @@ const destinationResolver = {
             destinationCtr.getDestination(context, args),
         getDestinations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryDestination>, context: I_Context) =>
             destinationCtr.getDestinations(context, args),
+        getDestinationAvailableCountries: (_parent: unknown, _args: unknown, context: I_Context) =>
+            destinationCtr.getDestinationAvailableCountries(context),
     },
     Mutation: {
         createDestination: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateDestination>, context: I_Context) =>

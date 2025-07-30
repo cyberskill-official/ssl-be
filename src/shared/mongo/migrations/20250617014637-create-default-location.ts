@@ -3,6 +3,7 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { readJsonSync } from '@cyberskill/shared/node/fs';
 import { log } from '@cyberskill/shared/node/log';
 import { MongoController } from '@cyberskill/shared/node/mongo';
+import { generateSlug } from '@cyberskill/shared/util';
 
 import type { I_City, I_Country, I_Region, I_State, I_SubRegion } from '#modules/location/index.js';
 
@@ -106,6 +107,7 @@ export async function up(db: C_Db) {
                     id: `${country.id}`,
                     regionId: `${subregion.region_id}`,
                     subRegionId: `${subregion.id}`,
+                    slug: generateSlug(country.name),
                 })));
 
                 if (!countryCreated.success) {

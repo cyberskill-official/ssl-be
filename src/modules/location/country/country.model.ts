@@ -1,4 +1,6 @@
-import { mongo } from '@cyberskill/shared/node/mongo';
+import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
+
+import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import type { I_Country, I_TimeZone } from './country.type.js';
@@ -29,6 +31,9 @@ export const CountryModel = mongo.createModel<I_Country>({
     name: 'Country',
     schema: {
         name: {
+            type: String,
+        },
+        slug: {
             type: String,
         },
         iso2: {
@@ -106,4 +111,73 @@ export const CountryModel = mongo.createModel<I_Country>({
             },
         },
     ],
+    middlewares: [
+        {
+            method: 'save',
+            pre: createMiddleware,
+        },
+        {
+            method: 'findOneAndUpdate',
+            pre: updateMiddleware,
+        },
+    ],
 });
+
+async function createMiddleware(this: I_Country, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Country>(CountryModel);
+
+        const newSlug = await mongooseCtr.createSlug({
+            field: 'name',
+            from: this,
+        });
+
+        if (!newSlug.success) {
+            throw new Error(newSlug.message);
+        }
+
+        this.slug = newSlug.result;
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};
+
+async function updateMiddleware(this: T_QueryWithHelpers<I_Country>, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Country>(CountryModel);
+        const newData = this.getUpdate() as I_Country;
+        const query = this.findOne(this.getFilter());
+        const oldData = await query.clone().exec();
+
+        if (!oldData) {
+            throw new Error('Page not found');
+        }
+
+        const shouldGenerateSlug = !!(
+            newData.name
+            && oldData.name
+            && newData.name !== oldData.name
+        );
+
+        if (shouldGenerateSlug) {
+            const newSlug = await mongooseCtr.createSlug({
+                field: 'name',
+                from: newData,
+            });
+
+            if (!newSlug.success) {
+                throw new Error(newSlug.message);
+            }
+
+            newData.slug = newSlug.result;
+        }
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};
