@@ -39,6 +39,7 @@ export interface I_Input_Hotel extends I_Hotel {
 export interface I_Destination extends I_GenericDocument {
     type?: E_DestinationType;
     name?: string;
+    slug?: string;
     address?: string;
     websiteURL?: string;
     rating?: E_DestinationRating;

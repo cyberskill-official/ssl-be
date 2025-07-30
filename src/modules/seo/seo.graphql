@@ -4,7 +4,6 @@ type T_Seo {
     keywords: [String]
     socialImage: String
     socialMediaDescription: String
-    urlSlug: String
     altTextForImages: String
 }
 
@@ -14,6 +13,5 @@ input Input_Seo {
     keywords: [String]
     socialImage: String
     socialMediaDescription: String
-    urlSlug: String
     altTextForImages: String
 }

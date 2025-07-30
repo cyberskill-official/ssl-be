@@ -23,6 +23,7 @@ export enum E_BlogCategory {
 
 export interface I_Blog extends I_GenericDocument {
     title?: string;
+    slug?: string;
     authorName?: string;
     websiteName?: string;
     websiteURL?: string;

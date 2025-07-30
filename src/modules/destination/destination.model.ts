@@ -1,4 +1,6 @@
-import { mongo } from '@cyberskill/shared/node/mongo';
+import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
+
+import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { LocationSchema } from '#modules/location/index.js';
@@ -53,6 +55,20 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter the destination name',
+                },
+            ],
+        },
+        slug: {
+            type: String,
+            require: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter the slug.',
+                },
+                {
+                    validator: mongo.validator.isUnique(['slug']),
+                    message: 'Slug is duplicated.',
                 },
             ],
         },
@@ -202,4 +218,73 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             },
         },
     ],
+    middlewares: [
+        {
+            method: 'save',
+            pre: createMiddleware,
+        },
+        {
+            method: 'findOneAndUpdate',
+            pre: updateMiddleware,
+        },
+    ],
 });
+
+async function createMiddleware(this: I_Destination, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
+
+        const newSlug = await mongooseCtr.createSlug({
+            field: 'name',
+            from: this,
+        });
+
+        if (!newSlug.success) {
+            throw new Error(newSlug.message);
+        }
+
+        this.slug = newSlug.result;
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};
+
+async function updateMiddleware(this: T_QueryWithHelpers<I_Destination>, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
+        const newData = this.getUpdate() as I_Destination;
+        const query = this.findOne(this.getFilter());
+        const oldData = await query.clone().exec();
+
+        if (!oldData) {
+            throw new Error('Page not found');
+        }
+
+        const shouldGenerateSlug = !!(
+            newData.name
+            && oldData.name
+            && newData.name !== oldData.name
+        );
+
+        if (shouldGenerateSlug) {
+            const newSlug = await mongooseCtr.createSlug({
+                field: 'name',
+                from: newData,
+            });
+
+            if (!newSlug.success) {
+                throw new Error(newSlug.message);
+            }
+
+            newData.slug = newSlug.result;
+        }
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};

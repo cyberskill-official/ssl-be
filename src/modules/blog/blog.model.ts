@@ -1,4 +1,6 @@
-import { mongo } from '@cyberskill/shared/node/mongo';
+import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
+
+import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { SeoSchema } from '#modules/seo/index.js';
@@ -19,6 +21,20 @@ export const BlogModel = mongo.createModel<I_Blog>({
                 validator: mongo.validator.isRequired(),
                 message: 'Please enter title for blog',
             },
+        },
+        slug: {
+            type: String,
+            require: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter the slug.',
+                },
+                {
+                    validator: mongo.validator.isUnique(['slug']),
+                    message: 'Slug is duplicated.',
+                },
+            ],
         },
         authorName: {
             type: String,
@@ -175,4 +191,73 @@ export const BlogModel = mongo.createModel<I_Blog>({
             },
         },
     ],
+    middlewares: [
+        {
+            method: 'save',
+            pre: createMiddleware,
+        },
+        {
+            method: 'findOneAndUpdate',
+            pre: updateMiddleware,
+        },
+    ],
 });
+
+async function createMiddleware(this: I_Blog, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
+
+        const newSlug = await mongooseCtr.createSlug({
+            field: 'title',
+            from: this,
+        });
+
+        if (!newSlug.success) {
+            throw new Error(newSlug.message);
+        }
+
+        this.slug = newSlug.result;
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};
+
+async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>, next: T_MongooseHookNextFunction) {
+    try {
+        const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
+        const newData = this.getUpdate() as I_Blog;
+        const query = this.findOne(this.getFilter());
+        const oldData = await query.clone().exec();
+
+        if (!oldData) {
+            throw new Error('Page not found');
+        }
+
+        const shouldGenerateSlug = !!(
+            newData.title
+            && oldData.title
+            && newData.title !== oldData.title
+        );
+
+        if (shouldGenerateSlug) {
+            const newSlug = await mongooseCtr.createSlug({
+                field: 'title',
+                from: newData,
+            });
+
+            if (!newSlug.success) {
+                throw new Error(newSlug.message);
+            }
+
+            newData.slug = newSlug.result;
+        }
+
+        next();
+    }
+    catch (error) {
+        next(error as Error);
+    }
+};

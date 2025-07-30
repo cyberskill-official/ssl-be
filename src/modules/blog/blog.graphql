@@ -20,6 +20,7 @@ type T_Blog {
     createdAt: DateTime
     updatedAt: DateTime
     title: String
+    slug: String
     authorName: String
     websiteName: String
     websiteURL: String
@@ -52,6 +53,7 @@ input Input_QueryBlog {
     createdAt: DateTime
     updatedAt: DateTime
     title: String
+    slug: String
     authorName: String
     websiteName: String
     websiteURL: String

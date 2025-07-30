@@ -61,6 +61,7 @@ type T_Destination {
     updatedAt: DateTime
     type: E_DestinationType
     name: String
+    slug: String
     address: String
     websiteURL: String
     rating: E_DestinationRating
@@ -98,6 +99,7 @@ input Input_QueryDestination {
     updatedAt: DateTime
     type: E_DestinationType
     name: String
+    slug: String
     address: String
     websiteURL: String
     rating: E_DestinationRating
