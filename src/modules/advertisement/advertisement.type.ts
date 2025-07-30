@@ -34,3 +34,8 @@ export interface I_Input_CreateAdvertisement extends Omit<I_Advertisement, T_Omi
 }
 
 export interface I_Input_UpdateAdvertisement extends Omit<I_Advertisement, T_Omit_Update> {}
+
+export interface I_Input_UpdateClickCount {
+    id: string;
+    clickCount: number;
+}

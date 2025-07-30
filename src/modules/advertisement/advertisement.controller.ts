@@ -17,7 +17,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/authn.controller.js';
 
-import type { I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement } from './advertisement.type.js';
+import type { I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement, I_Input_UpdateClickCount } from './advertisement.type.js';
 
 import { AdvertisementModel } from './advertisement.model.js';
 
@@ -153,5 +153,20 @@ export const advertisementCtr = {
             { $inc: { clickCount: 1 } },
             { new: true },
         );
+    },
+    updateClickCount: async (
+        _context: I_Context,
+        { filter, update }: I_Input_UpdateOne<I_Input_UpdateClickCount>,
+    ): Promise<I_Return<I_Advertisement>> => {
+        const existingAd = await advertisementCtr.getAdvertisement(
+            _context,
+            { filter },
+        );
+
+        if (!existingAd.success) {
+            throwError({ message: 'Advertisement not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        return mongooseCtr.updateOne(filter, { clickCount: update.clickCount });
     },
 };

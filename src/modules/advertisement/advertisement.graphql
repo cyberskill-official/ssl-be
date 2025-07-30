@@ -60,6 +60,11 @@ input Input_UpdateAdvertisement {
     isActive: Boolean
 }
 
+input Input_UpdateClickCount {
+    id: String!
+    clickCount: Float!
+}
+
 type T_Response_Advertisement {
     success: Boolean
     message: String
@@ -113,5 +118,9 @@ type Mutation {
     ): T_Response_Advertisement!
     clickAdvertisement(
         filter: Input_QueryAdvertisement!
-    ): T_Response_Advertisement!  
+    ): T_Response_Advertisement!
+    updateClickCount(
+        filter: Input_QueryAdvertisement!
+        update: Input_UpdateClickCount!
+    ): T_Response_Advertisement!
 }
