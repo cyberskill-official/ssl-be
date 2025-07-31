@@ -21,6 +21,15 @@ const env = getEnv();
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
 
+    app.use(createCors({
+        // TODO: remove this after testing
+        isDev: true,
+        // isDev: !env.IS_PROD,
+        whiteList: env.CORS_WHITELIST,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    }));
+
     app.use(createSession({
         name: env.SESSION_NAME,
         secret: env.SESSION_SECRET,
@@ -75,12 +84,6 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_GRAPHQL,
-        createCors({
-            // TODO: remove this after testing
-            isDev: true,
-            // isDev: !env.IS_PROD,
-            whiteList: env.CORS_WHITELIST,
-        }),
         express.json({ limit: env.BODY_PARSER_LIMIT }),
         expressMiddleware(apolloServer, {
             context: async (context) => {
@@ -105,10 +108,6 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_RESTAPI,
-        createCors({
-            isDev: !env.IS_PROD,
-            whiteList: env.CORS_WHITELIST,
-        }),
         // (req, res, next) => {
         //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
         // },

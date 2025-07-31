@@ -70,8 +70,6 @@ export function getEnv(): I_Environment {
         BUNNY_STREAM_API_KEY: str(),
     });
 
-    const BASE_ENDPOINT = `http://localhost:${cleanedEnv.PORT}`;
-
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;
 
     const MONGO_URI = `mongodb://${
@@ -86,7 +84,6 @@ export function getEnv(): I_Environment {
             NODE_ENV: cleanedEnv.NODE_ENV,
             NODE_ENV_MODE: cleanedEnv.NODE_ENV_MODE,
         }),
-        BASE_ENDPOINT,
         MONGO_URI,
     };
 }

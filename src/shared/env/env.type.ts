@@ -7,7 +7,6 @@ export interface I_Environment {
     IS_STAG: boolean;
     IS_PROD: boolean;
     PORT: number;
-    BASE_ENDPOINT: string;
     STATIC_FOLDER: string;
     BODY_PARSER_LIMIT: string;
     SESSION_NAME: string;
