@@ -81,6 +81,9 @@ export const EventModel = mongo.createModel<I_Event>({
         destinationId: {
             type: String,
         },
+        image: {
+            type: String,
+        },
         startTime: {
             type: String,
         },
