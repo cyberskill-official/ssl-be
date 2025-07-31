@@ -16,22 +16,10 @@ input Input_Register {
 }
 
 # Step 3
-input Input_Register_Coordinates {
-    latitude: Float!
-    longitude: Float!
-}
-
-input Input_Register_Location {
-    countryId: String!
-    cityId: String
-    coordinates: Input_Register_Coordinates
-    raw: JSON
-}
-
 input Input_Register_PersonalInfo_Partner {
     gender: E_Gender!
     dateOfBirth: DateTime!
-    location: Input_Register_Location!
+    location: Input_Location!
 }
 
 input Input_Register_Settings {
