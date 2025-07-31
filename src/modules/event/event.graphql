@@ -36,6 +36,7 @@ input Input_QueryEvent {
     updatedAt: DateTime
     type: E_EventType
     title: String
+    slug: String
     description: String
     startDate: DateTime
     endDate: DateTime
