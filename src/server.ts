@@ -76,7 +76,9 @@ const env = getEnv();
     app.use(
         env.ENDPOINT_GRAPHQL,
         createCors({
-            isDev: !env.IS_PROD,
+            // TODO: remove this after testing
+            isDev: true,
+            // isDev: !env.IS_PROD,
             whiteList: env.CORS_WHITELIST,
         }),
         express.json({ limit: env.BODY_PARSER_LIMIT }),
