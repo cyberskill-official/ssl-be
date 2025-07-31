@@ -83,6 +83,13 @@ export const EventModel = mongo.createModel<I_Event>({
         },
         image: {
             type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter image for event',
+                },
+            ],
         },
         startTime: {
             type: String,
