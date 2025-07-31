@@ -4,34 +4,50 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Entity } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_UserPartner } from './user.type.js';
+import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
 
 import { userCtr } from './user.controller.js';
 
 const userResolver = {
     T_User: {
-        partner1: (parent: I_UserPartner) => {
+        partner1: (parent: I_User) => {
+            if (!parent.partner1) {
+                return null;
+            }
+
             return {
-                ...parent,
-                location: {
-                    ...parent.location,
-                    map: {
-                        ...parent.location?.map,
-                        entity: E_Entity.USER,
-                    },
-                },
+                ...parent.partner1,
+                location: parent.partner1.location
+                    ? {
+                            ...parent.partner1.location,
+                            map: parent.partner1.location.map
+                                ? {
+                                        ...parent.partner1.location.map,
+                                        entity: E_Entity.USER,
+                                    }
+                                : null,
+                        }
+                    : null,
             };
         },
-        partner2: (parent: I_UserPartner) => {
+        partner2: (parent: I_User) => {
+            if (!parent.partner2) {
+                return null;
+            }
+
             return {
-                ...parent,
-                location: {
-                    ...parent.location,
-                    map: {
-                        ...parent.location?.map,
-                        entity: E_Entity.USER,
-                    },
-                },
+                ...parent.partner2,
+                location: parent.partner2.location
+                    ? {
+                            ...parent.partner2.location,
+                            map: parent.partner2.location.map
+                                ? {
+                                        ...parent.partner2.location.map,
+                                        entity: E_Entity.USER,
+                                    }
+                                : null,
+                        }
+                    : null,
             };
         },
     },
