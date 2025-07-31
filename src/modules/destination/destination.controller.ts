@@ -166,7 +166,7 @@ export const destinationCtr = {
                 const mediaFields: Array<keyof Pick<I_Destination, 'logo' | 'wearImage'>> = ['logo', 'wearImage'];
 
                 for (const field of mediaFields) {
-                    if (update[field] && existingDestination.result[field]) {
+                    if (update[field] && existingDestination.result[field] && existingDestination.result[field] !== update[field]) {
                         const imageDeleted = await bunnyCtr.deleteFile(context, existingDestination.result[field]);
 
                         if (!imageDeleted.success) {

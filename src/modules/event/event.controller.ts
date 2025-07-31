@@ -268,7 +268,7 @@ export const eventCtr = {
                 projection: { image: 1 },
             });
 
-            if (existingEvent.success && existingEvent.result.image) {
+            if (existingEvent.success && existingEvent.result.image && existingEvent.result.image !== update.image) {
                 const imageDeleted = await bunnyCtr.deleteFile(context, existingEvent.result.image);
 
                 if (!imageDeleted.success) {

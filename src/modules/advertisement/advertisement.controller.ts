@@ -140,7 +140,7 @@ export const advertisementCtr = {
         if (update.image) {
             const existingAdvertisement = await advertisementCtr.getAdvertisement(context, { filter });
 
-            if (existingAdvertisement.success && existingAdvertisement.result.image) {
+            if (existingAdvertisement.success && existingAdvertisement.result.image && existingAdvertisement.result.image !== update.image) {
                 const imageDeleted = await bunnyCtr.deleteFile(context, existingAdvertisement.result.image);
 
                 if (!imageDeleted.success) {

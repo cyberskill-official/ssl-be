@@ -108,7 +108,7 @@ export const galleryCtr = {
         if (update.url) {
             const existingGallery = await galleryCtr.getGallery(context, { filter });
 
-            if (existingGallery.success && existingGallery.result.url) {
+            if (existingGallery.success && existingGallery.result.url && existingGallery.result.url !== update.url) {
                 switch (existingGallery.result.type) {
                     case E_GalleryType.VIDEO: {
                         const videoDeleted = await bunnyCtr.deleteVideo(context, existingGallery.result.url.split('/').pop()!);

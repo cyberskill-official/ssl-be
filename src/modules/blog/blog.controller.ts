@@ -140,7 +140,7 @@ export const blogCtr = {
                 const mediaFields: Array<keyof Pick<I_Input_UpdateBlog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
                 for (const field of mediaFields) {
-                    if (update[field] && existingBlog.result[field]) {
+                    if (update[field] && existingBlog.result[field] && existingBlog.result[field] !== update[field]) {
                         const imageDeleted = await bunnyCtr.deleteFile(context, existingBlog.result[field]);
 
                         if (!imageDeleted.success) {

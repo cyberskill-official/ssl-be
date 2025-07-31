@@ -74,7 +74,7 @@ export const catalogueCtr = {
                 projection: { url: 1, type: 1 },
             });
 
-            if (existingCatalogue.success && existingCatalogue.result.url) {
+            if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
                 switch (existingCatalogue.result.type) {
                     case E_CatalogueType.VIDEO: {
                         const videoDeleted = await bunnyCtr.deleteVideo(context, existingCatalogue.result.url.split('/').pop()!);
