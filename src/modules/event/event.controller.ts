@@ -11,6 +11,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 
@@ -144,7 +145,7 @@ export const eventCtr = {
             }
 
             validateTimeBasedEvent(
-                { startDate, startTime, endTime },
+                { startDate, endDate, startTime, endTime },
                 E_EventType.BOOTY_CALL,
             );
 
@@ -180,7 +181,7 @@ export const eventCtr = {
 
             if (startDate && startTime && endTime) {
                 validateTimeBasedEvent(
-                    { startDate, startTime, endTime },
+                    { startDate, endDate, startTime, endTime },
                     E_EventType.PRIVATE,
                 );
             }
@@ -191,33 +192,18 @@ export const eventCtr = {
                 });
             }
 
-            // TODO: Tạo group chat cho event
-            // const createdConversation = await conversationCtr.createConversation(context, {
-            //     name: title,
-            //     type: E_ConversationType.GROUP,
-            //     createdById: userId,
-            // });
+            const createdConversation = await conversationCtr.createConversation(context, { doc: {
+                name: title,
+                type: E_ConversationType.GROUP,
+                createdById: currentUser.id,
+            } });
 
-            // if (!createdConversation.success) {
-            //     throwError({
-            //         message: 'Failed to create conversation for event',
-            //         status: RESPONSE_STATUS.BAD_REQUEST,
-            //     });
-            // }
-
-            // TODO: Thêm event user tạo event vào group chat với vai trò ADMIN
-            // const createdParticipant = await participantCtr.createParticipant(context, {
-            //     conversationId: createdConversation.result.id,
-            //     userId: userId,
-            //     role: E_ParticipantRole.ADMIN,
-            // });
-
-            // if(!createdParticipant.success){
-            //     throwError({
-            //         message: 'Failed to add creator to event conversation',
-            //         status: RESPONSE_STATUS.BAD_REQUEST
-            //     })
-            // }
+            if (!createdConversation.success) {
+                throwError({
+                    message: 'Failed to create conversation for event',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
         }
 
         if (isAfter(startDate, endDate)) {

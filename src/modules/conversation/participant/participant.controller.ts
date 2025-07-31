@@ -49,26 +49,32 @@ export const participantCtr = {
         }
         const conversation = conversationFound.result.docs[0];
 
-        if (conversation!.type !== E_ConversationType.GROUP) {
+        if (!conversation || conversation.type !== E_ConversationType.GROUP) {
             throwError({
                 message: 'Only group conversations can have participants added',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const isAdmin = await mongooseCtr.findOne({
-            filter: {
-                conversationId,
-                role: E_ParticipantRole.ADMIN,
-                userId: currentUser.id,
-            },
-        });
+        // Kiểm tra xem user có phải là creator của conversation không
+        const isCreator = conversation.createdById === currentUser.id;
 
-        if (!isAdmin.success) {
-            throwError({
-                message: 'Only group admins can add participants',
-                status: RESPONSE_STATUS.FORBIDDEN,
+        // Nếu không phải creator, kiểm tra có phải admin không
+        if (!isCreator) {
+            const isAdmin = await mongooseCtr.findOne({
+                filter: {
+                    conversationId,
+                    role: E_ParticipantRole.ADMIN,
+                    userId: currentUser.id,
+                },
             });
+
+            if (!isAdmin.success) {
+                throwError({
+                    message: 'Only group admins can add participants',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
         }
 
         const alreadyParticipant = await mongooseCtr.findOne({

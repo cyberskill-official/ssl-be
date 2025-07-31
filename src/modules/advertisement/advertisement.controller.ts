@@ -185,7 +185,7 @@ export const advertisementCtr = {
     },
     updateClickCount: async (
         _context: I_Context,
-        { filter, update }: I_Input_UpdateOne<I_Input_UpdateClickCount>,
+        { filter }: I_Input_UpdateOne<I_Input_UpdateClickCount>,
     ): Promise<I_Return<I_Advertisement>> => {
         const existingAd = await advertisementCtr.getAdvertisement(
             _context,
@@ -193,9 +193,16 @@ export const advertisementCtr = {
         );
 
         if (!existingAd.success) {
-            throwError({ message: 'Advertisement not found', status: RESPONSE_STATUS.NOT_FOUND });
+            throwError({
+                message: 'Advertisement not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
         }
 
-        return mongooseCtr.updateOne(filter, { clickCount: update.clickCount });
+        return mongooseCtr.updateOne(
+            filter,
+            { $inc: { clickCount: 1 } },
+            { new: true },
+        );
     },
 };

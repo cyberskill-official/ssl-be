@@ -6,6 +6,7 @@ import { E_EventType } from './event.type.js';
 
 interface I_Input_TimeBasedEventData {
     startDate: Date;
+    endDate?: Date; // Add optional endDate
     startTime: string;
     endTime: string;
 }
@@ -27,7 +28,7 @@ export function validateTimeBasedEvent(
     eventData: I_Input_TimeBasedEventData,
     eventType: E_EventType,
 ): I_TimeBasedEventValidation {
-    const { startDate, startTime, endTime } = eventData;
+    const { startDate, endDate, startTime, endTime } = eventData;
 
     const startTimeParsed = parse(startTime, 'hh:mm a', new Date());
     const endTimeParsed = parse(endTime, 'hh:mm a', new Date());
@@ -49,15 +50,11 @@ export function validateTimeBasedEvent(
     const startTimeHours = startTimeParsed.getHours();
     const endTimeHours = endTimeParsed.getHours();
 
-    const isOvernight = endTimeHours < startTimeHours
-        || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
-
     let endDateTime: Date;
 
-    if (isOvernight) {
-        const nextDay = new Date(startDate);
-        nextDay.setDate(nextDay.getDate() + 1);
-        endDateTime = set(nextDay, {
+    // If endDate is provided, use it for multi-day events
+    if (endDate) {
+        endDateTime = set(endDate, {
             hours: endTimeParsed.getHours(),
             minutes: endTimeParsed.getMinutes(),
             seconds: 0,
@@ -65,12 +62,28 @@ export function validateTimeBasedEvent(
         });
     }
     else {
-        endDateTime = set(startDate, {
-            hours: endTimeParsed.getHours(),
-            minutes: endTimeParsed.getMinutes(),
-            seconds: 0,
-            milliseconds: 0,
-        });
+        // Original logic for same-day events
+        const isOvernight = endTimeHours < startTimeHours
+            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+
+        if (isOvernight) {
+            const nextDay = new Date(startDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            endDateTime = set(nextDay, {
+                hours: endTimeParsed.getHours(),
+                minutes: endTimeParsed.getMinutes(),
+                seconds: 0,
+                milliseconds: 0,
+            });
+        }
+        else {
+            endDateTime = set(startDate, {
+                hours: endTimeParsed.getHours(),
+                minutes: endTimeParsed.getMinutes(),
+                seconds: 0,
+                milliseconds: 0,
+            });
+        }
     }
 
     const durationInHours = differenceInMinutes(endDateTime, startDateTime) / 60;
@@ -100,7 +113,7 @@ export function validateTimeBasedEvent(
     return {
         startDateTime,
         endDateTime,
-        isOvernight,
+        isOvernight: endDate ? false : (endTimeHours < startTimeHours || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes())),
         durationInHours,
     };
 }
