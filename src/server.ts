@@ -26,8 +26,6 @@ const env = getEnv();
         isDev: true,
         // isDev: !env.IS_PROD,
         whiteList: env.CORS_WHITELIST,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     }));
 
     app.use(createSession({
@@ -99,6 +97,16 @@ const env = getEnv();
             },
         }) as unknown as express.RequestHandler,
     );
+
+    const handleOptions = (_req: express.Request, res: express.Response) => {
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+        res.status(200).end();
+    };
+
+    app.options(env.ENDPOINT_GRAPHQL, handleOptions);
+    app.options(env.ENDPOINT_RESTAPI, handleOptions);
 
     // RestAPI
     await new Promise<void>(resolve =>
