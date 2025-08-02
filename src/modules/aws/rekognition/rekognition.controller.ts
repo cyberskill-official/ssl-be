@@ -1,16 +1,19 @@
 import type { AgeRange, CompareFacesCommandInput, DetectFacesCommandInput } from '@aws-sdk/client-rekognition';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
-import { Attribute, CompareFacesCommand, DetectFacesCommand, DetectTextCommand } from '@aws-sdk/client-rekognition';
+import { Attribute, CompareFacesCommand, DetectFacesCommand } from '@aws-sdk/client-rekognition';
+import { AnalyzeIDCommand } from '@aws-sdk/client-textract';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
 
-import type { I_Input_UploadMany, I_UploadedFile } from '#modules/upload/index.js';
+import type { I_AIVerifyResult } from '#modules/authn/index.js';
+import type { I_Input_UploadMany, T_UploadedFilePromise } from '#modules/upload/index.js';
 
-import type { I_CompareFacesResult, I_VerifyAgeDocumentResult } from './rekognition.type.js';
+import type { I_VerifyAgeDocumentResult } from './rekognition.type.js';
 
-import { rekognitionClient } from '../aws.config.js';
+import { rekognitionClient, textractClient } from '../aws.config.js';
 import { FACE_SIMILARITY_THRESHOLD, IMAGE_QUALITY_THRESHOLDS } from './rekognition.constant.js';
-import { calculateAgeFromBirthDate, checkAge, streamToBuffer, verifyImageExtension } from './rekognition.util.js';
+import { calculateAgeFromBirthDate, extractBirthDateFromMRZ, streamToBuffer, verifyImageExtension } from './rekognition.util.js';
 
 export const rekognitionController = {
     /**
@@ -22,110 +25,110 @@ export const rekognitionController = {
      * - Detects face and text fields (ID number, birth date)
      * - Returns age and extracted fields
      */
-    async verifyAgeDocument(file: I_UploadedFile): Promise<I_Return<I_VerifyAgeDocumentResult>> {
-        const stream = file.createReadStream();
+    async verifyAgeDocument(file: T_UploadedFilePromise): Promise<I_Return<I_VerifyAgeDocumentResult>> {
+        const fileStream = (await file).file;
 
-        if (!verifyImageExtension(file.filename)) {
-            return {
-                success: false,
+        if (!verifyImageExtension(fileStream.filename)) {
+            throwError({
                 message: 'Only JPEG and PNG image formats are supported.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const imageBuffer = await streamToBuffer(stream);
+        const imageBuffer = await streamToBuffer(fileStream.createReadStream());
 
-        const qualityParams: DetectFacesCommandInput = {
+        // Face quality check
+        const { FaceDetails } = await rekognitionClient.send(new DetectFacesCommand({
             Image: { Bytes: imageBuffer },
             Attributes: [Attribute.ALL],
-        };
-        const qualityCommand = new DetectFacesCommand(qualityParams);
-        const qualityResult = await rekognitionClient.send(qualityCommand);
+        }));
 
-        let qualityMsg = '';
+        const face = FaceDetails?.[0];
 
-        const faceDetails = qualityResult.FaceDetails && qualityResult.FaceDetails[0];
-
-        if (faceDetails) {
-            const sharpness = faceDetails.Quality?.Sharpness || 0;
-            const brightness = faceDetails.Quality?.Brightness || 0;
-            const occluded = faceDetails.FaceOccluded?.Value;
-
-            if (sharpness < IMAGE_QUALITY_THRESHOLDS.sharpness) {
-                qualityMsg += 'Image is blurry. ';
-            }
-            if (brightness < IMAGE_QUALITY_THRESHOLDS.brightness.low) {
-                qualityMsg += 'Image is too dark. ';
-            }
-            if (brightness > IMAGE_QUALITY_THRESHOLDS.brightness.high) {
-                qualityMsg += 'Image is too bright. ';
-            }
-            if (occluded) {
-                qualityMsg += 'Face is occluded. ';
-            }
-        }
-        else {
-            qualityMsg = 'No face detected in the image.';
+        if (!face) {
+            throwError({
+                message: 'No face detected in the image.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        if (qualityMsg) {
-            return {
-                success: false,
-                message: qualityMsg.trim(),
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+        const { Sharpness = 0, Brightness = 0 } = face.Quality || {};
+        const isOccluded = face.FaceOccluded?.Value === true;
+
+        const qualityIssues = [
+            Sharpness < IMAGE_QUALITY_THRESHOLDS.sharpness ? 'Image is blurry' : '',
+            Brightness < IMAGE_QUALITY_THRESHOLDS.brightness.low ? 'Image is too dark' : '',
+            Brightness > IMAGE_QUALITY_THRESHOLDS.brightness.high ? 'Image is too bright' : '',
+            isOccluded ? 'Face is occluded' : '',
+        ].filter(Boolean).join('. ');
+
+        if (qualityIssues) {
+            throwError({
+                message: qualityIssues,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const textParams = { Image: { Bytes: imageBuffer } };
-        const textCommand = new DetectTextCommand(textParams);
-        const textResult = await rekognitionClient.send(textCommand);
+        // Analyze ID
+        const { IdentityDocuments } = await textractClient.send(new AnalyzeIDCommand({
+            DocumentPages: [{ Bytes: imageBuffer }],
+        }));
 
-        const detectedTexts = (textResult.TextDetections?.map(text => text.DetectedText) || []).filter((t): t is string => typeof t === 'string');
+        const fields = IdentityDocuments?.[0]?.IdentityDocumentFields || [];
         let idNumber: string | null = null;
-        let birthDate: string | null = null;
-        let birthYear: number | null = null;
+        let mrzCode: string | null = null;
 
-        for (const text of detectedTexts) {
-            const idMatch = text?.match(/\b\d{9,12}\b/);
+        for (const { Type, ValueDetection } of fields) {
+            const key = Type?.Text;
+            const value = ValueDetection?.Text;
 
-            if (idMatch) {
-                idNumber = idMatch[0];
+            if (!value) {
+                continue;
             }
-
-            const dateMatch = text?.match(/\b\d{2}[/\-]\d{2}[/\-]\d{4}\b/);
-
-            if (dateMatch) {
-                birthDate = dateMatch[0];
-                birthYear = Number.parseInt(birthDate?.split(/[/\-]/).pop() || '', 10);
+            if (key === 'MRZ_CODE') {
+                mrzCode = value;
             }
-
-            if (idNumber && birthYear) {
-                break;
+            if (!idNumber && key === 'DOCUMENT_NUMBER') {
+                idNumber = value;
             }
         }
 
-        if (!idNumber || !birthYear) {
-            return {
-                success: false,
-                message: 'ID number or birth date not found in the document.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+        // Require MRZ code detection
+        if (!mrzCode) {
+            throwError({
+                message: 'MRZ code not detected. Please take a clear photo showing the MRZ code (machine readable zone) at the bottom of your document.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const age = calculateAgeFromBirthDate(birthDate || '');
+        // Extract birth date from MRZ code only
+        const birthDate = extractBirthDateFromMRZ(mrzCode);
+
+        if (!birthDate) {
+            throwError({
+                message: 'Birth date could not be extracted from MRZ code. Please ensure the MRZ code is clearly visible and not damaged.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (!idNumber) {
+            throwError({
+                message: 'ID number not found in the document.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const age = calculateAgeFromBirthDate(birthDate);
 
         return {
             success: true,
             result: {
                 idNumber,
-                birthDate: birthDate || '',
-                birthYear,
-                age: typeof age === 'number' && age !== null ? age : 0,
-                detectedTexts,
+                birthDate: new Date(birthDate),
+                age: typeof age === 'number' ? age : 0,
             },
         };
     },
-
     /**
      * Estimates age from a selfie image
      * @param {object} file - The selfie image file
@@ -136,16 +139,17 @@ export const rekognitionController = {
      * - Uses AWS Rekognition to detect face and estimate age
      * - Returns age range or error if detection fails
      */
-    async verifyAgeSelfie(file: I_UploadedFile): Promise<I_Return<AgeRange>> {
-        if (!verifyImageExtension(file.filename)) {
-            return {
-                success: false,
+    async verifyAgeSelfie(file: T_UploadedFilePromise): Promise<I_Return<AgeRange>> {
+        const fileStream = (await file).file;
+
+        if (!verifyImageExtension(fileStream.filename)) {
+            throwError({
                 message: 'Invalid image format. Only JPEG and PNG are supported.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const imageBuffer = await streamToBuffer(file.createReadStream());
+        const imageBuffer = await streamToBuffer(fileStream.createReadStream());
 
         const params: DetectFacesCommandInput = {
             Image: { Bytes: imageBuffer },
@@ -183,27 +187,24 @@ export const rekognitionController = {
         const ageRange = faceDetails?.AgeRange;
 
         if (!faceDetails) {
-            return {
-                success: false,
+            throwError({
                 message: 'No face detected in the image.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         if (!ageRange) {
-            return {
-                success: false,
+            throwError({
                 message: 'Age range could not be determined.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         if (qualityMsg) {
-            return {
-                success: false,
+            throwError({
                 message: qualityMsg,
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         return {
@@ -222,51 +223,28 @@ export const rekognitionController = {
      * - Uses AWS Rekognition to compare faces with a similarity threshold
      * - Returns similarity result
      */
-    async compareFaces(args: I_Input_UploadMany): Promise<I_Return<I_CompareFacesResult>> {
-        const idFileUpload = args.files[0];
-        const selfieFileUpload = args.files[1];
-
-        if (!idFileUpload || !selfieFileUpload) {
-            return {
-                success: false,
+    async compareFaces(args: I_Input_UploadMany): Promise<I_Return<I_AIVerifyResult>> {
+        if (!args.files[0] || !args.files[1]) {
+            throwError({
                 message: 'Both ID and selfie images are required.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
-        const idFileObj = await idFileUpload.promise;
-        const selfieFileObj = await selfieFileUpload.promise;
-
-        const idVerify = await rekognitionController.verifyAgeDocument(idFileObj);
+        const idVerify = await rekognitionController.verifyAgeDocument(args.files[0]);
 
         if (!idVerify.success) {
-            return {
-                success: false,
-                message: idVerify.message,
-                code: idVerify.code,
-            };
+            return idVerify;
         }
 
-        const selfieVerify = await rekognitionController.verifyAgeSelfie(selfieFileObj);
+        const selfieVerify = await rekognitionController.verifyAgeSelfie(args.files[1]);
 
         if (!selfieVerify.success) {
-            return {
-                success: false,
-                message: selfieVerify.message,
-                code: selfieVerify.code,
-            };
+            return selfieVerify;
         }
 
-        if (!verifyImageExtension(idFileObj.filename) || !verifyImageExtension(selfieFileObj.filename)) {
-            return {
-                success: false,
-                message: 'Invalid image format. Only JPEG and PNG are supported.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
-        }
-
-        const idImageBuffer = await streamToBuffer(idFileObj.createReadStream());
-        const selfieImageBuffer = await streamToBuffer(selfieFileObj.createReadStream());
+        const idImageBuffer = await streamToBuffer((await args.files[0]).file.createReadStream());
+        const selfieImageBuffer = await streamToBuffer((await args.files[1]).file.createReadStream());
 
         const params: CompareFacesCommandInput = {
             SourceImage: { Bytes: idImageBuffer },
@@ -278,35 +256,32 @@ export const rekognitionController = {
         const faceMatches = result.FaceMatches || [];
 
         if (faceMatches.length === 0) {
-            return {
-                success: false,
+            throwError({
                 message: 'No face match found between document and selfie',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         if (faceMatches.length > 1) {
-            return {
-                success: false,
+            throwError({
                 message: 'Multiple faces detected. Please ensure only one face is visible in each image',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         const faceMatch = faceMatches[0]!;
-        const isAgeVerified = checkAge(idVerify.result.age, selfieVerify.result);
 
         return {
             success: true,
             result: {
-                similar: true,
-                similarity: faceMatch.Similarity || 0,
-                isAgeVerified,
-                selfieAgeRange: {
-                    low: selfieVerify.result.Low || 0,
-                    high: selfieVerify.result.High || 0,
-                },
                 documentAge: idVerify.result.age,
+                selfieAgeRange: {
+                    low: selfieVerify.result.Low,
+                    high: selfieVerify.result.High,
+                },
+                similarity: faceMatch.Similarity,
+                isOver18: idVerify.result.age >= 18,
+                dateOfBirth: idVerify.result.birthDate,
             },
         };
     },

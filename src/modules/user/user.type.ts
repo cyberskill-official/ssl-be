@@ -1,6 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { E_RegisterStep } from '#modules/authn/index.js';
+import type { E_RegisterStep, I_AgeVerify } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Language } from '#modules/language/index.js';
@@ -100,7 +100,7 @@ export interface I_User extends I_GenericDocument {
     rolesIds?: string[];
     registerStep?: E_RegisterStep;
     isEmailVerified?: boolean;
-    isAgeVerified?: boolean;
+    ageVerify?: I_AgeVerify;
     displayName?: string;
     accountType?: E_AccountType;
     partner1?: I_UserPartner;

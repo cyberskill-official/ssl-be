@@ -6,6 +6,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
+import { E_UploadType } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -17,8 +18,10 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { rekognitionController } from '#modules/aws/index.js';
+import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
+import { uploadCtr } from '#modules/upload/index.js';
 import { userCtr } from '#modules/user/index.js';
 import {
     E_VerificationContext,
@@ -26,9 +29,11 @@ import {
     verificationCtr,
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { E_Entity } from '#shared/typescript/index.js';
 import { date, helper, validate } from '#shared/util/index.js';
 
 import type {
+    I_Input_ApproveAgeVerify,
     I_Input_CheckAuth,
     I_Input_CheckToken,
     I_Input_ForgotPasswordRequest,
@@ -39,6 +44,7 @@ import type {
     I_Input_Register_Preferences,
     I_Input_Register_SendVerifyEmail,
     I_Input_Register_VerifyEmail,
+    I_Input_RejectAgeVerify,
     I_Input_ResetPassword,
     I_Response_Auth,
     I_SessionPayload,
@@ -47,17 +53,22 @@ import type {
 import {
     EMAIL_VERIFICATION,
     FORGOT_PASSWORD,
+    TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
 } from './authn.constant.js';
-import { E_MembershipType, E_RegisterStep } from './authn.type.js';
+import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
 
 export const authnCtr = {
     generateToken: (_context: I_Context, id: string): string => {
         return jwt.sign(
-            { createdAt: Date.now(), userId: id } as I_SessionPayload,
+            {
+                createdAt: Date.now(),
+                userId: id,
+            },
             env.JWT_SECRET,
+            { expiresIn: TOKEN_EXPIRES },
         );
     },
     checkToken: async (
@@ -106,6 +117,14 @@ export const authnCtr = {
         context: I_Context,
         args?: I_Input_CheckAuth,
     ): Promise<I_Return<I_Response_Auth>> => {
+        // First try to get token from Authorization header as fallback
+        // const authHeader = context?.req?.headers?.authorization;
+        // let token: string | undefined;
+
+        // if (authHeader && authHeader.startsWith('Bearer ')) {
+        //     token = authHeader.substring(7); // Remove 'Bearer ' prefix
+        // }
+
         if (args?.token) {
             return authnCtr.checkToken(context, { token: args.token });
         }
@@ -814,8 +833,17 @@ export const authnCtr = {
             email,
         });
     },
-    verifyAge: async (context: I_Context, args: I_Input_UploadMany) => {
-        const user = await authnCtr.getUserFromSession(context);
+    verifyAge: async (context: I_Context, args: I_Input_UploadMany): Promise<I_Return<I_User>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const [documentFile, selfieFile] = args.files;
+
+        if (!documentFile || !selfieFile) {
+            throwError({
+                message: 'Both document and selfie files are required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
 
         const compareFaceResult = await rekognitionController.compareFaces(args);
 
@@ -823,13 +851,190 @@ export const authnCtr = {
             return compareFaceResult;
         }
 
-        await userCtr.updateUser(context, {
-            filter: { id: user.id },
-            update: {
-                isAgeVerified: compareFaceResult.result.isAgeVerified,
-            },
+        const documentUpload = await uploadCtr.upload(context, {
+            type: E_UploadType.IMAGE,
+            entity: E_Entity.USER,
+            entityId: currentUser.id,
+            file: documentFile,
         });
 
-        return compareFaceResult;
+        const selfieUpload = await uploadCtr.upload(context, {
+            type: E_UploadType.IMAGE,
+            entity: E_Entity.USER,
+            entityId: currentUser.id,
+            file: selfieFile,
+        });
+
+        if (!documentUpload.success || !selfieUpload.success) {
+            throwError({
+                message: 'Failed to upload verification images.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        if (currentUser.ageVerify?.preApproval) {
+            try {
+                await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.documentPic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
+                await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.selfiePic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
+            }
+            catch {
+                throwError({
+                    message: 'Failed to delete old verification images.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+
+        return userCtr.updateUser(context, {
+            filter: { id: currentUser.id },
+            update: {
+                ageVerify: {
+                    status: E_AgeVerifyStatus.PENDING,
+                    method: E_AgeVerifyMethod.PASSPORT,
+                    preApproval: {
+                        documentPic: documentUpload.result,
+                        selfiePic: selfieUpload.result,
+                        aiResult: {
+                            documentAge: compareFaceResult.result.documentAge,
+                            selfieAgeRange: compareFaceResult.result.selfieAgeRange,
+                            similarity: compareFaceResult.result.similarity,
+                            isOver18: compareFaceResult.result.isOver18,
+                            dateOfBirth: compareFaceResult.result.dateOfBirth,
+                        },
+                    },
+                },
+            },
+        });
+    },
+    approveAgeVerify: async (
+        context: I_Context,
+        { userId }: I_Input_ApproveAgeVerify,
+    ): Promise<I_Return<I_User>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!currentUser) {
+            throwError({
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+                message: 'Admin not authenticated',
+            });
+        }
+
+        const userFound = await userCtr.getUser(
+            context,
+            { filter: { id: userId } },
+        );
+
+        if (!userFound.success) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'User not found',
+            });
+        }
+
+        if (!userFound.result.ageVerify) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'User has no age verification',
+            });
+        }
+
+        if (userFound.result.ageVerify.status !== E_AgeVerifyStatus.PENDING) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'User is not in pending age verification',
+            });
+        }
+
+        if (userFound.result.ageVerify.preApproval) {
+            try {
+                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+            }
+            catch (error) {
+                console.error('Failed to delete verification images:', error);
+            }
+        }
+
+        return userCtr.updateUser(
+            context,
+            {
+                filter: { id: userId },
+                update: { ageVerify: {
+                    status: E_AgeVerifyStatus.APPROVED,
+                    approvedById: currentUser.id,
+                    approvedAt: new Date(),
+                    preApproval: undefined,
+                    dateOfBirth: userFound.result.ageVerify.preApproval?.aiResult?.dateOfBirth,
+                } },
+            },
+        );
+    },
+    rejectAgeVerify: async (
+        context: I_Context,
+        { userId, reason }: I_Input_RejectAgeVerify,
+    ): Promise<I_Return<I_User>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!currentUser) {
+            throwError({
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+                message: 'Admin not authenticated',
+            });
+        }
+
+        if (!reason || reason.trim().length === 0) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'Reason is required when rejecting age verification',
+            });
+        }
+
+        const userFound = await userCtr.getUser(
+            context,
+            { filter: { id: userId } },
+        );
+
+        if (!userFound.success) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'User not found',
+            });
+        }
+
+        if (!userFound.result.ageVerify) {
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'User has no age verification',
+            });
+        }
+
+        if (userFound.result.ageVerify.status !== E_AgeVerifyStatus.PENDING) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'User is not in pending age verification',
+            });
+        }
+
+        if (userFound.result.ageVerify.preApproval) {
+            try {
+                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+            }
+            catch (error) {
+                console.error('Failed to delete verification images:', error);
+            }
+        }
+
+        return userCtr.updateUser(
+            context,
+            {
+                filter: { id: userId },
+                update: { ageVerify: {
+                    status: E_AgeVerifyStatus.REJECTED,
+                    reason: reason.trim(),
+                    preApproval: undefined,
+                } },
+            },
+        );
     },
 };

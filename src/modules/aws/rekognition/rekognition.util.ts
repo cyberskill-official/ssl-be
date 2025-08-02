@@ -1,5 +1,3 @@
-import type { AgeRange } from '@aws-sdk/client-rekognition';
-
 import { Buffer } from 'node:buffer';
 
 /**
@@ -99,25 +97,104 @@ export function calculateAgeFromBirthDate(birthDate: string): number | null {
 }
 
 /**
- * Checks if ID age is within selfie age range and over 18
- * @param {number} idAge - Age from ID document
- * @param {object} selfieRange - AgeRange from verifyAgeSelfie
- * @returns {boolean} True if age is valid and within range, false otherwise
+ * Extracts birth date from MRZ (Machine Readable Zone) code
+ * @param {string} mrzText - The MRZ text to parse
+ * @returns {string | null} The birth date in YYYY-MM-DD format or null if not found
  * @description
- * - Validates that ID age is 18 or older
- * - Checks if ID age falls within the selfie age range
- * - Returns true if all conditions are met
+ * - Searches for MRZ pattern containing birth date (YYMMDD format)
+ * - Converts 2-digit year to 4-digit year (assumes 1900s for years > 50, 2000s for years <= 50)
+ * - Returns formatted date string or null if parsing fails
  */
-export function checkAge(idAge: number, selfieRange: AgeRange): boolean {
-    if (
-        idAge >= 18
-        && typeof selfieRange.Low === 'number'
-        && typeof selfieRange.High === 'number'
-        && idAge >= selfieRange.Low
-        && idAge <= selfieRange.High
-    ) {
-        return true;
+export function extractBirthDateFromMRZ(mrzText: string): string | null {
+    if (!mrzText) {
+        return null;
     }
 
-    return false;
+    // Split MRZ into lines and process the second line which typically contains personal data
+    const lines = mrzText.split(/[\n\r]+/);
+
+    for (const line of lines) {
+        // For passport MRZ (TD3), the birth date is typically in positions 13-18 of the second line
+        // Format: PPPPPPPPPCCCYYMMDDCSGGGGGGGGGGGGGCCCCCCCCCCCCCCCC
+        // Where YYMMDD is the birth date
+
+        if (line.length >= 18) {
+            // Try extracting from standard MRZ position (characters 13-18)
+            const standardBirthDate = line.substring(13, 19);
+            if (/^\d{6}$/.test(standardBirthDate)) {
+                const parsed = parseMRZDate(standardBirthDate);
+                if (parsed)
+                    return parsed;
+            }
+        }
+
+        // Fallback: Search for any 6-digit sequences that could be dates
+        const mrzPattern = /(\d{6})/g;
+        const matches = line.match(mrzPattern);
+
+        if (matches) {
+            for (const match of matches) {
+                const parsed = parseMRZDate(match);
+                if (parsed)
+                    return parsed;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Helper function to parse and validate MRZ date format (YYMMDD)
+ * @param {string} dateStr - 6-digit date string in YYMMDD format
+ * @returns {string | null} Formatted date string or null if invalid
+ */
+function parseMRZDate(dateStr: string): string | null {
+    if (!/^\d{6}$/.test(dateStr)) {
+        return null;
+    }
+
+    const year2 = Number.parseInt(dateStr.substring(0, 2), 10);
+    const month = Number.parseInt(dateStr.substring(2, 4), 10);
+    const day = Number.parseInt(dateStr.substring(4, 6), 10);
+
+    // Convert 2-digit year to 4-digit year
+    // Assume years > 50 are 1900s, years <= 50 are 2000s
+    const year4 = year2 > 50 ? 1900 + year2 : 2000 + year2;
+
+    // Validate date
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const testDate = new Date(year4, month - 1, day);
+        if (testDate.getFullYear() === year4
+            && testDate.getMonth() === month - 1
+            && testDate.getDate() === day) {
+            // Return in YYYY-MM-DD format
+            return `${year4}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Checks if text contains MRZ pattern
+ * @param {string} text - The text to check for MRZ pattern
+ * @returns {boolean} True if MRZ pattern is detected, false otherwise
+ */
+export function containsMRZPattern(text: string): boolean {
+    if (!text) {
+        return false;
+    }
+
+    // MRZ patterns typically contain:
+    // - Multiple lines of fixed-length alphanumeric characters
+    // - Specific characters like '<' for padding
+    // - Consistent format across lines
+    const mrzPatterns = [
+        /^[A-Z0-9<]{30,44}$/m, // Standard MRZ line length
+        /[A-Z0-9<]{6,}\d{6}[A-Z0-9<]{6,}/, // Pattern with birth date
+        /<{2,}/, // Multiple padding characters
+    ];
+
+    return mrzPatterns.some(pattern => pattern.test(text));
 }

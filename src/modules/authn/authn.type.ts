@@ -107,6 +107,59 @@ export interface I_Input_Register_Membership {
     promoCode?: string;
 }
 
+// Verify Age
+export enum E_AgeVerifyStatus {
+    PENDING = 'PENDING',
+    APPROVED = 'APPROVED',
+    REJECTED = 'REJECTED',
+}
+
+export enum E_AgeVerifyMethod {
+    PASSPORT = 'PASSPORT',
+    ID_CARD = 'ID_CARD',
+    DRIVERS_LICENSE = 'DRIVERS_LICENSE',
+}
+
+export interface I_AgeRange {
+    low?: number;
+    high?: number;
+}
+
+export interface I_AIVerifyResult {
+    documentAge?: number;
+    selfieAgeRange?: I_AgeRange;
+    similarity?: number;
+    isOver18?: boolean;
+    dateOfBirth?: Date;
+}
+
+export interface I_PreApproval {
+    documentPic?: string;
+    selfiePic?: string;
+    aiResult?: I_AIVerifyResult;
+}
+
+export interface I_AgeVerify {
+    status?: E_AgeVerifyStatus;
+    method?: E_AgeVerifyMethod;
+    preApproval?: I_PreApproval;
+    approvedById?: string;
+    approvedBy?: I_User;
+    approvedAt?: Date;
+    reason?: string;
+    dateOfBirth?: Date;
+    agreement?: string;
+}
+
+export interface I_Input_ApproveAgeVerify {
+    userId: string;
+}
+
+export interface I_Input_RejectAgeVerify {
+    userId: string;
+    reason: string;
+}
+
 export interface I_Input_ForgotPasswordRequest {
     email: string;
 }

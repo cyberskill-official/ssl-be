@@ -1,7 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_RegisterStep } from '#modules/authn/index.js';
+import type { I_AgeVerify, I_AIVerifyResult, I_PreApproval } from '#modules/authn/index.js';
+
+import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { LocationSchema } from '#modules/location/index.js';
 import { validate } from '#shared/util/index.js';
 
@@ -13,6 +15,135 @@ import {
     E_PinStyle,
     E_UserSettings_TimeFormat,
 } from './user.type.js';
+
+const AIVerifyResultSchema = mongo.createSchema<I_AIVerifyResult>({
+    standalone: true,
+    mongoose,
+    schema: {
+        documentAge: {
+            type: Number,
+            default: 0,
+        },
+        selfieAgeRange: {
+            low: {
+                type: Number,
+                default: 0,
+            },
+            high: {
+                type: Number,
+                default: 0,
+            },
+        },
+        similarity: {
+            type: Number,
+            default: 0,
+        },
+        isOver18: {
+            type: Boolean,
+            default: false,
+        },
+        dateOfBirth: {
+            type: Date,
+        },
+    },
+});
+
+const PreApprovalSchema = mongo.createSchema<I_PreApproval>({
+    standalone: true,
+    mongoose,
+    schema: {
+        documentPic: {
+            type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select document picture for age verification',
+                },
+            ],
+        },
+        selfiePic: {
+            type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select selfie picture for age verification',
+                },
+            ],
+        },
+        aiResult: {
+            type: AIVerifyResultSchema,
+        },
+    },
+});
+
+const AgeVerifySchema = mongo.createSchema<I_AgeVerify>({
+    standalone: true,
+    mongoose,
+    schema: {
+        status: {
+            type: String,
+            enum: Object.values(E_AgeVerifyStatus),
+            default: E_AgeVerifyStatus.PENDING,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select status for age verification',
+                },
+            ],
+        },
+        method: {
+            type: String,
+            enum: Object.values(E_AgeVerifyMethod),
+            default: E_AgeVerifyMethod.PASSPORT,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select method for age verification',
+                },
+            ],
+        },
+        preApproval: {
+            type: PreApprovalSchema,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select pre-approval for age verification',
+                },
+            ],
+        },
+        approvedById: {
+            type: String,
+        },
+        approvedAt: {
+            type: Date,
+        },
+        reason: {
+            type: String,
+        },
+        dateOfBirth: {
+            type: Date,
+        },
+        agreement: {
+            type: String,
+        },
+    },
+    virtuals: [
+        {
+            name: 'approvedBy',
+            options: {
+                ref: 'User',
+                localField: 'approvedById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
+});
 
 export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
     standalone: true,
@@ -384,9 +515,8 @@ export const UserModel = mongo.createModel<I_User>({
             type: Boolean,
             default: false,
         },
-        isAgeVerified: {
-            type: Boolean,
-            default: false,
+        ageVerify: {
+            type: AgeVerifySchema,
         },
         displayName: {
             type: String,

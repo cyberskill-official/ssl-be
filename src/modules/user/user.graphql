@@ -8,6 +8,79 @@ enum E_Gender {
     FEMALE
 }
 
+enum E_AgeVerifyStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+enum E_AgeVerifyMethod {
+    PASSPORT
+    ID_CARD
+    DRIVERS_LICENSE
+}
+
+type T_AgeRange {
+    low: Int
+    high: Int
+}
+
+input Input_AgeRange {
+    low: Int
+    high: Int
+}
+
+type T_AIVerifyResult {
+    documentAge: Int
+    selfieAgeRange: T_AgeRange
+    similarity: Float
+    isOver18: Boolean
+    dateOfBirth: DateTime
+}
+
+input Input_AIVerifyResult {
+    documentAge: Int
+    selfieAgeRange: Input_AgeRange
+    similarity: Float
+    isOver18: Boolean
+    dateOfBirth: DateTime
+}
+
+type T_PreApproval {
+    documentPic: String
+    selfiePic: String
+    aiResult: T_AIVerifyResult
+}
+
+input Input_PreApproval {
+    documentPic: String
+    selfiePic: String
+    aiResult: Input_AIVerifyResult
+}
+
+type T_AgeVerify {
+    status: E_AgeVerifyStatus
+    method: E_AgeVerifyMethod
+    preApproval: T_PreApproval
+    approvedById: String
+    approvedBy: T_User
+    approvedAt: DateTime
+    reason: String
+    dateOfBirth: DateTime
+    agreement: String
+}
+
+input Input_AgeVerify {
+    status: E_AgeVerifyStatus
+    method: E_AgeVerifyMethod
+    preApproval: Input_PreApproval
+    approvedById: String
+    approvedAt: DateTime
+    reason: String
+    dateOfBirth: DateTime
+    agreement: String
+}
+
 type T_UserPartner {
     gender: E_Gender
     dateOfBirth: DateTime
@@ -115,7 +188,7 @@ type T_User {
     rolesIds: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
-    isAgeVerified: Boolean
+    ageVerify: T_AgeVerify
     displayName: String
     accountType: E_AccountType
     partner1: T_UserPartner
@@ -151,7 +224,7 @@ input Input_QueryUser {
     rolesIds: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
-    isAgeVerified: Boolean
+    ageVerify: Input_AgeVerify
     displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner

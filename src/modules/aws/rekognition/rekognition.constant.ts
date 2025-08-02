@@ -1,5 +1,5 @@
 export const IMAGE_QUALITY_THRESHOLDS = {
-    sharpness: 40,
+    sharpness: 10,
     brightness: {
         low: 40,
         high: 100,

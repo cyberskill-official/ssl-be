@@ -19,7 +19,7 @@ export interface I_GraphQLUpload {
 }
 
 export interface I_Input_UploadMany {
-    files: I_GraphQLUpload[];
+    files: T_UploadedFilePromise[];
 }
 export interface I_Input_Upload {
     type: E_UploadType;
