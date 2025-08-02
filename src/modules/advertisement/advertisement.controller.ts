@@ -141,14 +141,7 @@ export const advertisementCtr = {
             const existingAdvertisement = await advertisementCtr.getAdvertisement(context, { filter });
 
             if (existingAdvertisement.success && existingAdvertisement.result.image && existingAdvertisement.result.image !== update.image) {
-                const imageDeleted = await bunnyCtr.deleteFile(context, existingAdvertisement.result.image);
-
-                if (!imageDeleted.success) {
-                    throwError({
-                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                        message: imageDeleted.message,
-                    });
-                }
+                await bunnyCtr.deleteFile(context, existingAdvertisement.result.image);
             }
         }
 
@@ -161,14 +154,7 @@ export const advertisementCtr = {
         const advertisementFound = await advertisementCtr.getAdvertisement(context, { filter });
 
         if (advertisementFound.success && advertisementFound.result.image) {
-            const imageDeleted = await bunnyCtr.deleteFile(context, advertisementFound.result.image);
-
-            if (!imageDeleted.success) {
-                throwError({
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                    message: imageDeleted.message,
-                });
-            }
+            await bunnyCtr.deleteFile(context, advertisementFound.result.image);
         }
 
         return mongooseCtr.deleteOne(filter);

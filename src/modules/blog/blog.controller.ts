@@ -136,14 +136,7 @@ export const blogCtr = {
 
                 for (const field of mediaFields) {
                     if (update[field] && existingBlog.result[field] && existingBlog.result[field] !== update[field]) {
-                        const imageDeleted = await bunnyCtr.deleteFile(context, existingBlog.result[field]);
-
-                        if (!imageDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: imageDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteFile(context, existingBlog.result[field]);
                     }
                 }
             }
@@ -168,14 +161,7 @@ export const blogCtr = {
 
         for (const field of mediaFields) {
             if (blogFound.result[field]) {
-                const imageDeleted = await bunnyCtr.deleteFile(context, blogFound.result[field]);
-
-                if (!imageDeleted.success) {
-                    throwError({
-                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                        message: imageDeleted.message,
-                    });
-                }
+                await bunnyCtr.deleteFile(context, blogFound.result[field]);
             }
         }
 

@@ -104,25 +104,11 @@ export const galleryCtr = {
             if (existingGallery.success && existingGallery.result.url && existingGallery.result.url !== update.url) {
                 switch (existingGallery.result.type) {
                     case E_GalleryType.VIDEO: {
-                        const videoDeleted = await bunnyCtr.deleteVideo(context, existingGallery.result.url.split('/').pop()!);
-
-                        if (!videoDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: videoDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteVideo(context, existingGallery.result.url.split('/').pop()!);
                         break;
                     }
                     case E_GalleryType.IMAGE: {
-                        const imageDeleted = await bunnyCtr.deleteFile(context, existingGallery.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-
-                        if (!imageDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: imageDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteFile(context, existingGallery.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                         break;
                     }
                     default:
@@ -150,25 +136,11 @@ export const galleryCtr = {
         if (galleryFound.result.url) {
             switch (galleryFound.result.type) {
                 case E_GalleryType.VIDEO: {
-                    const videoDeleted = await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
-
-                    if (!videoDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: videoDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
                     break;
                 }
                 case E_GalleryType.IMAGE: {
-                    const imageDeleted = await bunnyCtr.deleteFile(context, galleryFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-
-                    if (!imageDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: imageDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteFile(context, galleryFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                     break;
                 }
                 default:
@@ -220,25 +192,11 @@ export const galleryCtr = {
         if (galleryFound.result.url) {
             switch (galleryFound.result.type) {
                 case E_GalleryType.VIDEO: {
-                    const videoDeleted = await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
-
-                    if (!videoDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: videoDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
                     break;
                 }
                 case E_GalleryType.IMAGE: {
-                    const imageDeleted = await bunnyCtr.deleteFile(context, galleryFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-
-                    if (!imageDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: imageDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteFile(context, galleryFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                     break;
                 }
                 default:

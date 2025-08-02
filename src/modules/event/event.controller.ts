@@ -268,14 +268,7 @@ export const eventCtr = {
             });
 
             if (existingEvent.success && existingEvent.result.image && existingEvent.result.image !== update.image) {
-                const imageDeleted = await bunnyCtr.deleteFile(context, existingEvent.result.image);
-
-                if (!imageDeleted.success) {
-                    throwError({
-                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                        message: imageDeleted.message,
-                    });
-                }
+                await bunnyCtr.deleteFile(context, existingEvent.result.image);
             }
         }
 
@@ -298,14 +291,7 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            const imageDeleted = await bunnyCtr.deleteFile(context, eventFound.result.image);
-
-            if (!imageDeleted.success) {
-                throwError({
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                    message: imageDeleted.message,
-                });
-            }
+            await bunnyCtr.deleteFile(context, eventFound.result.image);
         }
 
         return mongooseCtr.deleteOne(filter, options);

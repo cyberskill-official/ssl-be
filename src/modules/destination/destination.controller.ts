@@ -167,28 +167,13 @@ export const destinationCtr = {
 
                 for (const field of mediaFields) {
                     if (update[field] && existingDestination.result[field] && existingDestination.result[field] !== update[field]) {
-                        const imageDeleted = await bunnyCtr.deleteFile(context, existingDestination.result[field]);
-
-                        if (!imageDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: imageDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteFile(context, existingDestination.result[field]);
                     }
                 }
 
-                // Handle images array separately
                 if (update.images && existingDestination.result.images) {
                     for (const imageUrl of existingDestination.result.images) {
-                        const imageDeleted = await bunnyCtr.deleteFile(context, imageUrl);
-
-                        if (!imageDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: imageDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteFile(context, imageUrl);
                     }
                 }
             }
@@ -207,28 +192,13 @@ export const destinationCtr = {
 
             for (const field of mediaFields) {
                 if (destinationFound.result[field]) {
-                    const imageDeleted = await bunnyCtr.deleteFile(context, destinationFound.result[field]);
-
-                    if (!imageDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: imageDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteFile(context, destinationFound.result[field]);
                 }
             }
 
-            // Handle images array
             if (destinationFound.result.images) {
                 for (const imageUrl of destinationFound.result.images) {
-                    const imageDeleted = await bunnyCtr.deleteFile(context, imageUrl);
-
-                    if (!imageDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: imageDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteFile(context, imageUrl);
                 }
             }
         }

@@ -75,25 +75,11 @@ export const catalogueCtr = {
             if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
                 switch (existingCatalogue.result.type) {
                     case E_CatalogueType.VIDEO: {
-                        const videoDeleted = await bunnyCtr.deleteVideo(context, existingCatalogue.result.url.split('/').pop()!);
-
-                        if (!videoDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: videoDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteVideo(context, existingCatalogue.result.url.split('/').pop()!);
                         break;
                     }
                     case E_CatalogueType.IMAGE: {
-                        const imageDeleted = await bunnyCtr.deleteFile(context, existingCatalogue.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-
-                        if (!imageDeleted.success) {
-                            throwError({
-                                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                                message: imageDeleted.message,
-                            });
-                        }
+                        await bunnyCtr.deleteFile(context, existingCatalogue.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                         break;
                     }
                     default:
@@ -114,25 +100,11 @@ export const catalogueCtr = {
         if (catalogueFound.success && catalogueFound.result.url) {
             switch (catalogueFound.result.type) {
                 case E_CatalogueType.VIDEO: {
-                    const videoDeleted = await bunnyCtr.deleteVideo(context, catalogueFound.result.url.split('/').pop()!);
-
-                    if (!videoDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: videoDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteVideo(context, catalogueFound.result.url.split('/').pop()!);
                     break;
                 }
                 case E_CatalogueType.IMAGE: {
-                    const imageDeleted = await bunnyCtr.deleteFile(context, catalogueFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-
-                    if (!imageDeleted.success) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: imageDeleted.message,
-                        });
-                    }
+                    await bunnyCtr.deleteFile(context, catalogueFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                     break;
                 }
                 default:

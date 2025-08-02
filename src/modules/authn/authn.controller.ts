@@ -873,16 +873,8 @@ export const authnCtr = {
         }
 
         if (currentUser.ageVerify?.preApproval) {
-            try {
-                await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.documentPic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
-                await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.selfiePic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
-            }
-            catch {
-                throwError({
-                    message: 'Failed to delete old verification images.',
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
-            }
+            await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.documentPic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
+            await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.selfiePic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
         return userCtr.updateUser(context, {
@@ -946,26 +938,23 @@ export const authnCtr = {
         }
 
         if (userFound.result.ageVerify.preApproval) {
-            try {
-                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
-                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
-            }
-            catch (error) {
-                console.error('Failed to delete verification images:', error);
-            }
+            await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+            await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
         return userCtr.updateUser(
             context,
             {
                 filter: { id: userId },
-                update: { ageVerify: {
-                    status: E_AgeVerifyStatus.APPROVED,
-                    approvedById: currentUser.id,
-                    approvedAt: new Date(),
-                    preApproval: undefined,
-                    dateOfBirth: userFound.result.ageVerify.preApproval?.aiResult?.dateOfBirth,
-                } },
+                update: {
+                    ageVerify: {
+                        status: E_AgeVerifyStatus.APPROVED,
+                        approvedById: currentUser.id,
+                        approvedAt: new Date(),
+                        preApproval: undefined,
+                        dateOfBirth: userFound.result.ageVerify.preApproval?.aiResult?.dateOfBirth,
+                    },
+                },
             },
         );
     },
@@ -1016,24 +1005,21 @@ export const authnCtr = {
         }
 
         if (userFound.result.ageVerify.preApproval) {
-            try {
-                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
-                await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
-            }
-            catch (error) {
-                console.error('Failed to delete verification images:', error);
-            }
+            await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.documentPic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
+            await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
         return userCtr.updateUser(
             context,
             {
                 filter: { id: userId },
-                update: { ageVerify: {
-                    status: E_AgeVerifyStatus.REJECTED,
-                    reason: reason.trim(),
-                    preApproval: undefined,
-                } },
+                update: {
+                    ageVerify: {
+                        status: E_AgeVerifyStatus.REJECTED,
+                        reason: reason.trim(),
+                        preApproval: undefined,
+                    },
+                },
             },
         );
     },
