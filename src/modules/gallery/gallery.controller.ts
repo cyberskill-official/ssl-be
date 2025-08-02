@@ -50,14 +50,7 @@ export const galleryCtr = {
         const isLoggedIn = !!context?.req?.session?.user;
         const userId = context.req?.session?.user?.id;
 
-        const galleries = await mongooseCtr.findPaging(filter, {
-            ...options,
-            lean: true,
-            projection: {
-                ...options?.projection,
-                _id: 0,
-            },
-        });
+        const galleries = await mongooseCtr.findPaging(filter, options);
 
         if (!galleries.success) {
             return galleries;
@@ -192,7 +185,6 @@ export const galleryCtr = {
 
         const galleryFound = await galleryCtr.getGallery(context, {
             filter: { id },
-            projection: { id: 1, uploadedById: 1 },
         });
 
         if (!galleryFound.success) {

@@ -265,7 +265,6 @@ export const eventCtr = {
         if (update.image) {
             const existingEvent = await eventCtr.getEvent(context, {
                 filter,
-                projection: { image: 1 },
             });
 
             if (existingEvent.success && existingEvent.result.image && existingEvent.result.image !== update.image) {

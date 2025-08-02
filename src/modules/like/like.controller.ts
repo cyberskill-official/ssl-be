@@ -88,7 +88,6 @@ export const likeCtr = {
             case E_EntityType.GALLERY: {
                 const entityFound = await galleryCtr.getGallery(context, {
                     filter: { id: doc.entityId },
-                    projection: { id: 1 },
                 });
                 if (!entityFound.success) {
                     throwError({
@@ -101,7 +100,6 @@ export const likeCtr = {
             case E_EntityType.BLOG: {
                 const entityFound = await blogCtr.getBlog(context, {
                     filter: { id: doc.entityId },
-                    projection: { id: 1 },
                 });
                 if (!entityFound.success) {
                     throwError({

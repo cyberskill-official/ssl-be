@@ -9,16 +9,6 @@ export const CatalogueModel = mongo.createModel<I_Catalogue>({
     mongoose,
     name: 'Catalogue',
     schema: {
-        moderationMediaId: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please provide moderationMediaId',
-                },
-            ],
-        },
         type: {
             type: String,
             enum: Object.values(E_ModerationMediaType),
@@ -49,6 +39,9 @@ export const CatalogueModel = mongo.createModel<I_Catalogue>({
                     message: 'Please enter url for catalogue',
                 },
             ],
+        },
+        moderationMediaId: {
+            type: String,
         },
         status: {
             type: String,

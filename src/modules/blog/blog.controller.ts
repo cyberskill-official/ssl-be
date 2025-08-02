@@ -42,7 +42,6 @@ export const blogCtr = {
         if (languageId) {
             const language = await languageCtr.getLanguage(context, {
                 filter: { id: languageId },
-                projection: { id: 1 },
             });
 
             if (!language) {
@@ -57,7 +56,6 @@ export const blogCtr = {
             const blogs = await blogCtr.getBlogs(context, {
                 filter: { id: { $in: relatedBlogsIds } },
                 options: {
-                    projection: { id: 1 },
                     limit: relatedBlogsIds?.length,
                 },
             });
@@ -96,7 +94,6 @@ export const blogCtr = {
         if (languageId) {
             const language = await languageCtr.getLanguage(context, {
                 filter: { id: languageId },
-                projection: { id: 1 },
             });
 
             if (!language) {
@@ -111,7 +108,6 @@ export const blogCtr = {
             const blogs = await blogCtr.getBlogs(context, {
                 filter: { id: { $in: relatedBlogsIds } },
                 options: {
-                    projection: { id: 1 },
                     limit: relatedBlogsIds?.length,
                 },
             });
@@ -133,7 +129,6 @@ export const blogCtr = {
         if (update.featuredImage || update.logo || update.cover || update.file) {
             const existingBlog = await blogCtr.getBlog(context, {
                 filter,
-                projection: { featuredImage: 1, logo: 1, cover: 1, file: 1 },
             });
 
             if (existingBlog.success) {

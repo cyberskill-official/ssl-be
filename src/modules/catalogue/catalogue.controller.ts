@@ -67,11 +67,9 @@ export const catalogueCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateCatalogue>,
     ): Promise<I_Return<I_Catalogue>> => {
-        // If new media is provided, remove old media from Bunny store first
         if (update.url) {
             const existingCatalogue = await catalogueCtr.getCatalogue(context, {
                 filter,
-                projection: { url: 1, type: 1 },
             });
 
             if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
@@ -111,7 +109,6 @@ export const catalogueCtr = {
     ): Promise<I_Return<I_Catalogue>> => {
         const catalogueFound = await catalogueCtr.getCatalogue(context, {
             filter,
-            projection: { url: 1, type: 1 },
         });
 
         if (catalogueFound.success && catalogueFound.result.url) {

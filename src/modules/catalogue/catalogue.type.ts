@@ -9,12 +9,12 @@ export enum E_CatalogueType {
 }
 
 export interface I_Catalogue extends I_GenericDocument {
-    moderationMediaId?: string;
-    moderationMedia?: I_ModerationMedia;
     type?: E_CatalogueType;
     tagId?: string;
     tag?: I_Tag;
     url?: string;
+    moderationMediaId?: string;
+    moderationMedia?: I_ModerationMedia;
     status?: E_ModerationMediaStatus;
 }
 
