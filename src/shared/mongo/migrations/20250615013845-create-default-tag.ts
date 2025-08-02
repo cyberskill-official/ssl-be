@@ -114,12 +114,6 @@ const tags = [
     { name: 'Beach', type: E_TagType.CATALOGUE },
     { name: 'Island', type: E_TagType.CATALOGUE },
     { name: 'Nature', type: E_TagType.CATALOGUE },
-    { name: 'BDSM', type: E_TagType.CATALOGUE },
-    { name: 'Soft', type: E_TagType.CATALOGUE },
-    { name: 'Chemistry', type: E_TagType.CATALOGUE },
-    { name: 'Drinks', type: E_TagType.CATALOGUE },
-    { name: 'Spontaneous', type: E_TagType.CATALOGUE },
-    { name: 'Passion', type: E_TagType.CATALOGUE },
 ];
 
 export async function up(db: C_Db) {
