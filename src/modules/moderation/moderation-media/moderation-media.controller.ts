@@ -17,10 +17,11 @@ import type { I_User } from '#modules/user/user.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
-import { E_Entity } from '#shared/typescript/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type {
     I_Input_ApproveModerationMedia,
@@ -42,13 +43,47 @@ export const moderationMediaCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const moderationMediaFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!moderationMediaFound.success) {
+            return moderationMediaFound;
+        }
+
+        if (moderationMediaFound.result.url) {
+            moderationMediaFound.result.url = bunnyCtr.generateSignedUrl({
+                fullUrl: moderationMediaFound.result.url,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        return moderationMediaFound;
     },
     getModerationMedias: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<T_PaginateResult<I_ModerationMedia>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const moderationMedias = await mongooseCtr.findPaging(filter, options);
+
+        if (!moderationMedias.success) {
+            return moderationMedias;
+        }
+
+        moderationMedias.result.docs = moderationMedias.result.docs.map((moderationMedia) => {
+            if (moderationMedia.url) {
+                moderationMedia.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: moderationMedia.url,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+
+            return moderationMedia;
+        });
+
+        return moderationMedias;
     },
     createModerationMedia: async (
         context: I_Context,
@@ -76,7 +111,7 @@ export const moderationMediaCtr = {
             moderationCreatedId = moderationCreated.result.id;
 
             switch (entity) {
-                case E_Entity.GALLERY: {
+                case E_UploadEntity.GALLERY: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
                         doc: {
                             moderationMediaId: moderationCreatedId,
@@ -96,7 +131,7 @@ export const moderationMediaCtr = {
                     break;
                 }
 
-                case E_Entity.CATALOGUE: {
+                case E_UploadEntity.CATALOGUE: {
                     if (!moderationCreated.result.tagId) {
                         throwError({
                             message: 'Tag ID is required for catalogue module.',
@@ -122,13 +157,13 @@ export const moderationMediaCtr = {
                     break;
                 }
 
-                case E_Entity.CONVERSATION:
+                case E_UploadEntity.CONVERSATION:
                     // TODO: Handle conversation module if needed
                     break;
-                case E_Entity.EVENT:
+                case E_UploadEntity.EVENT:
                     // TODO:Handle event module if needed
                     break;
-                case E_Entity.USER:
+                case E_UploadEntity.USER:
                     // TODO: Handle user module if needed
                     break;
 
@@ -181,7 +216,7 @@ export const moderationMediaCtr = {
 
         try {
             switch (currentEntity) {
-                case E_Entity.CATALOGUE:
+                case E_UploadEntity.CATALOGUE:
                     await catalogueCtr.updateCatalogue(context, {
                         filter: {
                             moderationMediaId: moderation.id,
@@ -192,7 +227,7 @@ export const moderationMediaCtr = {
                     });
                     break;
 
-                case E_Entity.GALLERY:
+                case E_UploadEntity.GALLERY:
                     await galleryCtr.updateGallery(context, {
                         filter: {
                             moderationMediaId: moderation.id,
@@ -203,13 +238,13 @@ export const moderationMediaCtr = {
                     });
                     break;
 
-                case E_Entity.CONVERSATION:
+                case E_UploadEntity.CONVERSATION:
                     // TODO: Handle conversation module if needed
                     break;
-                case E_Entity.EVENT:
+                case E_UploadEntity.EVENT:
                     // TODO:Handle event module if needed
                     break;
-                case E_Entity.USER:
+                case E_UploadEntity.USER:
                     // TODO: Handle user module if needed
                     break;
 
@@ -329,12 +364,12 @@ export const moderationMediaCtr = {
 
         try {
             switch (entity) {
-                case E_Entity.GALLERY:
+                case E_UploadEntity.GALLERY:
                     await galleryCtr.deleteGallery(context, {
                         filter: { moderationMediaId: id },
                     });
                     break;
-                case E_Entity.CATALOGUE:
+                case E_UploadEntity.CATALOGUE:
                     await catalogueCtr.deleteCatalogue(context, {
                         filter: { moderationMediaId: id },
                     });

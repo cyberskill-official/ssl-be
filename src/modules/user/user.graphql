@@ -106,6 +106,7 @@ type T_UserPartner {
     skinTone: T_Tag
     galleryId: String
     gallery: T_Gallery
+    locationId: String
     location: T_Location
     bio: String
 }
@@ -124,23 +125,19 @@ input Input_UserPartner {
     eyeColorId: String
     skinToneId: String
     galleryId: String
+    locationId: String
     location: Input_Location
     bio: String
 }
 
-enum E_PinStyle {
-    MALE
-    FEMALE
-    COUPLE
-    LGBTQ_PLUS
-}
-
 type T_UserSettings_TemporaryLocation {
+    locationId: String
     location: T_Location
     endAt: DateTime
 }
 
 input Input_UserSettings_TemporaryLocation {
+    locationId: String
     location: Input_Location
     endAt: DateTime
 }
@@ -170,12 +167,14 @@ type T_UserSettings {
     timeFormat: E_UserSettings_TimeFormat
     temporaryLocation: T_UserSettings_TemporaryLocation
     notification: T_UserSettings_Notification
+    zoomLevel: Int
 }
 
 input Input_UserSettings {
     timeFormat: E_UserSettings_TimeFormat
     temporaryLocation: Input_UserSettings_TemporaryLocation
     notification: Input_UserSettings_Notification
+    zoomLevel: Int
 }
 
 type T_User {
@@ -197,7 +196,6 @@ type T_User {
     nativeLanguage: T_Language
     otherLanguagesIds: [String]
     otherLanguages: [T_Language]
-    pinStyle: E_PinStyle
     lookingForIds: [String]
     lookingFor: [T_Tag]
     profilePurposeIds: [String]
@@ -231,7 +229,6 @@ input Input_QueryUser {
     partner2: Input_UserPartner
     nativeLanguageId: String
     otherLanguagesIds: [String]
-    pinStyle: E_PinStyle
     lookingForIds: [String]
     profilePurposeIds: [String]
     willingnessToGoIds: [String]
@@ -256,7 +253,6 @@ input Input_CreateUser {
     partner2: Input_UserPartner
     nativeLanguageId: String
     otherLanguagesIds: [String]
-    pinStyle: E_PinStyle
     lookingForIds: [String]
     profilePurposeIds: [String]
     willingnessToGoIds: [String]
@@ -282,7 +278,6 @@ input Input_UpdateUser {
     partner2: Input_UserPartner
     nativeLanguageId: String
     otherLanguagesIds: [String]
-    pinStyle: E_PinStyle
     lookingForIds: [String]
     profilePurposeIds: [String]
     willingnessToGoIds: [String]

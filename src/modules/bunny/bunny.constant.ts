@@ -9,3 +9,5 @@ export const storageZone = zone.connect_with_accesskey(
     env.BUNNY_STORAGE_ZONE_NAME,
     env.BUNNY_STORAGE_API_KEY,
 );
+
+export const BUNNY_IFRAME_URL = `https://iframe.mediadelivery.net/embed`;

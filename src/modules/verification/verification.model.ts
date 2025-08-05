@@ -32,10 +32,6 @@ export const VerificationMetaSchema = mongo.createSchema<I_VerificationMeta>({
         userAgent: {
             type: String,
         },
-        location: {
-            country: { type: String },
-            city: { type: String },
-        },
         extra: {
             type: Object,
             default: {},

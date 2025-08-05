@@ -63,11 +63,13 @@ export function getEnv(): I_Environment {
         AWS_SES_REGION: str({ default: AWS_SES_REGION }),
         AWS_REKOGNITION_REGION: str({ default: AWS_REKOGNITION_REGION }),
         BUNNY_CDN_HOSTNAME: str(),
+        BUNNY_CDN_SECURITY_KEY: str(),
         BUNNY_STORAGE_ZONE_NAME: str(),
         BUNNY_STORAGE_API_KEY: str(),
         BUNNY_STREAM_HOST_NAME: str(),
         BUNNY_STREAM_LIBRARY_ID: str(),
         BUNNY_STREAM_API_KEY: str(),
+        BUNNY_STREAM_SECURITY_KEY: str(),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;

@@ -26,10 +26,6 @@ export interface I_VerificationMeta {
     platform?: E_VerificationPlatform;
     ip?: string;
     userAgent?: string;
-    location?: {
-        country?: string;
-        city?: string;
-    };
     extra?: Record<string, any>;
 }
 

@@ -3,8 +3,6 @@ import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { LocationSchema } from '#modules/location/index.js';
-
 import type { I_Event } from './event.type.js';
 
 import { E_EventType } from './event.type.js';
@@ -78,9 +76,6 @@ export const EventModel = mongo.createModel<I_Event>({
                 },
             ],
         },
-        destinationId: {
-            type: String,
-        },
         image: {
             type: String,
             required: true,
@@ -91,14 +86,21 @@ export const EventModel = mongo.createModel<I_Event>({
                 },
             ],
         },
+        createdById: {
+            type: String,
+            required: true,
+        },
+        destinationId: {
+            type: String,
+        },
         startTime: {
             type: String,
         },
         endTime: {
             type: String,
         },
-        location: {
-            type: LocationSchema,
+        locationId: {
+            type: String,
         },
         fee: {
             type: Number,
@@ -109,10 +111,6 @@ export const EventModel = mongo.createModel<I_Event>({
         },
         pushMessage: {
             type: String,
-        },
-        createdById: {
-            type: String,
-            required: true,
         },
         isActive: {
             type: Boolean,
@@ -134,6 +132,15 @@ export const EventModel = mongo.createModel<I_Event>({
             options: {
                 ref: 'User',
                 localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
                 foreignField: 'id',
                 justOne: true,
             },

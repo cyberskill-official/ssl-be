@@ -13,6 +13,7 @@ import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
+import { E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
@@ -28,13 +29,46 @@ export const eventCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const eventFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!eventFound.success) {
+            return eventFound;
+        }
+
+        if (eventFound.result.image) {
+            eventFound.result.image = bunnyCtr.generateSignedUrl({
+                fullUrl: eventFound.result.image,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        return eventFound;
     },
     getEvents: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const events = await mongooseCtr.findPaging(filter, options);
+
+        if (!events.success) {
+            return events;
+        }
+
+        events.result.docs = events.result.docs.map((event) => {
+            if (event.image) {
+                event.image = bunnyCtr.generateSignedUrl({
+                    fullUrl: event.image,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+            return event;
+        });
+
+        return events;
     },
     createEvent: async (
         context: I_Context,
@@ -250,7 +284,46 @@ export const eventCtr = {
             doc.fee = totalFee;
         }
 
-        return mongooseCtr.createOne(doc);
+        const eventCreated = await mongooseCtr.createOne(doc);
+
+        if (!eventCreated.success) {
+            return eventCreated;
+        }
+
+        let pinStyle;
+
+        if (type === E_EventType.CLUB_VISIT) {
+            pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
+        }
+
+        if (type === E_EventType.TRAVEL) {
+            pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
+        }
+
+        if (type === E_EventType.BOOTY_CALL) {
+            pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
+        }
+
+        const locationCreated = await locationCtr.createLocation(context, {
+            doc: doc.location
+                ? {
+                        ...doc.location,
+                        pinStyle,
+                        entityType: E_LocationEntityType.EVENT,
+                        entityId: eventCreated.result.id,
+                    }
+                : {
+                        pinStyle,
+                        entityType: E_LocationEntityType.EVENT,
+                        entityId: eventCreated.result.id,
+                    },
+        });
+
+        if (!locationCreated.success) {
+            return locationCreated;
+        }
+
+        return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: locationCreated.result.id });
     },
     updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
         const eventFound = await eventCtr.getEvent(context, { filter });
@@ -269,6 +342,34 @@ export const eventCtr = {
 
             if (existingEvent.success && existingEvent.result.image && existingEvent.result.image !== update.image) {
                 await bunnyCtr.deleteFile(context, existingEvent.result.image);
+            }
+        }
+
+        if (update.location) {
+            let pinStyle;
+
+            if (update.type === E_EventType.CLUB_VISIT) {
+                pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
+            }
+
+            if (update.type === E_EventType.TRAVEL) {
+                pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
+            }
+
+            if (update.type === E_EventType.BOOTY_CALL) {
+                pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
+            }
+
+            const locationUpdated = await locationCtr.updateLocation(context, {
+                filter: { id: eventFound.result.locationId },
+                update: {
+                    ...update.location,
+                    pinStyle,
+                },
+            });
+
+            if (!locationUpdated.success) {
+                return locationUpdated;
             }
         }
 
@@ -292,6 +393,14 @@ export const eventCtr = {
 
         if (eventFound.result.image) {
             await bunnyCtr.deleteFile(context, eventFound.result.image);
+        }
+
+        if (eventFound.result.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: eventFound.result.locationId } });
+
+            if (!locationDeleted.success) {
+                return locationDeleted;
+            }
         }
 
         return mongooseCtr.deleteOne(filter, options);

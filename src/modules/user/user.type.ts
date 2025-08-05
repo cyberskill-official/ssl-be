@@ -4,7 +4,7 @@ import type { E_RegisterStep, I_AgeVerify } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Language } from '#modules/language/index.js';
-import type { I_Input_Location, I_Location } from '#modules/location/index.js';
+import type { I_Location } from '#modules/location/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
 
 export enum E_AccountType {
@@ -47,6 +47,7 @@ export interface I_UserPartner {
     skinTone?: I_Tag;
     galleryId?: string;
     gallery?: I_Gallery;
+    locationId?: string;
     location?: I_Location;
     bio?: string;
 }
@@ -54,23 +55,17 @@ export interface I_UserPartner {
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
 
 export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> {
-    location?: I_Input_Location;
-}
-
-export enum E_PinStyle {
-    MALE = 'MALE',
-    FEMALE = 'FEMALE',
-    COUPLE = 'COUPLE',
-    LGBTQ_PLUS = 'LGBTQ+',
 }
 
 export interface I_UserSettings_TemporaryLocation {
+    locationId?: string;
     location?: I_Location;
     endAt?: Date;
 }
 
 export interface I_Input_UserSettings_TemporaryLocation extends I_UserSettings_TemporaryLocation {
-    location?: I_Input_Location;
+    location: I_Location;
+    endAt: Date;
 }
 
 export interface I_UserSettings_Notification {
@@ -85,12 +80,14 @@ export interface I_UserSettings {
     timeFormat?: E_UserSettings_TimeFormat;
     temporaryLocation?: I_UserSettings_TemporaryLocation;
     notification?: I_UserSettings_Notification;
+    zoomLevel?: number;
 }
 
 export interface I_Input_UserSettings {
     timeFormat?: E_UserSettings_TimeFormat;
     temporaryLocation?: I_Input_UserSettings_TemporaryLocation;
     notification?: I_UserSettings_Notification;
+    zoomLevel?: number;
 }
 
 export interface I_User extends I_GenericDocument {
@@ -109,7 +106,6 @@ export interface I_User extends I_GenericDocument {
     nativeLanguage?: I_Language;
     otherLanguagesIds?: string[];
     otherLanguages?: I_Language[];
-    pinStyle?: E_PinStyle;
     lookingForIds?: string[];
     lookingFor?: I_Tag[];
     profilePurposeIds?: string[];

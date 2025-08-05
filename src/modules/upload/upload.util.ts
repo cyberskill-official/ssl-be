@@ -1,6 +1,6 @@
 import { path } from '@cyberskill/shared/node/path';
 
-import { E_Entity } from '#shared/typescript/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type { I_UploadPathConfig } from './upload.type.js';
 
@@ -8,31 +8,31 @@ export function generateUploadPath(baseDir: string, config: I_UploadPathConfig):
     const { entity, type, entityId, userId } = config;
 
     switch (entity) {
-        case E_Entity.USER: {
+        case E_UploadEntity.USER: {
             return path.posix.join(baseDir, entity, entityId || userId || 'anonymous', type.toLowerCase());
         }
-        case E_Entity.CONVERSATION: {
+        case E_UploadEntity.CONVERSATION: {
             if (!entityId) {
                 throw new Error('Entity ID is required for conversation uploads');
             }
 
             return path.posix.join(baseDir, entity, entityId, userId || 'anonymous', type.toLowerCase());
         }
-        case E_Entity.EVENT: {
+        case E_UploadEntity.EVENT: {
             if (!entityId) {
                 throw new Error('Entity ID is required for event uploads');
             }
 
             return path.posix.join(baseDir, entity, entityId, type.toLowerCase());
         }
-        case E_Entity.CATALOGUE: {
+        case E_UploadEntity.CATALOGUE: {
             if (!entityId) {
                 throw new Error('Entity ID is required for catalogue uploads');
             }
 
             return path.posix.join(baseDir, entity, entityId, type.toLowerCase());
         }
-        case E_Entity.CLUB: {
+        case E_UploadEntity.CLUB: {
             if (!entityId) {
                 throw new Error('Entity ID is required for club uploads');
             }

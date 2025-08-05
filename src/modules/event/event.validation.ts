@@ -2,21 +2,9 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
+import type { I_Input_TimeBasedEventData, I_TimeBasedEventValidation } from './event.type.js';
+
 import { E_EventType } from './event.type.js';
-
-interface I_Input_TimeBasedEventData {
-    startDate: Date;
-    endDate?: Date; // Add optional endDate
-    startTime: string;
-    endTime: string;
-}
-
-interface I_TimeBasedEventValidation {
-    startDateTime: Date;
-    endDateTime: Date;
-    isOvernight: boolean;
-    durationInHours: number;
-}
 
 /**
  * Validates time-based event for creation

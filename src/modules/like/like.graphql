@@ -1,10 +1,10 @@
-enum E_EntityType {
+enum E_LikeEntityType {
     GALLERY
     BLOG
     MESSAGE
 }
 
-union U_Entity = T_Gallery | T_Blog | T_Message
+union U_LikeEntity = T_Gallery | T_Blog | T_Message
 
 type T_Like {
     id: String
@@ -13,9 +13,9 @@ type T_Like {
     updatedAt: DateTime
     userId: String
     user: T_User
-    entityType: E_EntityType
+    entityType: E_LikeEntityType
     entityId: String
-    entity: U_Entity
+    entity: U_LikeEntity
 }
 
 input Input_QueryLike {
@@ -24,12 +24,12 @@ input Input_QueryLike {
     createdAt: DateTime
     updatedAt: DateTime
     userId: String
-    entityType: E_EntityType
+    entityType: E_LikeEntityType
     entityId: String
 }
 
 input Input_CreateLike {
-    entityType: E_EntityType!
+    entityType: E_LikeEntityType!
     entityId: String!
 }
 

@@ -11,10 +11,14 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
+import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
@@ -28,13 +32,103 @@ export const userCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const userFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!userFound.success) {
+            return userFound;
+        }
+
+        if (userFound.result.partner1?.gallery?.url) {
+            userFound.result.partner1.gallery.url = bunnyCtr.generateSignedUrl({
+                fullUrl: userFound.result.partner1.gallery.url,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        if (userFound.result.partner2?.gallery?.url) {
+            userFound.result.partner2.gallery.url = bunnyCtr.generateSignedUrl({
+                fullUrl: userFound.result.partner2.gallery.url,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        if (userFound.result.ageVerify?.preApproval?.documentPic) {
+            userFound.result.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
+                fullUrl: userFound.result.ageVerify.preApproval.documentPic,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        if (userFound.result.ageVerify?.preApproval?.selfiePic) {
+            userFound.result.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
+                fullUrl: userFound.result.ageVerify.preApproval.selfiePic,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        return userFound;
     },
     getUsers: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryUser>,
     ): Promise<I_Return<T_PaginateResult<I_User>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const users = await mongooseCtr.findPaging(filter, options);
+
+        if (!users.success) {
+            return users;
+        }
+
+        users.result.docs = users.result.docs.map((user) => {
+            // Apply signed URLs to partner galleries
+            if (user.partner1?.gallery?.url) {
+                user.partner1.gallery.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: user.partner1.gallery.url,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+
+            if (user.partner2?.gallery?.url) {
+                user.partner2.gallery.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: user.partner2.gallery.url,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+
+            // Apply signed URLs to age verification images
+            if (user.ageVerify?.preApproval?.documentPic) {
+                user.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
+                    fullUrl: user.ageVerify.preApproval.documentPic,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+
+            if (user.ageVerify?.preApproval?.selfiePic) {
+                user.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
+                    fullUrl: user.ageVerify.preApproval.selfiePic,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+
+            return user;
+        });
+
+        return users;
     },
     createUser: async (
         context: I_Context,
@@ -59,9 +153,53 @@ export const userCtr = {
             });
         }
 
-        return mongooseCtr.createOne({
+        const userCreated = await mongooseCtr.createOne({
             ...doc,
             password: bcrypt.hashSync(password),
+        });
+
+        if (!userCreated.success) {
+            throwError({
+                message: userCreated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const locationCreated = await locationCtr.createLocation(context, {
+            doc: {
+                entityType: E_LocationEntityType.USER,
+                entityId: userCreated.result.id,
+            },
+        });
+
+        if (!locationCreated.success) {
+            throwError({
+                message: locationCreated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const temporaryLocationCreated = await locationCtr.createLocation(context, {
+            doc: {
+                entityType: E_LocationEntityType.USER,
+                entityId: userCreated.result.id,
+            },
+        });
+
+        if (!temporaryLocationCreated.success) {
+            throwError({
+                message: temporaryLocationCreated.message,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return mongooseCtr.updateOne({ id: userCreated.result.id }, {
+            partner1: { locationId: locationCreated.result.id },
+            settings: {
+                temporaryLocation: {
+                    locationId: temporaryLocationCreated.result.id,
+                },
+            },
         });
     },
     updateUser: async (
@@ -75,6 +213,16 @@ export const userCtr = {
             update.password = bcrypt.hashSync(password);
         }
 
+        if (update.settings?.temporaryLocation) {
+            const isFreeMember = await authnCtr.isFreeMember(context);
+            if (isFreeMember) {
+                throwError({
+                    message: 'Free users cannot use temporary location feature. Please upgrade your membership.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
         const userFound = await userCtr.getUser(context, { filter });
 
         if (!userFound.success) {
@@ -84,7 +232,43 @@ export const userCtr = {
             });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        if (update?.partner1?.location) {
+            const locationUpdated = await locationCtr.updateLocation(context, {
+                filter: { id: userFound.result.partner1?.locationId },
+                update: {
+                    ...update?.partner1?.location,
+                },
+            });
+
+            if (!locationUpdated.success) {
+                throwError({
+                    message: locationUpdated.message,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+
+        if (update.settings?.temporaryLocation) {
+            const locationUpdated = await locationCtr.updateLocation(context, {
+                filter: { id: userFound.result.settings?.temporaryLocation?.locationId },
+                update: {
+                    ...update.settings.temporaryLocation,
+                },
+            });
+
+            if (!locationUpdated.success) {
+                throwError({
+                    message: locationUpdated.message,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+
+        const mergeUpdate = deepMerge(
+            userFound.result as unknown as Record<string, unknown>,
+            update as Record<string, unknown>,
+        );
+        return mongooseCtr.updateOne(filter, mergeUpdate, options);
     },
     deleteUser: async (
         context: I_Context,
@@ -97,6 +281,28 @@ export const userCtr = {
                 message: 'User not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
+        }
+
+        if (userFound.result.partner1?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userFound.result.partner1?.locationId } });
+
+            if (!locationDeleted.success) {
+                throwError({
+                    message: locationDeleted.message,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+
+        if (userFound.result.settings?.temporaryLocation?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userFound.result.settings?.temporaryLocation?.locationId } });
+
+            if (!locationDeleted.success) {
+                throwError({
+                    message: locationDeleted.message,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
         }
 
         return mongooseCtr.deleteOne(filter, options);

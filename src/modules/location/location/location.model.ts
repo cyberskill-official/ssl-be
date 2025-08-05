@@ -1,9 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_Entity } from '#shared/typescript/index.js';
-
 import type { I_Location } from './location.type.js';
+
+import { E_Destination_PinStyle, E_Event_PinStyle, E_LocationEntityType, E_User_PinStyle } from './location.type.js';
 
 export const MapSchema = mongo.createSchema({
     standalone: true,
@@ -15,19 +15,12 @@ export const MapSchema = mongo.createSchema({
         longitude: {
             type: Number,
         },
-        zoomLevel: {
-            type: Number,
-        },
-        entity: {
-            type: String,
-            enum: Object.values(E_Entity),
-        },
     },
 });
 
-export const LocationSchema = mongo.createSchema<I_Location>({
-    standalone: true,
+export const LocationModel = mongo.createModel<I_Location>({
     mongoose,
+    name: 'Location',
     schema: {
         regionId: {
             type: String,
@@ -49,6 +42,23 @@ export const LocationSchema = mongo.createSchema<I_Location>({
         },
         map: {
             type: MapSchema,
+        },
+        pinStyle: {
+            type: String,
+            enum: [...Object.values(E_User_PinStyle), ...Object.values(E_Event_PinStyle), ...Object.values(E_Destination_PinStyle)],
+        },
+        entityType: {
+            type: String,
+            enum: Object.values(E_LocationEntityType),
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please enter entityType for like',
+                },
+            ],
+        },
+        entityId: {
+            type: String,
         },
     },
     virtuals: [
@@ -93,6 +103,15 @@ export const LocationSchema = mongo.createSchema<I_Location>({
             options: {
                 ref: 'City',
                 localField: 'cityId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'entity',
+            options: {
+                ref: doc => doc.entityType,
+                localField: 'entityId',
                 foreignField: 'id',
                 justOne: true,
             },

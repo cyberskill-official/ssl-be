@@ -28,8 +28,8 @@ input Input_Seo {
 
 type T_Hotel {
     name: String
-    address: String
-    countryId: String
+    locationId: String
+    location: T_Location
     url: String
     description: String
     image: String
@@ -37,8 +37,7 @@ type T_Hotel {
 
 input Input_Hotel {
     name: String
-    address: String
-    countryId: String
+    location: Input_Location
     url: String
     description: String
     image: String
@@ -62,7 +61,6 @@ type T_Destination {
     type: E_DestinationType
     name: String
     slug: String
-    address: String
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -70,6 +68,7 @@ type T_Destination {
     introductionContent: String
     ageGroup: E_DestinationAgeGroup
     logo: String
+    locationId: String
     location: T_Location
     nearbyHotels: [T_Hotel]
     wearImage: String
@@ -100,7 +99,6 @@ input Input_QueryDestination {
     type: E_DestinationType
     name: String
     slug: String
-    address: String
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -108,7 +106,7 @@ input Input_QueryDestination {
     introductionContent: String
     ageGroup: E_DestinationAgeGroup
     logo: String
-    location: Input_Location
+    locationId: String
     nearbyHotels: [Input_Hotel]
     wearImage: String
     womenDressCode: String
@@ -132,7 +130,6 @@ input Input_QueryDestination {
 input Input_CreateDestination {
     type: E_DestinationType!
     name: String!
-    address: String!
     websiteURL: String!
     rating: E_DestinationRating!
     images: [String]!
@@ -165,7 +162,6 @@ input Input_UpdateDestination {
     isDel: Boolean
     type: E_DestinationType
     name: String
-    address: String
     websiteURL: String
     rating: E_DestinationRating
     images: [String]

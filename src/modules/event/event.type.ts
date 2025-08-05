@@ -1,7 +1,7 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/index.js';
-import type { I_Input_Location, I_Location } from '#modules/location/index.js';
+import type { I_Location } from '#modules/location/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_EventType {
@@ -18,17 +18,18 @@ export interface I_Event extends I_GenericDocument {
     description?: string;
     startDate?: Date;
     endDate?: Date;
+    image?: string;
+    createdById?: string;
+    createdBy?: I_User;
     destinationId?: string;
     destination?: I_Destination;
-    image?: string;
     startTime?: string;
     endTime?: string;
+    locationId?: string;
     location?: I_Location;
     fee?: number;
     currency?: string;
     pushMessage?: string;
-    createdById?: string;
-    createdBy?: I_User;
     isActive?: boolean;
 }
 
@@ -42,12 +43,23 @@ export interface I_Input_CreateEvent extends Omit<I_Event, T_Omit_Create | T_Eve
     description: string;
     startDate: Date;
     endDate: Date;
-    destinationId?: string;
-    location: I_Input_Location;
     image: string;
     createdById: string;
 }
 
 export interface I_Input_UpdateEvent extends Omit<I_Event, T_Omit_Update | T_Event_Populate> {
-    location?: I_Input_Location;
+}
+
+export interface I_Input_TimeBasedEventData {
+    startDate: Date;
+    endDate?: Date;
+    startTime: string;
+    endTime: string;
+}
+
+export interface I_TimeBasedEventValidation {
+    startDateTime: Date;
+    endDateTime: Date;
+    isOvernight: boolean;
+    durationInHours: number;
 }

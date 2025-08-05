@@ -23,7 +23,7 @@ type T_ModerationMedia {
     moderatedBy: T_User
     reason: String
     notes: [T_Note]
-    entity: E_Entity
+    entity: E_UploadEntity
     entityId: String
     tagId: String
     tag: T_Tag
@@ -43,7 +43,7 @@ input Input_QueryModerationMedia {
     moderatedById: String
     reason: String
     notes: [Input_Note]
-    entity: E_Entity
+    entity: E_UploadEntity
     entityId: String
     tagId: String
     isPublished: Boolean
@@ -55,7 +55,7 @@ input Input_CreateModerationMedia {
     status: E_ModerationMediaStatus
     reason: String
     notes: [Input_Note]
-    entity: E_Entity!
+    entity: E_UploadEntity!
     tagId: String
     isPublished: Boolean
 }
@@ -67,7 +67,7 @@ input Input_UpdateModerationMedia {
     status: E_ModerationMediaStatus
     reason: String
     notes: [Input_Note]
-    entity: E_Entity
+    entity: E_UploadEntity
     tagId: String
     isPublished: Boolean
 }

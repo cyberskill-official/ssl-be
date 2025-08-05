@@ -33,7 +33,7 @@ input Input_AdminNotification {
     newMembers: Boolean
 }
 
-union T_SettingValue = T_Footer | T_AdminNotification
+union U_SettingValue = T_Footer | T_AdminNotification
 
 input Input_Setting {
     footer: Input_Footer
@@ -46,7 +46,7 @@ type T_Setting {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_SettingType
-    value: T_SettingValue
+    value: U_SettingValue
 }
 
 input Input_QuerySetting {

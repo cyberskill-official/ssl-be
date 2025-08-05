@@ -16,7 +16,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { E_EntityType, likeCtr } from '#modules/like/index.js';
+import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -38,9 +38,35 @@ const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
 
 export const galleryCtr = {
     getGallery: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        const isLoggedIn = !!context?.req?.session?.user;
+        let isFreeMember = false;
+
+        if (isLoggedIn) {
+            try {
+                isFreeMember = await authnCtr.isFreeMember(context);
+            }
+            catch {
+                isFreeMember = true;
+            }
+        }
+
+        const galleryFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!galleryFound.success) {
+            return galleryFound;
+        }
+        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
+            galleryFound.result.url = bunnyCtr.generateSignedUrl({
+                fullUrl: galleryFound.result.url,
+                extraQueryParams: {
+                    class: isFreeMember ? 'free' : 'premium',
+                },
+            });
+        }
+
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     getGalleries: async (
@@ -49,6 +75,19 @@ export const galleryCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
         const isLoggedIn = !!context?.req?.session?.user;
         const userId = context.req?.session?.user?.id;
+        const isOwner = context.req?.session?.user?.id === filter?.uploadedById;
+
+        // Check if user is a free member
+        let isFreeMember = false;
+        if (isLoggedIn) {
+            try {
+                isFreeMember = await authnCtr.isFreeMember(context);
+            }
+            catch {
+                // If check fails, treat as free member for safety
+                isFreeMember = true;
+            }
+        }
 
         const galleries = await mongooseCtr.findPaging(filter, options);
 
@@ -60,7 +99,7 @@ export const galleryCtr = {
         const galleryIds = galleryDocs.map(g => g.id);
 
         const likeCountsMap = await likeCtr.getLikeCountsBatch(context, {
-            entityType: E_EntityType.GALLERY,
+            entityType: E_LikeEntityType.GALLERY,
             entityIds: galleryIds,
         });
 
@@ -73,7 +112,7 @@ export const galleryCtr = {
         if (isLoggedIn) {
             userLikesSet = await likeCtr.getUserLikesBatch(context, {
                 userId: userId || '',
-                entityType: E_EntityType.GALLERY,
+                entityType: E_LikeEntityType.GALLERY,
                 entityIds: galleryIds,
             });
         }
@@ -82,7 +121,33 @@ export const galleryCtr = {
             const isLike = isLoggedIn && userLikesSet.has(gallery.id);
             const likeCount = likeCountsMap[gallery.id] || 0;
             const viewCount = viewCountsMap[gallery.id] || 0;
-            return { ...gallery, isLike, likeCount, viewCount };
+
+            // For free members, blur gallery images (only show profile pics)
+            const galleryResult = { ...gallery, isLike, likeCount, viewCount };
+            if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
+                if (isOwner) {
+                    galleryResult.url = bunnyCtr.generateSignedUrl({
+                        fullUrl: galleryResult.url,
+                        extraQueryParams: {
+                            class: 'normal',
+                        },
+                    });
+                }
+                else {
+                    galleryResult.url = bunnyCtr.generateSignedUrl({
+                        fullUrl: galleryResult.url,
+                        extraQueryParams: {
+                            class: isFreeMember ? 'free' : 'premium',
+                        },
+                    });
+                }
+            }
+            if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
+                galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                    fullUrl: galleryResult.url,
+                });
+            }
+            return galleryResult;
         });
 
         return galleries;
@@ -104,7 +169,7 @@ export const galleryCtr = {
             if (existingGallery.success && existingGallery.result.url && existingGallery.result.url !== update.url) {
                 switch (existingGallery.result.type) {
                     case E_GalleryType.VIDEO: {
-                        await bunnyCtr.deleteVideo(context, existingGallery.result.url.split('/').pop()!);
+                        await bunnyCtr.deleteVideoUrl(context, existingGallery.result.url);
                         break;
                     }
                     case E_GalleryType.IMAGE: {
@@ -136,7 +201,7 @@ export const galleryCtr = {
         if (galleryFound.result.url) {
             switch (galleryFound.result.type) {
                 case E_GalleryType.VIDEO: {
-                    await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
+                    await bunnyCtr.deleteVideoUrl(context, galleryFound.result.url);
                     break;
                 }
                 case E_GalleryType.IMAGE: {
@@ -192,7 +257,7 @@ export const galleryCtr = {
         if (galleryFound.result.url) {
             switch (galleryFound.result.type) {
                 case E_GalleryType.VIDEO: {
-                    await bunnyCtr.deleteVideo(context, galleryFound.result.url.split('/').pop()!);
+                    await bunnyCtr.deleteVideoUrl(context, galleryFound.result.url);
                     break;
                 }
                 case E_GalleryType.IMAGE: {

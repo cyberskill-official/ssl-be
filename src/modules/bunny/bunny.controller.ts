@@ -2,11 +2,16 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import fetch from 'node-fetch';
+import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { getEnv } from '#shared/env/index.js';
 
+import type { I_Input_GenerateSignedUrl } from './bunny.type.js';
+
+import { BUNNY_IFRAME_URL } from './bunny.constant.js';
 import { isValidReadableStream } from './bunny.util.js';
 
 const env = getEnv();
@@ -123,6 +128,18 @@ export const bunnyCtr = {
             };
         }
     },
+    deleteVideoUrl: async (_context: I_Context, videoUrl: string): Promise<I_Return<void>> => {
+        const videoId = videoUrl.split('/').pop();
+        if (!videoId) {
+            return {
+                success: false,
+                message: 'Invalid video URL',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        return bunnyCtr.deleteVideo(_context, videoId);
+    },
     uploadToBunnyStream: async (
         context: I_Context,
         fileStream: NodeJS.ReadableStream,
@@ -148,7 +165,7 @@ export const bunnyCtr = {
 
         return {
             success: true,
-            result: `${env.BUNNY_STREAM_HOST_NAME}/${videoId}`,
+            result: `${BUNNY_IFRAME_URL}/${env.BUNNY_STREAM_LIBRARY_ID}/${videoId}`,
         };
     },
     deleteFile: async (_context: I_Context, fileUrl: string): Promise<I_Return<void>> => {
@@ -180,5 +197,108 @@ export const bunnyCtr = {
                 code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
             };
         }
+    },
+    generateSignedUrl: (input: I_Input_GenerateSignedUrl): string => {
+        const {
+            fullUrl,
+            expiresInSec = 10 * 60,
+            tokenPath,
+            extraQueryParams = {},
+            remoteIp,
+        } = input;
+        const url = new URL(fullUrl);
+
+        const domain = url.origin;
+        const path = url.pathname;
+
+        const expires = Math.floor(Date.now() / 1000) + expiresInSec;
+
+        const scopedPath = tokenPath || path;
+
+        const filteredParams = Object.entries(extraQueryParams)
+            .filter(([key]) => key !== 'token' && key !== 'expires')
+            .sort(([a], [b]) => a.localeCompare(b));
+
+        const formEncodedQuery = filteredParams
+            .map(([key, value]) => `${key}=${value}`)
+            .join('&');
+
+        let hashInput = env.BUNNY_CDN_SECURITY_KEY + scopedPath + expires;
+        if (remoteIp) {
+            hashInput += remoteIp;
+        }
+        if (formEncodedQuery) {
+            hashInput += formEncodedQuery;
+        }
+
+        const hash = createHash('sha256').update(hashInput).digest();
+        const token = Buffer.from(hash)
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '')
+            .replace(/\n/g, '');
+
+        const query = new URLSearchParams({
+            token,
+            expires: expires.toString(),
+        });
+
+        if (tokenPath) {
+            query.append('token_path', tokenPath);
+        }
+        if (remoteIp) {
+            query.append('remote_ip', remoteIp);
+        }
+
+        for (const [key, value] of filteredParams) {
+            query.append(key, value as string);
+        }
+
+        return `${domain}${path}?${query.toString()}`;
+    },
+    generateEmbedIframeUrlFromUrl: (input: I_Input_GenerateSignedUrl): string => {
+        const {
+            fullUrl,
+            expiresInSec = 10 * 60,
+            extraQueryParams = {},
+            remoteIp,
+        } = input;
+        const key = env.BUNNY_STREAM_SECURITY_KEY;
+        if (!key)
+            throw new Error('Missing BUNNY_STREAM_SECURITY_KEY');
+
+        const u = new URL(fullUrl);
+
+        const m = u.pathname.match(/^\/embed\/([^/]+)\/([^/?#]+)/);
+        if (!m)
+            throw new Error('Invalid Bunny iframe URL');
+        const libId = m[1];
+        const videoId = m[2];
+
+        if (env.BUNNY_STREAM_LIBRARY_ID && String(libId) !== String(env.BUNNY_STREAM_LIBRARY_ID)) {
+            throw new Error(`Library ID mismatch: url=${libId} env=${env.BUNNY_STREAM_LIBRARY_ID}`);
+        }
+
+        const expires = Math.floor(Date.now() / 1000) + expiresInSec;
+
+        const token = createHash('sha256')
+            .update(`${key}${videoId}${expires}`, 'utf8')
+            .digest('hex');
+
+        const qs = new URLSearchParams(u.search);
+        qs.delete('token');
+        qs.delete('expires');
+        qs.set('token', token);
+        qs.set('expires', String(expires));
+
+        for (const [k, v] of Object.entries(extraQueryParams)) {
+            qs.set(k, String(v));
+        }
+        if (remoteIp) {
+            qs.set('remote_ip', remoteIp);
+        }
+
+        return `${u.origin}${u.pathname}?${qs.toString()}`;
     },
 };

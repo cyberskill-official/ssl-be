@@ -12,6 +12,7 @@ type T_Pricing {
     price: Float
     taxRate: Float
     isActive: Boolean
+    locationId: String
     location: T_Location
 }
 
@@ -24,7 +25,7 @@ input Input_QueryPricing {
     price: Float
     taxRate: Float
     isActive: Boolean
-    location: Input_Location
+    locationId: String
 }
 
 input Input_CreatePricing {

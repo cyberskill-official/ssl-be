@@ -3,7 +3,6 @@ import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { LocationSchema } from '#modules/location/index.js';
 import { RatingSchema } from '#modules/rating/index.js';
 import { SeoSchema } from '#modules/seo/index.js';
 
@@ -18,7 +17,7 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
         name: {
             type: String,
         },
-        address: {
+        locationId: {
             type: String,
         },
         url: {
@@ -31,6 +30,17 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
             type: String,
         },
     },
+    virtuals: [
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });
 
 export const DestinationModel = mongo.createModel<I_Destination>({
@@ -69,16 +79,6 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 {
                     validator: mongo.validator.isUnique(['slug']),
                     message: 'Slug is duplicated.',
-                },
-            ],
-        },
-        address: {
-            type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter the address',
                 },
             ],
         },
@@ -147,8 +147,8 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         logo: {
             type: String,
         },
-        location: {
-            type: LocationSchema,
+        locationId: {
+            type: String,
         },
         nearbyHotels: {
             type: [HotelSchema],
@@ -213,6 +213,15 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             options: {
                 ref: 'User',
                 localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
                 foreignField: 'id',
                 justOne: true,
             },

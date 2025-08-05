@@ -69,6 +69,14 @@ export const conversationCtr = {
             });
         }
 
+        // Free members cannot comment in guestbooks (profile comments), blogs, and threads (destination comments)
+        if (([E_ConversationType.PROFILE_COMMENT, E_ConversationType.BLOG_COMMENT, E_ConversationType.DESTINATION_COMMENT].includes(type)) && isFreeMember) {
+            throwError({
+                message: 'Free users cannot comment in guestbooks, blogs, and threads. Please upgrade your membership.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
         if ([E_ConversationType.PROFILE_COMMENT, E_ConversationType.BLOG_COMMENT, E_ConversationType.DESTINATION_COMMENT].includes(type)) {
             if (createdById !== currentUser.id) {
                 throwError({

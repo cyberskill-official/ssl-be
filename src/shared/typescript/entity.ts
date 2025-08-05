@@ -1,4 +1,4 @@
-export enum E_Entity {
+export enum E_UploadEntity {
     USER = 'USER',
     EVENT = 'EVENT',
     CONVERSATION = 'CONVERSATION',
@@ -6,5 +6,4 @@ export enum E_Entity {
     GALLERY = 'GALLERY',
     CLUB = 'CLUB',
     DESTINATION = 'DESTINATION',
-    PRICING = 'PRICING',
 }

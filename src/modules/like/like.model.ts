@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_Like } from './like.type.js';
 
-import { E_EntityType } from './like.type.js';
+import { E_LikeEntityType } from './like.type.js';
 
 export const LikeModel = mongo.createModel<I_Like>({
     mongoose,
@@ -22,7 +22,7 @@ export const LikeModel = mongo.createModel<I_Like>({
         entityType: {
             type: String,
             required: true,
-            enum: Object.values(E_EntityType),
+            enum: Object.values(E_LikeEntityType),
             validate: [
                 {
                     validator: mongo.validator.isRequired(),

@@ -37,13 +37,46 @@ export const catalogueCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryCatalogue>,
     ): Promise<I_Return<I_Catalogue>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const catalogueFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!catalogueFound.success) {
+            return catalogueFound;
+        }
+
+        if (catalogueFound.result.url) {
+            catalogueFound.result.url = bunnyCtr.generateSignedUrl({
+                fullUrl: catalogueFound.result.url,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
+        return catalogueFound;
     },
     getCatalogues: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryCatalogue>,
     ): Promise<I_Return<T_PaginateResult<I_Catalogue>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const catalogues = await mongooseCtr.findPaging(filter, options);
+
+        if (!catalogues.success) {
+            return catalogues;
+        }
+
+        catalogues.result.docs = catalogues.result.docs.map((catalogue) => {
+            if (catalogue.url) {
+                catalogue.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: catalogue.url,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+            return catalogue;
+        });
+
+        return catalogues;
     },
     createCatalogue: async (
         context: I_Context,
@@ -75,7 +108,7 @@ export const catalogueCtr = {
             if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
                 switch (existingCatalogue.result.type) {
                     case E_CatalogueType.VIDEO: {
-                        await bunnyCtr.deleteVideo(context, existingCatalogue.result.url.split('/').pop()!);
+                        await bunnyCtr.deleteVideoUrl(context, existingCatalogue.result.url);
                         break;
                     }
                     case E_CatalogueType.IMAGE: {
@@ -100,7 +133,7 @@ export const catalogueCtr = {
         if (catalogueFound.success && catalogueFound.result.url) {
             switch (catalogueFound.result.type) {
                 case E_CatalogueType.VIDEO: {
-                    await bunnyCtr.deleteVideo(context, catalogueFound.result.url.split('/').pop()!);
+                    await bunnyCtr.deleteVideoUrl(context, catalogueFound.result.url);
                     break;
                 }
                 case E_CatalogueType.IMAGE: {

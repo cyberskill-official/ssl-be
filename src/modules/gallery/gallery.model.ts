@@ -1,7 +1,6 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_EntityType } from '#modules/like/like.type.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/index.js';
 
 import type { I_Gallery } from './gallery.type.js';
@@ -87,9 +86,6 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
                 localField: 'id',
                 foreignField: 'entityId',
                 justOne: false,
-                options: {
-                    match: { entityType: E_EntityType.GALLERY },
-                },
             },
         },
         {
@@ -99,9 +95,6 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
                 localField: 'id',
                 foreignField: 'entityId',
                 justOne: false,
-                options: {
-                    match: { entityType: E_EntityType.GALLERY },
-                },
             },
         },
     ],

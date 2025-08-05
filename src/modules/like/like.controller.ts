@@ -20,7 +20,7 @@ import { galleryCtr } from '#modules/gallery/index.js';
 import type { I_Input_CreateLike, I_Input_GetLikeCountBatch, I_Input_QueryLike, I_Like } from './like.type.js';
 
 import { LikeModel } from './like.model.js';
-import { E_EntityType } from './like.type.js';
+import { E_LikeEntityType } from './like.type.js';
 
 const mongooseCtr = new MongooseController<I_Like>(LikeModel);
 
@@ -85,7 +85,7 @@ export const likeCtr = {
         const currentUser = await authnCtr.getUserFromSession(context);
 
         switch (doc.entityType) {
-            case E_EntityType.GALLERY: {
+            case E_LikeEntityType.GALLERY: {
                 const entityFound = await galleryCtr.getGallery(context, {
                     filter: { id: doc.entityId },
                 });
@@ -97,7 +97,7 @@ export const likeCtr = {
                 }
                 break;
             }
-            case E_EntityType.BLOG: {
+            case E_LikeEntityType.BLOG: {
                 const entityFound = await blogCtr.getBlog(context, {
                     filter: { id: doc.entityId },
                 });
@@ -163,7 +163,7 @@ export const likeCtr = {
     },
     getUserLikesBatch: async (
         _context: I_Context,
-        input: { userId: string; entityType: E_EntityType; entityIds: string[] },
+        input: { userId: string; entityType: E_LikeEntityType; entityIds: string[] },
     ): Promise<Set<string>> => {
         const { userId, entityType, entityIds } = input;
 

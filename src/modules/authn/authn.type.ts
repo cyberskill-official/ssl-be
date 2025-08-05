@@ -1,5 +1,4 @@
-import type { I_Input_Location } from '#modules/location/index.js';
-import type { E_AccountType, E_PinStyle, I_Input_UserPartner, I_Input_UserSettings, I_User } from '#modules/user/index.js';
+import type { E_AccountType, I_Input_UserPartner, I_Input_UserSettings, I_User } from '#modules/user/index.js';
 
 export enum E_RegisterStep {
     VERIFY_EMAIL = 'VERIFY_EMAIL', // Step 2
@@ -53,10 +52,7 @@ export interface I_Input_Register_VerifyEmail {
 }
 
 // Step 3
-export interface I_Input_Register_Location extends Pick<I_Input_Location, 'countryId' | 'cityId' | 'map'> { }
-
 export interface I_Input_Register_PersonalInfo_Partner extends Pick<I_Input_UserPartner, 'gender' | 'dateOfBirth' | 'location'> {
-    location: I_Input_Register_Location;
 }
 
 export interface I_Input_Register_Settings extends Pick<I_Input_UserSettings, 'timeFormat'> { }
@@ -67,7 +63,6 @@ export interface I_Input_Register_PersonalInfo {
     nativeLanguageId: string;
     otherLanguagesIds?: string[];
     settings: I_Input_Register_Settings;
-    pinStyle: E_PinStyle;
 }
 
 // Step 4

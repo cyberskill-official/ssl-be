@@ -29,7 +29,7 @@ import {
     verificationCtr,
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
-import { E_Entity } from '#shared/typescript/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 import { date, helper, validate } from '#shared/util/index.js';
 
 import type {
@@ -51,7 +51,7 @@ import type {
 } from './authn.type.js';
 
 import {
-    EMAIL_VERIFICATION,
+    // EMAIL_VERIFICATION,
     FORGOT_PASSWORD,
     TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
@@ -239,6 +239,27 @@ export const authnCtr = {
             || (role.ancestorsIds && role.ancestorsIds.includes(userRoleId)),
         );
     },
+    isFreeMember: async (context: I_Context): Promise<boolean> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const freeMemberRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_User.FREE_MEMBER },
+        });
+
+        if (!freeMemberRole.success) {
+            throwError({
+                message: 'Free member role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const freeMemberRoleId = freeMemberRole.result.id;
+
+        return !!currentUser.roles?.some(role =>
+            (role.id === freeMemberRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
+        );
+    },
     register: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Register>,
@@ -330,46 +351,47 @@ export const authnCtr = {
             });
         }
 
-        const otp = helper.generateOTP();
+        // TODO: Uncomment this when we have a way to verify the email
+        // const otp = helper.generateOTP();
 
-        const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
+        // const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
 
-        const verificationCreated = await verificationCtr.createVerification(
-            context,
-            {
-                doc: {
-                    identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
-                    value: otp,
-                    expiresAt,
-                    maxAttempts: 5,
-                    method: E_VerificationMethod.EMAIL_OTP,
-                },
-            },
-        );
+        // const verificationCreated = await verificationCtr.createVerification(
+        //     context,
+        //     {
+        //         doc: {
+        //             identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
+        //             value: otp,
+        //             expiresAt,
+        //             maxAttempts: 5,
+        //             method: E_VerificationMethod.EMAIL_OTP,
+        //         },
+        //     },
+        // );
 
-        if (!verificationCreated.success) {
-            throwError({
-                message: verificationCreated.message,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
+        // if (!verificationCreated.success) {
+        //     throwError({
+        //         message: verificationCreated.message,
+        //         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        //     });
+        // }
 
-        const emailResult = await emailCtr.sendEmail(
-            EMAIL_VERIFICATION,
-            emailLowerCase,
-            {
-                otp,
-                expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
-                email: emailLowerCase,
-            },
-        );
+        // const emailResult = await emailCtr.sendEmail(
+        //     EMAIL_VERIFICATION,
+        //     emailLowerCase,
+        //     {
+        //         otp,
+        //         expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
+        //         email: emailLowerCase,
+        //     },
+        // );
 
-        if (!emailResult.success) {
-            throwError({
-                message: emailResult.message,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
+        // if (!emailResult.success) {
+        //     throwError({
+        //         message: emailResult.message,
+        //         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        //     });
+        // }
 
         return {
             success: true,
@@ -380,7 +402,7 @@ export const authnCtr = {
     },
     registerVerifyEmail: async (
         context: I_Context,
-        { email, otp }: I_Input_Register_VerifyEmail,
+        { email /* otp */ }: I_Input_Register_VerifyEmail,
     ): Promise<I_Return<I_Response_Auth>> => {
         const emailLowerCase = email.toLowerCase();
 
@@ -396,25 +418,25 @@ export const authnCtr = {
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
+        // TODO: Uncomment this when we have a way to verify the email
+        // const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
 
-        const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
+        // const checkResult = await verificationCtr.checkVerification(context, {
+        //     identifier,
+        //     value: otp,
+        //     method: E_VerificationMethod.EMAIL_OTP,
+        // });
 
-        const checkResult = await verificationCtr.checkVerification(context, {
-            identifier,
-            value: otp,
-            method: E_VerificationMethod.EMAIL_OTP,
-        });
+        // if (!checkResult.success) {
+        //     throwError({
+        //         message: checkResult.message,
+        //         status: RESPONSE_STATUS.BAD_REQUEST,
+        //     });
+        // }
 
-        if (!checkResult.success) {
-            throwError({
-                message: checkResult.message,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        await verificationCtr.deleteVerifications(context, {
-            filter: { identifier },
-        });
+        // await verificationCtr.deleteVerifications(context, {
+        //     filter: { identifier },
+        // });
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: userFound.result.id },
@@ -853,14 +875,14 @@ export const authnCtr = {
 
         const documentUpload = await uploadCtr.upload(context, {
             type: E_UploadType.IMAGE,
-            entity: E_Entity.USER,
+            entity: E_UploadEntity.USER,
             entityId: currentUser.id,
             file: documentFile,
         });
 
         const selfieUpload = await uploadCtr.upload(context, {
             type: E_UploadType.IMAGE,
-            entity: E_Entity.USER,
+            entity: E_UploadEntity.USER,
             entityId: currentUser.id,
             file: selfieFile,
         });

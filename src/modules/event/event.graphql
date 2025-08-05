@@ -16,16 +16,18 @@ type T_Event {
     description: String
     startDate: DateTime
     endDate: DateTime
-    destinationId: String
     image: String
+    createdBy: T_User
+    createdById: String
+    destinationId: String
+    destination: T_Destination
     startTime: String
     endTime: String
+    locationId: String
     location: T_Location
     fee: Float
     currency: String
     pushMessage: String
-    createdBy: T_User
-    createdById: String
     isActive: Boolean
 }
 
@@ -40,15 +42,15 @@ input Input_QueryEvent {
     description: String
     startDate: DateTime
     endDate: DateTime
-    destinationId: String
     image: String
+    createdById: String
+    destinationId: String
     startTime: String
     endTime: String
-    location: Input_Location
+    locationId: String
     fee: Float
     currency: String
     pushMessage: String
-    createdById: String
     isActive: Boolean
 }
 
@@ -58,15 +60,15 @@ input Input_CreateEvent {
     description: String!
     startDate: DateTime!
     endDate: DateTime!
-    destinationId: String
     image: String!
+    createdById: String
+    destinationId: String
     startTime: String
     endTime: String
     location: Input_Location
     fee: Float
     currency: String
     pushMessage: String
-    createdById: String
     isActive: Boolean
 }
 
@@ -77,15 +79,15 @@ input Input_UpdateEvent {
     description: String
     startDate: DateTime
     endDate: DateTime
-    destinationId: String
     image: String
+    createdById: String
+    destinationId: String
     startTime: String
     endTime: String
     location: Input_Location
     fee: Float
     currency: String
     pushMessage: String
-    createdById: String
     isActive: Boolean
 }
 

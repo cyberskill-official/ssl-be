@@ -1,6 +1,6 @@
 import type { E_UploadType } from '@cyberskill/shared/node/upload';
 
-import type { E_Entity } from '#shared/typescript/index.js';
+import type { E_UploadEntity } from '#shared/typescript/index.js';
 
 export interface I_UploadedFile {
     createReadStream: () => NodeJS.ReadableStream;
@@ -23,14 +23,14 @@ export interface I_Input_UploadMany {
 }
 export interface I_Input_Upload {
     type: E_UploadType;
-    entity: E_Entity;
+    entity: E_UploadEntity;
     entityId: string;
     file: T_UploadedFilePromise;
 }
 
 export interface I_UploadPathConfig {
     type: E_UploadType;
-    entity: E_Entity;
+    entity: E_UploadEntity;
     entityId: string;
     userId: string;
 }

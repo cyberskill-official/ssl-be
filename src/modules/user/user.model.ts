@@ -4,7 +4,6 @@ import mongoose from 'mongoose';
 import type { I_AgeVerify, I_AIVerifyResult, I_PreApproval } from '#modules/authn/index.js';
 
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
-import { LocationSchema } from '#modules/location/index.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';
@@ -12,7 +11,6 @@ import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification
 import {
     E_AccountType,
     E_Gender,
-    E_PinStyle,
     E_UserSettings_TimeFormat,
 } from './user.type.js';
 
@@ -281,8 +279,8 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                 },
             ],
         },
-        location: {
-            type: LocationSchema,
+        locationId: {
+            type: String,
         },
         bio: {
             type: String,
@@ -388,6 +386,15 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                 justOne: true,
             },
         },
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
     ],
 });
 
@@ -395,9 +402,24 @@ export const UserSettingsTemporaryLocationSchema = mongo.createSchema<I_UserSett
     standalone: true,
     mongoose,
     schema: {
-        location: { type: LocationSchema },
-        endAt: { type: Date },
+        locationId: {
+            type: String,
+        },
+        endAt: {
+            type: Date,
+        },
     },
+    virtuals: [
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });
 
 export const UserSettingsNotificationSchema = mongo.createSchema<I_UserSettings_Notification>({
@@ -537,10 +559,6 @@ export const UserModel = mongo.createModel<I_User>({
         },
         otherLanguagesIds: {
             type: [String],
-        },
-        pinStyle: {
-            type: String,
-            enum: Object.values(E_PinStyle),
         },
         lookingForIds: {
             type: [String],

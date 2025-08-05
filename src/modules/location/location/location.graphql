@@ -1,17 +1,70 @@
+enum E_LocationEntityType {
+    USER
+    EVENT
+    DESTINATION
+    PRICING
+}
+
+enum E_User_PinStyle {
+    MALE
+    FEMALE
+    COUPLE
+    LGBTQ_PLUS
+}
+
+enum E_Event_PinStyle {
+    EVENT_TRAVEL
+    EVENT_BOOTY_CALL
+    EVENT_PRIVATE
+}
+
+enum E_Destination_PinStyle {
+    HOTEL
+    CLUB_BRONZE
+    CLUB_SILVER
+    CLUB_GOLD
+    RESORT_BRONZE
+    RESORT_SILVER
+    RESORT_GOLD
+}
+
+enum E_PinStyle {
+    # User
+    MALE
+    FEMALE
+    COUPLE
+    LGBTQ_PLUS
+    # Event
+    EVENT_TRAVEL
+    EVENT_BOOTY_CALL
+    EVENT_PRIVATE
+    # Destination
+    HOTEL
+    CLUB_BRONZE
+    CLUB_SILVER
+    CLUB_GOLD
+    RESORT_BRONZE
+    RESORT_SILVER
+    RESORT_GOLD
+}
+
 type T_Map {
     latitude: Float
     longitude: Float
-    zoomLevel: Int
-    entity: E_Entity
 }
 
 input Input_Map {
-    latitude: Float!
-    longitude: Float!
-    zoomLevel: Int
+    latitude: Float
+    longitude: Float
 }
 
+union U_LocationEntity = T_User | T_Event | T_Destination | T_Pricing
+
 type T_Location {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     regionId: String
     region: T_Region
     subRegionId: String
@@ -24,6 +77,10 @@ type T_Location {
     city: T_City
     address: String
     map: T_Map
+    pinStyle: E_PinStyle
+    entityType: E_LocationEntityType
+    entityId: String
+    entity: U_LocationEntity
 }
 
 input Input_Location {
@@ -34,5 +91,61 @@ input Input_Location {
     cityId: String
     address: String
     map: Input_Map
+    pinStyle: E_PinStyle
 }
 
+input Input_QueryLocation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    regionId: String
+    subRegionId: String
+    countryId: String
+    stateId: String
+    cityId: String
+    address: String
+    pinStyle: E_PinStyle
+    entityType: E_LocationEntityType
+    entityId: String
+}
+
+input Input_GetLocationInViewport {
+    southWestLatitude: Float!
+    southWestLongitude: Float!
+    northEastLatitude: Float!
+    northEastLongitude: Float!
+}
+
+type T_Response_Location {
+    success: Boolean
+    message: String
+    result: T_Location
+}
+
+type T_Locations {
+    docs: [T_Location]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Locations {
+    success: Boolean
+    message: String
+    result: T_Locations
+}
+
+type Query {
+    getLocation(filter: Input_QueryLocation!, options: JSON, populate: JSON): T_Response_Location!
+    getLocations(filter: Input_QueryLocation, options: JSON): T_Response_Locations!
+    getLocationsInViewport(filter: Input_GetLocationInViewport!, options: JSON): T_Response_Locations!
+}

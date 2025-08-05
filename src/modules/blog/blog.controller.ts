@@ -22,13 +22,55 @@ export const blogCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>,
     ): Promise<I_Return<I_Blog>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
+
+        if (!blogFound.success) {
+            return blogFound;
+        }
+
+        const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+
+        for (const field of imageFields) {
+            if (blogFound.result[field]) {
+                blogFound.result[field] = bunnyCtr.generateSignedUrl({
+                    fullUrl: blogFound.result[field]!,
+                    extraQueryParams: {
+                        class: 'normal',
+                    },
+                });
+            }
+        }
+
+        return blogFound;
     },
     getBlogs: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>,
     ): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const blogs = await mongooseCtr.findPaging(filter, options);
+
+        if (!blogs.success) {
+            return blogs;
+        }
+
+        blogs.result.docs = blogs.result.docs.map((blog) => {
+            const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+
+            for (const field of imageFields) {
+                if (blog[field]) {
+                    blog[field] = bunnyCtr.generateSignedUrl({
+                        fullUrl: blog[field]!,
+                        extraQueryParams: {
+                            class: 'normal',
+                        },
+                    });
+                }
+            }
+
+            return blog;
+        });
+
+        return blogs;
     },
     createBlog: async (
         context: I_Context,

@@ -5,23 +5,23 @@ import type { I_Context } from '#shared/typescript/index.js';
 import type { I_Input_CreateLike, I_Input_QueryLike, I_Like } from './like.type.js';
 
 import { likeCtr } from './like.controller.js';
-import { E_EntityType } from './like.type.js';
+import { E_LikeEntityType } from './like.type.js';
 
 const likeResolver = {
     T_Like: {
         entity: (parent: I_Like) => {
             switch (parent.entityType) {
-                case E_EntityType.GALLERY:
+                case E_LikeEntityType.GALLERY:
                     return {
                         ...parent.entity,
                         __typename: 'T_Gallery',
                     };
-                case E_EntityType.BLOG:
+                case E_LikeEntityType.BLOG:
                     return {
                         ...parent.entity,
                         __typename: 'T_Blog',
                     };
-                case E_EntityType.MESSAGE:
+                case E_LikeEntityType.MESSAGE:
                     return {
                         ...parent.entity,
                         __typename: 'T_Message',

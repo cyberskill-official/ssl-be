@@ -1,8 +1,6 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { LocationSchema } from '#modules/location/index.js';
-
 import type { I_Pricing } from './pricing.type.js';
 
 import { E_PricingType } from './pricing.type.js';
@@ -34,8 +32,19 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             type: Boolean,
             default: false,
         },
-        location: {
-            type: LocationSchema,
+        locationId: {
+            type: String,
         },
     },
+    virtuals: [
+        {
+            name: 'location',
+            options: {
+                ref: 'Location',
+                localField: 'locationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });

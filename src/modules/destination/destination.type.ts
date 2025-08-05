@@ -1,6 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Input_Location, I_Location } from '#modules/location/index.js';
+import type { I_Location } from '#modules/location/index.js';
 import type { I_Rating } from '#modules/rating/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/index.js';
@@ -25,22 +25,17 @@ export enum E_DestinationAgeGroup {
 
 export interface I_Hotel {
     name?: string;
-    address?: string;
+    locationId?: string;
     location?: I_Location;
     url?: string;
     description?: string;
     image?: string;
 }
 
-export interface I_Input_Hotel extends I_Hotel {
-    location?: I_Input_Location;
-}
-
 export interface I_Destination extends I_GenericDocument {
     type?: E_DestinationType;
     name?: string;
     slug?: string;
-    address?: string;
     websiteURL?: string;
     rating?: E_DestinationRating;
     images?: string[];
@@ -48,6 +43,7 @@ export interface I_Destination extends I_GenericDocument {
     introductionContent?: string;
     ageGroup?: E_DestinationAgeGroup;
     logo?: string;
+    locationId?: string;
     location?: I_Location;
     nearbyHotels?: I_Hotel[];
     wearImage?: string;
@@ -73,25 +69,18 @@ export interface I_Destination extends I_GenericDocument {
 export type T_Destination_Populate = 'createdBy';
 
 export interface I_Input_QueryDestination extends Omit<I_Destination, T_Destination_Populate> {
-    location?: I_Input_Location;
-    nearbyHotels?: I_Input_Hotel[];
 }
 
 export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Create | T_Destination_Populate> {
     type: E_DestinationType;
     name: string;
-    address: string;
     websiteURL: string;
     rating: E_DestinationRating;
     images: string[];
     introductionHeadline: string;
     introductionContent: string;
     ageGroup: E_DestinationAgeGroup;
-    location?: I_Input_Location;
-    nearbyHotels?: I_Input_Hotel[];
 }
 
 export interface I_Input_UpdateDestination extends Omit<I_Destination, T_Omit_Update | T_Destination_Populate> {
-    location?: I_Input_Location;
-    nearbyHotels?: I_Input_Hotel[];
 }
