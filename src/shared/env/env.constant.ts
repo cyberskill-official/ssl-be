@@ -1,6 +1,6 @@
 export const PORT = 8000;
 export const STATIC_FOLDER = 'static';
-export const BODY_PARSER_LIMIT = '50mb';
+export const BODY_PARSER_LIMIT = '500mb';
 export const MONGO_HOST = 'localhost';
 export const MONGO_PORT = 27017;
 export const MONGO_BACKUP_FOLDER = 'backup';

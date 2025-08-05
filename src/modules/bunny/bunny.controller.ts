@@ -206,56 +206,61 @@ export const bunnyCtr = {
             extraQueryParams = {},
             remoteIp,
         } = input;
-        const url = new URL(fullUrl);
+        try {
+            const url = new URL(fullUrl);
 
-        const domain = url.origin;
-        const path = url.pathname;
+            const domain = url.origin;
+            const path = url.pathname;
 
-        const expires = Math.floor(Date.now() / 1000) + expiresInSec;
+            const expires = Math.floor(Date.now() / 1000) + expiresInSec;
 
-        const scopedPath = tokenPath || path;
+            const scopedPath = tokenPath || path;
 
-        const filteredParams = Object.entries(extraQueryParams)
-            .filter(([key]) => key !== 'token' && key !== 'expires')
-            .sort(([a], [b]) => a.localeCompare(b));
+            const filteredParams = Object.entries(extraQueryParams)
+                .filter(([key]) => key !== 'token' && key !== 'expires')
+                .sort(([a], [b]) => a.localeCompare(b));
 
-        const formEncodedQuery = filteredParams
-            .map(([key, value]) => `${key}=${value}`)
-            .join('&');
+            const formEncodedQuery = filteredParams
+                .map(([key, value]) => `${key}=${value}`)
+                .join('&');
 
-        let hashInput = env.BUNNY_CDN_SECURITY_KEY + scopedPath + expires;
-        if (remoteIp) {
-            hashInput += remoteIp;
+            let hashInput = env.BUNNY_CDN_SECURITY_KEY + scopedPath + expires;
+            if (remoteIp) {
+                hashInput += remoteIp;
+            }
+            if (formEncodedQuery) {
+                hashInput += formEncodedQuery;
+            }
+
+            const hash = createHash('sha256').update(hashInput).digest();
+            const token = Buffer.from(hash)
+                .toString('base64')
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '')
+                .replace(/\n/g, '');
+
+            const query = new URLSearchParams({
+                token,
+                expires: expires.toString(),
+            });
+
+            if (tokenPath) {
+                query.append('token_path', tokenPath);
+            }
+            if (remoteIp) {
+                query.append('remote_ip', remoteIp);
+            }
+
+            for (const [key, value] of filteredParams) {
+                query.append(key, value as string);
+            }
+
+            return `${domain}${path}?${query.toString()}`;
         }
-        if (formEncodedQuery) {
-            hashInput += formEncodedQuery;
+        catch {
+            return '';
         }
-
-        const hash = createHash('sha256').update(hashInput).digest();
-        const token = Buffer.from(hash)
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '')
-            .replace(/\n/g, '');
-
-        const query = new URLSearchParams({
-            token,
-            expires: expires.toString(),
-        });
-
-        if (tokenPath) {
-            query.append('token_path', tokenPath);
-        }
-        if (remoteIp) {
-            query.append('remote_ip', remoteIp);
-        }
-
-        for (const [key, value] of filteredParams) {
-            query.append(key, value as string);
-        }
-
-        return `${domain}${path}?${query.toString()}`;
     },
     generateEmbedIframeUrlFromUrl: (input: I_Input_GenerateSignedUrl): string => {
         const {
