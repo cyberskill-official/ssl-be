@@ -34,6 +34,7 @@ export interface I_Response_Auth {
 
 // Step 1
 export interface I_Input_Register {
+    displayName: string;
     username: string;
     email: string;
     password: string;

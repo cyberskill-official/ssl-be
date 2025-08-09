@@ -550,6 +550,7 @@ export const UserModel = mongo.createModel<I_User>({
         accountType: {
             type: String,
             enum: Object.values(E_AccountType),
+            default: E_AccountType.SINGLE,
         },
         partner1: {
             type: UserPartnerSchema,

@@ -11,6 +11,7 @@ input Input_Register {
     username: String!
     email: String!
     password: String!
+    displayName: String
     accountType: E_AccountType
 }
 
