@@ -59,7 +59,6 @@ const tags = [
 
     // Smoking
     { name: 'Smoke', type: E_TagType.SMOKING_HABITS },
-    { name: 'Non smoker', type: E_TagType.SMOKING_HABITS },
     { name: 'Vape', type: E_TagType.SMOKING_HABITS },
     { name: 'Plants', type: E_TagType.SMOKING_HABITS },
 
