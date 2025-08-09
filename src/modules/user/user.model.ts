@@ -459,6 +459,10 @@ export const UserSettingsSchema = mongo.createSchema<I_UserSettings>({
         },
         temporaryLocation: { type: UserSettingsTemporaryLocationSchema },
         notification: { type: UserSettingsNotificationSchema },
+        zoomLevel: {
+            type: Number,
+            default: 0,
+        },
     },
 });
 
