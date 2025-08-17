@@ -24,27 +24,9 @@ export const EventModel = mongo.createModel<I_Event>({
         },
         title: {
             type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter title for event',
-                },
-            ],
         },
         slug: {
             type: String,
-            require: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter the slug.',
-                },
-                {
-                    validator: mongo.validator.isUnique(['slug']),
-                    message: 'Slug is duplicated.',
-                },
-            ],
         },
         description: {
             type: String,
@@ -78,13 +60,6 @@ export const EventModel = mongo.createModel<I_Event>({
         },
         image: {
             type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please enter image for event',
-                },
-            ],
         },
         createdById: {
             type: String,
@@ -162,16 +137,18 @@ async function createMiddleware(this: I_Event, next: T_MongooseHookNextFunction)
     try {
         const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
-        const newSlug = await mongooseCtr.createSlug({
-            field: 'title',
-            from: this,
-        });
+        if (this.title) {
+            const newSlug = await mongooseCtr.createSlug({
+                field: 'title',
+                from: this,
+            });
 
-        if (!newSlug.success) {
-            throw new Error(newSlug.message);
+            if (!newSlug.success) {
+                throw new Error(newSlug.message);
+            }
+
+            this.slug = newSlug.result;
         }
-
-        this.slug = newSlug.result;
 
         next();
     }
@@ -192,9 +169,7 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Event>, next: T_Mongo
         }
 
         const shouldGenerateSlug = !!(
-            newData.title
-            && oldData.title
-            && newData.title !== oldData.title
+            newData.title && newData.title !== oldData.title
         );
 
         if (shouldGenerateSlug) {

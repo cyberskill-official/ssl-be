@@ -4,10 +4,11 @@ import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 import bcrypt from 'bcryptjs';
 
-import type { I_Role } from '#modules/authz/index.js';
-import type { I_User } from '#modules/user/index.js';
+// Narrow imports to avoid module index cycles
+import type { I_Role } from '#modules/authz/role/role.type.js';
+import type { I_User } from '#modules/user/user.type.js';
 
-import { E_Role_Staff } from '#modules/authz/index.js';
+import { E_Role_Staff } from '#modules/authz/role/role.type.js';
 
 export async function up(db: C_Db) {
     const roleCtr = new MongoController<I_Role>(db, 'roles');

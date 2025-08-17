@@ -47,18 +47,12 @@ export const BlogModel = mongo.createModel<I_Blog>({
         websiteName: {
             type: String,
             required: true,
-            validate: {
-                validator: mongo.validator.isRequired(),
-                message: 'Please enter website name for blog',
-            },
+
         },
         websiteURL: {
             type: String,
             required: true,
-            validate: {
-                validator: mongo.validator.isRequired(),
-                message: 'Please enter website URL for blog',
-            },
+
         },
         type: {
             type: String,

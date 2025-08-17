@@ -9,6 +9,8 @@ import type { I_Tag } from '#modules/tag/index.js';
 
 export enum E_AccountType {
     SINGLE = 'SINGLE',
+    SINGLE_MALE = 'SINGLE_MALE',
+    SINGLE_FEMALE = 'SINGLE_FEMALE',
     COUPLE = 'COUPLE',
 }
 
@@ -43,8 +45,8 @@ export interface I_UserPartner {
     hairColor?: I_Tag;
     eyeColorId?: string;
     eyeColor?: I_Tag;
-    skinToneId?: string;
-    skinTone?: I_Tag;
+    ethnicityId?: string;
+    ethnicity?: I_Tag;
     galleryId?: string;
     gallery?: I_Gallery;
     locationId?: string;
@@ -52,7 +54,7 @@ export interface I_UserPartner {
     bio?: string;
 }
 
-export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'skinTone';
+export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'ethnicity';
 
 export interface I_Input_UserPartner extends Omit<I_UserPartner, T_UserPartner_Populate> {
 }

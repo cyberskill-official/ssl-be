@@ -77,4 +77,5 @@ export interface I_Input_GetLocationInViewport {
     southWestLongitude: number;
     northEastLatitude: number;
     northEastLongitude: number;
+    entityType?: E_LocationEntityType;
 }

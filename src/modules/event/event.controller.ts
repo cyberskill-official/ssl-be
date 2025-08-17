@@ -13,7 +13,7 @@ import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
-import { E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
@@ -23,6 +23,18 @@ import { E_EventType } from './event.type.js';
 import { validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
+
+function mapEventTypeToPinStyle(eventType?: E_EventType) {
+    if (!eventType)
+        return undefined;
+    if (eventType === E_EventType.CLUB_VISIT)
+        return E_Event_PinStyle.EVENT_PRIVATE;
+    if (eventType === E_EventType.TRAVEL)
+        return E_Event_PinStyle.EVENT_TRAVEL;
+    if (eventType === E_EventType.BOOTY_CALL)
+        return E_Event_PinStyle.EVENT_BOOTY_CALL;
+    return undefined;
+}
 
 export const eventCtr = {
     getEvent: async (
@@ -76,16 +88,7 @@ export const eventCtr = {
     ): Promise<I_Return<I_Event>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
-        const eventFound = await eventCtr.getEvent(context, { filter: { title } });
-
         doc.createdById = currentUser.id;
-
-        if (eventFound.success) {
-            throwError({
-                message: 'Event title already exist',
-                status: RESPONSE_STATUS.BAD_GATEWAY,
-            });
-        }
 
         if (!type) {
             throwError({
@@ -94,7 +97,7 @@ export const eventCtr = {
             });
         }
 
-        if (!image) {
+        if (!image && type !== E_EventType.CLUB_VISIT) {
             throwError({
                 message: 'Image upload is required for all events.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -128,16 +131,46 @@ export const eventCtr = {
                     isActive: true,
                 },
             });
+
             if (!destinationFound.success) {
                 throwError({
                     message: 'Selected club/resort not found or is not active.',
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-            const destination = destinationFound.result;
 
-            doc.image = (destination.images && destination.images[0])!;
-            doc.location = destination.location!;
+            const destination = destinationFound.result;
+            let countryName = destination.location?.country?.name ?? '';
+            let cityName = destination.location?.city?.name ?? '';
+
+            if ((!countryName || !cityName) && destination.locationId) {
+                const locationFound = await locationCtr.getLocation(context, { filter: { id: destination.locationId } });
+
+                if (locationFound.success && locationFound.result) {
+                    const countryId = (locationFound.result).countryId;
+                    const cityId = (locationFound.result).cityId;
+                    if (countryId) {
+                        const countryFound = await countryCtr.getCountry(context, { filter: { id: countryId } });
+                        if (countryFound.success && countryFound.result)
+                            countryName = (countryFound.result).name ?? countryName;
+                    }
+                    if (cityId) {
+                        const cityFound = await cityCtr.getCity(context, { filter: { id: cityId } });
+                        if (cityFound.success && cityFound.result)
+                            cityName = (cityFound.result).name ?? cityName;
+                    }
+                    if (!destination.location) {
+                        doc.location = locationFound.result;
+                    }
+                }
+            }
+
+            const autoTitle = `Going clubbing in ${countryName}${countryName && cityName ? ', ' : ''}${cityName}`.trim();
+
+            doc.title = autoTitle || title;
+
+            doc.image = (destination.images && destination.images[0]) ?? image;
+            doc.location = doc.location || destination.location!;
         }
 
         if (type === E_EventType.TRAVEL) {
@@ -258,13 +291,22 @@ export const eventCtr = {
             }
         }
 
+        if (doc.title) {
+            const duplicate = await eventCtr.getEvent(context, { filter: { title: doc.title } });
+            if (duplicate.success) {
+                throwError({
+                    message: 'Event title already exists',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
         const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
 
         if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
             const pricingFound = await pricingCtr.getPricing(context, {
                 filter: {
                     'type': E_PricingType.ANNOUNCEMENT,
-                    // TODO: Tìm pricing theo location
                     'location.countryId': location?.countryId,
                     'isActive': true,
                 },
@@ -306,12 +348,15 @@ export const eventCtr = {
 
         const locationCreated = await locationCtr.createLocation(context, {
             doc: doc.location
-                ? {
-                        ...doc.location,
-                        pinStyle,
-                        entityType: E_LocationEntityType.EVENT,
-                        entityId: eventCreated.result.id,
-                    }
+                ? (() => {
+                        const { _id: _omitMongoId, id: _omitId, isDel: _omitIsDel, createdAt: _omitCA, updatedAt: _omitUA, entityType: _omitET, entityId: _omitEID, ...rest } = doc.location as any;
+                        return {
+                            ...rest,
+                            pinStyle,
+                            entityType: E_LocationEntityType.EVENT,
+                            entityId: eventCreated.result.id,
+                        };
+                    })()
                 : {
                         pinStyle,
                         entityType: E_LocationEntityType.EVENT,
@@ -346,25 +391,26 @@ export const eventCtr = {
         }
 
         if (update.location) {
-            let pinStyle;
+            // Enforce mapping from event type to valid pinStyle
+            const effectiveType = update.type ?? eventFound.result.type;
+            const allowedPinStyle = mapEventTypeToPinStyle(effectiveType);
 
-            if (update.type === E_EventType.CLUB_VISIT) {
-                pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
+            let pinStyle = update.location.pinStyle;
+            if (pinStyle !== undefined && allowedPinStyle !== undefined && pinStyle !== allowedPinStyle) {
+                throwError({
+                    message: 'Invalid pinStyle for the selected event type',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
             }
-
-            if (update.type === E_EventType.TRAVEL) {
-                pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
-            }
-
-            if (update.type === E_EventType.BOOTY_CALL) {
-                pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
+            if (pinStyle === undefined) {
+                pinStyle = allowedPinStyle;
             }
 
             const locationUpdated = await locationCtr.updateLocation(context, {
                 filter: { id: eventFound.result.locationId },
                 update: {
                     ...update.location,
-                    pinStyle,
+                    ...(pinStyle !== undefined ? { pinStyle } : {}),
                 },
             });
 

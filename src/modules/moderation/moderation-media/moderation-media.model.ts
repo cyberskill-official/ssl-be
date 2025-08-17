@@ -33,6 +33,9 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
                 },
             ],
         },
+        ipAddress: {
+            type: String,
+        },
         url: {
             type: String,
             required: true,

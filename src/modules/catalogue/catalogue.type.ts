@@ -4,8 +4,9 @@ import type { E_ModerationMediaStatus, I_ModerationMedia } from '#modules/modera
 import type { I_Tag } from '#modules/tag/index.js';
 
 export enum E_CatalogueType {
-    IMAGE = 'IMAGE',
-    VIDEO = 'VIDEO',
+    BOOTYCALL = 'BOOTYCALL',
+    PARTY = 'PARTY',
+    TRAVEL = 'TRAVEL',
 }
 
 export interface I_Catalogue extends I_GenericDocument {

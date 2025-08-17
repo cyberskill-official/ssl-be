@@ -3,11 +3,11 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Role } from '#modules/authz/index.js';
-import type { I_Tag } from '#modules/tag/index.js';
+import type { I_Role } from '#modules/authz/role/role.type.js';
+import type { I_Tag } from '#modules/tag/tag.type.js';
 
-import { E_Role_Staff } from '#modules/authz/index.js';
-import { E_TagType } from '#modules/tag/index.js';
+import { E_Role_Staff } from '#modules/authz/role/role.type.js';
+import { E_TagType } from '#modules/tag/tag.type.js';
 
 const tags = [
     // What are you looking for
@@ -59,6 +59,7 @@ const tags = [
 
     // Smoking
     { name: 'Smoke', type: E_TagType.SMOKING_HABITS },
+    { name: 'Non smoker', type: E_TagType.SMOKING_HABITS },
     { name: 'Vape', type: E_TagType.SMOKING_HABITS },
     { name: 'Plants', type: E_TagType.SMOKING_HABITS },
 
@@ -101,11 +102,13 @@ const tags = [
     { name: 'Hazel', type: E_TagType.EYE_COLOR },
     { name: 'Grey', type: E_TagType.EYE_COLOR },
 
-    // Skin Tone
-    { name: 'Light', type: E_TagType.SKIN_TONE },
-    { name: 'Medium', type: E_TagType.SKIN_TONE },
-    { name: 'Dark', type: E_TagType.SKIN_TONE },
-    { name: 'Very Dark', type: E_TagType.SKIN_TONE },
+    // Ethnicity
+    { name: 'White', type: E_TagType.ETHNICITY },
+    { name: 'Black', type: E_TagType.ETHNICITY },
+    { name: 'Latin', type: E_TagType.ETHNICITY },
+    { name: 'Middle Eastern', type: E_TagType.ETHNICITY },
+    { name: 'Asian', type: E_TagType.ETHNICITY },
+    { name: 'Mixed', type: E_TagType.ETHNICITY },
 
     // Catalogue
     { name: 'Big City', type: E_TagType.CATALOGUE },

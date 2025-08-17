@@ -271,7 +271,7 @@ export const authnCtr = {
             });
         }
 
-        const { email, username, password, displayName, accountType } = doc;
+        const { email, username, password, accountType } = doc;
         const emailLowerCase = email.toLowerCase();
 
         validate.email.validate(email);
@@ -309,7 +309,6 @@ export const authnCtr = {
                 username,
                 password,
                 ...(accountType && { accountType }),
-                ...(displayName && { displayName }),
                 rolesIds: [roleFound.result.id],
                 registerStep: E_RegisterStep.VERIFY_EMAIL,
                 isActive: true,
@@ -464,6 +463,13 @@ export const authnCtr = {
         { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!currentUser.accountType) {
+            throwError({
+                message: 'Please select your account type (Couple or Single) before continuing.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
 
         const stepsAfter = [
             E_RegisterStep.PREFERENCES,

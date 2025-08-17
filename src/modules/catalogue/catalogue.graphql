@@ -1,6 +1,7 @@
 enum E_CatalogueType {
-    IMAGE
-    VIDEO
+    BOOTYCALL
+    PARTY
+    TRAVEL
 }
 
 type T_Catalogue {

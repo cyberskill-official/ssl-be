@@ -20,6 +20,7 @@ export interface I_ModerationMedia extends I_GenericDocument {
     type?: E_ModerationMediaType;
     uploadedById?: string;
     uploadedBy?: I_User;
+    ipAddress?: string;
     url?: string;
     status?: E_ModerationMediaStatus;
     moderatedById?: string;

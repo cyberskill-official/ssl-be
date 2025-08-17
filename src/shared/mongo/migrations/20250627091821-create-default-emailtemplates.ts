@@ -3,9 +3,9 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/index.js';
+import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/email-template.type.js';
 
-import { EMAIL_VERIFICATION, FORGOT_PASSWORD } from '#modules/authn/index.js';
+import { EMAIL_VERIFICATION, FORGOT_PASSWORD } from '#modules/authn/authn.constant.js';
 
 interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 }

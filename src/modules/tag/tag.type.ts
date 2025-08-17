@@ -16,7 +16,7 @@ export enum E_TagType {
     HEIGHT = 'HEIGHT',
     HAIR_COLOR = 'HAIR_COLOR',
     EYE_COLOR = 'EYE_COLOR',
-    SKIN_TONE = 'SKIN_TONE',
+    ETHNICITY = 'ETHNICITY',
     CATALOGUE = 'CATALOGUE',
 }
 

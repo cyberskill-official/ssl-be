@@ -22,6 +22,13 @@ export const cityCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryCity>,
     ): Promise<I_Return<T_PaginateResult<I_City>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
+
+        if (typeof filter?.name === 'string' && filter.name.trim() !== '') {
+            const escaped = filter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            computedFilter['name'] = { $regex: `^${escaped}`, $options: 'i' };
+        }
+
+        return mongooseCtr.findPaging(computedFilter as unknown as never, options);
     },
 };

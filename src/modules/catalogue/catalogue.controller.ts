@@ -27,7 +27,6 @@ import type {
 } from './catalogue.type.js';
 
 import { CatalogueModel } from './catalogue.model.js';
-import { E_CatalogueType } from './catalogue.type.js';
 
 const mongooseCtr = new MongooseController<I_Catalogue>(CatalogueModel);
 const env = getEnv();
@@ -106,16 +105,13 @@ export const catalogueCtr = {
             });
 
             if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
-                switch (existingCatalogue.result.type) {
-                    case E_CatalogueType.VIDEO: {
-                        await bunnyCtr.deleteVideoUrl(context, existingCatalogue.result.url);
-                        break;
-                    }
-                    case E_CatalogueType.IMAGE: {
-                        await bunnyCtr.deleteFile(context, existingCatalogue.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-                        break;
-                    }
-                    default:
+                const oldUrl = existingCatalogue.result.url;
+                const isVideo = oldUrl.includes('/embed/');
+                if (isVideo) {
+                    await bunnyCtr.deleteVideoUrl(context, oldUrl);
+                }
+                else {
+                    await bunnyCtr.deleteFile(context, oldUrl.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
                 }
             }
         }
@@ -131,16 +127,13 @@ export const catalogueCtr = {
         });
 
         if (catalogueFound.success && catalogueFound.result.url) {
-            switch (catalogueFound.result.type) {
-                case E_CatalogueType.VIDEO: {
-                    await bunnyCtr.deleteVideoUrl(context, catalogueFound.result.url);
-                    break;
-                }
-                case E_CatalogueType.IMAGE: {
-                    await bunnyCtr.deleteFile(context, catalogueFound.result.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
-                    break;
-                }
-                default:
+            const url = catalogueFound.result.url;
+            const isVideo = url.includes('/embed/');
+            if (isVideo) {
+                await bunnyCtr.deleteVideoUrl(context, url);
+            }
+            else {
+                await bunnyCtr.deleteFile(context, url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
             }
         }
 

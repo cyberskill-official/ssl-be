@@ -154,7 +154,7 @@ input Input_CreateDestination {
     highlightDance: String
     seo: Input_Seo
     linkTo: String
-    isActive: Boolean
+    isActive: Boolean!
     createdById: String
 }
 

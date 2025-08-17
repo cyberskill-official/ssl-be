@@ -259,25 +259,18 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
                 },
             ],
         },
-        skinToneId: {
+        ethnicityId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please select skin tone',
+                    message: 'Please select ethnicity',
                 },
             ],
         },
         galleryId: {
             type: String,
-            required: true,
-            validate: [
-                {
-                    validator: mongo.validator.isRequired(),
-                    message: 'Please upload a gallery',
-                },
-            ],
         },
         locationId: {
             type: String,
@@ -369,10 +362,10 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
             },
         },
         {
-            name: 'skinTone',
+            name: 'ethnicity',
             options: {
                 ref: 'Tag',
-                localField: 'skinToneId',
+                localField: 'ethnicityId',
                 foreignField: 'id',
                 justOne: true,
             },
@@ -550,7 +543,6 @@ export const UserModel = mongo.createModel<I_User>({
         accountType: {
             type: String,
             enum: Object.values(E_AccountType),
-            default: E_AccountType.SINGLE,
         },
         partner1: {
             type: UserPartnerSchema,

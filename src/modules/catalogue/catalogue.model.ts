@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/index.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/moderation-media/moderation-media.type.js';
 
 import type { I_Catalogue } from './catalogue.type.js';
 

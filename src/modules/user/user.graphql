@@ -102,8 +102,8 @@ type T_UserPartner {
     hairColor: T_Tag
     eyeColorId: String
     eyeColor: T_Tag
-    skinToneId: String
-    skinTone: T_Tag
+    ethnicityId: String
+    ethnicity: T_Tag
     galleryId: String
     gallery: T_Gallery
     locationId: String
@@ -123,7 +123,7 @@ input Input_UserPartner {
     heightId: String
     hairColorId: String
     eyeColorId: String
-    skinToneId: String
+    ethnicityId: String
     galleryId: String
     locationId: String
     location: Input_Location

@@ -80,8 +80,8 @@ input Input_QueryBlog {
 input Input_CreateBlog {
     title: String!
     authorName: String!
-    websiteName: String!
-    websiteURL: String!
+    websiteName: String
+    websiteURL: String
     type: E_BlogType!
     category: E_BlogCategory!
     featuredImage: String!

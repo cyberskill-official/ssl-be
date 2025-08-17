@@ -4,7 +4,7 @@ import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 import { addMonths, addYears } from 'date-fns';
 
-import type { I_Input_CreatePromoCode, I_PromoCode } from '#modules/promo-code/index.js';
+import type { I_Input_CreatePromoCode, I_PromoCode } from '#modules/promo-code/promo-code/promo-code.type.js';
 
 interface I_PromoCodeRaw extends I_Input_CreatePromoCode {
 }

@@ -11,7 +11,6 @@ input Input_Register {
     username: String!
     email: String!
     password: String!
-    displayName: String
     accountType: E_AccountType
 }
 
@@ -46,8 +45,8 @@ input Input_Register_Preferences_Partner {
     heightId: String!
     hairColorId: String!
     eyeColorId: String!
-    skinToneId: String!
-    galleryId: String!
+    ethnicityId: String!
+    galleryId: String
     bio: String
 }
 

@@ -80,6 +80,7 @@ export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Cr
     introductionHeadline: string;
     introductionContent: string;
     ageGroup: E_DestinationAgeGroup;
+    isActive: boolean;
 }
 
 export interface I_Input_UpdateDestination extends Omit<I_Destination, T_Omit_Update | T_Destination_Populate> {

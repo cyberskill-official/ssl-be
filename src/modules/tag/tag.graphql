@@ -12,7 +12,7 @@ enum E_TagType {
     HEIGHT
     HAIR_COLOR
     EYE_COLOR
-    SKIN_TONE
+    ETHNICITY
     CATALOGUE
 }
 

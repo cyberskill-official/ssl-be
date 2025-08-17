@@ -10,7 +10,9 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
+import { E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { getClientIp } from '#shared/util/ip.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
@@ -71,6 +73,18 @@ export const uploadCtr = {
                 return videoUploaded;
             }
 
+            const clientIp = getClientIp(context.req);
+            await moderationMediaCtr.createModerationMedia(context, {
+                doc: {
+                    type: E_ModerationMediaType.VIDEO,
+                    uploadedById: currentUser.id,
+                    url: videoUploaded.result!,
+                    entity,
+                    entityId,
+                    ipAddress: clientIp,
+                },
+            });
+
             return {
                 success: true,
                 result: videoUploaded.result,
@@ -97,11 +111,24 @@ export const uploadCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
+        const uploadedUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+
+        const clientIp = getClientIp(context.req);
+        await moderationMediaCtr.createModerationMedia(context, {
+            doc: {
+                type: E_ModerationMediaType.IMAGE,
+                uploadedById: currentUser.id,
+                url: uploadedUrl,
+                entity,
+                entityId,
+                ipAddress: clientIp,
+            },
+        });
 
         return {
             message: 'Upload successful',
             success: true,
-            result: `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`,
+            result: uploadedUrl,
         };
     },
 };

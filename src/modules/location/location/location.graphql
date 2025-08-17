@@ -115,6 +115,7 @@ input Input_GetLocationInViewport {
     southWestLongitude: Float!
     northEastLatitude: Float!
     northEastLongitude: Float!
+    entityType: E_LocationEntityType
 }
 
 type T_Response_Location {

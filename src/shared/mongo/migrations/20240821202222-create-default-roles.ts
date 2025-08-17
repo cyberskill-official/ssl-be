@@ -3,9 +3,10 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Role } from '#modules/authz/index.js';
+// Narrow imports to avoid circular deps via module index
+import type { I_Role } from '#modules/authz/role/role.type.js';
 
-import { E_Role } from '#modules/authz/index.js';
+import { E_Role } from '#modules/authz/role/role.type.js';
 
 interface I_RoleExtended extends Partial<I_Role> {
     children?: I_RoleExtended[];
