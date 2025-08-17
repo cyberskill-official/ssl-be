@@ -28,10 +28,10 @@ export interface I_Environment {
     REDIS_HOST: string;
     REDIS_PORT: number;
     REDIS_PASSWORD: string;
+    EMAIL_NAME: string;
     FROM_EMAIL_ADDRESS: string;
     AWS_ACCESS_KEY_ID: string;
     AWS_SECRET_ACCESS_KEY: string;
-    AWS_SES_REGION: string;
     AWS_REKOGNITION_REGION: string;
     BUNNY_CDN_HOSTNAME: string;
     BUNNY_CDN_SECURITY_KEY: string;
@@ -41,4 +41,5 @@ export interface I_Environment {
     BUNNY_STREAM_LIBRARY_ID: string;
     BUNNY_STREAM_API_KEY: string;
     BUNNY_STREAM_SECURITY_KEY: string;
+    POSTMARK_SERVER_API_TOKEN: string;
 }

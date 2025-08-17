@@ -17,7 +17,9 @@ import bcrypt from 'bcryptjs';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { validate } from '#shared/util/index.js';
 
@@ -306,5 +308,69 @@ export const userCtr = {
         }
 
         return mongooseCtr.deleteOne(filter, options);
+    },
+    getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {
+        let emails: string[] = [];
+
+        let matchStage = {};
+
+        switch (target) {
+            case E_UserGroup.ALL_SUBSCRIBERS:
+                // Get all subscribers
+                break;
+
+            case E_UserGroup.FREE_MEMBERS:{
+                const freeMember = await roleCtr.getRole({}, { filter: { name: E_Role_User.FREE_MEMBER } });
+                if (!freeMember.success) {
+                    throwError({
+                        message: 'Free member role not found.',
+                        status: RESPONSE_STATUS.NOT_FOUND,
+                    });
+                }
+                matchStage = { rolesIds: { $in: [freeMember.result.id] } };
+                break;
+            }
+
+            case E_UserGroup.PAID_MEMBERS:{
+                const paidMember = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                if (!paidMember.success) {
+                    throwError({
+                        message: 'Paid member role not found.',
+                        status: RESPONSE_STATUS.NOT_FOUND,
+                    });
+                }
+                matchStage = { rolesIds: { $in: [paidMember.result.id] } };
+                break;
+            }
+
+            case E_UserGroup.CUSTOM_RECIPIENTS:
+                if (!customRecipientsIds || customRecipientsIds.length === 0) {
+                    throwError({
+                        message: 'Custom recipients IDs are required for this target.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+                matchStage = { id: { $in: customRecipientsIds } };
+                break;
+
+            default:
+                throwError({
+                    message: 'Invalid user group target.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+        }
+
+        const result: { emails: string[] }[] = await UserModel.aggregate([
+            { $match: matchStage },
+            { $project: { _id: 0, email: 1 } },
+            { $group: { _id: null, emails: { $push: '$email' } } },
+            { $project: { _id: 0, emails: 1 } },
+        ]);
+
+        if (result.length > 0 && result[0]?.emails) {
+            emails = result[0].emails;
+        }
+
+        return emails;
     },
 };

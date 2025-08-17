@@ -20,7 +20,6 @@ export const emailTemplateCache = {
             return null;
         }
 
-        // Check if item is expired
         const now = Date.now();
         if (now - item.timestamp > item.ttl * 1000) {
             cache.delete(templateKey);

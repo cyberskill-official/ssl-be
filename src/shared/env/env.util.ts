@@ -8,8 +8,8 @@ import type { I_Environment } from './env.type.js';
 
 import {
     AWS_REKOGNITION_REGION,
-    AWS_SES_REGION,
     BODY_PARSER_LIMIT,
+    EMAIL_NAME,
     ENDPOINT_GRAPHQL,
     ENDPOINT_RESTAPI,
     ENDPOINT_WS,
@@ -57,10 +57,10 @@ export function getEnv(): I_Environment {
         REDIS_HOST: str({ default: REDIS_HOST }),
         REDIS_PORT: port({ default: REDIS_PORT }),
         REDIS_PASSWORD: str({ default: '' }),
+        EMAIL_NAME: str({ default: EMAIL_NAME }),
         FROM_EMAIL_ADDRESS: str({ default: FROM_EMAIL_ADDRESS }),
         AWS_ACCESS_KEY_ID: str(),
         AWS_SECRET_ACCESS_KEY: str(),
-        AWS_SES_REGION: str({ default: AWS_SES_REGION }),
         AWS_REKOGNITION_REGION: str({ default: AWS_REKOGNITION_REGION }),
         BUNNY_CDN_HOSTNAME: str(),
         BUNNY_CDN_SECURITY_KEY: str(),
@@ -70,14 +70,14 @@ export function getEnv(): I_Environment {
         BUNNY_STREAM_LIBRARY_ID: str(),
         BUNNY_STREAM_API_KEY: str(),
         BUNNY_STREAM_SECURITY_KEY: str(),
+        POSTMARK_SERVER_API_TOKEN: str(),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;
 
-    const MONGO_URI = `mongodb://${
-        haveAuth
-            ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@`
-            : ''
+    const MONGO_URI = `mongodb://${haveAuth
+        ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@`
+        : ''
     }${cleanedEnv.MONGO_HOST}:${cleanedEnv.MONGO_PORT}/${cleanedEnv.MONGO_NAME}${haveAuth ? '?authSource=admin' : ''}`;
 
     return {

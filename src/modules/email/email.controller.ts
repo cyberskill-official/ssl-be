@@ -5,10 +5,19 @@ import ejs from 'ejs';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { getEnv } from '#shared/env/index.js';
 
-import type { I_EmailJobData, I_EmailJobInfo, I_EmailJobResponse, I_EmailMetrics } from './email.type.js';
+import type {
+    I_EmailJobData,
+    I_EmailJobInfo,
+    I_EmailJobResponse,
+    I_EmailMetrics,
+    I_Input_SendBulkEmail,
+    I_Input_SendScheduleEmail,
+} from './email.type.js';
+import type { I_EmailJobRegistryFilter } from './queue-registry/index.js';
 
 import { emailQueue } from './email.queue.js';
 import { emailTemplateCache } from './email.template-cache.js';
+import { emailQueueRegistryCtr } from './queue-registry/index.js';
 
 const env = getEnv();
 
@@ -26,7 +35,6 @@ export const emailCtr = {
         try {
             const emails = Array.isArray(to) ? to : [to];
 
-            // Try to get template from cache first
             const templateFromCache = emailTemplateCache.get(templateKey);
             let html: string;
             let subjectText: string;
@@ -37,7 +45,6 @@ export const emailCtr = {
             }
 
             if (templateFromCache) {
-                // Use cached template
                 const { content, subject: templateSubject } = templateFromCache;
 
                 if (templateSubject) {
@@ -50,13 +57,11 @@ export const emailCtr = {
                 html = content ? await ejs.render(content, templateData) : emailCtr.generateBasicTemplate(templateData);
             }
             else {
-                // Get template from database and cache it
                 const template = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey } });
 
                 if (template.success && template.result) {
                     const { content, subject: templateSubject } = template.result;
 
-                    // Cache the template for future use
                     emailTemplateCache.set(templateKey, content || '', templateSubject);
 
                     if (templateSubject)
@@ -88,7 +93,7 @@ export const emailCtr = {
                 },
             };
 
-            const job = await emailQueue.addEmail(emailData, options);
+            const job = await emailQueue.addTransactionalEmail({ ...emailData, type: 'transactional' }, options);
 
             return {
                 success: true,
@@ -96,8 +101,47 @@ export const emailCtr = {
             };
         }
         catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             console.error('Error sending email:', error);
+
+            return {
+                success: false,
+                message: (error as Error).message,
+            };
+        }
+    },
+
+    /**
+     * Send email with raw HTML (no templateKey, html provided directly)
+     */
+    sendEmailRaw: async (input: I_Input_SendBulkEmail): Promise<I_EmailJobResponse> => {
+        const { to, subject, html, metadata, options } = input;
+        try {
+            const emails = Array.isArray(to) ? to : [to];
+            let subjectText = subject || 'No Subject';
+            if (env.IS_DEV || env.IS_STAG) {
+                subjectText = `[TEST] ${subjectText}`;
+            }
+
+            const emailData: I_EmailJobData = {
+                to: emails,
+                subject: subjectText,
+                html,
+                metadata: {
+                    ...(metadata || {}),
+                    renderEngine: 'raw',
+                },
+            };
+
+            const jobs = await emailQueue.addBulkEmail({ ...emailData, type: 'bulk' }, options);
+
+            return {
+                success: true,
+                jobId: jobs.map(j => String(j.id)),
+            };
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error('Error sending raw email:', error);
 
             return {
                 success: false,
@@ -109,20 +153,24 @@ export const emailCtr = {
     /**
      * Schedule an email to be sent at a specific time
      */
-    scheduleEmail: async (emailData: I_EmailJobData, sendAt: Date, options?: Bull.JobOptions): Promise<I_EmailJobResponse> => {
+    scheduleEmail: async (input: I_Input_SendScheduleEmail): Promise<I_EmailJobResponse> => {
+        const { to, subject, html, metadata, options, sendAt } = input;
         try {
-            if (!emailData.to || !emailData.subject) {
+            if (!to || !subject) {
                 throw new Error('Missing required fields: to, subject');
             }
 
-            if (sendAt <= new Date()) {
+            if (sendAt && sendAt <= new Date()) {
                 throw new Error('sendAt must be a future date');
             }
 
-            // Validate email addresses
-            const emails = Array.isArray(emailData.to) ? emailData.to : [emailData.to];
+            const emails = Array.isArray(to) ? to : [to];
 
-            const job = await emailQueue.scheduleEmail({ ...emailData, to: emails }, sendAt, options);
+            const job = await emailQueue.scheduleEmail(
+                { to: emails, subject, html, metadata, type: 'bulk' },
+                sendAt,
+                options,
+            );
 
             return {
                 success: true,
@@ -241,6 +289,84 @@ export const emailCtr = {
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             return { success: false, message: errorMessage };
+        }
+    },
+
+    /**
+     * Get job progress from registry
+     */
+    getJobProgress: async (jobId: string) => {
+        try {
+            return await emailQueueRegistryCtr.getJobProgress(jobId);
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to get job progress: ${errorMessage}`);
+        }
+    },
+
+    /**
+     * List scheduled jobs from registry
+     */
+    listScheduledJobs: async () => {
+        try {
+            return await emailQueueRegistryCtr.listScheduledJobs();
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to list scheduled jobs: ${errorMessage}`);
+        }
+    },
+
+    /**
+     * List jobs with optional filter from registry
+     */
+    listJobs: async (filter?: I_EmailJobRegistryFilter) => {
+        try {
+            return await emailQueueRegistryCtr.listJobs(filter);
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to list jobs: ${errorMessage}`);
+        }
+    },
+
+    /**
+     * Get job statistics from registry
+     */
+    getJobStats: async () => {
+        try {
+            return await emailQueueRegistryCtr.getJobStats();
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to get job stats: ${errorMessage}`);
+        }
+    },
+
+    /**
+     * Delete a job from registry
+     */
+    deleteJobFromRegistry: async (jobId: string) => {
+        try {
+            return await emailQueueRegistryCtr.deleteJob(jobId);
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to delete job from registry: ${errorMessage}`);
+        }
+    },
+
+    /**
+     * Cleanup old completed jobs from registry
+     */
+    cleanupCompletedJobs: async (olderThanHours?: number) => {
+        try {
+            return await emailQueueRegistryCtr.cleanupCompletedJobs(olderThanHours);
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Failed to cleanup completed jobs: ${errorMessage}`);
         }
     },
 };

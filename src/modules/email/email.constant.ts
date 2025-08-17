@@ -2,11 +2,17 @@ import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
 
+export const EMAIL_PRIORITY = {
+    HIGH: 1,
+    NORMAL: 5,
+    LOW: 10,
+} as const;
+
 export const EMAIL_CONSTANTS = {
     // Queue settings
     QUEUE: {
         CONCURRENCY: 5,
-        DEFAULT_BATCH_SIZE: 100,
+        DEFAULT_BATCH_SIZE: 300, // Default batch size for bulk email processing
         MAX_BATCH_SIZE: 1000,
         PROCESSING_TIMEOUT: 30000, // 30 seconds
         DEFAULT_JOB_OPTIONS: {
@@ -43,6 +49,27 @@ export const EMAIL_CONFIG = {
             },
             removeOnComplete: EMAIL_CONSTANTS.QUEUE.DEFAULT_JOB_OPTIONS.REMOVE_ON_COMPLETE,
             removeOnFail: EMAIL_CONSTANTS.QUEUE.DEFAULT_JOB_OPTIONS.REMOVE_ON_FAIL,
+        },
+    },
+
+    // Transactional queue settings
+    transactionalQueue: {
+        redis: {
+            host: env.REDIS_HOST,
+            port: env.REDIS_PORT,
+            password: env.REDIS_PASSWORD,
+            db: 2, // Dedicated database for transactional email queue
+            maxRetriesPerRequest: 3,
+        },
+        concurrency: 5,
+        defaultJobOptions: {
+            attempts: 3,
+            backoff: {
+                type: 'exponential' as const,
+                delay: 5000,
+            },
+            removeOnComplete: 100,
+            removeOnFail: 50,
         },
     },
 

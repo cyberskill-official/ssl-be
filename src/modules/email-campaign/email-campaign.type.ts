@@ -24,6 +24,8 @@ export interface I_EmailCampaign extends I_GenericDocument {
     recipientCount?: number;
     openCount?: number;
     clickCount?: number;
+    jobIds?: string[];
+    isSent?: boolean; // Track if campaign has been sent
 }
 
 export type T_EmailCampaign_Populate = 'customRecipients';

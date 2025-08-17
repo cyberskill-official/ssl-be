@@ -1,6 +1,7 @@
+import type Bull from 'bull';
+
 export interface I_EmailJobData {
     to: string | string[];
-    from?: string;
     subject: string;
     text?: string;
     html?: string;
@@ -8,6 +9,7 @@ export interface I_EmailJobData {
     categories?: string[];
     customArgs?: Record<string, string>;
     metadata?: Record<string, any>;
+    type?: 'transactional' | 'bulk';
 }
 
 export interface I_EmailAttachment {
@@ -53,11 +55,11 @@ export interface I_EmailJobResult {
 export interface I_EmailJobResponse {
     success: boolean;
     message?: string;
-    jobId?: string;
+    jobId?: string | string[];
 }
 
 export interface I_BulkEmailJobData {
-    emails: I_EmailJobData[];
+    emailJob: I_EmailJobData;
     batchSize?: number;
 }
 
@@ -106,4 +108,15 @@ export interface I_CacheItem {
     subject?: string;
     timestamp: number;
     ttl: number;
+}
+
+export interface I_Input_SendBulkEmail {
+    to: string | string[];
+    html: string;
+    subject?: string;
+    options?: Bull.JobOptions;
+    metadata?: Record<string, any>;
+}
+export interface I_Input_SendScheduleEmail extends I_Input_SendBulkEmail {
+    sendAt: Date;
 }

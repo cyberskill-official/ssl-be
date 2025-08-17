@@ -10,6 +10,6 @@ export const ENDPOINT_RESTAPI = '/rest';
 export const UPLOAD_FOLDER = 'uploads';
 export const REDIS_HOST = 'localhost';
 export const REDIS_PORT = 6379;
+export const EMAIL_NAME = 'Secret Swinger Lust';
 export const FROM_EMAIL_ADDRESS = 'no-reply@secretswingerlust.com';
-export const AWS_SES_REGION = 'eu-west-3';
 export const AWS_REKOGNITION_REGION = 'eu-central-1';

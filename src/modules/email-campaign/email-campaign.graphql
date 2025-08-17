@@ -1,3 +1,24 @@
+# Email Job Status from Queue Registry
+type T_EmailJobStatus {
+    jobId: String
+    status: String
+    type: String
+    total: Int
+    sent: Int
+    failed: Int
+    createdAt: DateTime
+    updatedAt: DateTime
+    scheduledAt: DateTime
+    recipients: [String]
+    failedRecipients: [String]
+    meta: JSON
+}
+
+type T_Response_EmailJobStatus {
+    success: Boolean
+    message: String
+    result: T_EmailJobStatus
+}
 
 enum E_UserGroup {
     ALL_SUBSCRIBERS
@@ -7,7 +28,7 @@ enum E_UserGroup {
 }
 
 type T_EmailCampaign {
-    id:	String
+    id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
@@ -25,6 +46,8 @@ type T_EmailCampaign {
     recipientCount: Int
     openCount: Int
     clickCount: Int
+    jobIds: [String]
+    isSent: Boolean
 }
 
 input Input_QueryEmailCampaign {
@@ -45,6 +68,8 @@ input Input_QueryEmailCampaign {
     recipientCount: Int
     openCount: Int
     clickCount: Int
+    jobIds: [String]
+    isSent: Boolean
 }
 
 input Input_CreateEmailCampaign {
@@ -78,6 +103,8 @@ input Input_UpdateEmailCampaign {
     recipientCount: Int
     openCount: Int
     clickCount: Int
+    jobIds: [String]
+    isSent: Boolean
 }
 
 type T_Response_EmailCampaign {
@@ -105,4 +132,26 @@ type T_Response_EmailCampaigns {
     success: Boolean
     message: String
     result: T_EmailCampaigns
+}
+
+type Query {
+    getEmailCampaign(
+        filter: Input_QueryEmailCampaign!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_EmailCampaign!
+    getEmailCampaigns(filter: Input_QueryEmailCampaign, options: JSON): T_Response_EmailCampaigns!
+    getEmailJobStatus(jobId: String!): T_Response_EmailJobStatus!
+}
+
+type Mutation {
+    createEmailCampaign(doc: Input_CreateEmailCampaign!): T_Response_EmailCampaign!
+    updateEmailCampaign(
+        filter: Input_QueryEmailCampaign!
+        update: Input_UpdateEmailCampaign!
+        options: JSON
+    ): T_Response_EmailCampaign!
+    deleteEmailCampaign(filter: Input_QueryEmailCampaign!, options: JSON): T_Response_EmailCampaign!
+    sendCampaignNow(filter: Input_QueryEmailCampaign!): T_Response_EmailCampaign!
 }
