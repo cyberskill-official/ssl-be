@@ -3,7 +3,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import type { I_AdminNotification, I_Footer } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_Footer } from './setting.type.js';
 
 import { E_SettingType } from './setting.type.js';
 
@@ -67,6 +67,36 @@ export function validateAdminNotification(value: I_AdminNotification): boolean {
     return true;
 }
 
+export function validateAIModerationConfig(value: I_AIModerationConfig): boolean {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    // Validate global thresholds
+    if (typeof value.autoRejectThreshold !== 'number' || value.autoRejectThreshold < 0 || value.autoRejectThreshold > 1) {
+        return false;
+    }
+
+    if (typeof value.humanReviewThreshold !== 'number' || value.humanReviewThreshold < 0 || value.humanReviewThreshold > 1) {
+        return false;
+    }
+
+    // Validate image thresholds
+    if (value.imageThresholds) {
+        const imageThresholdsKeys = ['explicitNudity', 'violence', 'hateSymbols', 'drugs', 'nonExplicitNudity', 'swimwearOrUnderwear'];
+
+        for (const threshold of imageThresholdsKeys) {
+            const thresholdValue = (value.imageThresholds as unknown as Record<string, number>)[threshold];
+
+            if (typeof thresholdValue !== 'number' || thresholdValue < 0 || thresholdValue > 1) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 export function validateFooterBusinessRules(footer: I_Footer): void {
     if (footer.socialLinks && footer.socialLinks.length === 0) {
         throwError({
@@ -106,12 +136,30 @@ export function validateAdminNotificationBusinessRules(adminNotification: I_Admi
     }
 }
 
-export function validateSettingValue(value: I_Footer | I_AdminNotification, settingType: E_SettingType): boolean {
+export function validateAIModerationBusinessRules(config: I_AIModerationConfig): void {
+    if (!config || typeof config !== 'object') {
+        throwError({
+            message: 'Invalid AI moderation configuration',
+            status: RESPONSE_STATUS.BAD_REQUEST,
+        });
+    }
+
+    if (config.autoRejectThreshold <= config.humanReviewThreshold) {
+        throwError({
+            message: 'Auto reject threshold must be higher than human review threshold',
+            status: RESPONSE_STATUS.BAD_REQUEST,
+        });
+    }
+}
+
+export function validateSettingValue(value: I_Footer | I_AdminNotification | I_AIModerationConfig, settingType: E_SettingType): boolean {
     switch (settingType) {
         case E_SettingType.FOOTER:
             return validateFooter(value as I_Footer);
         case E_SettingType.ADMIN_NOTIFICATION:
             return validateAdminNotification(value as I_AdminNotification);
+        case E_SettingType.AI_MODERATION:
+            return validateAIModerationConfig(value as I_AIModerationConfig);
         default:
             return false;
     }

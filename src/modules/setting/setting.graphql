@@ -1,6 +1,7 @@
 enum E_SettingType {
     FOOTER
     ADMIN_NOTIFICATION
+    AI_MODERATION
 }
 
 type T_SocialLink {
@@ -33,11 +34,68 @@ input Input_AdminNotification {
     newMembers: Boolean
 }
 
-union U_SettingValue = T_Footer | T_AdminNotification
+type T_AIModerationConfig {
+    # Global thresholds
+    autoRejectThreshold: Float
+    humanReviewThreshold: Float
+    # Content type specific thresholds
+    imageThresholds: T_AIModerationThresholds
+    # Banned words configuration
+    bannedWords: T_BannedWordsConfig
+    # Additional settings
+    moderationCategories: E_ModerationCategory
+}
+
+type T_BannedWordsConfig {
+    explicit: [String]
+    hate: [String]
+    violence: [String]
+    drugs: [String]
+    custom: [String]
+}
+
+type T_AIModerationThresholds {
+    explicitNudity: Float
+    violence: Float
+    hateSymbols: Float
+    drugs: Float
+    nonExplicitNudity: Float
+    swimwearOrUnderwear: Float
+}
+
+input Input_AIModerationThresholds {
+    explicitNudity: Float
+    violence: Float
+    hateSymbols: Float
+    drugs: Float
+    nonExplicitNudity: Float
+    swimwearOrUnderwear: Float
+}
+
+input Input_AIModerationConfig {
+    # AWS Service controls
+    awsComprehendEnabled: Boolean
+    awsRekognitionEnabled: Boolean
+    awsTextractEnabled: Boolean
+    # Global thresholds
+    autoRejectThreshold: Float
+    humanReviewThreshold: Float
+    # Content type specific thresholds
+    imageThresholds: Input_AIModerationThresholds
+    # Content type controls
+    enableImageModeration: Boolean
+    enableTextModeration: Boolean
+    enableVideoModeration: Boolean
+    # Additional settings
+    moderationCategories: [String]
+}
+
+union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig
 
 input Input_Setting {
     footer: Input_Footer
     adminNotification: Input_AdminNotification
+    aiModeration: Input_AIModerationConfig
 }
 
 type T_Setting {

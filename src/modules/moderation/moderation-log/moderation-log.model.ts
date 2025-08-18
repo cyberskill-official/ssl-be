@@ -26,6 +26,9 @@ export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
         moderationMediaId: {
             type: String,
         },
+        aiResult: {
+            type: JSON,
+        },
     },
     virtuals: [
         {

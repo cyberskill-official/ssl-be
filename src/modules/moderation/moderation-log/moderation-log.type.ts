@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_User } from '#modules/user/index.js';
 
+import type { I_MediaModerationResult } from '../ai-moderation/index.js';
 import type { I_ModerationMedia } from '../moderation-media/index.js';
 
 export enum E_ModerationLogAction {
@@ -19,6 +20,7 @@ export interface I_ModerationLog extends I_GenericDocument {
     user?: I_User;
     moderationMediaId?: string;
     moderationMedia?: I_ModerationMedia;
+    aiResult?: I_MediaModerationResult;
 }
 
 export type T_ModerationLog_Populate = 'user' | 'moderationMedia';

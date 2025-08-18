@@ -1,6 +1,7 @@
 import type { E_Environment } from '@cyberskill/shared/typescript';
 
 export interface I_Environment {
+    AWS_BUCKET_NAME: string;
     NODE_ENV: E_Environment.DEVELOPMENT | E_Environment.PRODUCTION;
     NODE_ENV_MODE: E_Environment;
     IS_DEV: boolean;
@@ -32,7 +33,8 @@ export interface I_Environment {
     FROM_EMAIL_ADDRESS: string;
     AWS_ACCESS_KEY_ID: string;
     AWS_SECRET_ACCESS_KEY: string;
-    AWS_REKOGNITION_REGION: string;
+    AWS_MODERATION_REGION: string;
+    AWS_BUCKET_REGION: string;
     BUNNY_CDN_HOSTNAME: string;
     BUNNY_CDN_SECURITY_KEY: string;
     BUNNY_STORAGE_ZONE_NAME: string;

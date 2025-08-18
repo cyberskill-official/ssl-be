@@ -25,7 +25,9 @@ const settingResolver = {
             else if (parent.type === E_SettingType.ADMIN_NOTIFICATION) {
                 return parent.value ? { ...parent.value, __typename: 'T_AdminNotification' } : null;
             }
-
+            else if (parent.type === E_SettingType.AI_MODERATION) {
+                return parent.value ? { ...parent.value, __typename: 'T_AIModerationConfig' } : null;
+            }
             return null;
         },
     },

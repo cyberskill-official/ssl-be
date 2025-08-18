@@ -7,7 +7,9 @@ import process from 'node:process';
 import type { I_Environment } from './env.type.js';
 
 import {
-    AWS_REKOGNITION_REGION,
+    AWS_BUCKET_NAME,
+    AWS_BUCKET_REGION,
+    AWS_MODERATION_REGION,
     BODY_PARSER_LIMIT,
     EMAIL_NAME,
     ENDPOINT_GRAPHQL,
@@ -61,7 +63,9 @@ export function getEnv(): I_Environment {
         FROM_EMAIL_ADDRESS: str({ default: FROM_EMAIL_ADDRESS }),
         AWS_ACCESS_KEY_ID: str(),
         AWS_SECRET_ACCESS_KEY: str(),
-        AWS_REKOGNITION_REGION: str({ default: AWS_REKOGNITION_REGION }),
+        AWS_MODERATION_REGION: str({ default: AWS_MODERATION_REGION }),
+        AWS_BUCKET_REGION: str({ default: AWS_BUCKET_REGION }),
+        AWS_BUCKET_NAME: str({ default: AWS_BUCKET_NAME }),
         BUNNY_CDN_HOSTNAME: str(),
         BUNNY_CDN_SECURITY_KEY: str(),
         BUNNY_STORAGE_ZONE_NAME: str(),

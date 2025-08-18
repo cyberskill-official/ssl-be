@@ -32,9 +32,10 @@ import type {
     I_ModerationMedia,
 } from './moderation-media.type.js';
 
+import { aiModerationCtr } from '../ai-moderation/ai-moderation.controller.js';
 import { ModerationMediaModel } from './moderation-media.model.js';
-import { E_ModerationMediaStatus } from './moderation-media.type.js';
-import { mapModerationMediaTypeTo } from './moderation.util.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
+import { mapModerationMediaTypeTo } from './moderation-media.util.js';
 
 const mongooseCtr = new MongooseController<I_ModerationMedia>(ModerationMediaModel);
 
@@ -95,10 +96,66 @@ export const moderationMediaCtr = {
 
         let moderationCreatedId: string = undefined!;
         try {
+            let aiModerationResult = null;
+            try {
+                if (doc.type === E_ModerationMediaType.IMAGE) {
+                    const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
+
+                    if (imageModerationResult.success) {
+                        aiModerationResult = imageModerationResult.result;
+                    }
+                }
+                else if (doc.type === E_ModerationMediaType.VIDEO) {
+                    const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
+
+                    if (videoModerationResult.success) {
+                        aiModerationResult = videoModerationResult.result;
+                    }
+                }
+            }
+            catch (error) {
+                // Do not block uploads on AI moderation failure; log and continue
+                console.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+            }
+
+            let initialStatus = E_ModerationMediaStatus.PENDING;
+            let reason: string | undefined;
+
+            const composeReason = (res: any): string | undefined => {
+                if (res?.reasons && Array.isArray(res.reasons) && res.reasons.length > 0) {
+                    return res.reasons.join(', ');
+                }
+                if (res?.moderationLabels && Array.isArray(res.moderationLabels) && res.moderationLabels.length > 0) {
+                    return res.moderationLabels
+                        .map((l: any) => `${l.name}${typeof l.confidence === 'number' ? ` (${l.confidence.toFixed?.(1) ?? l.confidence}%)` : ''}`)
+                        .join(', ');
+                }
+                return undefined;
+            };
+
+            if (aiModerationResult) {
+                // Auto-reject path disabled; keep PENDING and attach reason for reviewers
+                initialStatus = E_ModerationMediaStatus.PENDING;
+                const reanson = composeReason(aiModerationResult);
+                if (reanson) {
+                    reason = `AI flagged for review: ${reanson}`;
+                }
+                // Auto-reject version kept for future use:
+                // if (
+                //     aiModerationResult.decision === E_ModerationMediaStatus.REJECTED
+                //     || aiModerationResult.riskLevel === E_RiskLevel.CRITICAL
+                // ) {
+                //     initialStatus = E_ModerationMediaStatus.REJECTED;
+                //     const r = composeReason(aiModerationResult);
+                //     reason = r ? `AI detected inappropriate content: ${r}` : 'AI detected inappropriate content';
+                // }
+            }
+
             const moderationCreated = await mongooseCtr.createOne({
                 ...doc,
                 uploadedById: currentUser.id,
-                status: E_ModerationMediaStatus.PENDING,
+                status: initialStatus,
+                reason,
             });
 
             if (!moderationCreated.success) {
@@ -169,7 +226,7 @@ export const moderationMediaCtr = {
 
                 default:
                     throwError({
-                        message: `Unsupported module: ${module}`,
+                        message: `Unsupported module: ${entity}`,
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
             }
@@ -315,13 +372,7 @@ export const moderationMediaCtr = {
         context: I_Context,
         { id, reason }: I_Input_RejectModerationMedia,
     ): Promise<I_Return<I_ModerationMedia>> => {
-        const currentUser = context.req?.session?.user;
-        if (!currentUser?.id) {
-            throwError({
-                message: 'User not authenticated.',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
-        }
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const currentModerationMedia = await mongooseCtr.findOne({ id });
         if (!currentModerationMedia.success || !currentModerationMedia.result) {
@@ -334,6 +385,37 @@ export const moderationMediaCtr = {
             throwError({
                 message: 'ModerationMedia already rejected.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        // Try delete underlying file on Bunny before status update
+        const media = currentModerationMedia.result;
+        try {
+            if (media.type === E_ModerationMediaType.VIDEO && media.url) {
+                const deleted = await bunnyCtr.deleteVideoUrl(context, media.url);
+                if (!deleted.success) {
+                    throw new Error(deleted.message || 'Failed to delete Bunny Stream video');
+                }
+            }
+            else if (media.type === E_ModerationMediaType.IMAGE && media.url) {
+                let storagePath = media.url;
+                try {
+                    const u = new URL(media.url);
+                    storagePath = u.pathname.replace(/^\//, '');
+                }
+                catch {
+                    // assume already a storage path
+                }
+                const deleted = await bunnyCtr.deleteFile(context, storagePath);
+                if (!deleted.success) {
+                    throw new Error(deleted.message || 'Failed to delete Bunny Storage file');
+                }
+            }
+        }
+        catch (error) {
+            throwError({
+                message: (error as Error).message || 'Failed to delete media file before reject.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
 

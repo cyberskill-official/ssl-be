@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_AgeVerify, I_AIVerifyResult, I_PreApproval } from '#modules/authn/index.js';
 
-import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
+import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';
@@ -82,8 +82,8 @@ const AgeVerifySchema = mongo.createSchema<I_AgeVerify>({
     schema: {
         status: {
             type: String,
-            enum: Object.values(E_AgeVerifyStatus),
-            default: E_AgeVerifyStatus.PENDING,
+            enum: E_AgeVerifyStatus ? Object.values(E_AgeVerifyStatus) : ['PENDING', 'APPROVED', 'REJECTED'],
+            default: E_AgeVerifyStatus?.PENDING || 'PENDING',
             required: true,
             validate: [
                 {
@@ -94,8 +94,8 @@ const AgeVerifySchema = mongo.createSchema<I_AgeVerify>({
         },
         method: {
             type: String,
-            enum: Object.values(E_AgeVerifyMethod),
-            default: E_AgeVerifyMethod.PASSPORT,
+            enum: E_AgeVerifyMethod ? Object.values(E_AgeVerifyMethod) : ['PASSPORT', 'ID_CARD', 'DRIVERS_LICENSE'],
+            default: E_AgeVerifyMethod?.PASSPORT || 'PASSPORT',
             required: true,
             validate: [
                 {
@@ -149,8 +149,8 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
     schema: {
         gender: {
             type: String,
-            enum: Object.values(E_Gender),
-            default: E_Gender.FEMALE,
+            enum: E_Gender ? Object.values(E_Gender) : ['MALE', 'FEMALE', 'OTHER'],
+            default: E_Gender?.FEMALE || 'FEMALE',
             required: true,
             validate: [
                 {
@@ -448,7 +448,7 @@ export const UserSettingsSchema = mongo.createSchema<I_UserSettings>({
     schema: {
         timeFormat: {
             type: String,
-            enum: Object.values(E_UserSettings_TimeFormat),
+            enum: E_UserSettings_TimeFormat ? Object.values(E_UserSettings_TimeFormat) : ['12_HOUR', '24_HOUR'],
         },
         temporaryLocation: { type: UserSettingsTemporaryLocationSchema },
         notification: { type: UserSettingsNotificationSchema },
@@ -521,7 +521,7 @@ export const UserModel = mongo.createModel<I_User>({
         },
         registerStep: {
             type: String,
-            enum: Object.values(E_RegisterStep),
+            enum: E_RegisterStep ? Object.values(E_RegisterStep) : ['VERIFY_EMAIL', 'PERSONAL_INFO', 'PREFERENCES', 'MEMBERSHIP', 'COMPLETE'],
             required: true,
             validate: [
                 {

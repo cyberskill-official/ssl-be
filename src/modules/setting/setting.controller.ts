@@ -7,18 +7,18 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_AdminNotification, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_Setting } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_Setting } from './setting.type.js';
 
 import { SettingsModel } from './setting.model.js';
 import { E_SettingType } from './setting.type.js';
-import { validateAdminNotificationBusinessRules, validateFooterBusinessRules } from './setting.validation.js';
+import { validateAdminNotificationBusinessRules, validateAIModerationBusinessRules, validateFooterBusinessRules, validateSettingValue } from './setting.validation.js';
 
 const mongooseCtr = new MongooseController<I_Setting>(SettingsModel);
 
 function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_CreateSetting {
     const transformed: I_Input_CreateSetting = {
         ...doc,
-        value: undefined as unknown as I_Footer | I_AdminNotification,
+        value: undefined as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig,
     };
 
     if (doc.type === E_SettingType.FOOTER && doc.value?.footer) {
@@ -26,6 +26,9 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
     }
     else if (doc.type === E_SettingType.ADMIN_NOTIFICATION && doc.value?.adminNotification) {
         transformed.value = doc.value.adminNotification;
+    }
+    else if (doc.type === E_SettingType.AI_MODERATION && doc.value?.aiModeration) {
+        transformed.value = doc.value.aiModeration;
     }
     else {
         throwError({
@@ -37,31 +40,26 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
     return transformed;
 }
 
-function transformGraphQLUpdateInput(update: Partial<I_Input_UpdateSettingGraphQL> & { type: E_SettingType }, previousValue: I_Footer | I_AdminNotification): I_Input_UpdateSetting {
-    let value: I_Footer | I_AdminNotification;
-    if (update.value) {
-        if (update.type === E_SettingType.FOOTER && update.value.footer) {
-            value = update.value.footer;
-        }
-        else if (update.type === E_SettingType.ADMIN_NOTIFICATION && update.value.adminNotification) {
-            value = update.value.adminNotification;
-        }
-        else {
-            throwError({
-                message: 'Value does not match the specified type',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-    }
-    else {
-        value = previousValue;
-    }
-    return {
+function transformGraphQLUpdateInput(
+    update: I_Input_UpdateSettingGraphQL,
+    currentValue: I_Footer | I_AdminNotification | I_AIModerationConfig,
+): I_Input_UpdateSetting {
+    const transformed: I_Input_UpdateSetting = {
         ...update,
-        type: update.type,
-        value,
-        isDel: update.isDel ?? false,
+        value: currentValue,
     };
+
+    if (update.type === E_SettingType.FOOTER && update.value?.footer) {
+        transformed.value = update.value.footer;
+    }
+    else if (update.type === E_SettingType.ADMIN_NOTIFICATION && update.value?.adminNotification) {
+        transformed.value = update.value.adminNotification;
+    }
+    else if (update.type === E_SettingType.AI_MODERATION && update.value?.aiModeration) {
+        transformed.value = update.value.aiModeration;
+    }
+
+    return transformed;
 }
 
 export const settingCtr = {
@@ -83,11 +81,22 @@ export const settingCtr = {
     ): Promise<I_Return<I_Setting>> => {
         const transformedDoc = transformGraphQLInput(doc);
 
+        // Validate setting value based on type
+        if (!validateSettingValue(transformedDoc.value, transformedDoc.type)) {
+            throwError({
+                message: 'Value does not match the expected schema for the given type',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         if (transformedDoc.type === E_SettingType.FOOTER) {
             validateFooterBusinessRules(transformedDoc.value as I_Footer);
         }
         else if (transformedDoc.type === E_SettingType.ADMIN_NOTIFICATION) {
             validateAdminNotificationBusinessRules(transformedDoc.value as I_AdminNotification);
+        }
+        else if (transformedDoc.type === E_SettingType.AI_MODERATION) {
+            validateAIModerationBusinessRules(transformedDoc.value as I_AIModerationConfig);
         }
         else {
             throwError({
@@ -113,15 +122,31 @@ export const settingCtr = {
 
         const effectiveType = update.type ?? settingFound.result?.type;
         const transformedUpdate = transformGraphQLUpdateInput(
-            { ...update, type: effectiveType as E_SettingType },
+            {
+                ...update,
+                type: effectiveType as E_SettingType,
+                value: update.value ?? undefined,
+                isDel: typeof update.isDel !== 'undefined' ? update.isDel : (settingFound.result?.isDel ?? false),
+            },
             settingFound.result!.value,
         );
+
+        // Validate setting value based on type
+        if (transformedUpdate.value && !validateSettingValue(transformedUpdate.value, effectiveType as E_SettingType)) {
+            throwError({
+                message: 'Value does not match the expected schema for the given type',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
 
         if (effectiveType === E_SettingType.FOOTER && transformedUpdate.value) {
             validateFooterBusinessRules(transformedUpdate.value as I_Footer);
         }
         else if (effectiveType === E_SettingType.ADMIN_NOTIFICATION && transformedUpdate.value) {
             validateAdminNotificationBusinessRules(transformedUpdate.value as I_AdminNotification);
+        }
+        else if (effectiveType === E_SettingType.AI_MODERATION && transformedUpdate.value) {
+            validateAIModerationBusinessRules(transformedUpdate.value as I_AIModerationConfig);
         }
 
         return await mongooseCtr.updateOne(filter, transformedUpdate, options);

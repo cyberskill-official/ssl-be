@@ -14,6 +14,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { aiModerationCtr } from '#modules/moderation/ai-moderation/ai-moderation.controller.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
@@ -32,7 +33,7 @@ export const messageCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateMessage>,
     ): Promise<I_Return<I_Message>> => {
-        const { senderId } = doc;
+        const { senderId, content } = doc;
 
         const currentUser = await authnCtr.getUserFromSession(context);
         if (senderId !== currentUser.id) {
@@ -40,6 +41,34 @@ export const messageCtr = {
                 message: 'You can only send message as yourself',
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
+        }
+
+        if (content?.trim()) {
+            try {
+                const textModerated = await aiModerationCtr.moderateText(context, { text: content });
+
+                if (textModerated.success && textModerated.result) {
+                    if (await aiModerationCtr.shouldAutoReject(textModerated.result)) {
+                        throwError({
+                            message: `Message blocked by AI moderation`,
+                            status: RESPONSE_STATUS.BAD_REQUEST,
+                        });
+                    }
+
+                    if (await aiModerationCtr.shouldRequireHumanReview(textModerated.result)) {
+                        throwError({
+                            message: 'Message requires human review',
+                            status: RESPONSE_STATUS.BAD_REQUEST,
+                        });
+                    }
+                }
+            }
+            catch (moderationError) {
+                throwError({
+                    message: `AI moderation failed: ${moderationError instanceof Error ? moderationError.message : 'Unknown error'}`,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
         }
 
         return mongooseCtr.createOne(doc);

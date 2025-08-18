@@ -7,6 +7,7 @@ export enum E_LegalDocumentType {
     PRIVACY_POLICY = 'PRIVACY_POLICY',
     COOKIE_POLICY = 'COOKIE_POLICY',
     CODE_OF_ETHICS = 'CODE_OF_ETHICS',
+    TERM_OF_SALE = 'TERM_OF_SALE',
 }
 
 export enum E_LegalDocumentStatus {

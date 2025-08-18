@@ -3,6 +3,7 @@ enum E_LegalDocumentType  {
     PRIVACY_POLICY
     COOKIE_POLICY
     CODE_OF_ETHICS
+    TERM_OF_SALE
 }
 
 enum E_LegalDocumentStatus {

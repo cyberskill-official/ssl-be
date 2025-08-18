@@ -17,6 +17,7 @@ type T_ModerationLog {
     user: T_User
     moderationMediaId: String
     moderationMedia: T_ModerationMedia
+    aiResult: T_MediaModerationResult
 }
 
 input Input_QueryModerationLog {

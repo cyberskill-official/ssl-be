@@ -14,10 +14,17 @@ enum E_UploadEntity {
     GALLERY
 }
 
+type T_UploadResult {
+    url: String!
+    moderationMediaId: String!
+    status: E_ModerationMediaStatus
+    entityId: String
+}
+
 type T_Response_Upload {
     success: Boolean!
     message: String
-    result: String
+    result: T_UploadResult
 }
 
 type Mutation {
@@ -25,6 +32,7 @@ type Mutation {
         type: E_UploadType!
         entity: E_UploadEntity!
         entityId: String
+        tagId: String
         file: Upload!
     ): T_Response_Upload!
 }

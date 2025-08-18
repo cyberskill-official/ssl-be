@@ -5,6 +5,8 @@ import type { I_Tag } from '#modules/tag/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { E_UploadEntity } from '#shared/typescript/index.js';
 
+import type { I_ModerationLog } from '../moderation-log/moderation-log.type.js';
+
 export enum E_ModerationMediaType {
     IMAGE = 'IMAGE',
     VIDEO = 'VIDEO',
@@ -32,7 +34,7 @@ export interface I_ModerationMedia extends I_GenericDocument {
     // Optional, used for specific modules like catalogue
     tagId?: string;
     tag?: I_Tag;
-    // Optional, used for specific modules like gallery
+    moderationLogs?: I_ModerationLog[];
     isPublished?: boolean;
 }
 

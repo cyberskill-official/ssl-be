@@ -1,0 +1,353 @@
+import {
+    DetectModerationLabelsCommand,
+    DetectTextCommand,
+    GetLabelDetectionCommand,
+    RekognitionClient,
+    StartLabelDetectionCommand,
+} from '@aws-sdk/client-rekognition';
+import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
+
+import type { I_AIModerationConfig } from '#modules/setting/setting.type.js';
+
+import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
+import { getEnv } from '#shared/env/index.js';
+
+import type { I_Input_ImageModeration, I_Input_VideoModeration, I_MediaModerationResult } from '../ai-moderation.type.js';
+
+import { E_RiskLevel } from '../ai-moderation.type.js';
+import { AWSMediaUtils } from './aws-utils.js';
+
+const env = getEnv();
+
+export class AWSRekognitionProvider {
+    private client?: RekognitionClient;
+    private customAdapterId?: string;
+
+    private getClient(): RekognitionClient {
+        if (!this.client) {
+            this.client = new RekognitionClient({
+                region: env.AWS_MODERATION_REGION,
+                credentials: {
+                    accessKeyId: env.AWS_ACCESS_KEY_ID,
+                    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+                },
+            });
+        }
+        return this.client;
+    }
+
+    async analyzeImage(input: I_Input_ImageModeration, setting: I_AIModerationConfig): Promise<I_MediaModerationResult> {
+        const threshold = setting?.autoRejectThreshold ?? 0.8;
+
+        if (!input.imageUrl) {
+            throwError({
+                message: 'AWS Rekognition moderation is disabled or image URL/buffer is empty',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        let imageBytes: Uint8Array;
+        try {
+            if (typeof input.imageUrl === 'string') {
+                imageBytes = await AWSMediaUtils.downloadMedia(input.imageUrl);
+            }
+            else {
+                imageBytes = input.imageUrl;
+            }
+        }
+        catch (error) {
+            throwError({
+                message: `Failed to process image: ${(error as Error)?.message || 'Invalid image format'}`,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const reasons: string[] = [];
+
+        // Detect moderation labels
+        let moderationResult = null;
+
+        try {
+            const moderationCommand = new DetectModerationLabelsCommand({
+                Image: { Bytes: imageBytes },
+                MinConfidence: threshold * 100,
+                ...(this.customAdapterId && { ProjectVersionArn: this.customAdapterId }),
+            });
+
+            moderationResult = await this.getClient().send(moderationCommand);
+
+            // Process moderation labels and determine content suitability
+            if (moderationResult?.ModerationLabels && moderationResult.ModerationLabels.length > 0) {
+                for (const label of moderationResult.ModerationLabels) {
+                    if (label.Name && label.Confidence && label.Confidence >= 80) {
+                        reasons.push(`${label.Name}: ${label.Confidence.toFixed(1)}% confidence`);
+                    }
+                }
+            }
+        }
+        catch {
+            throwError({
+                message: 'Failed to analyze image with AWS Rekognition',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        // Extract text from image
+        let textResult = null;
+
+        try {
+            const textCommand = new DetectTextCommand({
+                Image: { Bytes: imageBytes },
+            });
+            textResult = await this.getClient().send(textCommand);
+        }
+        catch {
+            throwError({
+                message: 'Failed to extract text from image',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        // Calculate confidence (only labels >= 80%)
+        let confidence = 0;
+        if (moderationResult?.ModerationLabels && moderationResult.ModerationLabels.length > 0) {
+            const high = moderationResult.ModerationLabels
+                .map(l => (l.Confidence || 0))
+                .filter(c => c >= 80);
+            if (high.length > 0) {
+                confidence = Math.max(...high) / 100;
+            }
+        }
+
+        // Determine decision and risk level based on confidence (aligned with media status)
+        const decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+        let riskLevel = E_RiskLevel.LOW;
+        // Auto-reject disabled for now; keep for manual review
+        // if (confidence >= threshold) {
+        //     decision = E_ModerationMediaStatus.REJECTED;
+        //     riskLevel = E_RiskLevel.CRITICAL;
+        // }
+        if (confidence >= 0.5) {
+            riskLevel = E_RiskLevel.HIGH;
+        }
+        else if (confidence >= 0.3) {
+            riskLevel = E_RiskLevel.MEDIUM;
+        }
+        // else PENDING_REVIEW + LOW (default)
+
+        // If text is detected, set risk level to HIGH
+        const textDetections = textResult?.TextDetections?.filter((detection: any) =>
+            detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
+        );
+        if (textDetections && textDetections.length > 0) {
+            riskLevel = E_RiskLevel.HIGH;
+            reasons.push('Text detected in image - requires manual review');
+        }
+
+        return {
+            confidence,
+            reasons,
+            decision,
+            riskLevel,
+            textDetection: [{
+                detectedText: textResult?.TextDetections?.filter((detection: any) =>
+                    detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
+                ).map((detection: any) => detection.DetectedText).join(' ') || '',
+            }],
+        };
+    }
+
+    async analyzeVideo(input: I_Input_VideoModeration, settings: I_AIModerationConfig): Promise<I_MediaModerationResult> {
+        const threshold = settings?.autoRejectThreshold ?? 0.8;
+
+        if (!input.videoUrl) {
+            throwError({
+                message: 'AWS Rekognition moderation is disabled or video input is empty',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        let confidence = 0;
+        let labelDetectionResult: any = null;
+        const reasons: string[] = [];
+        const contextLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
+        // Keep local details if needed for debugging (not part of return type)
+
+        try {
+            // Step 1: Handle video input (URL, S3 key, or buffer)
+            let videoFileName: string;
+            let videoBuffer: Uint8Array | null = null;
+
+            if (typeof input.videoUrl === 'string') {
+                if (input.videoUrl.startsWith('http')) {
+                    // Download video from URL
+                    videoBuffer = await AWSMediaUtils.downloadMedia(input.videoUrl, true);
+                    videoFileName = await AWSMediaUtils.uploadVideoToS3(videoBuffer);
+                }
+                else if (input.videoUrl.startsWith('s3://')) {
+                    // Handle S3 URI format
+                    const s3Uri = input.videoUrl;
+
+                    if (s3Uri.startsWith(`s3://${env.AWS_BUCKET_NAME}/`)) {
+                        // Extract the key from S3 URI
+                        const s3Key = s3Uri.replace(`s3://${env.AWS_BUCKET_NAME}/`, '');
+                        videoFileName = s3Key;
+                    }
+                    else {
+                        const s3UriMatch = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
+                        if (s3UriMatch) {
+                            const [, bucket, key] = s3UriMatch;
+                            if (!bucket || !key) {
+                                throw new Error('Invalid S3 URI format');
+                            }
+                            if (bucket !== env.AWS_BUCKET_NAME) {
+                                throwError({
+                                    message: `S3 URI bucket not allowed: ${bucket}`,
+                                    status: RESPONSE_STATUS.BAD_REQUEST,
+                                });
+                            }
+                            videoFileName = key;
+                        }
+                        else {
+                            throw new Error('Invalid S3 URI format');
+                        }
+                    }
+                }
+                else {
+                    // Assume it's an S3 key
+                    videoFileName = input.videoUrl;
+                }
+            }
+            else {
+                // Video buffer provided
+                videoBuffer = input.videoUrl;
+                videoFileName = await AWSMediaUtils.uploadVideoToS3(input.videoUrl);
+            }
+
+            // Step 2: Start label detection job
+            const startLabelDetectionCommand = new StartLabelDetectionCommand({
+                Video: {
+                    S3Object: {
+                        Bucket: env.AWS_BUCKET_NAME,
+                        Name: videoFileName,
+                    },
+                },
+                ClientRequestToken: `label-detection-${Date.now()}`,
+                JobTag: 'VideoModeration',
+                MinConfidence: Math.round(threshold * 100),
+            });
+
+            const startResult = await this.getClient().send(startLabelDetectionCommand);
+            const jobId = startResult.JobId;
+
+            if (!jobId) {
+                throw new Error('Failed to start label detection job');
+            }
+
+            // Step 3: Poll for job completion
+            let jobStatus = 'IN_PROGRESS';
+            let attempts = 0;
+            const maxAttempts = 30; // 30 attempts with 10s delay = 5 minutes max wait
+
+            while (jobStatus === 'IN_PROGRESS' && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+                attempts++;
+
+                try {
+                    const getLabelDetectionCommand = new GetLabelDetectionCommand({ JobId: jobId });
+                    const jobResult = await this.getClient().send(getLabelDetectionCommand);
+                    jobStatus = jobResult.JobStatus || 'IN_PROGRESS';
+
+                    if (jobStatus === 'SUCCEEDED') {
+                        labelDetectionResult = jobResult;
+                        break;
+                    }
+                    else if (jobStatus === 'FAILED') {
+                        throw new Error(`Job failed: ${jobResult.StatusMessage || 'Unknown error'}`);
+                    }
+                }
+                catch {
+                    if (attempts >= maxAttempts) {
+                        throwError({
+                            message: 'Job timeout after maximum attempts',
+                            status: RESPONSE_STATUS.REQUEST_TIMEOUT,
+                        });
+                    }
+                }
+            }
+
+            if (jobStatus === 'IN_PROGRESS') {
+                throw new Error('Job still in progress after maximum attempts');
+            }
+
+            // Step 4: Analyze results
+            if (labelDetectionResult && labelDetectionResult.Labels) {
+                const labels = labelDetectionResult.Labels;
+
+                // Calculate confidence based on all detected labels with high confidence
+                const significantLabels = labels.filter((label: any) => {
+                    const confidence = label.Label?.Confidence || 0;
+                    return confidence > 60; // Only consider labels with >60% confidence
+                });
+
+                if (significantLabels.length > 0) {
+                    confidence = Math.max(...significantLabels.map((label: any) => label.Label?.Confidence || 0)) / 100;
+
+                    // Group labels by name and keep the highest confidence and an example timestamp
+                    const labelGroups = new Map<string, { confidence: number; timestampMs?: number }>();
+                    for (const label of significantLabels) {
+                        const labelName = label.Label?.Name as string | undefined;
+                        const labelConfidence = (label.Label?.Confidence || 0) as number;
+                        const ts = label.Timestamp as number | undefined;
+                        if (!labelName)
+                            continue;
+                        const current = labelGroups.get(labelName);
+                        if (!current || labelConfidence > current.confidence) {
+                            labelGroups.set(labelName, { confidence: labelConfidence, timestampMs: ts });
+                        }
+                    }
+
+                    // Build context labels and human-readable reasons (top 10)
+                    const top = Array.from(labelGroups.entries())
+                        .sort((a, b) => b[1].confidence - a[1].confidence)
+                        .slice(0, 10);
+                    for (const [name, v] of top) {
+                        contextLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
+                        const at = typeof v.timestampMs === 'number' ? ` - ${Math.floor(v.timestampMs / 1000)}s` : '';
+                        reasons.push(`Context: ${name} (${v.confidence.toFixed(1)}%)${at}`);
+                    }
+                }
+            }
+        }
+        catch (error) {
+            throwError({
+                message: `Video analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        let riskLevel = E_RiskLevel.LOW;
+        // Auto-reject disabled; always manual review for video
+        const decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+
+        // if (confidence >= threshold) {
+        //     decision = E_ModerationMediaStatus.REJECTED;
+        //     riskLevel = E_RiskLevel.CRITICAL;
+        // }
+        if (confidence >= 0.5) {
+            riskLevel = E_RiskLevel.HIGH;
+        }
+        else if (confidence >= 0.3) {
+            riskLevel = E_RiskLevel.MEDIUM;
+        }
+
+        return {
+            confidence,
+            decision,
+            riskLevel,
+            reasons,
+            contextLabels,
+        };
+    }
+}

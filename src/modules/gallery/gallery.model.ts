@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/index.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/moderation-media/moderation-media.type.js';
 
 import type { I_Gallery } from './gallery.type.js';
 
@@ -53,7 +53,7 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
         status: {
             type: String,
             enum: Object.values(E_ModerationMediaStatus),
-            default: E_ModerationMediaStatus.PENDING,
+            default: E_ModerationMediaStatus?.PENDING,
         },
         isPublished: {
             type: Boolean,
