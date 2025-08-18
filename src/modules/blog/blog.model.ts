@@ -46,12 +46,10 @@ export const BlogModel = mongo.createModel<I_Blog>({
         },
         websiteName: {
             type: String,
-            required: true,
 
         },
         websiteURL: {
             type: String,
-            required: true,
 
         },
         type: {
