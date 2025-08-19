@@ -1,9 +1,11 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_ModerationMediaStatus, E_ModerationMediaType } from '#modules/moderation/moderation-media/moderation-media.type.js';
+import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 
 import type { I_Catalogue } from './catalogue.type.js';
+
+import { E_CatalogueType } from './catalogue.type.js';
 
 export const CatalogueModel = mongo.createModel<I_Catalogue>({
     mongoose,
@@ -11,7 +13,7 @@ export const CatalogueModel = mongo.createModel<I_Catalogue>({
     schema: {
         type: {
             type: String,
-            enum: Object.values(E_ModerationMediaType),
+            enum: Object.values(E_CatalogueType),
             required: true,
             validate: [
                 {
