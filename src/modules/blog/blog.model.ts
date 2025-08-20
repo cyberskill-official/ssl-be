@@ -139,7 +139,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
             type: String,
         },
         seo: {
-            type: [SeoSchema],
+            type: SeoSchema,
         },
         isActive: {
             type: Boolean,
