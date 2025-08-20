@@ -46,7 +46,7 @@ export const CountryModel = mongo.createModel<I_Country>({
             type: String,
         },
         phonecode: {
-            type: [String],
+            type: String,
         },
         capital: {
             type: String,

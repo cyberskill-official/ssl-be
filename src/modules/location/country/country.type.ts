@@ -17,7 +17,7 @@ export interface I_Country extends I_GenericDocument {
     iso2?: string;
     iso3?: string;
     numeric_code?: string;
-    phonecode?: string[];
+    phonecode?: string;
     capital?: string;
     currency?: string;
     currency_name?: string;
