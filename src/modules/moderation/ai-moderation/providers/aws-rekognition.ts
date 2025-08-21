@@ -172,11 +172,10 @@ export class AWSRekognitionProvider {
         let labelDetectionResult: any = null;
         const reasons: string[] = [];
         const contextLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
-        // Keep local details if needed for debugging (not part of return type)
+        let videoFileName: string = '';
 
         try {
             // Step 1: Handle video input (URL, S3 key, or buffer)
-            let videoFileName: string;
             let videoBuffer: Uint8Array | null = null;
 
             if (typeof input.videoUrl === 'string') {

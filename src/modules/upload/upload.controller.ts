@@ -4,7 +4,9 @@ import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
+import { Buffer } from 'node:buffer';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 
 import type { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
@@ -104,7 +106,17 @@ export const uploadCtr = {
         }
 
         if (type === E_UploadType.VIDEO) {
-            const videoUploaded = await bunnyCtr.uploadToBunnyStream(context, createReadStream(), uploadPath);
+            // Read stream once → buffer
+            const src = createReadStream();
+            const bufChunks: Buffer[] = [];
+            await new Promise<void>((resolve, reject) => {
+                src.on('data', c => bufChunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+                src.on('end', () => resolve());
+                src.on('error', reject);
+            });
+            const videoBuffer = Buffer.concat(bufChunks);
+
+            const videoUploaded = await bunnyCtr.uploadToBunnyStream(context, Readable.from(videoBuffer), uploadPath);
 
             if (!videoUploaded.success) {
                 return videoUploaded;
@@ -132,7 +144,9 @@ export const uploadCtr = {
 
             // Run AI after upload and record initial result to moderation_log
             try {
-                const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoUploaded.result! });
+                // Pass the same bytes to AI moderation to ensure consistency
+                const videoBytes = new Uint8Array(videoBuffer);
+                const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
                 if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
                     const moderationId = moderationCreated.result.id;
                     // Always log first
@@ -149,7 +163,10 @@ export const uploadCtr = {
                 }
             }
             catch (error) {
-                console.warn('Failed to create AI moderation log (video):', (error as Error)?.message || error);
+                throwError({
+                    message: `Failed to create AI moderation log (video): ${(error as Error)?.message || String(error)}`,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
             }
 
             return {
@@ -172,6 +189,7 @@ export const uploadCtr = {
         const uploadedUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
 
         const clientIp = getClientIp(context.req);
+
         const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
             doc: {
                 type: E_ModerationMediaType.IMAGE,
@@ -194,8 +212,9 @@ export const uploadCtr = {
         await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
 
         try {
-            const aiRes = await aiModerationCtr.moderateImage(context, { imageUrl: uploadedUrl });
-            if (aiRes.success && moderationCreated.success && moderationCreated.result?.id) {
+            const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: uploadedUrl });
+
+            if (moderateImage.success && moderationCreated.success && moderationCreated.result?.id) {
                 const moderationId = moderationCreated.result.id;
 
                 await moderationLogCtr.createModerationLog(context, {
@@ -203,7 +222,7 @@ export const uploadCtr = {
                         action: E_ModerationLogAction.WARN,
                         userId: currentUser.id,
                         moderationMediaId: moderationId,
-                        aiResult: aiRes.result,
+                        aiResult: moderateImage.result,
                     },
                 });
 
@@ -212,7 +231,10 @@ export const uploadCtr = {
         }
         catch (error) {
             // Do not block upload on AI/log failure
-            console.warn('Failed to create AI moderation log on upload:', (error as Error)?.message || error);
+            throwError({
+                message: `Failed to create AI moderation log on upload: ${(error as Error)?.message || String(error)}`,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
         }
 
         return {
