@@ -80,6 +80,7 @@ input Input_QueryBlog {
 input Input_CreateBlog {
     title: String!
     authorName: String!
+    authorId: String
     websiteName: String
     websiteURL: String
     type: E_BlogType!
@@ -104,6 +105,7 @@ input Input_UpdateBlog {
     isDel: Boolean
     title: String
     authorName: String
+    authorId: String
     websiteName: String
     websiteURL: String
     type: E_BlogType
