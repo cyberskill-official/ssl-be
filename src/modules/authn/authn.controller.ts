@@ -882,6 +882,7 @@ export const authnCtr = {
             type: E_UploadType.IMAGE,
             entity: E_UploadEntity.USER,
             entityId: currentUser.id,
+            skipModeration: true,
             file: documentFile,
         });
 
@@ -889,6 +890,7 @@ export const authnCtr = {
             type: E_UploadType.IMAGE,
             entity: E_UploadEntity.USER,
             entityId: currentUser.id,
+            skipModeration: true,
             file: selfieFile,
         });
 
@@ -911,8 +913,8 @@ export const authnCtr = {
                     status: E_AgeVerifyStatus.PENDING,
                     method: E_AgeVerifyMethod.PASSPORT,
                     preApproval: {
-                        documentPic: documentUpload.result,
-                        selfiePic: selfieUpload.result,
+                        documentPic: (documentUpload as any).result?.url || (documentUpload as any).result,
+                        selfiePic: (selfieUpload as any).result?.url || (selfieUpload as any).result,
                         aiResult: {
                             documentAge: compareFaceResult.result.documentAge,
                             selfieAgeRange: compareFaceResult.result.selfieAgeRange,

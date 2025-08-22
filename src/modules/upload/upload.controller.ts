@@ -29,7 +29,7 @@ const env = getEnv();
 export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<{ url: string; moderationMediaId: string; status?: E_ModerationMediaStatus; entityId?: string }>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const { type, entity, file, entityId, tagId } = args;
+        const { type, entity, file, entityId, tagId, skipModeration } = args;
         const fileData = await getAndValidateFile(type, await file, UPLOAD_CONFIG);
 
         if (!fileData.success) {
@@ -61,10 +61,10 @@ export const uploadCtr = {
 
         const uploadPath = path.posix.join(folderPath, fullPath);
 
-        // Skip moderation completely for staff/admin (upload directly)
         const isStaff = await authnCtr.isStaff(context);
+        const shouldBypassModeration = isStaff || !!skipModeration;
 
-        if (isStaff) {
+        if (shouldBypassModeration) {
             if (type === E_UploadType.VIDEO) {
                 const videoUploaded = await bunnyCtr.uploadToBunnyStream(context, createReadStream(), uploadPath);
 
