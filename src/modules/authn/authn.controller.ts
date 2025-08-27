@@ -87,6 +87,11 @@ export const authnCtr = {
                 filter: {
                     id: decodedToken.userId,
                 },
+                populate: [
+                    'roles',
+                    'partner1.location',
+                    'settings.temporaryLocation.location',
+                ],
             });
 
             if (!userFound.success) {
@@ -141,7 +146,11 @@ export const authnCtr = {
             filter: {
                 id: context.req.session.user.id,
             },
-            populate: ['roles'],
+            populate: [
+                'roles',
+                'partner1.location',
+                'settings.temporaryLocation.location',
+            ],
         });
 
         if (!userFound.success) {
@@ -670,7 +679,11 @@ export const authnCtr = {
             filter: {
                 $or: [{ email: identity }, { username: identity }],
             },
-            populate: ['roles'],
+            populate: [
+                'roles',
+                'partner1.location',
+                'settings.temporaryLocation.location',
+            ],
         });
 
         if (!userFound.success) {
