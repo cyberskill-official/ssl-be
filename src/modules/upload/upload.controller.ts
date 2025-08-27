@@ -175,7 +175,7 @@ export const uploadCtr = {
                     url: videoUploaded.result!,
                     moderationMediaId: moderationCreated.result!.id!,
                     status: moderationCreated.result!.status,
-                    entityId,
+                    entityId: moderationCreated.result!.entityId || entityId,
                 },
             };
         }
@@ -244,7 +244,7 @@ export const uploadCtr = {
                 url: uploadedUrl,
                 moderationMediaId: moderationCreated.result!.id!,
                 status: moderationCreated.result!.status,
-                entityId,
+                entityId: moderationCreated.result!.entityId || entityId,
             },
         };
     },

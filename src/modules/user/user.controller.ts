@@ -251,18 +251,48 @@ export const userCtr = {
         }
 
         if (update.settings?.temporaryLocation) {
-            const locationUpdated = await locationCtr.updateLocation(context, {
-                filter: { id: userFound.result.settings?.temporaryLocation?.locationId },
-                update: {
-                    ...update.settings.temporaryLocation,
-                },
-            });
+            const temp = update.settings.temporaryLocation;
+            const existingTempLocationId = userFound.result.settings?.temporaryLocation?.locationId;
 
-            if (!locationUpdated.success) {
-                throwError({
-                    message: locationUpdated.message,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
+            if (temp.location) {
+                if (existingTempLocationId) {
+                    const locationUpdated = await locationCtr.updateLocation(context, {
+                        filter: { id: existingTempLocationId },
+                        update: {
+                            ...temp.location,
+                        },
+                    });
+
+                    if (!locationUpdated.success) {
+                        throwError({
+                            message: locationUpdated.message,
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        });
+                    }
+                }
+                else {
+                    const locationCreated = await locationCtr.createLocation(context, {
+                        doc: {
+                            ...temp.location,
+                            entityType: E_LocationEntityType.USER,
+                            entityId: userFound.result.id,
+                        },
+                    });
+
+                    if (!locationCreated.success) {
+                        throwError({
+                            message: locationCreated.message,
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        });
+                    }
+
+                    // Ensure the new locationId is saved back to user settings
+                    update.settings.temporaryLocation.locationId = locationCreated.result.id;
+                }
+
+                // Do not persist the virtual `location` object in user settings
+                // It is a virtual populated from `locationId` in the schema
+                delete (update.settings.temporaryLocation as unknown as Record<string, unknown>)['location'];
             }
         }
 
