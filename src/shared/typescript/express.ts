@@ -6,6 +6,9 @@ import type { I_User } from '#modules/user/index.js';
 export interface I_Request extends Partial<Request> {
     session?: Session & Partial<SessionData> & {
         user?: I_User;
+        meta?: {
+            loginIp?: string;
+        };
     };
     body?: { fileName: string; query?: string; src?: string };
 }

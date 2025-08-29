@@ -1,9 +1,7 @@
-import type { Details } from 'express-useragent';
-
 export interface I_Response_Ip {
     success: boolean;
     message: string;
-    result?: Details;
+    result?: I_MyIp;
 }
 
 export interface I_MyIp {

@@ -7,6 +7,7 @@ export enum E_SettingType {
     FOOTER = 'FOOTER',
     ADMIN_NOTIFICATION = 'ADMIN_NOTIFICATION',
     AI_MODERATION = 'AI_MODERATION',
+    PRICING_DEFAULT = 'PRICING_DEFAULT',
 }
 
 export interface I_SocialLink {
@@ -54,15 +55,22 @@ export interface I_AIModerationConfig {
     moderationCategories?: E_ModerationCategory;
 }
 
+export interface I_PricingDefault {
+    currency: string;
+    amount: number;
+    taxRate?: number;
+}
+
 export interface I_Setting extends I_GenericDocument {
     type: E_SettingType;
-    value: I_Footer | I_AdminNotification | I_AIModerationConfig;
+    value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault;
 }
 
 export interface I_GraphQLSettingValue {
     footer?: I_Footer;
     adminNotification?: I_AdminNotification;
     aiModeration?: I_AIModerationConfig;
+    pricingDefault?: I_PricingDefault;
 }
 
 export interface I_GraphQLSetting extends I_GenericDocument {

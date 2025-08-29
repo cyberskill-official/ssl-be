@@ -25,3 +25,9 @@ export interface I_Input_CreatePricing extends Omit<I_Pricing, T_Omit_Create> {
 
 export interface I_Input_UpdatePricing extends Omit<I_Pricing, T_Omit_Update> {
 }
+
+export interface I_Response_SubscriptionPrice {
+    amount: number;
+    currency: string;
+    taxRate?: number;
+}

@@ -12,15 +12,21 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_PricingDefault } from '#modules/setting/setting.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
+import { countryCtr } from '#modules/location/country/country.controller.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { settingCtr } from '#modules/setting/setting.controller.js';
+import { E_SettingType } from '#modules/setting/setting.type.js';
 
 import type {
     I_Input_CreatePricing,
     I_Input_QueryPricing,
     I_Input_UpdatePricing,
     I_Pricing,
+    I_Response_SubscriptionPrice,
 } from './pricing.type.js';
 
 import { PricingModel } from './pricing.model.js';
@@ -106,5 +112,89 @@ export const pricingCtr = {
         }
 
         return mongooseCtr.deleteOne(filter, options);
+    },
+    async getSubscriptionPrice(context: I_Context): Promise<I_Return<I_Response_SubscriptionPrice>> {
+        const loginIp = context.req?.session?.meta?.loginIp;
+
+        let countryCode: string | undefined;
+        let countryName: string | undefined;
+
+        const myInfo = await ipInfoCtr.getMyIp();
+
+        if (myInfo?.success) {
+            countryCode = myInfo.result?.country_code;
+            countryName = myInfo.result?.country;
+        }
+        else if (loginIp) {
+            const info = await ipInfoCtr.getIpInfo(loginIp);
+            if (info.success) {
+                countryCode = info.result?.country_code;
+                countryName = info.result?.country;
+            }
+        }
+
+        let countryId;
+
+        if (countryCode) {
+            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: countryCode } });
+
+            if (countryFound.success)
+                countryId = countryFound.result.docs?.[0]?.id;
+        }
+        if (!countryId && countryName) {
+            const countryFound = await countryCtr.getCountries(context, { filter: { name: countryName } });
+            if (countryFound.success)
+                countryId = countryFound.result.docs?.[0]?.id;
+        }
+
+        // Resolve currency from country
+        let currency = 'EUR';
+        if (countryName) {
+            const countryForCurrency = await countryCtr.getCountries(context, { filter: { name: countryName } });
+            if (countryForCurrency.success) {
+                currency = countryForCurrency.result.docs?.[0]?.currency || 'EUR';
+            }
+        }
+
+        // Helper
+        const findByLocation = async (locFilter: Record<string, unknown>): Promise<I_Pricing | undefined> => {
+            const locationFound = await locationCtr.getLocation(context, {
+                filter: { entityType: E_LocationEntityType.PRICING, ...locFilter },
+            });
+            if (locationFound.success && locationFound.result?.entityId) {
+                const pricingFound = await pricingCtr.getPricing(context, { filter: { id: locationFound.result.entityId } });
+                if (pricingFound.success)
+                    return pricingFound.result;
+            }
+            return undefined;
+        };
+
+        let amount = 0;
+        let taxRate = 0;
+
+        if (countryId) {
+            const pricingFound = await findByLocation({ countryId });
+            if (pricingFound) {
+                amount = pricingFound.price ?? 0;
+                taxRate = pricingFound.taxRate ?? 0;
+                return { success: true, result: { amount, currency, taxRate } };
+            }
+        }
+
+        try {
+            const pricingDefault = await settingCtr.getSetting(context, { filter: { type: E_SettingType.PRICING_DEFAULT } });
+
+            if (pricingDefault.success) {
+                const val = pricingDefault.result.value as I_PricingDefault;
+                amount = typeof val.amount === 'number' ? val.amount : amount;
+                currency = typeof val.currency === 'string' ? val.currency : currency;
+                taxRate = typeof val.taxRate === 'number' ? val.taxRate : taxRate;
+            }
+        }
+        catch {
+            // Ignore
+        }
+
+        return { success: true, result: { amount, currency, taxRate } };
     },
 };

@@ -13,11 +13,11 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
+import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { aiModerationCtr, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { getEnv } from '#shared/env/index.js';
-import { getClientIp } from '#shared/util/ip.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
@@ -122,7 +122,8 @@ export const uploadCtr = {
                 return videoUploaded;
             }
 
-            const clientIp = getClientIp(context.req);
+            const myIpInfo = await ipInfoCtr.getMyIp();
+            const clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                 doc: {
                     type: E_ModerationMediaType.VIDEO,
@@ -188,7 +189,8 @@ export const uploadCtr = {
 
         const uploadedUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
 
-        const clientIp = getClientIp(context.req);
+        const myIpInfo = await ipInfoCtr.getMyIp();
+        const clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
 
         const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
             doc: {

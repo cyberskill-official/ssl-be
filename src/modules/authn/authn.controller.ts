@@ -20,6 +20,7 @@ import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
+import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -186,6 +187,23 @@ export const authnCtr = {
         }
 
         context.req.session.user = omit(userFound.result, 'password');
+
+        try {
+            const myInfo = await ipInfoCtr.getMyIp();
+
+            const ipFromMyIp = myInfo?.result?.ip;
+            if (!context.req.session.meta)
+                (context.req.session as any).meta = {} as any;
+            if (ipFromMyIp && !(context.req.session.meta?.loginIp)) {
+                (context.req.session.meta as any).loginIp = ipFromMyIp;
+            }
+        }
+        catch {
+            throwError({
+                message: 'Failed to get IP information',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
 
         return {
             success: true,

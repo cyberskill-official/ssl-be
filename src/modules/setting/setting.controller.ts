@@ -7,18 +7,18 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_Setting } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_PricingDefault, I_Setting } from './setting.type.js';
 
 import { SettingsModel } from './setting.model.js';
 import { E_SettingType } from './setting.type.js';
-import { validateAdminNotificationBusinessRules, validateAIModerationBusinessRules, validateFooterBusinessRules, validateSettingValue } from './setting.validation.js';
+import { validateAdminNotificationBusinessRules, validateAIModerationBusinessRules, validateFooterBusinessRules, validateSettingValue, validationPricingDefault } from './setting.validation.js';
 
 const mongooseCtr = new MongooseController<I_Setting>(SettingsModel);
 
 function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_CreateSetting {
     const transformed: I_Input_CreateSetting = {
         ...doc,
-        value: undefined as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig,
+        value: undefined as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
     };
 
     if (doc.type === E_SettingType.FOOTER && doc.value?.footer) {
@@ -30,6 +30,10 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
     else if (doc.type === E_SettingType.AI_MODERATION && doc.value?.aiModeration) {
         transformed.value = doc.value.aiModeration;
     }
+    else if (doc.type === E_SettingType.PRICING_DEFAULT && doc.value?.pricingDefault) {
+        transformed.value = doc.value.pricingDefault as unknown as I_PricingDefault;
+    }
+
     else {
         throwError({
             message: 'Value does not match the specified type',
@@ -42,11 +46,11 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
 
 function transformGraphQLUpdateInput(
     update: I_Input_UpdateSettingGraphQL,
-    currentValue: I_Footer | I_AdminNotification | I_AIModerationConfig,
+    currentValue: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
 ): I_Input_UpdateSetting {
     const transformed: I_Input_UpdateSetting = {
         ...update,
-        value: currentValue,
+        value: currentValue as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
     };
 
     if (update.type === E_SettingType.FOOTER && update.value?.footer) {
@@ -58,7 +62,9 @@ function transformGraphQLUpdateInput(
     else if (update.type === E_SettingType.AI_MODERATION && update.value?.aiModeration) {
         transformed.value = update.value.aiModeration;
     }
-
+    else if (update.type === E_SettingType.PRICING_DEFAULT && update.value?.pricingDefault) {
+        transformed.value = update.value.pricingDefault;
+    }
     return transformed;
 }
 
@@ -82,7 +88,7 @@ export const settingCtr = {
         const transformedDoc = transformGraphQLInput(doc);
 
         // Validate setting value based on type
-        if (!validateSettingValue(transformedDoc.value, transformedDoc.type)) {
+        if (!validateSettingValue(transformedDoc.value as any, transformedDoc.type)) {
             throwError({
                 message: 'Value does not match the expected schema for the given type',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -97,6 +103,9 @@ export const settingCtr = {
         }
         else if (transformedDoc.type === E_SettingType.AI_MODERATION) {
             validateAIModerationBusinessRules(transformedDoc.value as I_AIModerationConfig);
+        }
+        else if (transformedDoc.type === E_SettingType.PRICING_DEFAULT) {
+            validationPricingDefault(transformedDoc.value as I_PricingDefault);
         }
         else {
             throwError({
@@ -132,7 +141,7 @@ export const settingCtr = {
         );
 
         // Validate setting value based on type
-        if (transformedUpdate.value && !validateSettingValue(transformedUpdate.value, effectiveType as E_SettingType)) {
+        if (transformedUpdate.value && !validateSettingValue(transformedUpdate.value as any, effectiveType as E_SettingType)) {
             throwError({
                 message: 'Value does not match the expected schema for the given type',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -147,6 +156,9 @@ export const settingCtr = {
         }
         else if (effectiveType === E_SettingType.AI_MODERATION && transformedUpdate.value) {
             validateAIModerationBusinessRules(transformedUpdate.value as I_AIModerationConfig);
+        }
+        else if (effectiveType === E_SettingType.PRICING_DEFAULT && transformedUpdate.value) {
+            validationPricingDefault(transformedUpdate.value as I_PricingDefault);
         }
 
         return await mongooseCtr.updateOne(filter, transformedUpdate, options);

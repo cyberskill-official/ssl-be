@@ -1,7 +1,5 @@
 import axios from 'axios';
 
-import type { I_Context } from '#shared/typescript/index.js';
-
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_Response_Ip, I_Response_MyIp } from './ipinfo.type.js';
@@ -9,23 +7,6 @@ import type { I_Response_Ip, I_Response_MyIp } from './ipinfo.type.js';
 const env = getEnv();
 
 export const ipInfoCtr = {
-    async getIp(context: I_Context): Promise<I_Response_Ip> {
-        const useragent = context.req?.useragent;
-
-        try {
-            return {
-                success: true,
-                message: 'Success',
-                result: useragent,
-            };
-        }
-        catch {
-            return {
-                success: false,
-                message: 'Token invalid or network error.',
-            };
-        }
-    },
 
     async getIpInfo(ip: string): Promise<I_Response_Ip> {
         try {

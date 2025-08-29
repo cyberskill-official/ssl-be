@@ -28,6 +28,9 @@ const settingResolver = {
             else if (parent.type === E_SettingType.AI_MODERATION) {
                 return parent.value ? { ...parent.value, __typename: 'T_AIModerationConfig' } : null;
             }
+            else if (parent.type === E_SettingType.PRICING_DEFAULT) {
+                return parent.value ? { ...parent.value, __typename: 'T_PricingDefault' } : null;
+            }
             return null;
         },
     },

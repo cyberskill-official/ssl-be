@@ -72,9 +72,16 @@ type T_Response_Pricings {
     result: T_Pricings
 }
 
+type T_Response_SubscriptionPrice {
+    amount: Float
+    currency: String
+    taxRate: Float
+}
+
 type Query {
     getPricing(filter: Input_QueryPricing!, projection: JSON, options: JSON, populate: JSON): T_Response_Pricing!
     getPricings(filter: Input_QueryPricing, options: JSON): T_Response_Pricings!
+    getSubscriptionPrice: T_Response_SubscriptionPrice!
 }
 
 type Mutation {

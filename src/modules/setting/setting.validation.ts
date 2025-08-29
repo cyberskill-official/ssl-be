@@ -3,7 +3,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import type { I_AdminNotification, I_AIModerationConfig, I_Footer } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_PricingDefault } from './setting.type.js';
 
 import { E_SettingType } from './setting.type.js';
 
@@ -97,6 +97,26 @@ export function validateAIModerationConfig(value: I_AIModerationConfig): boolean
     return true;
 }
 
+export function validatePricingDefault(value: I_PricingDefault): boolean {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    if (typeof value.amount !== 'number' || value.amount < 0) {
+        return false;
+    }
+
+    if (typeof value.currency !== 'string') {
+        return false;
+    }
+
+    if (value.taxRate !== undefined && (typeof value.taxRate !== 'number' || value.taxRate < 0)) {
+        return false;
+    }
+
+    return true;
+}
+
 export function validateFooterBusinessRules(footer: I_Footer): void {
     if (footer.socialLinks && footer.socialLinks.length === 0) {
         throwError({
@@ -152,7 +172,16 @@ export function validateAIModerationBusinessRules(config: I_AIModerationConfig):
     }
 }
 
-export function validateSettingValue(value: I_Footer | I_AdminNotification | I_AIModerationConfig, settingType: E_SettingType): boolean {
+export function validationPricingDefault(config: I_PricingDefault): void {
+    if (!config || typeof config !== 'object') {
+        throwError({
+            message: 'Invalid Pricing Default configuration',
+            status: RESPONSE_STATUS.BAD_REQUEST,
+        });
+    }
+}
+
+export function validateSettingValue(value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault, settingType: E_SettingType): boolean {
     switch (settingType) {
         case E_SettingType.FOOTER:
             return validateFooter(value as I_Footer);
@@ -160,6 +189,8 @@ export function validateSettingValue(value: I_Footer | I_AdminNotification | I_A
             return validateAdminNotification(value as I_AdminNotification);
         case E_SettingType.AI_MODERATION:
             return validateAIModerationConfig(value as I_AIModerationConfig);
+        case E_SettingType.PRICING_DEFAULT:
+            return validatePricingDefault(value as I_PricingDefault);
         default:
             return false;
     }

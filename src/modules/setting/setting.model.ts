@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { E_ModerationCategory } from '#modules/moderation/ai-moderation/ai-moderation.type.js';
 import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import type { I_AdminNotification, I_AIModerationConfig, I_BannedWordsConfig, I_Footer, I_ImageThresholdsConfig, I_Setting, I_SocialLink } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_BannedWordsConfig, I_Footer, I_ImageThresholdsConfig, I_PricingDefault, I_Setting, I_SocialLink } from './setting.type.js';
 
 import { E_SettingType } from './setting.type.js';
 import { validateSettingValue } from './setting.validation.js';
@@ -131,7 +131,7 @@ export const SettingsModel = mongo.createModel<I_Setting>({
             required: true,
             validate: [
                 {
-                    validator(this: { type: E_SettingType }, value: I_Footer | I_AdminNotification | I_AIModerationConfig) {
+                    validator(this: { type: E_SettingType }, value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault) {
                         if (!this.type) {
                             return true;
                         }

@@ -2,6 +2,7 @@ enum E_SettingType {
     FOOTER
     ADMIN_NOTIFICATION
     AI_MODERATION
+    PRICING_DEFAULT
 }
 
 type T_SocialLink {
@@ -90,12 +91,25 @@ input Input_AIModerationConfig {
     moderationCategories: [String]
 }
 
-union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig
+input Input_PricingDefault {
+    currency: String!
+    amount: Float!
+    taxRate: Float
+}
+
+type T_PricingDefault {
+    currency: String
+    amount: Float
+    taxRate: Float
+}
+
+union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig | T_PricingDefault
 
 input Input_Setting {
     footer: Input_Footer
     adminNotification: Input_AdminNotification
     aiModeration: Input_AIModerationConfig
+    pricingDefault: Input_PricingDefault
 }
 
 type T_Setting {
