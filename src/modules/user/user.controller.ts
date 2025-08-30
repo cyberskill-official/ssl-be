@@ -3,6 +3,7 @@ import type {
     I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
+    I_Input_UpdateMany,
     I_Input_UpdateOne,
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
@@ -301,6 +302,12 @@ export const userCtr = {
             update as Record<string, unknown>,
         );
         return mongooseCtr.updateOne(filter, mergeUpdate, options);
+    },
+    updateUsers: async (
+        _: I_Context,
+        { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
+    ): Promise<I_Return<{ modifiedCount: number }>> => {
+        return mongooseCtr.updateMany(filter, update, options);
     },
     deleteUser: async (
         context: I_Context,

@@ -11,6 +11,7 @@ import process from 'node:process';
 import { permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
+import { updateUserActivity } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { schema } from '#shared/graphql/schema.js';
 
@@ -83,6 +84,7 @@ const env = getEnv();
     app.use(
         env.ENDPOINT_GRAPHQL,
         express.json({ limit: env.BODY_PARSER_LIMIT }),
+        updateUserActivity,
         expressMiddleware(apolloServer, {
             context: async (context) => {
                 const indexes = await mongoose.connection.db?.collection('sessions').indexes();
@@ -106,6 +108,7 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_RESTAPI,
+        updateUserActivity,
         // (req, res, next) => {
         //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
         // },

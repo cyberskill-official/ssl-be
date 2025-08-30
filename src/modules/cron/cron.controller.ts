@@ -4,6 +4,7 @@ import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
 
 import { eventCtr } from '#modules/event/index.js';
+import { userCtr } from '#modules/user/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { mongoBackup } from '#shared/mongo/index.js';
@@ -13,12 +14,13 @@ import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
 
-const cron = {
+export const cron = {
     start: () => {
         cron.backupDB().start();
         cron.checkExpiredEvents().start();
         cron.cleanupVerification().start();
         cron.disableExpiredAds().start();
+        cron.checkUserOnlineStatus().start();
     },
     backupDB: () => {
         return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
@@ -200,6 +202,48 @@ const cron = {
             }
         });
     },
-};
+    checkUserOnlineStatus: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_MINUTE, async () => {
+            try {
+                log.info('Checking user online status...');
 
-export { cron };
+                // Find users who haven't had API activity in the last 30 seconds
+                const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+
+                const offlineUsers = await userCtr.getUsers({}, {
+                    filter: {
+                        isOnline: true,
+                        lastOnline: { $lt: thirtySecondsAgo },
+                    },
+                    options: { pagination: false },
+                });
+
+                if (offlineUsers.success && offlineUsers.result?.docs && offlineUsers.result.docs.length > 0) {
+                    const offlineUserIds = offlineUsers.result.docs.map(user => user.id);
+
+                    // Update isOnline to false for inactive users
+                    const updateResult = await userCtr.updateUsers({}, {
+                        filter: { id: { $in: offlineUserIds } },
+                        update: {
+                            isOnline: false,
+                        },
+                    });
+
+                    if (updateResult.success) {
+                        log.success(`[CRON] Marked ${offlineUserIds.length} users as offline due to inactivity (lastOnline > 30 seconds ago)`);
+                    }
+                    else {
+                        log.error('[CRON] Failed to update offline users:', updateResult.message);
+                    }
+                }
+                else {
+                    log.info('[CRON] No users found to mark as offline');
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Error checking user online status:', error);
+            }
+        });
+    },
+
+};
