@@ -102,7 +102,7 @@ export function validatePricingDefault(value: I_PricingDefault): boolean {
         return false;
     }
 
-    if (typeof value.amount !== 'number' || value.amount < 0) {
+    if (typeof value.price !== 'number' || value.price < 0) {
         return false;
     }
 

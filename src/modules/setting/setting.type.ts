@@ -57,7 +57,7 @@ export interface I_AIModerationConfig {
 
 export interface I_PricingDefault {
     currency: string;
-    amount: number;
+    price: number;
     taxRate?: number;
 }
 

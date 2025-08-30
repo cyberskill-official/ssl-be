@@ -13,7 +13,7 @@ const picingDefault = {
     type: E_SettingType.PRICING_DEFAULT,
     value: {
         currency: 'EUR',
-        amount: 9,
+        price: 9,
         taxRate: 1,
     },
 };

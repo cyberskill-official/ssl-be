@@ -195,7 +195,7 @@ export const pricingCtr = {
 
             if (pricingDefault.success) {
                 const val = pricingDefault.result.value as I_PricingDefault;
-                price = typeof val.amount === 'number' ? val.amount : price;
+                price = typeof val.price === 'number' ? val.price : price;
                 currency = typeof val.currency === 'string' ? val.currency : currency;
                 taxRate = typeof val.taxRate === 'number' ? val.taxRate : taxRate;
             }
