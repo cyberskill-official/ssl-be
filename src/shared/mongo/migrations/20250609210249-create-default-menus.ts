@@ -46,12 +46,6 @@ const menus: I_MenuExtended[] = [
         icon: 'blog',
         order: 6,
     },
-    {
-        text: 'Contact Us',
-        url: '/contact',
-        icon: 'contact',
-        order: 7,
-    },
 ];
 
 export async function up(db: C_Db) {
