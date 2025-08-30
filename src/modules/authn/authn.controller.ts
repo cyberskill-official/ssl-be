@@ -192,10 +192,18 @@ export const authnCtr = {
             const myInfo = await ipInfoCtr.getMyIp();
 
             const ipFromMyIp = myInfo?.result?.ip;
-            if (!context.req.session.meta)
-                (context.req.session as any).meta = {} as any;
-            if (ipFromMyIp && !(context.req.session.meta?.loginIp)) {
-                (context.req.session.meta as any).loginIp = ipFromMyIp;
+            if (ipFromMyIp) {
+                // Update user's lastLoginIp in database
+                try {
+                    await userCtr.updateUser(context, {
+                        filter: { id: context.req.session.user.id },
+                        update: { lastLoginIp: ipFromMyIp },
+                    });
+                }
+                catch (error) {
+                    // Don't block auth check if IP update fails
+                    console.warn('Failed to update user IP in checkAuth:', error);
+                }
             }
         }
         catch {
@@ -728,6 +736,24 @@ export const authnCtr = {
                 message: 'Account has been deleted.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        // Get IP address and update user's lastLoginIp
+        let clientIp: string | undefined;
+        try {
+            const myIpInfo = await ipInfoCtr.getMyIp();
+            clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+
+            if (clientIp) {
+                await userCtr.updateUser(context, {
+                    filter: { id: userFound.result.id },
+                    update: { lastLoginIp: clientIp },
+                });
+            }
+        }
+        catch (error) {
+            // Don't block login if IP update fails
+            console.warn('Failed to update user IP:', error);
         }
 
         const token = rememberMe

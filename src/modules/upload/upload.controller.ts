@@ -17,6 +17,7 @@ import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { aiModerationCtr, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
@@ -189,8 +190,24 @@ export const uploadCtr = {
 
         const uploadedUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
 
-        const myIpInfo = await ipInfoCtr.getMyIp();
-        const clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+        let clientIp: string | undefined;
+        try {
+            const userFound = await userCtr.getUser(context, {
+                filter: { id: currentUser.id },
+            });
+            if (userFound.success && userFound.result.lastLoginIp) {
+                clientIp = userFound.result.lastLoginIp;
+            }
+        }
+        catch (error) {
+            console.warn('Failed to get user IP from database:', error);
+        }
+
+        // Fallback to current IP if no user IP found
+        if (!clientIp) {
+            const myIpInfo = await ipInfoCtr.getMyIp();
+            clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+        }
 
         const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
             doc: {

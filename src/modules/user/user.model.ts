@@ -579,6 +579,9 @@ export const UserModel = mongo.createModel<I_User>({
         lastOnline: {
             type: Date,
         },
+        lastLoginIp: {
+            type: String,
+        },
         settings: {
             type: UserSettingsSchema,
         },

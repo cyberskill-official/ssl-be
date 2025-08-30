@@ -73,7 +73,7 @@ type T_Response_Pricings {
 }
 
 type T_Response_SubscriptionPrice {
-    amount: Float
+    price: Float
     currency: String
     taxRate: Float
 }

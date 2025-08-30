@@ -20,6 +20,7 @@ import { countryCtr } from '#modules/location/country/country.controller.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { settingCtr } from '#modules/setting/setting.controller.js';
 import { E_SettingType } from '#modules/setting/setting.type.js';
+import { userCtr } from '#modules/user/user.controller.js';
 
 import type {
     I_Input_CreatePricing,
@@ -114,22 +115,30 @@ export const pricingCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     async getSubscriptionPrice(context: I_Context): Promise<I_Return<I_Response_SubscriptionPrice>> {
-        const loginIp = context.req?.session?.meta?.loginIp;
-
         let countryCode: string | undefined;
         let countryName: string | undefined;
 
-        const myInfo = await ipInfoCtr.getMyIp();
-
-        if (myInfo?.success) {
-            countryCode = myInfo.result?.country_code;
-            countryName = myInfo.result?.country;
+        // Get IP from user's lastLoginIp
+        let userIp: string | undefined;
+        if (context.req?.session?.user?.id) {
+            try {
+                const userFound = await userCtr.getUser(context, {
+                    filter: { id: context.req.session.user.id },
+                });
+                if (userFound.success) {
+                    userIp = userFound.result.lastLoginIp;
+                }
+            }
+            catch (error) {
+                console.warn('Failed to get user IP from database:', error);
+            }
         }
-        else if (loginIp) {
-            const info = await ipInfoCtr.getIpInfo(loginIp);
-            if (info.success) {
-                countryCode = info.result?.country_code;
-                countryName = info.result?.country;
+
+        if (userIp) {
+            const ipInfo = await ipInfoCtr.getIpInfo(userIp);
+            if (ipInfo.success) {
+                countryCode = ipInfo.result?.country_code;
+                countryName = ipInfo.result?.country;
             }
         }
 
@@ -169,15 +178,15 @@ export const pricingCtr = {
             return undefined;
         };
 
-        let amount = 0;
+        let price = 0;
         let taxRate = 0;
 
         if (countryId) {
             const pricingFound = await findByLocation({ countryId });
             if (pricingFound) {
-                amount = pricingFound.price ?? 0;
+                price = pricingFound.price ?? 0;
                 taxRate = pricingFound.taxRate ?? 0;
-                return { success: true, result: { amount, currency, taxRate } };
+                return { success: true, result: { price, currency, taxRate } };
             }
         }
 
@@ -186,7 +195,7 @@ export const pricingCtr = {
 
             if (pricingDefault.success) {
                 const val = pricingDefault.result.value as I_PricingDefault;
-                amount = typeof val.amount === 'number' ? val.amount : amount;
+                price = typeof val.amount === 'number' ? val.amount : price;
                 currency = typeof val.currency === 'string' ? val.currency : currency;
                 taxRate = typeof val.taxRate === 'number' ? val.taxRate : taxRate;
             }
@@ -195,6 +204,6 @@ export const pricingCtr = {
             // Ignore
         }
 
-        return { success: true, result: { amount, currency, taxRate } };
+        return { success: true, result: { price, currency, taxRate } };
     },
 };

@@ -208,6 +208,7 @@ type T_User {
     isActive: Boolean
     isOnline: Boolean
     lastOnline: DateTime
+    lastLoginIp: String
     settings: T_UserSettings
     flagCount: Int
 }

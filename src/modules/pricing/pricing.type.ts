@@ -27,7 +27,7 @@ export interface I_Input_UpdatePricing extends Omit<I_Pricing, T_Omit_Update> {
 }
 
 export interface I_Response_SubscriptionPrice {
-    amount: number;
+    price: number;
     currency: string;
     taxRate?: number;
 }

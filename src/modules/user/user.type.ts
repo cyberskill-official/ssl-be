@@ -120,6 +120,7 @@ export interface I_User extends I_GenericDocument {
     isActive?: boolean;
     isOnline?: boolean;
     lastOnline?: Date;
+    lastLoginIp?: string;
     settings?: I_UserSettings;
     flagCount?: number;
 }
