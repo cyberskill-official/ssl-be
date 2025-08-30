@@ -16,9 +16,12 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/authn.controller.js';
+
 import type { I_Input_CreateLocation, I_Input_GetLocationInViewport, I_Input_QueryLocation, I_Input_UpdateLocation, I_Location } from './location.type.js';
 
 import { LocationModel } from './location.model.js';
+import { E_LocationEntityType } from './location.type.js';
 
 const mongooseCtr = new MongooseController<I_Location>(LocationModel);
 
@@ -79,7 +82,7 @@ export const locationCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     getLocationsInViewport: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
         if (!filter) {
@@ -89,11 +92,63 @@ export const locationCtr = {
             });
         }
 
-        return mongooseCtr.findPaging({
+        const baseFilter = {
             map: {
                 longitude: { $gte: filter.southWestLongitude, $lte: filter.northEastLongitude },
                 latitude: { $gte: filter.southWestLatitude, $lte: filter.northEastLatitude },
             },
-        }, options);
+        };
+
+        if (filter.entityType === E_LocationEntityType.USER && context.req?.session?.user) {
+            const currentUser = await authnCtr.getUserFromSession(context);
+            const tempLocationId = currentUser.settings?.temporaryLocation?.locationId;
+
+            if (tempLocationId) {
+                const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
+
+                if (tempLocation.success && tempLocation.result?.map) {
+                    const { map } = tempLocation.result;
+                    const inViewport = map.longitude >= filter.southWestLongitude
+                        && map.longitude <= filter.northEastLongitude
+                        && map.latitude >= filter.southWestLatitude
+                        && map.latitude <= filter.northEastLatitude;
+
+                    if (inViewport) {
+                        return {
+                            success: true,
+                            result: {
+                                docs: [tempLocation.result],
+                                totalDocs: 1,
+                                limit: options?.limit || 10,
+                                hasPrevPage: false,
+                                hasNextPage: false,
+                                page: 1,
+                                totalPages: 1,
+                                offset: 0,
+                                prevPage: 0,
+                                nextPage: 0,
+                                pagingCounter: 1,
+                                meta: undefined,
+                            },
+                        };
+                    }
+                }
+            }
+
+            return mongooseCtr.findPaging({
+                ...baseFilter,
+                $and: [
+                    baseFilter,
+                    {
+                        $or: [
+                            { entityType: { $ne: E_LocationEntityType.USER } },
+                            { entityType: E_LocationEntityType.USER, id: { $ne: tempLocationId } },
+                        ],
+                    },
+                ],
+            }, options);
+        }
+
+        return mongooseCtr.findPaging(baseFilter, options);
     },
 };
