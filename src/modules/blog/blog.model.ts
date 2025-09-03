@@ -38,11 +38,6 @@ export const BlogModel = mongo.createModel<I_Blog>({
         },
         authorName: {
             type: String,
-            required: true,
-            validate: {
-                validator: mongo.validator.isRequired(),
-                message: 'Please enter author name for blog',
-            },
         },
         websiteName: {
             type: String,

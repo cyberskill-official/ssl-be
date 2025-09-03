@@ -79,7 +79,7 @@ input Input_QueryBlog {
 
 input Input_CreateBlog {
     title: String!
-    authorName: String!
+    authorName: String
     authorId: String
     websiteName: String
     websiteURL: String

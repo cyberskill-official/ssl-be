@@ -56,7 +56,6 @@ export interface I_Input_QueryBlog extends Omit<I_Blog, T_Blog_Populate> { }
 
 export interface I_Input_CreateBlog extends Omit<I_Blog, T_Omit_Create | T_Blog_Populate> {
     title: string;
-    authorName: string;
     type: E_BlogType;
     category: E_BlogCategory;
     featuredImage: string;
