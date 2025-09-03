@@ -205,6 +205,6 @@ export const promoCodeCtr = {
         };
     },
     calculateMembershipDuration: (promoCode: I_PromoCode): number => {
-        return promoCode.membershipDurationMonths || 1;
+        return promoCode.membershipDurationDays || 1;
     },
 };

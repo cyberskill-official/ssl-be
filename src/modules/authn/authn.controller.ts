@@ -9,7 +9,6 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
-import { addMonths } from 'date-fns';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
@@ -622,9 +621,11 @@ export const authnCtr = {
                     });
                 }
 
-                const membershipDurationMonths = promoCodeCtr.calculateMembershipDuration(applyPromo.result);
+                const membershipDurationDays = promoCodeCtr.calculateMembershipDuration(applyPromo.result);
 
-                membershipExpiresAt = addMonths(new Date(), membershipDurationMonths);
+                // Calculate expiration date by adding days
+                membershipExpiresAt = new Date();
+                membershipExpiresAt.setDate(membershipExpiresAt.getDate() + membershipDurationDays);
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
