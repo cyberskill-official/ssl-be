@@ -18,6 +18,7 @@ input Input_CreatePromoCode {
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
+    membershipDurationMonths: Int
 }
 
 input Input_UpdatePromoCode {
@@ -28,6 +29,7 @@ input Input_UpdatePromoCode {
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
+    membershipDurationMonths: Int
 }
 
 type T_PromoCode {
@@ -41,6 +43,7 @@ type T_PromoCode {
     isLimit: Boolean
     usageLimit: Int
     globalUsageLimit: Int
+    membershipDurationMonths: Int
 }
 
 type T_PromoCodes {

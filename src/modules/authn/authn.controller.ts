@@ -9,6 +9,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
+import { addMonths } from 'date-fns';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
@@ -580,6 +581,7 @@ export const authnCtr = {
         const currentUser = await authnCtr.getUserFromSession(context);
 
         let roleId;
+        let membershipExpiresAt: Date | undefined;
 
         switch (type) {
             case E_MembershipType.FREE: {
@@ -619,6 +621,10 @@ export const authnCtr = {
                         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                     });
                 }
+
+                const membershipDurationMonths = promoCodeCtr.calculateMembershipDuration(applyPromo.result);
+
+                membershipExpiresAt = addMonths(new Date(), membershipDurationMonths);
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
@@ -664,6 +670,9 @@ export const authnCtr = {
                 rolesIds: [roleId],
                 ...(!stepsAfter.includes(currentUser.registerStep!) && {
                     registerStep: E_RegisterStep.COMPLETE,
+                }),
+                ...(type === E_MembershipType.PROMO && membershipExpiresAt && {
+                    membershipExpiresAt,
                 }),
             },
         });
@@ -1108,5 +1117,14 @@ export const authnCtr = {
                 },
             },
         );
+    },
+    isMembershipActive: (user: I_User): boolean => {
+        // If user has no membership expiration date, they have a lifetime membership
+        if (!user.membershipExpiresAt) {
+            return true;
+        }
+
+        // Check if membership has expired
+        return new Date() < new Date(user.membershipExpiresAt);
     },
 };

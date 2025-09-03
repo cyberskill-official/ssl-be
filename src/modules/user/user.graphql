@@ -211,6 +211,7 @@ type T_User {
     lastLoginIp: String
     settings: T_UserSettings
     flagCount: Int
+    membershipExpiresAt: DateTime
 }
 
 input Input_QueryUser {
@@ -288,6 +289,7 @@ input Input_UpdateUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
+    membershipExpiresAt: DateTime
 }
 
 type T_Response_User {
