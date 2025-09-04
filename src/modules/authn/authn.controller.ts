@@ -695,10 +695,15 @@ export const authnCtr = {
 
         const stepsAfter = [E_RegisterStep.COMPLETE];
 
+        const currentRoles = currentUser.rolesIds || [];
+        const updatedRoles = currentRoles.includes(roleId)
+            ? currentRoles
+            : [...currentRoles, roleId];
+
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
             update: {
-                rolesIds: [roleId],
+                rolesIds: updatedRoles,
                 ...(!stepsAfter.includes(currentUser.registerStep!) && {
                     registerStep: E_RegisterStep.COMPLETE,
                 }),
