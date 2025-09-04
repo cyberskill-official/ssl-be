@@ -89,9 +89,24 @@ export const authnCtr = {
                     id: decodedToken.userId,
                 },
                 populate: [
-                    'roles',
-                    'partner1.location',
-                    'settings.temporaryLocation.location',
+                    { path: 'roles' },
+                    {
+                        path: 'partner1',
+                        populate: [
+                            {
+                                path: 'gallery',
+                            },
+                        ],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [
+                            {
+                                path: 'gallery',
+                            },
+                        ],
+                    },
+                    { path: 'settings.temporaryLocation.location' },
                 ],
             });
 
@@ -148,9 +163,24 @@ export const authnCtr = {
                 id: context.req.session.user.id,
             },
             populate: [
-                'roles',
-                'partner1.location',
-                'settings.temporaryLocation.location',
+                { path: 'roles' },
+                {
+                    path: 'partner1',
+                    populate: [
+                        {
+                            path: 'gallery',
+                        },
+                    ],
+                },
+                {
+                    path: 'partner2',
+                    populate: [
+                        {
+                            path: 'gallery',
+                        },
+                    ],
+                },
+                { path: 'settings.temporaryLocation.location' },
             ],
         });
 
@@ -716,9 +746,24 @@ export const authnCtr = {
                 $or: [{ email: identity }, { username: identity }],
             },
             populate: [
-                'roles',
-                'partner1.location',
-                'settings.temporaryLocation.location',
+                { path: 'roles' },
+                {
+                    path: 'partner1',
+                    populate: [
+                        {
+                            path: 'gallery',
+                        },
+                    ],
+                },
+                {
+                    path: 'partner2',
+                    populate: [
+                        {
+                            path: 'gallery',
+                        },
+                    ],
+                },
+                { path: 'settings.temporaryLocation.location' },
             ],
         });
 
