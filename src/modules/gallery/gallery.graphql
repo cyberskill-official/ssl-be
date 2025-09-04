@@ -32,6 +32,7 @@ input Input_QueryGallery {
     type: E_GalleryType
     url: String
     uploadedById: String
+    uploadedByIds: [String]
     viewCount: Int
     status: E_ModerationMediaStatus
     isPublished: Boolean

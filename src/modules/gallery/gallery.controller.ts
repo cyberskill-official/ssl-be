@@ -17,6 +17,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
+import { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -89,7 +90,18 @@ export const galleryCtr = {
             }
         }
 
-        const galleries = await mongooseCtr.findPaging(filter, options);
+        let modifiedFilter = { ...(filter || {}) };
+        if (filter?.uploadedByIds && filter.uploadedByIds.length > 0) {
+            modifiedFilter = {
+                ...filter,
+                uploadedById: { $in: filter.uploadedByIds },
+                isPublished: true,
+                status: E_ModerationMediaStatus.APPROVED,
+            };
+            delete modifiedFilter.uploadedByIds;
+        }
+
+        const galleries = await mongooseCtr.findPaging(modifiedFilter, options);
 
         if (!galleries.success) {
             return galleries;

@@ -26,7 +26,9 @@ export interface I_Gallery extends I_GenericDocument {
 
 export type T_Gallery_Populate = 'moderationMedia' | 'uploadedBy';
 
-export interface I_Input_QueryGallery extends Omit<I_Gallery, T_Gallery_Populate> { }
+export interface I_Input_QueryGallery extends Omit<I_Gallery, T_Gallery_Populate> {
+    uploadedByIds?: string[];
+}
 
 export interface I_Input_CreateGallery extends Omit<I_Gallery, T_Omit_Create | T_Gallery_Populate> {
     moderationMediaId: string;
