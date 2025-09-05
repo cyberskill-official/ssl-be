@@ -1,5 +1,6 @@
 export enum E_SocialPlatform {
     FACEBOOK = 'FACEBOOK',
+    BLUESKY = 'BLUESKY',
     TWITTER = 'TWITTER',
     INSTAGRAM = 'INSTAGRAM',
     LINKEDIN = 'LINKEDIN',

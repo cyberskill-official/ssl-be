@@ -1,5 +1,6 @@
 enum E_SocialPlatform {
     FACEBOOK
+    BLUESKY
     TWITTER
     INSTAGRAM
     LINKEDIN
