@@ -170,6 +170,9 @@ export const authnCtr = {
                         {
                             path: 'gallery',
                         },
+                        {
+                            path: 'location',
+                        },
                     ],
                 },
                 {
