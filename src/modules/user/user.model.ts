@@ -591,6 +591,7 @@ export const UserModel = mongo.createModel<I_User>({
         },
         membershipExpiresAt: {
             type: Date,
+            default: null,
         },
     },
     virtuals: [

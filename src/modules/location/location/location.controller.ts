@@ -102,6 +102,7 @@ export const locationCtr = {
         if (filter.entityType === E_LocationEntityType.USER && context.req?.session?.user) {
             const currentUser = await authnCtr.getUserFromSession(context);
             const tempLocationId = currentUser.settings?.temporaryLocation?.locationId;
+            const partner1LocationId = currentUser.partner1?.locationId;
 
             if (tempLocationId) {
                 const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
@@ -135,6 +136,38 @@ export const locationCtr = {
                 }
             }
 
+            const excludeLocationIds = [];
+            if (tempLocationId) {
+                excludeLocationIds.push(tempLocationId);
+            }
+            if (partner1LocationId && partner1LocationId !== tempLocationId) {
+                // Kiểm tra xem partner1 location có trùng với temporary location không
+                if (tempLocationId) {
+                    const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
+                    const partner1Location = await locationCtr.getLocation(context, { filter: { id: partner1LocationId } });
+
+                    if (tempLocation.success && partner1Location.success
+                        && tempLocation.result?.map && partner1Location.result?.map) {
+                        const tempMap = tempLocation.result.map;
+                        const partner1Map = partner1Location.result.map;
+
+                        // Nếu 2 location có cùng tọa độ thì không thêm partner1 vào exclude list
+                        const isSameLocation = tempMap.latitude === partner1Map.latitude
+                            && tempMap.longitude === partner1Map.longitude;
+
+                        if (!isSameLocation) {
+                            excludeLocationIds.push(partner1LocationId);
+                        }
+                    }
+                    else {
+                        excludeLocationIds.push(partner1LocationId);
+                    }
+                }
+                else {
+                    excludeLocationIds.push(partner1LocationId);
+                }
+            }
+
             return mongooseCtr.findPaging({
                 ...baseFilter,
                 $and: [
@@ -142,7 +175,7 @@ export const locationCtr = {
                     {
                         $or: [
                             { entityType: { $ne: E_LocationEntityType.USER } },
-                            { entityType: E_LocationEntityType.USER, id: { $ne: tempLocationId } },
+                            { entityType: E_LocationEntityType.USER, id: { $nin: excludeLocationIds } },
                         ],
                     },
                 ],
