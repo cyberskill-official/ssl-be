@@ -1,3 +1,19 @@
+enum E_MessageType {
+    TEXT
+    IMAGE
+    VIDEO
+}
+
+type T_MessageContent {
+    type: E_MessageType
+    value: String
+}
+
+input Input_MessageContent {
+    type: E_MessageType!
+    value: String!
+}
+
 type T_Message {
     id: String
     isDel: Boolean
@@ -5,11 +21,12 @@ type T_Message {
     updatedAt: DateTime
     senderId: String
     sender: T_User
-    content: String
+    content: T_MessageContent
     conversationId: String
     conversation: T_Conversation
     parentId: String
     parent: T_Message
+    messageStatuses: [T_MessageStatus]
 }
 
 input Input_QueryMessage {
@@ -18,22 +35,21 @@ input Input_QueryMessage {
     createdAt: DateTime
     updatedAt: DateTime
     senderId: String
-    content: String
     conversationId: String
     parentId: String
 }
 
 input Input_CreateMessage {
-    senderId: String!
-    content: String!
+    content: Input_MessageContent!
     conversationId: String
+    recipientId: String
     parentId: String
 }
 
 input Input_UpdateMessage {
     isDel: Boolean
     senderId: String
-    content: String
+    content: Input_MessageContent
     conversationId: String
     parentId: String
 }

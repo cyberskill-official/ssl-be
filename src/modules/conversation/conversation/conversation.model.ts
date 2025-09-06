@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_Conversation } from './conversation.type.js';
 
+import { GROUP_RETENTION_DAYS } from './conversation.constant.js';
 import { E_ConversationType } from './conversation.type.js';
 
 export const ConversationModel = mongo.createModel<I_Conversation>({
@@ -36,6 +37,16 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
         lastMessageId: {
             type: String,
         },
+        entityId: {
+            type: String,
+        },
+        retentionDays: {
+            type: Number,
+            default: GROUP_RETENTION_DAYS,
+        },
+        lastMessageAt: {
+            type: Date,
+        },
     },
     virtuals: [
         {
@@ -54,6 +65,15 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
                 localField: 'lastMessageId',
                 foreignField: 'id',
                 justOne: true,
+            },
+        },
+        {
+            name: 'participants',
+            options: {
+                ref: 'Participant',
+                localField: 'id',
+                foreignField: 'conversationId',
+                justOne: false,
             },
         },
     ],

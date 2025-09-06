@@ -7,6 +7,8 @@ enum E_ConversationType {
     ADMIN_BROADCAST
 }
 
+union U_ConversationEntity = T_User | T_Blog | T_Destination
+
 type T_Conversation {
     id: String
     isDel: Boolean
@@ -18,6 +20,9 @@ type T_Conversation {
     createdBy: T_User
     lastMessageId: String
     lastMessage: T_Message
+    entityId: String
+    entity: U_ConversationEntity
+    participants: [T_Participant]
 }
 
 type T_BroadcastResult {
@@ -49,6 +54,10 @@ input Input_CreateConversation {
     lastMessageId: String
 }
 
+input Input_CreateGroupConversation {
+    name: String!
+}
+
 input Input_UpdateConversation {
     isDel: Boolean
     type: E_ConversationType
@@ -58,8 +67,58 @@ input Input_UpdateConversation {
 }
 
 input Input_CreateBroadcast {
-    content: String!
+    content: Input_MessageContent!
     target: E_Role_User
+}
+
+input Input_MarkAllMessagesAsRead {
+    conversationId: String!
+}
+
+# Subscription input types
+input Input_SubscribeToConversation {
+    conversationId: String
+}
+
+# Subscription payload types
+type T_MessageSentResult {
+    conversation: T_Conversation
+}
+
+type T_MessageReadResult {
+    messageId: String
+    userId: String
+    conversationId: String
+    readAt: DateTime
+}
+
+enum E_ConversationAction {
+    CREATED
+    UPDATED
+    DELETED
+}
+
+type T_ConversationEventResult {
+    conversationId: String
+    type: E_ConversationType
+    action: E_ConversationAction
+}
+
+type T_MarkAllMessagesAsReadResult {
+    conversation: T_Conversation
+    totalMarked: Int
+}
+
+type T_Response_MarkAllMessagesAsReadResult {
+    success: Boolean
+    message: String
+    result: T_MarkAllMessagesAsReadResult
+}
+
+type T_Response_DeleteConversationResult {
+    success: Boolean
+    message: String
+    result: Boolean
 }
 
 type T_Response_Conversation {
@@ -91,10 +150,22 @@ type T_Response_Conversations {
 
 type Query {
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
+    getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
+    getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
 }
 
 type Mutation {
     createConversation(doc: Input_CreateConversation!): T_Response_Conversation!
+    createGroupConversation(doc: Input_CreateGroupConversation!): T_Response_Conversation!
     createBroadcast(doc: Input_CreateBroadcast!): T_Response_BroadcastResult!
     deleteConversation(filter: Input_QueryConversation!, options: JSON): T_Response_Conversation!
+    deletePrivateConversation(conversationId: String!): T_Response_DeleteConversationResult!
+    deleteGroupConversation(conversationId: String!): T_Response_DeleteConversationResult!
+    markAllMessagesAsRead(conversationId: String!): T_Response_MarkAllMessagesAsReadResult!
+}
+
+type Subscription {
+    messageSent(input: Input_SubscribeToConversation): T_MessageSentResult
+    messageRead(input: Input_SubscribeToConversation): T_MessageReadResult
+    conversationEvent: T_ConversationEventResult
 }

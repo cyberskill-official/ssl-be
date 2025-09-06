@@ -30,13 +30,13 @@ export const InvitationModel = mongo.createModel<I_Invitation>({
                 },
             ],
         },
-        inviteId: {
+        inviterId: {
             type: String,
             required: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
-                    message: 'Please enter invite id for invitation',
+                    message: 'Please enter inviter id for invitation',
                 },
             ],
         },
@@ -44,6 +44,10 @@ export const InvitationModel = mongo.createModel<I_Invitation>({
             type: String,
             enum: Object.values(E_InvitationStatus),
             default: E_InvitationStatus.PENDING,
+        },
+        entityId: {
+            type: String,
+            required: false,
         },
     },
     virtuals: [
@@ -57,10 +61,19 @@ export const InvitationModel = mongo.createModel<I_Invitation>({
             },
         },
         {
-            name: 'invite',
+            name: 'inviter',
             options: {
                 ref: 'User',
-                localField: 'inviteId',
+                localField: 'inviterId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'entity',
+            options: {
+                ref: doc => doc.type,
+                localField: 'entityId',
                 foreignField: 'id',
                 justOne: true,
             },

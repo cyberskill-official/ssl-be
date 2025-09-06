@@ -4,11 +4,17 @@ enum E_InvitationType {
 }
 
 enum E_InvitationStatus {
-    PENDING 
-    ACCEPTED 
-    REJECTED 
+    PENDING
+    ACCEPTED
+    REJECTED
     BLACKLISTED
 }
+enum E_InvitationEvent {
+    INVITATION_SENT
+    INVITATION_RESPONDED
+}
+
+union U_InvitationEntity = T_Conversation | T_Event
 
 type T_Invitation {
     id: String
@@ -18,9 +24,11 @@ type T_Invitation {
     type: E_InvitationType
     userId: String
     user: T_User
-    inviteId: String
-    invite: T_User
+    inviterId: String
+    inviter: T_User
     status: E_InvitationStatus
+    entityId: String
+    entity: U_InvitationEntity
 }
 
 input Input_QueryInvitation {
@@ -30,23 +38,34 @@ input Input_QueryInvitation {
     updatedAt: DateTime
     type: E_InvitationType
     userId: String
-    inviteId: String
+    inviterId: String
     status: E_InvitationStatus
+    entityId: String
 }
 
-input Input_CreateInvitation {
+input Input_SendInvitation {
     type: E_InvitationType!
+    entityId: String!
     userId: String!
-    inviteId: String!
-    status: E_InvitationStatus
+}
+
+input Input_RespondToInvitation {
+    invitationId: String!
+    status: E_InvitationStatus!
+}
+
+type T_InvitationEventPayload {
+    invitation: T_Invitation!
+    eventType: E_InvitationEvent!
 }
 
 input Input_UpdateInvitation {
     isDel: Boolean
     type: E_InvitationType
     userId: String
-    inviteId: String
+    inviterId: String
     status: E_InvitationStatus
+    entityId: String
 }
 
 type T_Response_Invitation {
@@ -74,4 +93,17 @@ type T_Response_Invitations {
     success: Boolean
     message: String
     result: T_Invitations
+}
+
+type Query {
+    getMyInvitations(filter: Input_QueryInvitation, options: JSON): T_Response_Invitations!
+}
+
+type Mutation {
+    sendInvitation(doc: Input_SendInvitation!): T_Response_Invitation!
+    respondToInvitation(doc: Input_RespondToInvitation!): T_Response_Invitation!
+}
+
+type Subscription {
+    onInvitationEvent(type: E_InvitationType!, entityId: String): T_InvitationEventPayload!
 }

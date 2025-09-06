@@ -1,8 +1,17 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type {
+    I_Input_CreateOne,
+    I_Input_DeleteOne,
+    I_Input_FindPaging,
+    I_Input_UpdateOne,
+} from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage } from './message.type.js';
+import type {
+    I_Input_CreateMessage,
+    I_Input_QueryMessage,
+    I_Input_UpdateMessage,
+} from './message.type.js';
 
 import { messageCtr } from './message.controller.js';
 

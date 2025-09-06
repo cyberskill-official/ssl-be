@@ -1,6 +1,6 @@
 enum E_ParticipantRole {
     ADMIN
-    MEMBER 
+    MEMBER
 }
 
 type T_Participant {
@@ -35,18 +35,21 @@ input Input_CreateParticipant {
     role: E_ParticipantRole
 }
 
-input Input_UpdateParticipant {
-    isDel: Boolean
+type T_DirectMessageBetweenResult {
+    exists: Boolean!
     conversationId: String
-    userId: String
-    lastReadMessageId: String
-    role: E_ParticipantRole
 }
 
 type T_Response_Participant {
     success: Boolean
     message: String
     result: T_Participant
+}
+
+type T_Response_ParticipantAction {
+    success: Boolean
+    message: String
+    result: Boolean
 }
 
 type T_Participants {
@@ -72,10 +75,12 @@ type T_Response_Participants {
 
 type Query {
     getParticipants(filter: Input_QueryParticipant, options: JSON): T_Response_Participants!
+    directMessageBetween(userId: String!): T_DirectMessageBetweenResult!
 }
 
 type Mutation {
     createParticipant(doc: Input_CreateParticipant!): T_Response_Participant!
-    updateParticipant(filter: Input_QueryParticipant!, update: Input_UpdateParticipant, options: JSON): T_Response_Participant!
-    deleteParticipant(filter: Input_QueryParticipant!, options: JSON): T_Response_Participant!
+    transferAdminRights(conversationId: String!, targetUserId: String!): T_Response_ParticipantAction!
+    leaveGroup(conversationId: String!): T_Response_ParticipantAction!
+    removeMember(conversationId: String!, userId: String!): T_Response_ParticipantAction!
 }

@@ -29,7 +29,7 @@ const env = getEnv();
         whiteList: env.CORS_WHITELIST,
     }));
 
-    app.use(createSession({
+    const sessionParser = createSession({
         name: env.SESSION_NAME,
         secret: env.SESSION_SECRET,
         resave: false,
@@ -41,14 +41,22 @@ const env = getEnv();
         cookie: {
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
-    }));
+    });
+    app.use(sessionParser);
 
     const httpServer = createServer(app);
     const wsServer = createWSServer({
         server: httpServer,
         path: env.ENDPOINT_WS,
+        sessionParser,
     });
-    const serverCleanup = initGraphQLWS({ schema, server: wsServer });
+    const serverCleanup = initGraphQLWS({
+        schema,
+        server: wsServer,
+        context: (req) => {
+            return req;
+        },
+    });
 
     // MongoDB
     if (!env.IS_PROD) {
