@@ -5,7 +5,7 @@ import type {
 import {
     ComprehendClient,
     DetectDominantLanguageCommand,
-    DetectPiiEntitiesCommand,
+    // DetectPiiEntitiesCommand, // Commented out - PII detection disabled
     DetectSentimentCommand,
 } from '@aws-sdk/client-comprehend';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -76,27 +76,28 @@ export class AWSComprehendProvider {
             });
         }
 
-        let piiResult = null;
+        // PII detection commented out
+        // let piiResult = null;
 
-        try {
-            const piiCommand = new DetectPiiEntitiesCommand({
-                Text: cleanText,
-                LanguageCode: language as LanguageCode,
-            });
+        // try {
+        //     const piiCommand = new DetectPiiEntitiesCommand({
+        //         Text: cleanText,
+        //         LanguageCode: language as LanguageCode,
+        //     });
 
-            piiResult = await this.getClient().send(piiCommand);
-        }
-        catch {
-            throwError({
-                message: 'Failed to detect PII entities',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
+        //     piiResult = await this.getClient().send(piiCommand);
+        // }
+        // catch {
+        //     throwError({
+        //         message: 'Failed to detect PII entities',
+        //         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        //     });
+        // }
 
-        if (piiResult.Entities?.length) {
-            categories.push(E_ModerationCategory.PII);
-            reasons.push(`PII entities detected: ${piiResult.Entities.map(entity => entity.Type).join(', ')}`);
-        }
+        // if (piiResult.Entities?.length) {
+        //     categories.push(E_ModerationCategory.PII);
+        //     reasons.push(`PII entities detected: ${piiResult.Entities.map(entity => entity.Type).join(', ')}`);
+        // }
 
         let sentimentResult = null;
 
@@ -143,12 +144,12 @@ export class AWSComprehendProvider {
             reasons,
             decision,
             language,
-            piiResult: piiResult?.Entities?.map(entity => ({
-                type: entity.Type!,
-                score: entity.Score!,
-                beginOffset: entity.BeginOffset!,
-                endOffset: entity.EndOffset!,
-            })) || [],
+            // piiResult: piiResult?.Entities?.map(entity => ({
+            //     type: entity.Type!,
+            //     score: entity.Score!,
+            //     beginOffset: entity.BeginOffset!,
+            //     endOffset: entity.EndOffset!,
+            // })) || [],
         };
     }
 }
