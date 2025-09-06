@@ -65,3 +65,7 @@ type T_Response_CreateMessageStatuses {
     message: String
     result: [T_MessageStatus]
 }
+
+type Query {
+    getMessageStatuses(filter: Input_QueryMessageStatus, options: JSON): T_Response_MessageStatuses!
+}
