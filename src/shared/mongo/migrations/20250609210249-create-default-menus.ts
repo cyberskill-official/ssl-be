@@ -29,7 +29,7 @@ const menus: I_MenuExtended[] = [
         order: 3,
     },
     {
-        text: 'Holiday Destinations',
+        text: 'Swinger holiday destinations',
         url: '/resort',
         icon: 'beach',
         order: 4,
