@@ -85,6 +85,15 @@ export const locationCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+        const authChecked = await authnCtr.checkAuth(context);
+
+        if (!authChecked.success) {
+            throwError({
+                message: 'Unauthorized',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
         if (!filter) {
             throwError({
                 message: 'Filter is required',
@@ -99,89 +108,80 @@ export const locationCtr = {
             },
         };
 
-        if (filter.entityType === E_LocationEntityType.USER && context.req?.session?.user) {
-            const currentUser = await authnCtr.getUserFromSession(context);
-            const tempLocationId = currentUser.settings?.temporaryLocation?.locationId;
-            const partner1LocationId = currentUser.partner1?.locationId;
-
-            if (tempLocationId) {
-                const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
-
-                if (tempLocation.success && tempLocation.result?.map) {
-                    const { map } = tempLocation.result;
-                    const inViewport = map.longitude >= filter.southWestLongitude
-                        && map.longitude <= filter.northEastLongitude
-                        && map.latitude >= filter.southWestLatitude
-                        && map.latitude <= filter.northEastLatitude;
-
-                    if (inViewport) {
-                        return {
-                            success: true,
-                            result: {
-                                docs: [tempLocation.result],
-                                totalDocs: 1,
-                                limit: options?.limit || 10,
-                                hasPrevPage: false,
-                                hasNextPage: false,
-                                page: 1,
-                                totalPages: 1,
-                                offset: 0,
-                                prevPage: 0,
-                                nextPage: 0,
-                                pagingCounter: 1,
-                                meta: undefined,
-                            },
-                        };
-                    }
-                }
-            }
-
-            const excludeLocationIds = [];
-            if (tempLocationId) {
-                excludeLocationIds.push(tempLocationId);
-            }
-            if (partner1LocationId && partner1LocationId !== tempLocationId) {
-                // Kiểm tra xem partner1 location có trùng với temporary location không
-                if (tempLocationId) {
-                    const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
-                    const partner1Location = await locationCtr.getLocation(context, { filter: { id: partner1LocationId } });
-
-                    if (tempLocation.success && partner1Location.success
-                        && tempLocation.result?.map && partner1Location.result?.map) {
-                        const tempMap = tempLocation.result.map;
-                        const partner1Map = partner1Location.result.map;
-
-                        // Nếu 2 location có cùng tọa độ thì không thêm partner1 vào exclude list
-                        const isSameLocation = tempMap.latitude === partner1Map.latitude
-                            && tempMap.longitude === partner1Map.longitude;
-
-                        if (!isSameLocation) {
-                            excludeLocationIds.push(partner1LocationId);
-                        }
-                    }
-                    else {
-                        excludeLocationIds.push(partner1LocationId);
-                    }
-                }
-                else {
-                    excludeLocationIds.push(partner1LocationId);
-                }
-            }
-
-            return mongooseCtr.findPaging({
-                ...baseFilter,
-                $and: [
-                    baseFilter,
-                    {
-                        $or: [
-                            { entityType: { $ne: E_LocationEntityType.USER } },
-                            { entityType: E_LocationEntityType.USER, id: { $nin: excludeLocationIds } },
-                        ],
-                    },
-                ],
-            }, options);
+        // Chỉ xử lý logic ưu tiên cho USER entity type
+        if (filter.entityType !== E_LocationEntityType.USER || !authChecked.success) {
+            return mongooseCtr.findPaging(baseFilter, options);
         }
 
-        return mongooseCtr.findPaging(baseFilter, options);
+        const currentUser = authChecked.result.user;
+        const tempLocationId = currentUser?.settings?.temporaryLocation?.locationId;
+        const tempLocationEndAt = currentUser?.settings?.temporaryLocation?.endAt;
+        const partner1LocationId = currentUser?.partner1?.locationId;
+
+        // Helper function để kiểm tra location có trong viewport không
+        const isLocationInViewport = (location: I_Location) => {
+            if (!location.map)
+                return false;
+            const { map } = location;
+            return map.longitude >= filter.southWestLongitude
+                && map.longitude <= filter.northEastLongitude
+                && map.latitude >= filter.southWestLatitude
+                && map.latitude <= filter.northEastLatitude;
+        };
+
+        // Helper function để tạo single location response
+        const createSingleResponse = (location: I_Location): I_Return<T_PaginateResult<I_Location>> => ({
+            success: true as const,
+            result: {
+                docs: [location],
+                totalDocs: 1,
+                limit: options?.limit || 10,
+                hasPrevPage: false,
+                hasNextPage: false,
+                page: 1,
+                totalPages: 1,
+                offset: 0,
+                prevPage: 0,
+                nextPage: 0,
+                pagingCounter: 1,
+                meta: undefined,
+            },
+        });
+
+        // Ưu tiên temporary location nếu có endAt
+        if (tempLocationId && tempLocationEndAt) {
+            const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
+            if (tempLocation.success && tempLocation.result && isLocationInViewport(tempLocation.result)) {
+                return createSingleResponse(tempLocation.result);
+            }
+        }
+
+        // Ưu tiên partner location nếu không có temporary location với endAt
+        if (partner1LocationId && (!tempLocationId || !tempLocationEndAt)) {
+            const partner1Location = await locationCtr.getLocation(context, { filter: { id: partner1LocationId } });
+            if (partner1Location.success && partner1Location.result && isLocationInViewport(partner1Location.result)) {
+                return createSingleResponse(partner1Location.result);
+            }
+        }
+
+        // Tìm các location khác, exclude location đã ưu tiên
+        const excludeIds = [];
+        if (tempLocationId && tempLocationEndAt)
+            excludeIds.push(tempLocationId);
+        if (partner1LocationId && (!tempLocationId || !tempLocationEndAt))
+            excludeIds.push(partner1LocationId);
+
+        return mongooseCtr.findPaging({
+            ...baseFilter,
+            $and: [
+                baseFilter,
+                {
+                    $or: [
+                        { entityType: { $ne: E_LocationEntityType.USER } },
+                        { entityType: E_LocationEntityType.USER, id: { $nin: excludeIds } },
+                    ],
+                },
+            ],
+        }, options);
     },
 };
