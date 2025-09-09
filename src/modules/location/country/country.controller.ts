@@ -29,6 +29,28 @@ export const countryCtr = {
             computedFilter['name'] = { $regex: `^${escaped}`, $options: 'i' };
         }
 
+        // Support searching by currency fields as well (case-insensitive, partial)
+        if (
+            typeof filter?.currency_name === 'string'
+            && filter.currency_name.trim() !== ''
+        ) {
+            const escaped = filter.currency_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            computedFilter['currency_name'] = { $regex: escaped, $options: 'i' };
+        }
+
+        if (typeof filter?.currency === 'string' && filter.currency.trim() !== '') {
+            const escaped = filter.currency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            computedFilter['currency'] = { $regex: escaped, $options: 'i' };
+        }
+
+        if (
+            typeof filter?.currency_symbol === 'string'
+            && filter.currency_symbol.trim() !== ''
+        ) {
+            const escaped = filter.currency_symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            computedFilter['currency_symbol'] = { $regex: escaped, $options: 'i' };
+        }
+
         return mongooseCtr.findPaging(computedFilter as unknown as never, options);
     },
 };
