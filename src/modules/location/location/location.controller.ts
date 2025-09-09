@@ -117,6 +117,7 @@ export const locationCtr = {
         const tempLocationId = currentUser?.settings?.temporaryLocation?.locationId;
         const tempLocationEndAt = currentUser?.settings?.temporaryLocation?.endAt;
         const partner1LocationId = currentUser?.partner1?.locationId;
+        const currentUserId = currentUser?.id;
 
         // Helper function để kiểm tra location có trong viewport không
         const isLocationInViewport = (location: I_Location) => {
@@ -148,30 +149,30 @@ export const locationCtr = {
             },
         });
 
-        // Ưu tiên temporary location nếu có endAt
-        if (tempLocationId && tempLocationEndAt) {
+        // Kiểm tra temporary location có còn hạn không
+        const isTemporaryLocationValid = tempLocationId && tempLocationEndAt && new Date(tempLocationEndAt) > new Date();
+        const excludeIds = [];
+
+        // Ưu tiên temporary location nếu còn hạn
+        if (isTemporaryLocationValid) {
             const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
             if (tempLocation.success && tempLocation.result && isLocationInViewport(tempLocation.result)) {
                 return createSingleResponse(tempLocation.result);
             }
+            excludeIds.push(tempLocationId);
         }
 
-        // Ưu tiên partner location nếu không có temporary location với endAt
-        if (partner1LocationId && (!tempLocationId || !tempLocationEndAt)) {
+        // Ưu tiên partner location nếu temporary location không có hoặc đã hết hạn
+        if (partner1LocationId && !isTemporaryLocationValid) {
             const partner1Location = await locationCtr.getLocation(context, { filter: { id: partner1LocationId } });
             if (partner1Location.success && partner1Location.result && isLocationInViewport(partner1Location.result)) {
                 return createSingleResponse(partner1Location.result);
             }
+            excludeIds.push(partner1LocationId);
         }
 
-        // Tìm các location khác, exclude location đã ưu tiên
-        const excludeIds = [];
-        if (tempLocationId && tempLocationEndAt)
-            excludeIds.push(tempLocationId);
-        if (partner1LocationId && (!tempLocationId || !tempLocationEndAt))
-            excludeIds.push(partner1LocationId);
-
-        return mongooseCtr.findPaging({
+        // Build the final filter
+        let finalFilter = {
             ...baseFilter,
             $and: [
                 baseFilter,
@@ -182,6 +183,33 @@ export const locationCtr = {
                     ],
                 },
             ],
-        }, options);
+        };
+
+        // If temporary location is active, exclude user's original location (keep only temporary location)
+        if (isTemporaryLocationValid && currentUserId) {
+            finalFilter = {
+                ...baseFilter,
+                $and: [
+                    baseFilter,
+                    {
+                        $or: [
+                            { entityType: { $ne: E_LocationEntityType.USER } },
+                            {
+                                entityType: E_LocationEntityType.USER,
+                                entityId: { $ne: currentUserId },
+                            },
+                            // Allow temporary location if it's in viewport
+                            {
+                                entityType: E_LocationEntityType.USER,
+                                entityId: currentUserId,
+                                id: tempLocationId,
+                            },
+                        ],
+                    },
+                ],
+            } as any;
+        }
+
+        return mongooseCtr.findPaging(finalFilter, options);
     },
 };
