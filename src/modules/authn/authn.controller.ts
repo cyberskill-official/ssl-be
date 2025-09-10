@@ -31,7 +31,7 @@ import {
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
-import { date, helper, validate } from '#shared/util/index.js';
+import { date, extractClientIp, helper, validate } from '#shared/util/index.js';
 
 import type {
     I_Input_ApproveAgeVerify,
@@ -60,6 +60,8 @@ import {
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
+
+// extractClientIp is now shared in env.util
 
 export const authnCtr = {
     generateToken: (_context: I_Context, id: string): string => {
@@ -222,28 +224,23 @@ export const authnCtr = {
         context.req.session.user = omit(userFound.result, 'password');
 
         try {
-            const myInfo = await ipInfoCtr.getMyIp();
-
-            const ipFromMyIp = myInfo?.result?.ip;
-            if (ipFromMyIp) {
-                // Update user's lastLoginIp in database
-                try {
-                    await userCtr.updateUser(context, {
-                        filter: { id: context.req.session.user.id },
-                        update: { lastLoginIp: ipFromMyIp },
-                    });
-                }
-                catch (error) {
-                    // Don't block auth check if IP update fails
-                    console.warn('Failed to update user IP in checkAuth:', error);
-                }
+            // Prefer client IP from request headers (proxied environments)
+            const clientIp = extractClientIp(context?.req, true);
+            let ipToPersist: string | undefined = clientIp;
+            if (!ipToPersist) {
+                // Fallback to server external IP (less accurate)
+                const myInfo = await ipInfoCtr.getMyIp();
+                ipToPersist = myInfo?.result?.ip as string | undefined;
+            }
+            if (ipToPersist) {
+                await userCtr.updateUser(context, {
+                    filter: { id: context.req.session.user.id },
+                    update: { lastLoginIp: ipToPersist },
+                });
             }
         }
-        catch {
-            throwError({
-                message: 'Failed to get IP information',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+        catch (error) {
+            console.warn('Failed to update user IP in checkAuth:', error);
         }
 
         return {
@@ -802,11 +799,13 @@ export const authnCtr = {
         }
 
         // Get IP address and update user's lastLoginIp
-        let clientIp: string | undefined;
         try {
-            const myIpInfo = await ipInfoCtr.getMyIp();
-            clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
-
+            const headerIp = extractClientIp(context?.req, true);
+            let clientIp = headerIp;
+            if (!clientIp) {
+                const myIpInfo = await ipInfoCtr.getMyIp();
+                clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+            }
             if (clientIp) {
                 await userCtr.updateUser(context, {
                     filter: { id: userFound.result.id },
