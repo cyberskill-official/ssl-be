@@ -97,6 +97,20 @@ export const eventCtr = {
             });
         }
 
+        if (!description || description.length < 25) {
+            throwError({
+                message: 'Description minimum: 50 characters.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (!description || description.length > 130) {
+            throwError({
+                message: 'Description maximum: 130 characters.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         if (!image && type !== E_EventType.CLUB_VISIT) {
             throwError({
                 message: 'Image upload is required for all events.',
@@ -232,13 +246,6 @@ export const eventCtr = {
         }
 
         if (type === E_EventType.PRIVATE) {
-            if (!description || description.length < 50) {
-                throwError({
-                    message: 'Description minimum: 50 characters.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-
             if (!location) {
                 throwError({
                     message: 'Event location is required for Event Announcements.',
