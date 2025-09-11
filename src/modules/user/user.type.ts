@@ -123,6 +123,7 @@ export interface I_User extends I_GenericDocument {
     lastLoginIp?: string;
     settings?: I_UserSettings;
     flagCount?: number;
+    hasUpcomingEvent?: boolean;
     membershipExpiresAt?: Date;
 }
 

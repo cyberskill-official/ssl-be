@@ -18,12 +18,19 @@ export function validateTimeBasedEvent(
 ): I_TimeBasedEventValidation {
     const { startDate, endDate, startTime, endTime } = eventData;
 
-    const startTimeParsed = parse(startTime, 'hh:mm a', new Date());
-    const endTimeParsed = parse(endTime, 'hh:mm a', new Date());
+    // Support both 12h (with AM/PM) and 24h (HH:mm) formats
+    const hasMeridianStart = /\bAM\b|\bPM\b/i.test(startTime);
+    const hasMeridianEnd = /\bAM\b|\bPM\b/i.test(endTime);
+
+    const startFormat = hasMeridianStart ? 'hh:mm a' : 'HH:mm';
+    const endFormat = hasMeridianEnd ? 'hh:mm a' : 'HH:mm';
+
+    const startTimeParsed = parse(startTime, startFormat, new Date());
+    const endTimeParsed = parse(endTime, endFormat, new Date());
 
     if (!isValid(startTimeParsed) || !isValid(endTimeParsed)) {
         throwError({
-            message: 'Invalid time format. Please use format like "10:30 AM" or "02:15 PM".',
+            message: 'Invalid time format. Use "10:30 AM" or "02:15 PM" for 12h; "14:30" for 24h.',
             status: RESPONSE_STATUS.BAD_REQUEST,
         });
     }

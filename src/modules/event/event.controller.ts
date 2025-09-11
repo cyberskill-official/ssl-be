@@ -15,6 +15,7 @@ import { conversationCtr, E_ConversationType } from '#modules/conversation/index
 import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
 import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
 
@@ -89,6 +90,15 @@ export const eventCtr = {
         const currentUser = await authnCtr.getUserFromSession(context);
         const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
         doc.createdById = currentUser.id;
+
+        const membershipExpiresAt = currentUser.membershipExpiresAt;
+
+        if (!membershipExpiresAt || new Date(membershipExpiresAt) < new Date()) {
+            throwError({
+                message: 'Your membership has expired. Please renew your membership to create an event.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
 
         if (!type) {
             throwError({
@@ -339,6 +349,14 @@ export const eventCtr = {
             return eventCreated;
         }
 
+        // If event is active and not expired, mark user's hasUpcomingEvent = true via user controller
+        if (doc.createdById) {
+            const notExpired = !doc.endDate || isAfter(doc.endDate, new Date());
+            if (doc.isActive && notExpired) {
+                await userCtr.updateUser(context, { filter: { id: doc.createdById }, update: { hasUpcomingEvent: true } });
+            }
+        }
+
         let pinStyle;
 
         if (type === E_EventType.CLUB_VISIT) {
@@ -426,6 +444,22 @@ export const eventCtr = {
             }
         }
 
+        // Maintain hasUpcomingEvent if isActive toggled or endDate changed
+        if (eventFound.success && eventFound.result.createdById) {
+            const beforeActive = eventFound.result.isActive === true;
+            const beforeFuture = !eventFound.result.endDate || isAfter(eventFound.result.endDate, new Date());
+            const before = beforeActive && beforeFuture;
+
+            const afterActive = (update.isActive !== undefined ? update.isActive : eventFound.result.isActive) === true;
+            const afterEndDate = update.endDate !== undefined ? update.endDate : eventFound.result.endDate;
+            const afterFuture = !afterEndDate || isAfter(afterEndDate, new Date());
+            const after = afterActive && afterFuture;
+
+            if (before !== after) {
+                await userCtr.updateUser(context, { filter: { id: eventFound.result.createdById }, update: { hasUpcomingEvent: after } });
+            }
+        }
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
@@ -454,6 +488,17 @@ export const eventCtr = {
             if (!locationDeleted.success) {
                 return locationDeleted;
             }
+        }
+
+        // If deleting an upcoming/active event, recompute hasUpcomingEvent for the owner
+        if (eventFound.result.createdById) {
+            const ownerId = eventFound.result.createdById;
+            const agg = await mongooseCtr.aggregate([
+                { $match: { createdById: ownerId, isActive: true, isDel: { $ne: true }, $expr: { $gt: ['$endDate', new Date()] } } },
+                { $limit: 1 },
+            ]) as unknown as Array<unknown>;
+            const hasAny = Array.isArray(agg) && agg.length > 0;
+            await userCtr.updateUser(context, { filter: { id: ownerId }, update: { hasUpcomingEvent: hasAny } });
         }
 
         return mongooseCtr.deleteOne(filter, options);

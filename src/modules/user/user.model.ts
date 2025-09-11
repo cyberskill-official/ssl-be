@@ -589,6 +589,10 @@ export const UserModel = mongo.createModel<I_User>({
             type: Number,
             default: 0,
         },
+        hasUpcomingEvent: {
+            type: Boolean,
+            default: false,
+        },
         membershipExpiresAt: {
             type: Date,
             default: null,

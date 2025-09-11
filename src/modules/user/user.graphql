@@ -203,7 +203,6 @@ type T_User {
     willingnessToGoIds: [String]
     willingnessToGo: [T_Tag]
     rulesOfEngagementIds: [String]
-    rulesOfEngagement: [T_Tag]
     roles: [T_Role]
     isActive: Boolean
     isOnline: Boolean
@@ -212,6 +211,7 @@ type T_User {
     settings: T_UserSettings
     flagCount: Int
     membershipExpiresAt: DateTime
+    hasUpcomingEvent: Boolean
 }
 
 input Input_QueryUser {
@@ -290,6 +290,7 @@ input Input_UpdateUser {
     settings: Input_UserSettings
     flagCount: Int
     membershipExpiresAt: DateTime
+    hasUpcomingEvent: Boolean
 }
 
 type T_Response_User {
