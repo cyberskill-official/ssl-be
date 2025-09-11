@@ -111,12 +111,23 @@ const tags = [
     { name: 'Mixed', type: E_TagType.ETHNICITY },
 
     // Catalogue
-    { name: 'Big City', type: E_TagType.CATALOGUE },
-    { name: 'Europe City', type: E_TagType.CATALOGUE },
+    { name: 'Big city', type: E_TagType.CATALOGUE },
+    { name: 'European city', type: E_TagType.CATALOGUE },
     { name: 'South Europe', type: E_TagType.CATALOGUE },
     { name: 'Beach', type: E_TagType.CATALOGUE },
     { name: 'Island', type: E_TagType.CATALOGUE },
     { name: 'Nature', type: E_TagType.CATALOGUE },
+    { name: 'BDSM', type: E_TagType.CATALOGUE },
+    { name: 'Soft', type: E_TagType.CATALOGUE },
+    { name: 'Chemistry', type: E_TagType.CATALOGUE },
+    { name: 'Drinks', type: E_TagType.CATALOGUE },
+    { name: 'Spontaneous' },
+    { name: 'Passion', type: E_TagType.CATALOGUE },
+    { name: 'Orgy', type: E_TagType.CATALOGUE },
+    { name: 'Masquerade', type: E_TagType.CATALOGUE },
+    { name: 'Dinner party', type: E_TagType.CATALOGUE },
+    { name: 'Holidays', type: E_TagType.CATALOGUE },
+    { name: 'House party', type: E_TagType.CATALOGUE },
 ];
 
 export async function up(db: C_Db) {

@@ -83,7 +83,23 @@ export const userCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryUser>,
     ): Promise<I_Return<T_PaginateResult<I_User>>> => {
-        const users = await mongooseCtr.findPaging(filter, options);
+        // Normalize filter to support case-insensitive regex for username/displayName
+        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
+
+        const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        if (typeof (filter as any)?.username === 'string' && (filter as any).username.trim() !== '') {
+            const escaped = escapeRegex((filter as any).username.trim());
+            // contains search (case-insensitive). Use ^ for startsWith if needed
+            (computedFilter as any).username = { $regex: escaped, $options: 'i' };
+        }
+
+        if (typeof (filter as any)?.displayName === 'string' && (filter as any).displayName.trim() !== '') {
+            const escaped = escapeRegex((filter as any).displayName.trim());
+            (computedFilter as any).displayName = { $regex: escaped, $options: 'i' };
+        }
+
+        const users = await mongooseCtr.findPaging(computedFilter as unknown as never, options);
 
         if (!users.success) {
             return users;
