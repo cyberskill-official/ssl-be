@@ -5,6 +5,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { applyNameFilters } from '#shared/util/filter-name.js';
+
 import type { I_Country, I_Input_QueryCountry } from './country.type.js';
 
 import { CountryModel } from './country.model.js';
@@ -22,34 +24,15 @@ export const countryCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryCountry>,
     ): Promise<I_Return<T_PaginateResult<I_Country>>> => {
-        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
-
-        if (typeof filter?.name === 'string' && filter.name.trim() !== '') {
-            const escaped = filter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['name'] = { $regex: `^${escaped}`, $options: 'i' };
-        }
-
-        // Support searching by currency fields as well (case-insensitive, partial)
-        if (
-            typeof filter?.currency_name === 'string'
-            && filter.currency_name.trim() !== ''
-        ) {
-            const escaped = filter.currency_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['currency_name'] = { $regex: escaped, $options: 'i' };
-        }
-
-        if (typeof filter?.currency === 'string' && filter.currency.trim() !== '') {
-            const escaped = filter.currency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['currency'] = { $regex: escaped, $options: 'i' };
-        }
-
-        if (
-            typeof filter?.currency_symbol === 'string'
-            && filter.currency_symbol.trim() !== ''
-        ) {
-            const escaped = filter.currency_symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['currency_symbol'] = { $regex: escaped, $options: 'i' };
-        }
+        const computedFilter = applyNameFilters(
+            { ...(filter || {}) },
+            [
+                { key: 'name', value: filter?.name, mode: 'startsWith' },
+                { key: 'currency_name', value: filter?.currency_name, mode: 'contains' },
+                { key: 'currency', value: filter?.currency, mode: 'contains' },
+                { key: 'currency_symbol', value: filter?.currency_symbol, mode: 'contains' },
+            ],
+        );
 
         return mongooseCtr.findPaging(computedFilter as unknown as never, options);
     },

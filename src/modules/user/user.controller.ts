@@ -22,7 +22,7 @@ import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
-import { validate } from '#shared/util/index.js';
+import { applyNameFilters, validate } from '#shared/util/index.js';
 
 import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
 
@@ -83,21 +83,13 @@ export const userCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryUser>,
     ): Promise<I_Return<T_PaginateResult<I_User>>> => {
-        // Normalize filter to support case-insensitive regex for username/displayName
-        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
-
-        const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-        if (typeof (filter as any)?.username === 'string' && (filter as any).username.trim() !== '') {
-            const escaped = escapeRegex((filter as any).username.trim());
-            // contains search (case-insensitive). Use ^ for startsWith if needed
-            (computedFilter as any).username = { $regex: escaped, $options: 'i' };
-        }
-
-        if (typeof (filter as any)?.displayName === 'string' && (filter as any).displayName.trim() !== '') {
-            const escaped = escapeRegex((filter as any).displayName.trim());
-            (computedFilter as any).displayName = { $regex: escaped, $options: 'i' };
-        }
+        const computedFilter = applyNameFilters(
+            { ...(filter || {}) },
+            [
+                { key: 'username', value: filter?.username, mode: 'startsWith' },
+                { key: 'displayName', value: filter?.email, mode: 'startsWith' },
+            ],
+        );
 
         const users = await mongooseCtr.findPaging(computedFilter as unknown as never, options);
 

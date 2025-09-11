@@ -5,6 +5,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { applyNameFilters } from '#shared/util/filter-name.js';
+
 import type { I_Input_QuerySubRegion, I_SubRegion } from './sub-region.type.js';
 
 import { SubRegionModel } from './sub-region.model.js';
@@ -22,12 +24,12 @@ export const subRegionCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QuerySubRegion>,
     ): Promise<I_Return<T_PaginateResult<I_SubRegion>>> => {
-        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
-
-        if (typeof filter?.name === 'string' && filter.name.trim() !== '') {
-            const escaped = filter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['name'] = { $regex: `^${escaped}`, $options: 'i' };
-        }
+        const computedFilter = applyNameFilters(
+            { ...(filter || {}) },
+            [
+                { key: 'name', value: filter?.name, mode: 'startsWith' },
+            ],
+        );
 
         return mongooseCtr.findPaging(computedFilter as unknown as never, options);
     },

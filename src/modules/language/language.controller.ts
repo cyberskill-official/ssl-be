@@ -5,6 +5,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { applyNameFilters } from '#shared/util/filter-name.js';
+
 import type { I_Input_QueryLanguage, I_Language } from './language.type.js';
 
 import { LanguageModel } from './language.model.js';
@@ -22,12 +24,12 @@ export const languageCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryLanguage>,
     ): Promise<I_Return<T_PaginateResult<I_Language>>> => {
-        const computedFilter = { ...(filter || {}) } as Record<string, unknown>;
-
-        if (typeof filter?.name === 'string' && filter.name.trim() !== '') {
-            const escaped = filter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            computedFilter['name'] = { $regex: `^${escaped}`, $options: 'i' };
-        }
+        const computedFilter = applyNameFilters(
+            { ...(filter || {}) },
+            [
+                { key: 'name', value: filter?.name, mode: 'startsWith' },
+            ],
+        );
 
         return mongooseCtr.findPaging(computedFilter as unknown as never, options);
     },
