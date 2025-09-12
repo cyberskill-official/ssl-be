@@ -14,6 +14,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
@@ -110,7 +111,24 @@ export const followCtr = {
             });
         }
 
-        return followCtr.createFollow(context, { doc: { userId: currentUser.id, followId } });
+        // Create follow relationship
+        const followResult = await followCtr.createFollow(context, { doc: { userId: currentUser.id, followId } });
+
+        if (followResult.success) {
+            // Increment follower count for the user being followed
+            await userCtr.updateUser(context, {
+                filter: { id: followId },
+                update: { $inc: { followerCount: 1 } },
+            });
+
+            // Increment following count for the current user
+            await userCtr.updateUser(context, {
+                filter: { id: currentUser.id },
+                update: { $inc: { followingCount: 1 } },
+            });
+        }
+
+        return followResult;
     },
     unFollow: async (
         context: I_Context,
@@ -125,6 +143,23 @@ export const followCtr = {
             });
         }
 
-        return followCtr.deleteFollow(context, { filter: { userId: currentUser.id, followId: filter.followId } });
+        // Delete follow relationship
+        const unfollowResult = await followCtr.deleteFollow(context, { filter: { userId: currentUser.id, followId: filter.followId } });
+
+        if (unfollowResult.success) {
+            // Decrement follower count for the user being unfollowed
+            await userCtr.updateUser(context, {
+                filter: { id: filter.followId },
+                update: { $inc: { followerCount: -1 } },
+            });
+
+            // Decrement following count for the current user
+            await userCtr.updateUser(context, {
+                filter: { id: currentUser.id },
+                update: { $inc: { followingCount: -1 } },
+            });
+        }
+
+        return unfollowResult;
     },
 };

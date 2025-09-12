@@ -211,8 +211,10 @@ type T_User {
     lastLoginIp: String
     settings: T_UserSettings
     flagCount: Int
-    membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
+    membershipExpiresAt: DateTime
+    followerCount: Int
+    followingCount: Int
 }
 
 input Input_QueryUser {
@@ -241,6 +243,10 @@ input Input_QueryUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
+    hasUpcomingEvent: Boolean
+    membershipExpiresAt: DateTime
+    followerCount: Int
+    followingCount: Int
 }
 
 input Input_CreateUser {
@@ -265,6 +271,9 @@ input Input_CreateUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
+    membershipExpiresAt: DateTime
+    hasUpcomingEvent: Boolean
+    followerCount: Int
 }
 
 input Input_UpdateUser {
@@ -292,6 +301,7 @@ input Input_UpdateUser {
     flagCount: Int
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
+    followerCount: Int
 }
 
 type T_Response_User {

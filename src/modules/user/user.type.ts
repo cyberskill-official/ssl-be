@@ -125,6 +125,8 @@ export interface I_User extends I_GenericDocument {
     flagCount?: number;
     hasUpcomingEvent?: boolean;
     membershipExpiresAt?: Date;
+    followerCount?: number;
+    followingCount?: number;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';

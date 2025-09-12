@@ -597,6 +597,14 @@ export const UserModel = mongo.createModel<I_User>({
             type: Date,
             default: null,
         },
+        followerCount: {
+            type: Number,
+            default: 0,
+        },
+        followingCount: {
+            type: Number,
+            default: 0,
+        },
     },
     virtuals: [
         {
