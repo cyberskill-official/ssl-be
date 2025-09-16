@@ -16,8 +16,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/authn.controller.js';
-
 import type {
     I_Input_CreateLocation,
     I_Input_GetLocationInViewport,
@@ -92,15 +90,6 @@ export const locationCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
-        const authChecked = await authnCtr.checkAuth(context);
-
-        if (!authChecked.success) {
-            throwError({
-                message: 'Unauthorized',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
-        }
-
         if (!filter) {
             throwError({
                 message: 'Filter is required',
@@ -108,7 +97,6 @@ export const locationCtr = {
             });
         }
 
-        // Build base filter with viewport
         const baseFilter: any = {
             map: {
                 longitude: { $gte: filter.southWestLongitude, $lte: filter.northEastLongitude },
@@ -116,131 +104,72 @@ export const locationCtr = {
             },
         };
 
-        // If filter.entityType is provided, add it to the base filter
         if (filter.entityType) {
             baseFilter.entityType = filter.entityType;
         }
 
-        if (filter.entityType !== E_LocationEntityType.USER || !authChecked.success) {
-            return mongooseCtr.findPaging(baseFilter, options);
+        if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
+            baseFilter.eventType = filter.eventType;
         }
 
-        const currentUser = authChecked.result.user;
-        const tempLocationId = currentUser?.settings?.temporaryLocation?.locationId;
-        const tempLocationEndAt = currentUser?.settings?.temporaryLocation?.endAt;
-        const partner1LocationId = currentUser?.partner1?.locationId;
-        const currentUserId = currentUser?.id;
-
-        const isLocationInViewport = (location: I_Location) => {
-            if (!location.map)
-                return false;
-            const { map } = location;
-            return (
-                map.longitude >= filter.southWestLongitude
-                && map.longitude <= filter.northEastLongitude
-                && map.latitude >= filter.southWestLatitude
-                && map.latitude <= filter.northEastLatitude
-            );
-        };
-
-        // Utility: create a single-item paginated response
-        const createSingleResponse = (
-            location: I_Location,
-        ): I_Return<T_PaginateResult<I_Location>> => ({
-            success: true as const,
-            result: {
-                docs: [location],
-                totalDocs: 1,
-                limit: options?.limit || 10,
-                hasPrevPage: false,
-                hasNextPage: false,
-                page: 1,
-                totalPages: 1,
-                offset: 0,
-                prevPage: 0,
-                nextPage: 0,
-                pagingCounter: 1,
-                meta: undefined,
-            },
+        // Lấy toàn bộ location trong viewport trước
+        const pagingResult = await mongooseCtr.findPaging(baseFilter, {
+            ...options,
+            populate: [{ path: 'entity' }], // nên populate entity để FE có đủ data
         });
-
-        // Check if temporary location is still valid
-        const isTemporaryLocationValid
-            = tempLocationId && tempLocationEndAt && new Date(tempLocationEndAt) > new Date();
-
-        const excludeIds: string[] = [];
-
-        // Priority 1: valid temporary location
-        if (isTemporaryLocationValid) {
-            const tempLocation = await locationCtr.getLocation(context, { filter: { id: tempLocationId } });
-            if (tempLocation.success && tempLocation.result && isLocationInViewport(tempLocation.result)) {
-                return createSingleResponse(tempLocation.result);
-            }
-            excludeIds.push(tempLocationId);
-        }
-
-        // Priority 2: partner1 location if no valid temporary location
-        if (partner1LocationId && !isTemporaryLocationValid) {
-            const partner1Location = await locationCtr.getLocation(context, { filter: { id: partner1LocationId } });
-            if (partner1Location.success && partner1Location.result && isLocationInViewport(partner1Location.result)) {
-                return createSingleResponse(partner1Location.result);
-            }
-            excludeIds.push(partner1LocationId);
-        }
-
-        // Build final filter for paging
-        let finalFilter: any = {
-            ...baseFilter,
-            $and: [
-                baseFilter,
-                {
-                    $or: [
-                        { entityType: { $ne: E_LocationEntityType.USER } },
-                        { entityType: E_LocationEntityType.USER, id: { $nin: excludeIds } },
-                    ],
-                },
-            ],
-        };
-
-        // If temporary location is active, exclude user's original location
-        if (isTemporaryLocationValid && currentUserId) {
-            finalFilter = {
-                ...baseFilter,
-                $and: [
-                    baseFilter,
-                    {
-                        $or: [
-                            { entityType: { $ne: E_LocationEntityType.USER } },
-                            { entityType: E_LocationEntityType.USER, entityId: { $ne: currentUserId } },
-                            {
-                                entityType: E_LocationEntityType.USER,
-                                entityId: currentUserId,
-                                id: tempLocationId,
-                            },
-                        ],
-                    },
-                ],
-            };
-        }
-
-        const pagingResult = await mongooseCtr.findPaging(finalFilter, options);
 
         if (!pagingResult.success || !pagingResult.result) {
             return pagingResult as any;
         }
 
-        // Deduplicate by entity id
-        const docs = pagingResult.result.docs || [];
+        let docs = pagingResult.result.docs || [];
+
+        // Nếu entityType = USER → áp dụng flow temp/partner để thay thế trong list
+        if (filter.entityType === E_LocationEntityType.USER) {
+            const currentUser = context.req?.session?.user;
+            const tempLocationId = currentUser?.settings?.temporaryLocation?.locationId;
+            const tempLocationEndAt = currentUser?.settings?.temporaryLocation?.endAt;
+            const partner1LocationId = currentUser?.partner1?.locationId;
+            const currentUserId = currentUser?.id;
+
+            const isTempValid
+            = tempLocationId && tempLocationEndAt && new Date(tempLocationEndAt) > new Date();
+
+            // Nếu temp hợp lệ → thay thế location gốc của user bằng temp
+            if (isTempValid && currentUserId) {
+                const tempLocation = await locationCtr.getLocation(context, {
+                    filter: { id: tempLocationId },
+                    populate: [{ path: 'entity' }],
+                });
+                if (tempLocation.success && tempLocation.result) {
+                    docs = docs.filter(d => d.entityId !== currentUserId); // loại bản gốc
+                    docs.push(tempLocation.result); // thêm temp location
+                }
+            }
+
+            // Nếu không có temp → check partner1
+            if (!isTempValid && partner1LocationId) {
+                const partner1Location = await locationCtr.getLocation(context, {
+                    filter: { id: partner1LocationId },
+                    populate: [{ path: 'entity' }],
+                });
+                if (partner1Location.success && partner1Location.result) {
+                    docs = docs.filter(d => d.id !== partner1LocationId); // tránh trùng
+                    docs.push(partner1Location.result);
+                }
+            }
+        }
+
+        // Deduplicate theo entity id
         const seen = new Set<string>();
         const deduped: I_Location[] = [];
-
         for (const d of docs) {
             const entityIdFromEntity = (d as any)?.entity?.id || (d as any)?.entity?._id;
             const key
-                = entityIdFromEntity
-                    || d.entityId
-                    || d.id
-                    || (d.map ? `${d.map.latitude}-${d.map.longitude}` : '');
+            = entityIdFromEntity
+                || d.entityId
+                || d.id
+                || (d.map ? `${d.map.latitude}-${d.map.longitude}` : '');
             const sk = key ? String(key) : '';
             if (sk) {
                 if (seen.has(sk))
@@ -250,7 +179,7 @@ export const locationCtr = {
             deduped.push(d);
         }
 
-        // Recalculate pagination meta
+        // Rebuild pagination meta
         const limit = pagingResult.result.limit || options?.limit || 10;
         const page = pagingResult.result.page || 1;
         const totalDocs = deduped.length;
@@ -273,8 +202,9 @@ export const locationCtr = {
         };
 
         return {
-            success: true as const,
+            success: true,
             result: newResult,
         };
     },
+
 };

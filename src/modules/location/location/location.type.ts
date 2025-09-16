@@ -1,7 +1,7 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/index.js';
-import type { I_Event } from '#modules/event/index.js';
+import type { E_EventType, I_Event } from '#modules/event/index.js';
 import type { I_User } from '#modules/user/index.js';
 
 import type { I_City } from '../city/index.js';
@@ -62,6 +62,8 @@ export interface I_Location extends I_GenericDocument {
     entityType?: E_LocationEntityType;
     entityId?: string;
     entity?: I_User | I_Event | I_Destination;
+    eventType?: E_EventType;
+    eventId?: string;
 }
 
 export type T_Location_Populate = 'region' | 'subRegion' | 'country' | 'state' | 'city' | 'entity';
@@ -78,4 +80,5 @@ export interface I_Input_GetLocationInViewport {
     northEastLatitude: number;
     northEastLongitude: number;
     entityType?: E_LocationEntityType;
+    eventType?: E_EventType;
 }
