@@ -11,6 +11,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { isAfter } from 'date-fns';
 import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
@@ -18,6 +19,8 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/conversation/index.js';
 import { E_ParticipantRole, participantCtr } from '#modules/conversation/participant/index.js';
+import { eventCtr } from '#modules/event/index.js';
+import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type {
@@ -419,7 +422,14 @@ export const invitationCtr = {
 
                 case E_InvitationType.EVENT:
                     if (invitation.result.entityId) {
-                        // TODO: Implement event participation logic
+                        const eventFound = await eventCtr.getEvent(context, { filter: { id: invitation.result.entityId } });
+                        if (eventFound.success) {
+                            const isActive = eventFound.result.isActive === true;
+                            const future = !eventFound.result.endDate || isAfter(eventFound.result.endDate, new Date());
+                            if (isActive && future) {
+                                await userCtr.updateUser(context, { filter: { id: currentUser.id }, update: { hasUpcomingEvent: true } });
+                            }
+                        }
                     }
                     break;
 

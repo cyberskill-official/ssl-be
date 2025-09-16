@@ -111,24 +111,40 @@ export const followCtr = {
             });
         }
 
+        // If already following, return the existing relationship populated (idempotent)
+        const existingFollow = await followCtr.getFollow(context, {
+            filter: { userId: currentUser.id, followId },
+            populate: ['user', 'follow'],
+        });
+
+        if (existingFollow.success) {
+            return existingFollow;
+        }
+
         // Create follow relationship
         const followResult = await followCtr.createFollow(context, { doc: { userId: currentUser.id, followId } });
 
         if (followResult.success) {
             // Increment follower count for the user being followed
-            await userCtr.updateUser(context, {
+            await userCtr.updateUsers(context, {
                 filter: { id: followId },
                 update: { $inc: { followerCount: 1 } },
             });
 
             // Increment following count for the current user
-            await userCtr.updateUser(context, {
+            await userCtr.updateUsers(context, {
                 filter: { id: currentUser.id },
                 update: { $inc: { followingCount: 1 } },
             });
         }
 
-        return followResult;
+        // Always return populated follow
+        const populatedFollow = await followCtr.getFollow(context, {
+            filter: { userId: currentUser.id, followId },
+            populate: ['user', 'follow'],
+        });
+
+        return populatedFollow.success ? populatedFollow : followResult;
     },
     unFollow: async (
         context: I_Context,
@@ -148,13 +164,13 @@ export const followCtr = {
 
         if (unfollowResult.success) {
             // Decrement follower count for the user being unfollowed
-            await userCtr.updateUser(context, {
+            await userCtr.updateUsers(context, {
                 filter: { id: filter.followId },
                 update: { $inc: { followerCount: -1 } },
             });
 
             // Decrement following count for the current user
-            await userCtr.updateUser(context, {
+            await userCtr.updateUsers(context, {
                 filter: { id: currentUser.id },
                 update: { $inc: { followingCount: -1 } },
             });
