@@ -81,8 +81,6 @@ type T_Location {
     entityType: E_LocationEntityType
     entityId: String
     entity: U_LocationEntity
-    eventType: E_EventType
-    eventId: String
 }
 
 input Input_Location {
@@ -110,8 +108,6 @@ input Input_QueryLocation {
     pinStyle: E_PinStyle
     entityType: E_LocationEntityType
     entityId: String
-    eventType: E_EventType
-    eventId: String
 }
 
 input Input_GetLocationInViewport {

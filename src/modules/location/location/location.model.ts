@@ -1,8 +1,6 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_EventType } from '#modules/event/event.type.js';
-
 import type { I_Location } from './location.type.js';
 
 import { E_Destination_PinStyle, E_Event_PinStyle, E_LocationEntityType, E_User_PinStyle } from './location.type.js';
@@ -62,10 +60,6 @@ export const LocationModel = mongo.createModel<I_Location>({
         entityId: {
             type: String,
         },
-        eventType: { type: String, enum: Object.values(E_EventType) },
-        eventId: {
-            type: String,
-        },
     },
     virtuals: [
         {
@@ -118,15 +112,6 @@ export const LocationModel = mongo.createModel<I_Location>({
             options: {
                 ref: doc => doc.entityType,
                 localField: 'entityId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-        {
-            name: 'event',
-            options: {
-                ref: 'Event',
-                localField: 'eventId',
                 foreignField: 'id',
                 justOne: true,
             },

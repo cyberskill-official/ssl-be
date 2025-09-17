@@ -62,8 +62,6 @@ export interface I_Location extends I_GenericDocument {
     entityType?: E_LocationEntityType;
     entityId?: string;
     entity?: I_User | I_Event | I_Destination;
-    eventType?: E_EventType;
-    eventId?: string;
 }
 
 export type T_Location_Populate = 'region' | 'subRegion' | 'country' | 'state' | 'city' | 'entity';
