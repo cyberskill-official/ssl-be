@@ -112,10 +112,38 @@ export const locationCtr = {
             baseFilter.eventType = filter.eventType;
         }
 
-        // Lấy toàn bộ location trong viewport trước
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
             ...options,
-            populate: [{ path: 'entity' }], // nên populate entity để FE có đủ data
+            populate: [
+                {
+                    path: 'entity',
+                    populate: [
+                        { path: 'partner1.gallery' },
+                        { path: 'partner2.gallery' },
+                        {
+                            path: 'partner2.location',
+                            populate: [
+                                { path: 'country' },
+                                { path: 'city' },
+                            ],
+                        },
+                        {
+                            path: 'settings.temporaryLocation.location',
+                            populate: [
+                                { path: 'country' },
+                                { path: 'city' },
+                            ],
+                        },
+                        {
+                            path: 'location',
+                            populate: [
+                                { path: 'country' },
+                                { path: 'city' },
+                            ],
+                        },
+                    ],
+                },
+            ],
         });
 
         if (!pagingResult.success || !pagingResult.result) {
@@ -124,7 +152,20 @@ export const locationCtr = {
 
         let docs = pagingResult.result.docs || [];
 
-        // Nếu entityType = USER → áp dụng flow temp/partner để thay thế trong list
+        // === Bổ sung: join thủ công partner1.location theo locationId (UUID) ===
+        for (const d of docs) {
+            const partner1LocationId = (d as any)?.entity?.partner1?.locationId;
+            if (partner1LocationId) {
+                const partner1Location = await locationCtr.getLocation(context, {
+                    filter: { id: partner1LocationId },
+                    populate: [{ path: 'country' }, { path: 'city' }],
+                });
+                if (partner1Location.success && partner1Location.result) {
+                    (d as any).entity.partner1.location = partner1Location.result;
+                }
+            }
+        }
+
         if (filter.entityType === E_LocationEntityType.USER) {
             const currentUser = context.req?.session?.user;
             const tempLocationId = currentUser?.settings?.temporaryLocation?.locationId;
@@ -164,7 +205,7 @@ export const locationCtr = {
         const seen = new Set<string>();
         const deduped: I_Location[] = [];
         for (const d of docs) {
-            const entityIdFromEntity = (d as any)?.entity?.id || (d as any)?.entity?._id;
+            const entityIdFromEntity = d?.entity?.id;
             const key
             = entityIdFromEntity
                 || d.entityId
