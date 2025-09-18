@@ -15,6 +15,7 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_Event } from '#modules/event/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
@@ -105,7 +106,7 @@ export const locationCtr = {
                     { path: 'profilePurpose' },
                     ...(filter.entityType === E_LocationEntityType.EVENT
                         ? [
-                                { path: 'createdBy' },
+                                'createdBy',
                                 {
                                     path: 'createdBy',
                                     populate: [
@@ -125,6 +126,14 @@ export const locationCtr = {
                                         },
                                     ],
                                 },
+                                'location',
+                                {
+                                    path: 'location',
+                                    populate: [
+                                        { path: 'country' },
+                                        { path: 'city' },
+                                    ],
+                                },
                             ]
                         : []),
                     ...(filter.entityType === E_LocationEntityType.USER
@@ -139,16 +148,32 @@ export const locationCtr = {
                                                 'uploadedBy',
                                             ],
                                         },
+                                        'location',
+                                        {
+                                            path: 'location',
+                                            populate: [
+                                                { path: 'country' },
+                                                { path: 'city' },
+                                            ],
+                                        },
                                     ],
                                 },
                                 {
-                                    path: 'partner1',
+                                    path: 'partner2',
                                     populate: [
                                         'gallery',
                                         {
                                             path: 'gallery',
                                             populate: [
                                                 'uploadedBy',
+                                            ],
+                                        },
+                                        'location',
+                                        {
+                                            path: 'location',
+                                            populate: [
+                                                { path: 'country' },
+                                                { path: 'city' },
                                             ],
                                         },
                                     ],
@@ -170,6 +195,15 @@ export const locationCtr = {
             return pagingResult;
         }
 
-        return pagingResult;
+        let docs: I_Location[] = pagingResult.result.docs ?? [];
+
+        if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
+            docs = docs.filter((d) => {
+                const e = d.entity as I_Event | undefined;
+                return e?.type === filter.eventType;
+            });
+        }
+
+        return { success: true, result: { ...pagingResult.result, docs } };
     },
 };
