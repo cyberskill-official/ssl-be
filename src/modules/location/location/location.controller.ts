@@ -125,7 +125,20 @@ export const locationCtr = {
         // ---- populate setup
         const entityPopulate: PopulateOptions = {
             path: 'entity',
-            populate: [{ path: 'lookingFor' }, { path: 'profilePurpose' }],
+            populate: [
+                { path: 'lookingFor' },
+                { path: 'profilePurpose' },
+                ...(filter.entityType === E_LocationEntityType.EVENT
+                    ? [
+                            { path: 'createdBy' },
+                            {
+                                path: 'location',
+                                model: 'Location',
+                                populate: [{ path: 'country' }, { path: 'city' }],
+                            },
+                        ]
+                    : []),
+            ],
         };
 
         const populates: PopulateOptions[] = [
@@ -153,17 +166,38 @@ export const locationCtr = {
             });
         }
 
-        // ---- fill outer city/country when only ids exist
+        // ---- fallback fill city/country khi populate null
         for (const d of docs) {
+        // City fallback
             if (d.cityId && !d.city) {
                 const cityRes = await cityCtr.getCity(context, { filter: { id: d.cityId } });
-                if (cityRes.success && cityRes.result)
+                if (cityRes.success && cityRes.result) {
                     d.city = cityRes.result;
+                }
             }
+
+            // Country fallback (ít khi cần vì populate đang ok)
             if (d.countryId && !d.country) {
                 const countryRes = await countryCtr.getCountry(context, { filter: { id: d.countryId } });
-                if (countryRes.success && countryRes.result)
+                if (countryRes.success && countryRes.result) {
                     d.country = countryRes.result;
+                }
+            }
+        }
+
+        // ---- fallback cho EVENT: populate location nếu bị null
+        if (filter.entityType === E_LocationEntityType.EVENT) {
+            for (const d of docs) {
+                const e = d.entity as I_Event | undefined;
+                if (e?.locationId && !e.location) {
+                    const locRes = await locationCtr.getLocation(context, {
+                        filter: { id: e.locationId },
+                        populate: [{ path: 'country' }, { path: 'city' }],
+                    });
+                    if (locRes.success && locRes.result) {
+                        e.location = locRes.result;
+                    }
+                }
             }
         }
 
