@@ -92,7 +92,6 @@ export const eventCtr = {
         doc.createdById = currentUser.id;
 
         const membershipExpiresAt = currentUser.membershipExpiresAt;
-
         if (!membershipExpiresAt || new Date(membershipExpiresAt) < new Date()) {
             throwError({
                 message: 'Your membership has expired. Please renew your membership to create an event.',
@@ -149,11 +148,7 @@ export const eventCtr = {
             }
 
             const destinationFound = await destinationCtr.getDestination(context, {
-                filter: {
-                    id: destinationId,
-                    type: E_DestinationType.CLUB,
-                    isActive: true,
-                },
+                filter: { id: destinationId, type: E_DestinationType.CLUB, isActive: true },
             });
 
             if (!destinationFound.success) {
@@ -171,18 +166,21 @@ export const eventCtr = {
                 const locationFound = await locationCtr.getLocation(context, { filter: { id: destination.locationId } });
 
                 if (locationFound.success && locationFound.result) {
-                    const countryId = (locationFound.result).countryId;
-                    const cityId = (locationFound.result).cityId;
+                    const countryId = locationFound.result.countryId;
+                    const cityId = locationFound.result.cityId;
+
                     if (countryId) {
                         const countryFound = await countryCtr.getCountry(context, { filter: { id: countryId } });
                         if (countryFound.success && countryFound.result)
-                            countryName = (countryFound.result).name ?? countryName;
+                            countryName = countryFound.result.name ?? countryName;
                     }
+
                     if (cityId) {
                         const cityFound = await cityCtr.getCity(context, { filter: { id: cityId } });
                         if (cityFound.success && cityFound.result)
-                            cityName = (cityFound.result).name ?? cityName;
+                            cityName = cityFound.result.name ?? cityName;
                     }
+
                     if (!destination.location) {
                         doc.location = locationFound.result;
                     }
@@ -190,9 +188,7 @@ export const eventCtr = {
             }
 
             const autoTitle = `Going clubbing in ${countryName}${countryName && cityName ? ', ' : ''}${cityName}`.trim();
-
             doc.title = autoTitle || title;
-
             doc.image = (destination.images && destination.images[0]) ?? image;
             doc.location = doc.location || destination.location!;
         }
@@ -204,14 +200,12 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             if (!location) {
                 throwError({
                     message: 'Location is required for Travel Announcements',
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             if (!startDate || !endDate) {
                 throwError({
                     message: 'Arrival and departure dates are required for Travel Announcements',
@@ -227,7 +221,6 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             if (!startDate || !startTime || !endTime) {
                 throwError({
                     message: 'Start date, start time, and end time are required for time-based events.',
@@ -235,10 +228,7 @@ export const eventCtr = {
                 });
             }
 
-            validateTimeBasedEvent(
-                { startDate, endDate, startTime, endTime },
-                E_EventType.BOOTY_CALL,
-            );
+            validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.BOOTY_CALL);
 
             if (!location) {
                 throwError({
@@ -262,12 +252,8 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             if (startDate && startTime && endTime) {
-                validateTimeBasedEvent(
-                    { startDate, endDate, startTime, endTime },
-                    E_EventType.PRIVATE,
-                );
+                validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.PRIVATE);
             }
             else {
                 throwError({
@@ -276,11 +262,9 @@ export const eventCtr = {
                 });
             }
 
-            const createdConversation = await conversationCtr.createConversation(context, { doc: {
-                name: title,
-                type: E_ConversationType.GROUP,
-                createdById: currentUser.id,
-            } });
+            const createdConversation = await conversationCtr.createConversation(context, {
+                doc: { name: title, type: E_ConversationType.GROUP, createdById: currentUser.id },
+            });
 
             if (!createdConversation.success) {
                 throwError({
@@ -299,7 +283,6 @@ export const eventCtr = {
 
         if (location?.map) {
             const { latitude, longitude } = location.map;
-
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
                 throwError({
                     message: 'Coordinates must be valid numbers',
@@ -319,14 +302,9 @@ export const eventCtr = {
         }
 
         const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
-
         if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
             const pricingFound = await pricingCtr.getPricing(context, {
-                filter: {
-                    'type': E_PricingType.ANNOUNCEMENT,
-                    'location.countryId': location?.countryId,
-                    'isActive': true,
-                },
+                filter: { 'type': E_PricingType.ANNOUNCEMENT, 'location.countryId': location?.countryId, 'isActive': true },
             });
 
             if (!pricingFound.success) {
@@ -339,37 +317,31 @@ export const eventCtr = {
             const basePrice = pricingFound.result.price ?? 0;
             const taxRate = pricingFound.result.taxRate ?? 0;
             const totalFee = Math.ceil((basePrice + (basePrice * taxRate / 100)) * 100) / 100;
-
             doc.fee = totalFee;
         }
 
         const eventCreated = await mongooseCtr.createOne(doc);
-
         if (!eventCreated.success) {
             return eventCreated;
         }
 
-        // If event is active and not expired, mark user's hasUpcomingEvent = true via user controller
-        if (doc.createdById) {
-            const notExpired = !doc.endDate || isAfter(doc.endDate, new Date());
-            if (doc.isActive && notExpired) {
-                await userCtr.updateUser(context, { filter: { id: doc.createdById }, update: { hasUpcomingEvent: true } });
+        if (eventCreated.result.createdById) {
+            const notExpired = !eventCreated.result.endDate || isAfter(eventCreated.result.endDate, new Date());
+            if (eventCreated.result.isActive && notExpired) {
+                await userCtr.updateUser(context, {
+                    filter: { id: eventCreated.result.createdById },
+                    update: { hasUpcomingEvent: true },
+                });
             }
         }
 
         let pinStyle;
-
-        if (type === E_EventType.CLUB_VISIT) {
+        if (type === E_EventType.CLUB_VISIT)
             pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
-        }
-
-        if (type === E_EventType.TRAVEL) {
+        if (type === E_EventType.TRAVEL)
             pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
-        }
-
-        if (type === E_EventType.BOOTY_CALL) {
+        if (type === E_EventType.BOOTY_CALL)
             pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
-        }
 
         const locationCreated = await locationCtr.createLocation(context, {
             doc: doc.location
@@ -395,6 +367,7 @@ export const eventCtr = {
 
         return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: locationCreated.result.id });
     },
+
     updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
         const eventFound = await eventCtr.getEvent(context, { filter });
 

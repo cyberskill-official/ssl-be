@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Like } from '#modules/like/index.js';
 import type { E_ModerationMediaStatus, I_ModerationMedia } from '#modules/moderation/index.js';
+import type { I_User } from '#modules/user/user.type.js';
 import type { I_View } from '#modules/view/index.js';
 
 export enum E_GalleryType {
@@ -15,6 +16,7 @@ export interface I_Gallery extends I_GenericDocument {
     type?: E_GalleryType;
     url?: string;
     uploadedById?: string;
+    uploadedBy?: I_User;
     status?: E_ModerationMediaStatus;
     isPublished?: boolean;
     likes?: I_Like[];

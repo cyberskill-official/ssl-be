@@ -110,7 +110,6 @@ export const locationCtr = {
             throwError({ message: 'Filter is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        // ---- viewport filter
         const baseFilter: Record<string, unknown> = {
             map: {
                 longitude: { $gte: filter.southWestLongitude, $lte: filter.northEastLongitude },
@@ -122,7 +121,6 @@ export const locationCtr = {
             baseFilter['entityType'] = filter.entityType;
         }
 
-        // ---- populate setup
         const entityPopulate: PopulateOptions = {
             path: 'entity',
             populate: [
@@ -158,7 +156,6 @@ export const locationCtr = {
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
 
-        // ---- Filter thủ công cho EVENT theo eventType
         if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
             docs = docs.filter((d) => {
                 const e = d.entity as I_Event | undefined;
@@ -166,7 +163,6 @@ export const locationCtr = {
             });
         }
 
-        // ---- fallback fill city/country khi populate null
         for (const d of docs) {
         // City fallback
             if (d.cityId && !d.city) {
@@ -176,7 +172,6 @@ export const locationCtr = {
                 }
             }
 
-            // Country fallback (ít khi cần vì populate đang ok)
             if (d.countryId && !d.country) {
                 const countryRes = await countryCtr.getCountry(context, { filter: { id: d.countryId } });
                 if (countryRes.success && countryRes.result) {
@@ -185,7 +180,6 @@ export const locationCtr = {
             }
         }
 
-        // ---- fallback cho EVENT: populate location nếu bị null
         if (filter.entityType === E_LocationEntityType.EVENT) {
             for (const d of docs) {
                 const e = d.entity as I_Event | undefined;
@@ -201,7 +195,6 @@ export const locationCtr = {
             }
         }
 
-        // ---- USER: join partner1/partner2 location + gallery
         if (filter.entityType !== E_LocationEntityType.EVENT) {
             for (const d of docs) {
                 if (d.entityType !== E_LocationEntityType.USER)
@@ -251,7 +244,6 @@ export const locationCtr = {
             }
         }
 
-        // ---- dedupe
         const seen = new Set<string>();
         const deduped: I_Location[] = [];
 
@@ -273,7 +265,6 @@ export const locationCtr = {
             deduped.push(d);
         }
 
-        // ---- rebuild pagination
         const limit = pagingResult.result.limit || options?.limit || 10;
         const page = pagingResult.result.page || 1;
         const totalDocs = deduped.length;

@@ -78,18 +78,17 @@ export const galleryCtr = {
         const userId = context.req?.session?.user?.id;
         const isOwner = context.req?.session?.user?.id === filter?.uploadedById;
 
-        // Check if user is a free member
         let isFreeMember = false;
         if (isLoggedIn) {
             try {
                 isFreeMember = await authnCtr.isFreeMember(context);
             }
             catch {
-                // If check fails, treat as free member for safety
                 isFreeMember = true;
             }
         }
 
+        // ép filter + status
         let modifiedFilter = { ...(filter || {}) };
         if (filter?.uploadedByIds && filter.uploadedByIds.length > 0) {
             modifiedFilter = {
@@ -101,7 +100,14 @@ export const galleryCtr = {
             delete modifiedFilter.uploadedByIds;
         }
 
-        const galleries = await mongooseCtr.findPaging(modifiedFilter, options);
+        const galleries = await mongooseCtr.findPaging(modifiedFilter, {
+            ...options,
+            populate: [
+                {
+                    path: 'uploadedBy',
+                },
+            ],
+        });
 
         if (!galleries.success) {
             return galleries;
@@ -110,11 +116,11 @@ export const galleryCtr = {
         const galleryDocs = galleries.result.docs;
         const galleryIds = galleryDocs.map(g => g.id);
 
+        // batch like/view
         const likeCountsMap = await likeCtr.getLikeCountsBatch(context, {
             entityType: E_LikeEntityType.GALLERY,
             entityIds: galleryIds,
         });
-
         const viewCountsMap = await viewCtr.getViewCountsBatch(context, {
             entityType: E_ViewEntityType.GALLERY,
             entityIds: galleryIds,
@@ -134,37 +140,27 @@ export const galleryCtr = {
             const likeCount = likeCountsMap[gallery.id] || 0;
             const viewCount = viewCountsMap[gallery.id] || 0;
 
-            // For free members, blur gallery images (only show profile pics)
             const galleryResult = { ...gallery, isLike, likeCount, viewCount };
+
             if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
-                if (isOwner) {
-                    galleryResult.url = bunnyCtr.generateSignedUrl({
-                        fullUrl: galleryResult.url,
-                        extraQueryParams: {
-                            class: 'normal',
-                        },
-                    });
-                }
-                else {
-                    galleryResult.url = bunnyCtr.generateSignedUrl({
-                        fullUrl: galleryResult.url,
-                        extraQueryParams: {
-                            class: isFreeMember ? 'free' : 'premium',
-                        },
-                    });
-                }
+                galleryResult.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: galleryResult.url,
+                    extraQueryParams: {
+                        class: isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium'),
+                    },
+                });
             }
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
                 galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
                     fullUrl: galleryResult.url,
                 });
             }
+
             return galleryResult;
         });
 
         return galleries;
     },
-
     createGallery: async (
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
