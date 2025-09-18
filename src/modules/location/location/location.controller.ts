@@ -15,7 +15,6 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Event } from '#modules/event/event.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
@@ -85,7 +84,6 @@ export const locationCtr = {
             throwError({ message: 'Filter is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        // ---- viewport filter
         const baseFilter: Record<string, unknown> = {
             map: {
                 longitude: { $gte: filter.southWestLongitude, $lte: filter.northEastLongitude },
@@ -98,6 +96,8 @@ export const locationCtr = {
         }
 
         const populates: PopulateOptions[] = [
+            { path: 'city' },
+            { path: 'country' },
             {
                 path: 'entity',
                 populate: [
@@ -107,35 +107,60 @@ export const locationCtr = {
                         ? [
                                 { path: 'createdBy' },
                                 {
-                                    path: 'location',
-                                    model: 'Location',
-                                    populate: [{ path: 'country' }, { path: 'city' }],
+                                    path: 'createdBy',
+                                    populate: [
+                                        {
+                                            path: 'partner1',
+                                            populate: [
+                                                {
+                                                    path: 'gallery',
+                                                },
+                                            ],
+                                        },
+                                        {
+                                            path: 'partner2',
+                                            populate: [
+                                                'gallery',
+                                            ],
+                                        },
+                                    ],
                                 },
                             ]
                         : []),
                     ...(filter.entityType === E_LocationEntityType.USER
                         ? [
                                 {
-                                    path: 'partner1.location',
-                                    model: 'Location',
-                                    populate: [{ path: 'country' }, { path: 'city' }],
+                                    path: 'partner1',
+                                    populate: [
+                                        'gallery',
+                                        {
+                                            path: 'gallery',
+                                            populate: [
+                                                'uploadedBy',
+                                            ],
+                                        },
+                                    ],
                                 },
                                 {
-                                    path: 'partner2.location',
-                                    model: 'Location',
-                                    populate: [{ path: 'country' }, { path: 'city' }],
+                                    path: 'partner1',
+                                    populate: [
+                                        'gallery',
+                                        {
+                                            path: 'gallery',
+                                            populate: [
+                                                'uploadedBy',
+                                            ],
+                                        },
+                                    ],
                                 },
-                                { path: 'partner1.gallery' },
-                                { path: 'partner2.gallery' },
+                                { path: 'lookingFor' },
+                                { path: 'profilePurpose' },
                             ]
                         : []),
                 ],
             },
-            { path: 'country' },
-            { path: 'city' },
         ];
 
-        // ---- query
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
             ...options,
             populate: populates,
@@ -145,58 +170,6 @@ export const locationCtr = {
             return pagingResult;
         }
 
-        let docs: I_Location[] = pagingResult.result.docs ?? [];
-
-        if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
-            docs = docs.filter((d) => {
-                const e = d.entity as I_Event | undefined;
-                return e?.type === filter.eventType;
-            });
-        }
-
-        // ---- dedupe entityId
-        const seen = new Set<string>();
-        const deduped: I_Location[] = [];
-
-        interface WithId { id?: string }
-        const hasId = (v: unknown): v is WithId =>
-            typeof v === 'object' && v !== null && 'id' in (v as Record<string, unknown>);
-
-        for (const d of docs) {
-            const entityId = hasId(d.entity) ? (d.entity as WithId).id : undefined;
-            const fallbackKey = d.map ? `${d.map.latitude}-${d.map.longitude}` : undefined;
-            const key = entityId ?? d.entityId ?? d.id ?? fallbackKey;
-
-            if (!key)
-                continue;
-            if (seen.has(key))
-                continue;
-
-            seen.add(key);
-            deduped.push(d);
-        }
-
-        // ---- rebuild pagination
-        const limit = pagingResult.result.limit || options?.limit || 10;
-        const page = pagingResult.result.page || 1;
-        const totalDocs = deduped.length;
-        const totalPages = Math.max(1, Math.ceil(totalDocs / limit));
-        const offset = pagingResult.result.offset ?? (page - 1) * limit;
-
-        const newResult: T_PaginateResult<I_Location> = {
-            ...pagingResult.result,
-            docs: deduped,
-            totalDocs,
-            totalPages,
-            hasPrevPage: page > 1,
-            hasNextPage: page < totalPages,
-            offset,
-            prevPage: page > 1 ? page - 1 : 0,
-            nextPage: page < totalPages ? page + 1 : 0,
-            pagingCounter: offset + 1,
-        };
-
-        return { success: true, result: newResult };
+        return pagingResult;
     },
-
 };
