@@ -102,8 +102,6 @@ export const locationCtr = {
             {
                 path: 'entity',
                 populate: [
-                    { path: 'lookingFor' },
-                    { path: 'profilePurpose' },
                     ...(filter.entityType === E_LocationEntityType.EVENT
                         ? [
                                 'createdBy',
