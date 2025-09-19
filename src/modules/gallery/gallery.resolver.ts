@@ -17,6 +17,11 @@ const galleryResolver = {
             galleryCtr.getGallery(context, args),
         getGalleries: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryGallery>, context: I_Context) =>
             galleryCtr.getGalleries(context, args),
+        getGalleriesByUserIds: (
+            _parent: unknown,
+            args: { userIds: string[]; options?: I_Input_FindPaging<I_Input_QueryGallery> },
+            context: I_Context,
+        ) => galleryCtr.getGalleriesByUserIds(context, args),
     },
     Mutation: {
         deleteGallery: (_parent: unknown, { id }: { id: string }, context: I_Context) =>

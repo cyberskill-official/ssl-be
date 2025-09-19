@@ -82,6 +82,7 @@ type T_Response_Galleries {
 type Query {
     getGallery(filter: Input_QueryGallery!, projection: JSON, options: JSON, populate: JSON): T_Response_Gallery!
     getGalleries(filter: Input_QueryGallery, options: JSON): T_Response_Galleries!
+    getGalleriesByUserIds(userIds: [String!]!, options: JSON): T_Response_Galleries!
 }
 
 type Mutation {

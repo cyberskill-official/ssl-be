@@ -161,6 +161,34 @@ export const galleryCtr = {
 
         return galleries;
     },
+    getGalleriesByUserIds: async (
+        context: I_Context,
+        { userIds, options }: { userIds: string[]; options?: I_Input_FindPaging<I_Input_QueryGallery> },
+    ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
+        const userFound = await userCtr.getUsers(context, {
+            filter: { id: { $in: userIds }, isActive: true },
+        });
+
+        if (!userFound.success || userFound.result.docs.length === 0) {
+            throwError({
+                message: 'User not found!',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const uploadedByIds = userFound.result.docs.map(u => u.id);
+
+        const gallery = await galleryCtr.getGalleries(context, {
+            filter: { uploadedByIds },
+            options: {
+                ...options,
+                sort: { createdAt: -1 },
+            },
+        });
+
+        return gallery;
+    },
+
     createGallery: async (
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
