@@ -96,90 +96,67 @@ export const locationCtr = {
             baseFilter['entityType'] = filter.entityType;
         }
 
-        const populates: PopulateOptions[] = [
+        const basePopulate: PopulateOptions[] = [
             { path: 'city' },
             { path: 'country' },
+        ];
+
+        const eventPopulate: PopulateOptions[] = [
+            { path: 'createdBy' },
+            {
+                path: 'createdBy',
+                populate: [
+                    { path: 'partner1', populate: [{ path: 'gallery' }] },
+                    { path: 'partner2', populate: ['gallery'] },
+                ],
+            },
+            { path: 'location' },
+            {
+                path: 'location',
+                populate: [{ path: 'country' }, { path: 'city' }],
+            },
+        ];
+
+        const userPopulate: PopulateOptions[] = [
+            {
+                path: 'partner1',
+                populate: [
+                    'gallery',
+                    { path: 'gallery', populate: ['uploadedBy'] },
+                    'location',
+                    { path: 'location', populate: [{ path: 'country' }, { path: 'city' }] },
+                ],
+            },
+            {
+                path: 'partner2',
+                populate: [
+                    'gallery',
+                    { path: 'gallery', populate: ['uploadedBy'] },
+                    'location',
+                    { path: 'location', populate: [{ path: 'country' }, { path: 'city' }] },
+                ],
+            },
+            { path: 'lookingFor' },
+            { path: 'profilePurpose' },
+        ];
+
+        const destinationPopulate: PopulateOptions[] = [
+            { path: 'location' },
+            {
+                path: 'location',
+                populate: [{ path: 'country' }, { path: 'city' }],
+            },
+        ];
+
+        const populates: PopulateOptions[] = [
+            ...basePopulate,
             {
                 path: 'entity',
                 populate: [
-                    ...(filter.entityType === E_LocationEntityType.EVENT
-                        ? [
-                                'createdBy',
-                                {
-                                    path: 'createdBy',
-                                    populate: [
-                                        {
-                                            path: 'partner1',
-                                            populate: [
-                                                {
-                                                    path: 'gallery',
-                                                },
-                                            ],
-                                        },
-                                        {
-                                            path: 'partner2',
-                                            populate: [
-                                                'gallery',
-                                            ],
-                                        },
-                                    ],
-                                },
-                                'location',
-                                {
-                                    path: 'location',
-                                    populate: [
-                                        { path: 'country' },
-                                        { path: 'city' },
-                                    ],
-                                },
-                            ]
-                        : []),
-                    ...(filter.entityType === E_LocationEntityType.USER
-                        ? [
-                                {
-                                    path: 'partner1',
-                                    populate: [
-                                        'gallery',
-                                        {
-                                            path: 'gallery',
-                                            populate: [
-                                                'uploadedBy',
-                                            ],
-                                        },
-                                        'location',
-                                        {
-                                            path: 'location',
-                                            populate: [
-                                                { path: 'country' },
-                                                { path: 'city' },
-                                            ],
-                                        },
-                                    ],
-                                },
-                                {
-                                    path: 'partner2',
-                                    populate: [
-                                        'gallery',
-                                        {
-                                            path: 'gallery',
-                                            populate: [
-                                                'uploadedBy',
-                                            ],
-                                        },
-                                        'location',
-                                        {
-                                            path: 'location',
-                                            populate: [
-                                                { path: 'country' },
-                                                { path: 'city' },
-                                            ],
-                                        },
-                                    ],
-                                },
-                                { path: 'lookingFor' },
-                                { path: 'profilePurpose' },
-                            ]
-                        : []),
+                    ...(filter.entityType === E_LocationEntityType.EVENT ? eventPopulate : []),
+                    ...(filter.entityType === E_LocationEntityType.USER ? userPopulate : []),
+                    ...(filter.entityType === E_LocationEntityType.DESTINATION ? destinationPopulate : []),
+                    ...(!filter.entityType ? [...eventPopulate, ...userPopulate, ...destinationPopulate] : []),
                 ],
             },
         ];
@@ -200,6 +177,17 @@ export const locationCtr = {
                 const e = d.entity as I_Event | undefined;
                 return e?.type === filter.eventType;
             });
+        }
+
+        if (!filter.entityType && !filter.eventType) {
+            const pagingResultAllMap = await mongooseCtr.findPaging(baseFilter, {
+                ...options,
+                populate: populates,
+            });
+
+            if (pagingResultAllMap.success && pagingResultAllMap.result) {
+                return pagingResultAllMap;
+            }
         }
 
         return { success: true, result: { ...pagingResult.result, docs } };
