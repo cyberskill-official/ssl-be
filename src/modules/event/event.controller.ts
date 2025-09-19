@@ -12,7 +12,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
-import { destinationCtr, E_DestinationType } from '#modules/destination/index.js';
+import { destinationCtr } from '#modules/destination/index.js';
 import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -148,7 +148,7 @@ export const eventCtr = {
             }
 
             const destinationFound = await destinationCtr.getDestination(context, {
-                filter: { id: destinationId, type: E_DestinationType.CLUB, isActive: true },
+                filter: { id: destinationId, isActive: true },
             });
 
             if (!destinationFound.success) {
@@ -326,8 +326,7 @@ export const eventCtr = {
         }
 
         if (eventCreated.result.createdById) {
-            const notExpired = !eventCreated.result.endDate || isAfter(eventCreated.result.endDate, new Date());
-            if (eventCreated.result.isActive && notExpired) {
+            if (eventCreated.result.isActive) {
                 await userCtr.updateUser(context, {
                     filter: { id: eventCreated.result.createdById },
                     update: { hasUpcomingEvent: true },
