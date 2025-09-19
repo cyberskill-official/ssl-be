@@ -27,6 +27,7 @@ import type {
     I_Gallery,
     I_Input_CreateGallery,
     I_Input_QueryGallery,
+    I_Input_QueryGalleryByUserId,
     I_Input_UpdateGallery,
 } from './gallery.type.js';
 
@@ -163,8 +164,14 @@ export const galleryCtr = {
     },
     getGalleriesByUserIds: async (
         context: I_Context,
-        { userIds, options }: { userIds: string[]; options?: I_Input_FindPaging<I_Input_QueryGallery> },
+        { filter, options }: {
+            filter: I_Input_QueryGalleryByUserId;
+            options?: I_Input_FindPaging<I_Input_QueryGallery>;
+        },
     ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
+        const { userIds, ...galleryFilter } = filter;
+
+        // B1: validate user
         const userFound = await userCtr.getUsers(context, {
             filter: { id: { $in: userIds }, isActive: true },
         });
@@ -176,17 +183,17 @@ export const galleryCtr = {
             });
         }
 
+        // B2: list uploadedByIds
         const uploadedByIds = userFound.result.docs.map(u => u.id);
 
-        const gallery = await galleryCtr.getGalleries(context, {
-            filter: { uploadedByIds },
+        // B3: query gallery
+        return galleryCtr.getGalleries(context, {
+            filter: { ...galleryFilter, uploadedByIds },
             options: {
                 ...options,
                 sort: { createdAt: -1 },
             },
         });
-
-        return gallery;
     },
 
     createGallery: async (

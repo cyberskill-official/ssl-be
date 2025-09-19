@@ -38,6 +38,11 @@ input Input_QueryGallery {
     isPublished: Boolean
 }
 
+input Input_QueryGalleryByUserIds {
+    userIds: [String!]
+    type: E_GalleryType
+}
+
 input Input_CreateGallery {
     type: E_GalleryType!
     url: String!
@@ -82,7 +87,7 @@ type T_Response_Galleries {
 type Query {
     getGallery(filter: Input_QueryGallery!, projection: JSON, options: JSON, populate: JSON): T_Response_Gallery!
     getGalleries(filter: Input_QueryGallery, options: JSON): T_Response_Galleries!
-    getGalleriesByUserIds(userIds: [String!]!, options: JSON): T_Response_Galleries!
+    getGalleriesByUserIds(filter: Input_QueryGalleryByUserIds, options: JSON): T_Response_Galleries!
 }
 
 type Mutation {
