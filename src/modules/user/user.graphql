@@ -340,4 +340,6 @@ type Mutation {
     createUser(doc: Input_CreateUser!): T_Response_User!
     updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
     deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
+    softDeleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
+    recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
 }

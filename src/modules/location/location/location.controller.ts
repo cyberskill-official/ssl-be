@@ -16,6 +16,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Event } from '#modules/event/index.js';
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
@@ -138,6 +139,15 @@ export const locationCtr = {
             },
             { path: 'lookingFor' },
             { path: 'profilePurpose' },
+            {
+                path: 'settings',
+                populate: [
+                    {
+                        path: 'temporaryLocation',
+                        populate: [{ path: 'country' }, { path: 'city' }],
+                    },
+                ],
+            },
         ];
 
         const destinationPopulate: PopulateOptions[] = [
@@ -172,6 +182,7 @@ export const locationCtr = {
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
 
+        // filter eventType nếu có
         if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
             docs = docs.filter((d) => {
                 const e = d.entity as I_Event | undefined;
@@ -179,17 +190,56 @@ export const locationCtr = {
             });
         }
 
-        if (!filter.entityType && !filter.eventType) {
-            const pagingResultAllMap = await mongooseCtr.findPaging(baseFilter, {
-                ...options,
-                populate: populates,
-            });
-
-            if (pagingResultAllMap.success && pagingResultAllMap.result) {
-                return pagingResultAllMap;
+        // ⚡ chọn location duy nhất cho user (TEMP > DEFAULT)
+        docs = docs.map((d) => {
+            const user = d.entity as I_User;
+            if (!user?.id) {
+                return d;
             }
-        }
+
+            const now = new Date();
+            let finalLocation: Partial<I_Location> | undefined;
+            let finalLocationId: string | undefined;
+            const tempLoc = user?.settings?.temporaryLocation;
+
+            if (tempLoc?.locationId && tempLoc.endAt && new Date(tempLoc.endAt) > now) {
+                finalLocation = tempLoc.location ?? { id: tempLoc.locationId };
+                finalLocationId = tempLoc.locationId;
+            }
+            else {
+                finalLocation = user.partner1?.location;
+                finalLocationId = user.partner1?.locationId;
+            }
+
+            return {
+                ...d,
+                entity: {
+                    ...user,
+                    partner1: {
+                        ...user.partner1,
+                        location: finalLocation,
+                        locationId: finalLocationId,
+                    },
+                },
+            };
+        });
+
+        // ⚡ loại duplicate user
+        const seenUsers = new Set<string>();
+        docs = docs.filter((d) => {
+            const user = d.entity as I_User;
+            if (!user?.id)
+                return true;
+
+            if (seenUsers.has(user.id)) {
+                return false;
+            }
+
+            seenUsers.add(user.id);
+            return true;
+        });
 
         return { success: true, result: { ...pagingResult.result, docs } };
     },
+
 };

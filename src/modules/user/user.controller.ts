@@ -354,6 +354,44 @@ export const userCtr = {
 
         return mongooseCtr.deleteOne(filter, options);
     },
+    softDeleteUser: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
+    ): Promise<I_Return<I_User>> => {
+        const userFound = await userCtr.getUser(context, { filter });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        return mongooseCtr.updateOne(
+            filter,
+            { isDel: true },
+            options,
+        );
+    },
+    recoverUser: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
+    ): Promise<I_Return<I_User>> => {
+        const userFound = await userCtr.getUser(context, { filter });
+
+        if (!userFound.success) {
+            throwError({
+                message: 'User not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        return mongooseCtr.updateOne(
+            filter,
+            { isDel: false },
+            options,
+        );
+    },
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {
         let emails: string[] = [];
 

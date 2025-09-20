@@ -15,6 +15,8 @@ const userResolver = {
         createUser: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateUser>, context: I_Context) => userCtr.createUser(context, args),
         updateUser: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdateUser>, context: I_Context) => userCtr.updateUser(context, args),
         deleteUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.deleteUser(context, args),
+        softDeleteUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.softDeleteUser(context, args),
+        recoverUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.recoverUser(context, args),
     },
 };
 
