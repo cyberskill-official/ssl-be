@@ -17,7 +17,6 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
-import { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -95,8 +94,6 @@ export const galleryCtr = {
             modifiedFilter = {
                 ...filter,
                 uploadedById: { $in: filter.uploadedByIds },
-                isPublished: true,
-                status: E_ModerationMediaStatus.APPROVED,
             };
             delete modifiedFilter.uploadedByIds;
         }
@@ -176,7 +173,7 @@ export const galleryCtr = {
             filter: { id: { $in: userIds }, isActive: true },
         });
 
-        if (!userFound.success || userFound.result.docs.length === 0) {
+        if (!userFound.success) {
             throwError({
                 message: 'User not found!',
                 status: RESPONSE_STATUS.BAD_REQUEST,
