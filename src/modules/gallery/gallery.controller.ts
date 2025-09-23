@@ -16,7 +16,10 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { followCtr } from '#modules/follow/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -197,7 +200,66 @@ export const galleryCtr = {
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
     ): Promise<I_Return<I_Gallery>> => {
-        return mongooseCtr.createOne(doc);
+        const galleryResult = await mongooseCtr.createOne(doc);
+
+        if (galleryResult.success) {
+            const uploaderId = galleryResult.result.uploadedById;
+
+            // prepare thumbnail for followers notifications (best-effort)
+            let thumbnailUrl: string | undefined;
+            try {
+                if (galleryResult.result.url) {
+                    if (galleryResult.result.type === 'IMAGE') {
+                        thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: galleryResult.result.url, extraQueryParams: { class: 'normal' } });
+                    }
+                    else if (galleryResult.result.type === 'VIDEO') {
+                        thumbnailUrl = bunnyCtr.generateEmbedIframeUrlFromUrl({ fullUrl: galleryResult.result.url });
+                    }
+                }
+            }
+            catch {
+                // ignore thumbnail generation errors
+            }
+
+            // Notify followers (in-app only)
+            try {
+                const followers = await followCtr.getFollowers(_context, {
+                    filter: { followId: uploaderId },
+                    options: { pagination: false },
+                });
+
+                // Fetch uploader displayName once
+                const uploader = await userCtr.getUser(_context, { filter: { id: uploaderId } });
+                const uploaderName = uploader.success ? (uploader.result.displayName || uploader.result.username || 'Someone') : 'Someone';
+
+                if (followers.success) {
+                    for (const f of followers.result.docs) {
+                        const targetId = f.userId;
+                        if (!targetId || targetId === uploaderId)
+                            continue;
+
+                        await notificationCtr.createNotificationWithSettings(_context, {
+                            doc: {
+                                targetId,
+                                type: E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA,
+                                entityType: E_NotificationEntityType.MEDIA,
+                                entityId: galleryResult.result.id,
+                                actorId: uploaderId,
+                                title: `${uploaderName} has posted a new ${galleryResult.result.type?.toLowerCase() ?? 'media'}`,
+                                data: { redirect: { kind: 'GALLERY', id: galleryResult.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                                channels: [E_NotificationChannel.IN_APP],
+                                isEmailSuppressed: true,
+                            },
+                        });
+                    }
+                }
+            }
+            catch {
+                // Don't block gallery creation if notifications fail
+            }
+        }
+
+        return galleryResult;
     },
     updateGallery: async (
         context: I_Context,

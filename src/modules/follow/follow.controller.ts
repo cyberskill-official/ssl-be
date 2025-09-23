@@ -14,6 +14,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
@@ -135,6 +137,25 @@ export const followCtr = {
             await userCtr.updateUsers(context, {
                 filter: { id: currentUser.id },
                 update: { $inc: { followingCount: 1 } },
+            });
+
+            await notificationCtr.createNotificationWithSettings(context, {
+                doc: {
+                    type: E_NotificationType.NEW_FOLLOWER,
+                    actorId: currentUser.id, // người follow
+                    targetId: followId, // người được follow
+                    entityType: E_NotificationEntityType.USER,
+                    entityId: currentUser.id, // profile của người follow
+                    title: `${currentUser.username} is now following you`, // text hiển thị
+                    data: {
+                        redirect: { kind: 'PROFILE', id: currentUser.id },
+                    },
+                    channels: [
+                        E_NotificationChannel.IN_APP,
+                        E_NotificationChannel.EMAIL,
+                    ],
+                    isEmailSuppressed: false,
+                },
             });
         }
 

@@ -22,7 +22,10 @@ import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { applyNameFilters, validate } from '#shared/util/index.js';
+import { getEffectiveLocation } from '#shared/util/location-map.js';
 
 import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
 
@@ -141,6 +144,7 @@ export const userCtr = {
 
         return users;
     },
+
     createUser: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateUser>,
@@ -152,9 +156,7 @@ export const userCtr = {
         validate.password.validate(password);
 
         const userFound = await userCtr.getUser(context, {
-            filter: {
-                $or: [{ username }, { email }],
-            },
+            filter: { $or: [{ username }, { email }] },
         });
 
         if (userFound.success) {
@@ -176,6 +178,7 @@ export const userCtr = {
             });
         }
 
+        // Tạo location mặc định
         const locationCreated = await locationCtr.createLocation(context, {
             doc: {
                 entityType: E_LocationEntityType.USER,
@@ -188,6 +191,36 @@ export const userCtr = {
                 message: locationCreated.message,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
+        }
+
+        // 🔔 Bắn notification cho nearby users
+        if (userCreated.success && locationCreated.success) {
+            const allUsers = await userCtr.getUsers(context, {
+                filter: { isActive: true },
+                options: { pagination: false },
+            });
+
+            if (allUsers.success) {
+                for (const u of allUsers.result.docs) {
+                    const effectiveLoc = getEffectiveLocation(u);
+                    if (!effectiveLoc)
+                        continue;
+
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: u.id,
+                            type: E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST,
+                            entityType: E_NotificationEntityType.USER,
+                            entityId: userCreated.result.id,
+                            actorId: userCreated.result.id,
+                            title: `There is a new member: "${username}"`,
+                            data: { redirect: { kind: 'PROFILE', id: userCreated.result.id } },
+                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                            isEmailSuppressed: false,
+                        },
+                    });
+                }
+            }
         }
 
         const temporaryLocationCreated = await locationCtr.createLocation(context, {
@@ -213,6 +246,7 @@ export const userCtr = {
             },
         });
     },
+
     updateUser: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,

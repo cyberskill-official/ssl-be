@@ -13,7 +13,10 @@ import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr } from '#modules/destination/index.js';
+import { followCtr } from '#modules/follow/index.js';
 import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
 
@@ -362,6 +365,82 @@ export const eventCtr = {
 
         if (!locationCreated.success) {
             return locationCreated;
+        }
+
+        const actorName = currentUser.displayName;
+        const headline = doc.title || '';
+        const notifTitle = `There is a new announcement from: ${actorName}${headline ? ` ${headline}` : ''}.`;
+
+        const followers = await followCtr.getFollowers(context, {
+            filter: { followId: currentUser.id },
+            options: { pagination: false },
+        });
+
+        const notifiedTargets = new Set<string>();
+
+        // prepare thumbnail for announcement if available
+        let thumbnailUrl: string | undefined;
+        try {
+            if (eventCreated.result.image) {
+                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: eventCreated.result.image, extraQueryParams: { class: 'normal' } });
+            }
+        }
+        catch {
+            // ignore
+        }
+
+        if (followers.success) {
+            for (const f of followers.result.docs) {
+                const targetId = f.userId;
+                if (!targetId || targetId === currentUser.id)
+                    continue;
+
+                notifiedTargets.add(targetId);
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId,
+                        type: E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED,
+                        entityType: E_NotificationEntityType.EVENT,
+                        entityId: eventCreated.result.id,
+                        actorId: currentUser.id,
+                        title: notifTitle,
+                        data: { redirect: { kind: 'ANNOUNCEMENT_MAP', id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                        isEmailSuppressed: false,
+                    },
+                });
+            }
+        }
+
+        const nearbyUsers = await userCtr.getUsers(context, {
+            filter: {
+                'isActive': true,
+                'partner1.locationId': { $exists: true },
+            },
+            options: { pagination: false },
+        });
+
+        if (nearbyUsers.success) {
+            for (const u of nearbyUsers.result.docs) {
+                if (!u.id || u.id === currentUser.id)
+                    continue;
+                if (notifiedTargets.has(u.id))
+                    continue;
+
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: u.id,
+                        type: E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED,
+                        entityType: E_NotificationEntityType.EVENT,
+                        entityId: eventCreated.result.id,
+                        actorId: currentUser.id,
+                        title: notifTitle,
+                        data: { redirect: { kind: 'ANNOUNCEMENT_MAP', id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                        isEmailSuppressed: false,
+                    },
+                });
+            }
         }
 
         return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: locationCreated.result.id });

@@ -10,6 +10,9 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
@@ -116,7 +119,45 @@ export const blogCtr = {
             }
         }
 
-        return mongooseCtr.createOne(doc);
+        const blogResult = await mongooseCtr.createOne(doc);
+
+        if (blogResult.success) {
+            const users = await userCtr.getUsers(context, {
+                filter: { isActive: true },
+                options: { pagination: false },
+            });
+
+            if (users.success) {
+                // prepare thumbnail if available
+                let thumbnailUrl: string | undefined;
+                try {
+                    if (blogResult.result.featuredImage) {
+                        thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' } });
+                    }
+                }
+                catch {
+                    // ignore
+                }
+
+                for (const user of users.result.docs) {
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: user.id,
+                            type: E_NotificationType.NEW_BLOG_POST,
+                            entityType: E_NotificationEntityType.BLOG,
+                            entityId: blogResult.result.id,
+                            actorId: currentUser.id,
+                            title: `There is a new blog: "${blogResult.result.title}"`,
+                            data: { redirect: { kind: 'BLOG', id: blogResult.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                            isEmailSuppressed: false,
+                        },
+                    });
+                }
+            }
+        }
+
+        return blogResult;
     },
     updateBlog: async (
         context: I_Context,

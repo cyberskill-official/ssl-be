@@ -18,6 +18,8 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
@@ -648,6 +650,21 @@ export const conversationCtr = {
 
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
+            if (messageResult.success) {
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: recipientId,
+                        type: E_NotificationType.NEW_MESSAGE,
+                        entityType: E_NotificationEntityType.CONVERSATION,
+                        entityId: messageResult.result.id,
+                        actorId: senderId,
+                        data: { redirect: { kind: 'CONVERSATION', id: directMessageResult.conversationId } },
+                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                        isEmailSuppressed: false,
+                    },
+                });
+            }
+
             return {
                 success: true,
                 message: 'Message sent successfully',
@@ -759,6 +776,25 @@ export const conversationCtr = {
             };
 
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
+
+            for (const participant of conversation.participants || []) {
+                if (participant.userId !== senderId) {
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: participant.userId,
+                            actorId: senderId,
+                            type: E_NotificationType.NEW_MESSAGE,
+                            entityType: E_NotificationEntityType.CONVERSATION,
+                            entityId: conversation.id,
+                            title: 'New message',
+                            body: content.value, // tuỳ nội dung message
+                            data: { redirect: { kind: 'CONVERSATION', id: conversation.id } },
+                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                            isEmailSuppressed: false,
+                        },
+                    });
+                }
+            }
 
             return {
                 success: true,
