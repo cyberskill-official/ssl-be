@@ -16,6 +16,8 @@ import { withFilter } from 'graphql-subscriptions';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { E_GalleryType } from '#modules/gallery/gallery.type.js';
+import { galleryCtr } from '#modules/gallery/index.js';
 import { userCtr } from '#modules/user/user.controller.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
@@ -35,6 +37,7 @@ import { NotificationModel } from './notification.model.js';
 import {
     E_NOTIFICATION_EVENTS,
     E_NotificationChannel,
+    E_NotificationEntityType,
     E_NotificationStatus,
     E_NotificationType,
 } from './notification.type.js';
@@ -57,23 +60,20 @@ export async function buildPresentation(context: I_Context, notification: I_Noti
         }
     }
 
-    // thumbnail: prefer notification.data.thumbnailUrl, else attempt to fetch for MEDIA
     let thumbnailUrl: string | undefined;
     try {
         if (notification.data && (notification.data as any).thumbnailUrl) {
             thumbnailUrl = (notification.data as any).thumbnailUrl as string;
         }
-        else if (notification.entityType === 'MEDIA' && notification.entityId) {
-            // try to fetch gallery URL (best-effort)
+        else if (notification.entityType === E_NotificationEntityType.MEDIA && notification.entityId) {
             try {
                 // dynamic import to avoid circular require
-                const { galleryCtr } = await import('#modules/gallery/index.js');
                 const galleryFound = await galleryCtr.getGallery(context, { filter: { id: notification.entityId } });
                 if (galleryFound.success && galleryFound.result.url) {
-                    if (galleryFound.result.type === 'IMAGE') {
+                    if (galleryFound.result.type === E_GalleryType.IMAGE) {
                         thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: galleryFound.result.url, extraQueryParams: { class: 'normal' } });
                     }
-                    else if (galleryFound.result.type === 'VIDEO') {
+                    else if (galleryFound.result.type === E_GalleryType.VIDEO) {
                         thumbnailUrl = bunnyCtr.generateEmbedIframeUrlFromUrl({ fullUrl: galleryFound.result.url });
                     }
                 }
