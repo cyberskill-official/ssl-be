@@ -15,12 +15,21 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { blogCtr } from '#modules/blog/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import {
+    E_NotificationEntityType,
+    E_NotificationType,
+    E_RedicrectType,
+} from '#modules/notification/notification.type.js';
+import { buildNotifThumbnail } from '#modules/notification/notification.util.js';
 
-import type { I_Input_CreateLike, I_Input_GetLikeCountBatch, I_Input_QueryLike, I_Like } from './like.type.js';
+import type {
+    I_Input_CreateLike,
+    I_Input_GetLikeCountBatch,
+    I_Input_QueryLike,
+    I_Like,
+} from './like.type.js';
 
 import { LikeModel } from './like.model.js';
 import { E_LikeEntityType } from './like.type.js';
@@ -45,9 +54,8 @@ export const likeCtr = {
         { filter }: I_Input_FindOne<I_Input_QueryLike>,
     ): Promise<number> => {
         const count = await mongooseCtr.count(filter);
-        if (count.success) {
+        if (count.success)
             return count.result;
-        }
         return 0;
     },
     getLikeCountsBatch: async (
@@ -55,28 +63,17 @@ export const likeCtr = {
         { entityType, entityIds }: I_Input_GetLikeCountBatch,
     ): Promise<{ [entityId: string]: number }> => {
         const aggResult = await mongooseCtr.aggregate([
-            {
-                $match: {
-                    entityType,
-                    entityId: { $in: entityIds },
-                },
-            },
-            {
-                $group: {
-                    _id: '$entityId',
-                    count: { $sum: 1 },
-                },
-            },
+            { $match: { entityType, entityId: { $in: entityIds } } },
+            { $group: { _id: '$entityId', count: { $sum: 1 } } },
         ]);
 
         const countsMap: { [entityId: string]: number } = {};
-        if (!aggResult.success) {
+        if (!aggResult.success)
             return countsMap;
-        }
         if (aggResult.result) {
             for (const result of aggResult.result) {
                 const { _id, count } = result as unknown as { _id: string; count: number };
-                countsMap[_id] = count; // count
+                countsMap[_id] = count;
             }
         }
         return countsMap;
@@ -123,30 +120,14 @@ export const likeCtr = {
 
         // 3) Create like
         const created = await mongooseCtr.createOne({ ...doc, userId: currentUser.id });
-
-        // 4) Notification (Gallery only, bell-only)
-        // ...
+        // 4) Notification (Gallery only)
         if (created.success && doc.entityType === E_LikeEntityType.GALLERY) {
             const galleryFound = await galleryCtr.getGallery(context, { filter: { id: doc.entityId } });
             if (galleryFound.success) {
                 const ownerId = galleryFound.result.uploadedById;
 
                 if (ownerId && ownerId !== currentUser.id) {
-                    // generate thumbnailUrl if possible
-                    let thumbnailUrl: string | undefined;
-                    try {
-                        if (galleryFound.result.url) {
-                            if (galleryFound.result.type === 'IMAGE') {
-                                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: galleryFound.result.url, extraQueryParams: { class: 'normal' } });
-                            }
-                            else if (galleryFound.result.type === 'VIDEO') {
-                                thumbnailUrl = bunnyCtr.generateEmbedIframeUrlFromUrl({ fullUrl: galleryFound.result.url });
-                            }
-                        }
-                    }
-                    catch {
-                        // ignore thumbnail generation errors
-                    }
+                    const thumbnailUrl = buildNotifThumbnail(galleryFound.result);
 
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
@@ -155,15 +136,13 @@ export const likeCtr = {
                             entityType: E_NotificationEntityType.MEDIA,
                             entityId: doc.entityId,
                             actorId: currentUser.id,
-                            title: `${currentUser.displayName || currentUser.username} liked your ${galleryFound.result.type?.toLowerCase() ?? 'media'}`,
-                            data: {
-                                galleryId: doc.entityId,
-                                galleryType: galleryFound.result.type,
+                            title: `${currentUser.displayName || currentUser.username} liked your ${
+                                galleryFound.result.type?.toLowerCase() ?? 'media'
+                            }`,
+                            presentation: {
+                                redirect: { kind: E_RedicrectType.MEDIA, id: doc.entityId },
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
-                                redirect: { kind: 'PROFILE', id: currentUser.id },
                             },
-                            channels: [E_NotificationChannel.IN_APP],
-                            isEmailSuppressed: true,
                         },
                     });
                 }
@@ -192,10 +171,13 @@ export const likeCtr = {
             });
         }
 
-        return mongooseCtr.deleteOne({
-            userId: currentUser.id,
-            ...filter,
-        }, options);
+        return mongooseCtr.deleteOne(
+            {
+                userId: currentUser.id,
+                ...filter,
+            },
+            options,
+        );
     },
     getUserLikesBatch: async (
         _context: I_Context,
@@ -208,26 +190,14 @@ export const likeCtr = {
         }
 
         const result = await mongooseCtr.aggregate([
-            {
-                $match: {
-                    userId,
-                    entityType,
-                    entityId: { $in: entityIds },
-                },
-            },
-            {
-                $group: {
-                    _id: '$entityId',
-                },
-            },
+            { $match: { userId, entityType, entityId: { $in: entityIds } } },
+            { $group: { _id: '$entityId' } },
         ]);
 
         if (!result.success || !result.result) {
             return new Set();
         }
 
-        return new Set(
-            (result.result as Array<{ _id: string }>).map(r => r._id),
-        );
+        return new Set((result.result as Array<{ _id: string }>).map(r => r._id));
     },
 };

@@ -18,8 +18,9 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
+import { buildNotifThumbnail } from '#modules/notification/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -205,32 +206,24 @@ export const galleryCtr = {
         if (galleryResult.success) {
             const uploaderId = galleryResult.result.uploadedById;
 
-            // prepare thumbnail for followers notifications (best-effort)
-            let thumbnailUrl: string | undefined;
-            try {
-                if (galleryResult.result.url) {
-                    if (galleryResult.result.type === 'IMAGE') {
-                        thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: galleryResult.result.url, extraQueryParams: { class: 'normal' } });
-                    }
-                    else if (galleryResult.result.type === 'VIDEO') {
-                        thumbnailUrl = bunnyCtr.generateEmbedIframeUrlFromUrl({ fullUrl: galleryResult.result.url });
-                    }
-                }
-            }
-            catch {
-                // ignore thumbnail generation errors
-            }
+            // 1) Thumbnail poster cho notification (ký URL, không iframe)
+            const thumbnailUrl = buildNotifThumbnail(galleryResult.result);
 
-            // Notify followers (in-app only)
+            // 2) Notify followers (IN_APP luôn có, EMAIL theo toggle — handled by WithSettings)
             try {
                 const followers = await followCtr.getFollowers(_context, {
                     filter: { followId: uploaderId },
                     options: { pagination: false },
                 });
 
-                // Fetch uploader displayName once
-                const uploader = await userCtr.getUser(_context, { filter: { id: uploaderId } });
-                const uploaderName = uploader.success ? (uploader.result.displayName || uploader.result.username || 'Someone') : 'Someone';
+                const uploaderFound = await userCtr.getUser(_context, { filter: { id: uploaderId } });
+
+                if (!uploaderFound.success) {
+                    return galleryResult;
+                }
+
+                const { displayName = '', username = '' } = uploaderFound.result;
+                const uploaderName = (displayName || username);
 
                 if (followers.success) {
                     for (const f of followers.result.docs) {
@@ -246,21 +239,22 @@ export const galleryCtr = {
                                 entityId: galleryResult.result.id,
                                 actorId: uploaderId,
                                 title: `${uploaderName} has posted a new ${galleryResult.result.type?.toLowerCase() ?? 'media'}`,
-                                data: { redirect: { kind: 'GALLERY', id: galleryResult.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
-                                channels: [E_NotificationChannel.IN_APP],
-                                isEmailSuppressed: true,
+                                presentation: {
+                                    redirect: { kind: E_RedicrectType.MEDIA, id: galleryResult.result.id },
+                                    ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                                },
                             },
                         });
                     }
                 }
             }
             catch {
-                // Don't block gallery creation if notifications fail
             }
         }
 
         return galleryResult;
     },
+
     updateGallery: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateGallery>,

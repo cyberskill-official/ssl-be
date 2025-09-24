@@ -19,7 +19,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
@@ -656,11 +656,9 @@ export const conversationCtr = {
                         targetId: recipientId,
                         type: E_NotificationType.NEW_MESSAGE,
                         entityType: E_NotificationEntityType.CONVERSATION,
-                        entityId: messageResult.result.id,
+                        entityId: directMessageResult.conversationId, // <-- only change: use conversationId
                         actorId: senderId,
-                        data: { redirect: { kind: 'CONVERSATION', id: directMessageResult.conversationId } },
-                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                        isEmailSuppressed: false,
+                        presentation: { redirect: { kind: E_RedicrectType.CONVERSATION, id: directMessageResult.conversationId } },
                     },
                 });
             }
@@ -788,9 +786,7 @@ export const conversationCtr = {
                             entityId: conversation.id,
                             title: 'New message',
                             body: content.value, // tuỳ nội dung message
-                            data: { redirect: { kind: 'CONVERSATION', id: conversation.id } },
-                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                            isEmailSuppressed: false,
+                            presentation: { redirect: { kind: E_RedicrectType.CONVERSATION, id: conversation.id } },
                         },
                     });
                 }

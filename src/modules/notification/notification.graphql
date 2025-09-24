@@ -1,4 +1,3 @@
-# --- ENUMS ---
 enum E_NotificationType {
     MEDIA_LIKED
     NEW_FOLLOWER
@@ -49,7 +48,19 @@ enum E_NotificationAction {
     DELETED
 }
 
-# --- TYPES ---
+enum E_RedicrectType {
+    PROFILE
+    MEDIA
+    BLOG
+    PODCAST
+    MESSAGE_THREAD
+    GUESTBOOK_ENTRY
+    PAYMENT
+    EVENT
+    DESTINATION
+    CONVERSATION
+}
+
 type T_Notification {
     id: String
     createdAt: DateTime
@@ -71,20 +82,20 @@ type T_Notification {
     isEmailSuppressed: Boolean
 }
 
-# Presentation payload included with NOTIFICATION_ADDED subscription (server-built, best-effort)
 type T_NotificationPresentationActor {
     id: String
     displayName: String
     accountType: String
-    avatarUrl: String
+    avatarUrls: [String]
 }
 
 type T_NotificationRedirect {
-    kind: String
+    kind: E_RedicrectType
     id: String
 }
 
 type T_NotificationPresentation {
+    id: String
     actor: T_NotificationPresentationActor
     thumbnailUrl: String
     redirect: T_NotificationRedirect
@@ -128,6 +139,18 @@ input Input_QueryNotification {
     status: E_NotificationStatus
 }
 
+input Input_NotificationRedirect {
+    kind: E_RedicrectType
+    id: String
+}
+
+input Input_NotificationPresentation {
+    id: String
+    thumbnailUrl: String
+    redirect: Input_NotificationRedirect
+    headline: String
+}
+
 input Input_CreateNotification {
     type: E_NotificationType!
     actorId: String
@@ -139,6 +162,8 @@ input Input_CreateNotification {
     data: JSON
     channels: [E_NotificationChannel]
     scheduledAt: DateTime
+    # 🔹 hint từ client; server sẽ safe-merge/derive
+    presentation: Input_NotificationPresentation
 }
 
 input Input_UpdateNotification {
@@ -157,6 +182,7 @@ type T_NotificationEvent {
     notification: T_Notification
 }
 
+# --- ROOT OPERATIONS ---
 type Query {
     getNotifications(filter: Input_QueryNotification, options: JSON): T_Response_Notifications!
     getNotification(filter: Input_QueryNotification): T_Response_Notification!
@@ -167,8 +193,8 @@ type Mutation {
     createNotificationWithSettings(doc: Input_CreateNotification!): T_Response_Notification!
     updateNotification(filter: Input_QueryNotification!, update: Input_UpdateNotification!): T_Response_Notification!
     deleteNotification(filter: Input_QueryNotification!): T_Response_Notification!
-    markNotificationRead(filter: Input_QueryNotification!):   T_Response_Notification!
-    dismissNotification(filter: Input_QueryNotification!):T_Response_Notification!
+    markNotificationRead(filter: Input_QueryNotification!): T_Response_Notification!
+    dismissNotification(filter: Input_QueryNotification!): T_Response_Notification!
 }
 
 type Subscription {

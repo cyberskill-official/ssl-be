@@ -11,7 +11,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
@@ -19,7 +19,6 @@ import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog 
 import { BlogModel } from './blog.model.js';
 
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
-
 export const blogCtr = {
     getBlog: async (
         _context: I_Context,
@@ -80,85 +79,92 @@ export const blogCtr = {
         { doc }: I_Input_CreateOne<I_Input_CreateBlog>,
     ): Promise<I_Return<I_Blog>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+        const authorId = currentUser.id;
 
-        const { languageId, relatedBlogsIds } = doc;
-        doc.authorId = currentUser.id;
+        // gán tác giả
+        doc.authorId = authorId;
 
-        if (languageId) {
-            const language = await languageCtr.getLanguage(context, {
-                filter: { id: languageId },
-            });
-
-            if (!language) {
-                throwError({
-                    message: 'Language does not exist',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+        // validate language (nếu có)
+        if (doc.languageId) {
+            const language = await languageCtr.getLanguage(context, { filter: { id: doc.languageId } });
+            if (!language.success) {
+                throwError({ message: 'Language does not exist', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
-        if (relatedBlogsIds) {
-            const blogs = await blogCtr.getBlogs(context, {
-                filter: { id: { $in: relatedBlogsIds } },
-                options: {
-                    limit: relatedBlogsIds?.length,
-                },
+        // validate relatedBlogsIds (nếu có)
+        if (doc.relatedBlogsIds?.length) {
+            const blogsFound = await blogCtr.getBlogs(context, {
+                filter: { id: { $in: doc.relatedBlogsIds } },
+                options: { limit: doc.relatedBlogsIds.length },
             });
-            if (!blogs.success) {
-                throwError({
-                    message: 'Error fetching related blogs',
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
+            if (!blogsFound.success) {
+                throwError({ message: 'Error fetching related blogs', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
-
-            if (blogs.result.docs.length !== relatedBlogsIds?.length) {
-                throwError({
-                    message: 'One or more relatedBlogsIds do not exist',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+            if (blogsFound.result.docs.length !== doc.relatedBlogsIds.length) {
+                throwError({ message: 'One or more relatedBlogsIds do not exist', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
+        // tạo blog
         const blogResult = await mongooseCtr.createOne(doc);
+        if (!blogResult.success)
+            return blogResult;
 
-        if (blogResult.success) {
+        // ký thumbnail (nếu có) — không iframe
+        let thumbnailUrl: string | undefined;
+        try {
+            if (blogResult.result.featuredImage) {
+                thumbnailUrl = bunnyCtr.generateSignedUrl({
+                    fullUrl: blogResult.result.featuredImage,
+                    extraQueryParams: { class: 'normal' },
+                });
+            }
+        }
+        catch {
+            // ignore
+        }
+
+        const title = `There is a new blog: "${blogResult.result.title}"`;
+
+        // không giới hạn: lấy tất cả user active, bắn noti cho tất cả (trừ tác giả)
+        try {
             const users = await userCtr.getUsers(context, {
                 filter: { isActive: true },
                 options: { pagination: false },
             });
 
-            if (users.success) {
-                // prepare thumbnail if available
-                let thumbnailUrl: string | undefined;
-                try {
-                    if (blogResult.result.featuredImage) {
-                        thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' } });
-                    }
-                }
-                catch {
-                    // ignore
-                }
-
-                for (const user of users.result.docs) {
-                    await notificationCtr.createNotificationWithSettings(context, {
-                        doc: {
-                            targetId: user.id,
-                            type: E_NotificationType.NEW_BLOG_POST,
-                            entityType: E_NotificationEntityType.BLOG,
-                            entityId: blogResult.result.id,
-                            actorId: currentUser.id,
-                            title: `There is a new blog: "${blogResult.result.title}"`,
-                            data: { redirect: { kind: 'BLOG', id: blogResult.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
-                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                            isEmailSuppressed: false,
-                        },
-                    });
-                }
+            if (users.success && users.result.docs.length > 0) {
+                await Promise.all(
+                    users.result.docs
+                        .map(u => u.id)
+                        .filter((id): id is string => !!id && id !== authorId)
+                        .map(targetId =>
+                            notificationCtr.createNotificationWithSettings(context, {
+                                doc: {
+                                    targetId,
+                                    type: E_NotificationType.NEW_BLOG_POST,
+                                    entityType: E_NotificationEntityType.BLOG,
+                                    entityId: blogResult.result.id,
+                                    actorId: authorId,
+                                    title,
+                                    presentation: {
+                                        redirect: { kind: E_RedicrectType.BLOG, id: blogResult.result.id },
+                                        ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                                    },
+                                },
+                            }),
+                        ),
+                );
             }
+        }
+        catch {
+            // không chặn flow tạo blog nếu notify lỗi
         }
 
         return blogResult;
     },
+
     updateBlog: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>,

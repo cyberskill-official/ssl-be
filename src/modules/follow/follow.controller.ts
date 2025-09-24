@@ -15,7 +15,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
@@ -146,15 +146,10 @@ export const followCtr = {
                     targetId: followId, // người được follow
                     entityType: E_NotificationEntityType.USER,
                     entityId: currentUser.id, // profile của người follow
-                    title: `${currentUser.username} is now following you`, // text hiển thị
-                    data: {
-                        redirect: { kind: 'PROFILE', id: currentUser.id },
+                    title: `${currentUser.displayName || currentUser.username} is now following you`, // text hiển thị
+                    presentation: {
+                        redirect: { kind: E_RedicrectType.PROFILE, id: currentUser.id },
                     },
-                    channels: [
-                        E_NotificationChannel.IN_APP,
-                        E_NotificationChannel.EMAIL,
-                    ],
-                    isEmailSuppressed: false,
                 },
             });
         }

@@ -59,23 +59,31 @@ export enum E_NOTIFICATION_EVENTS {
     NOTIFICATION_DELETED = 'NOTIFICATION_DELETED',
 }
 
-// Presentation interfaces (best-effort, non-persisted)
-export interface I_NotificationPresentationActor {
-    id?: string;
-    displayName?: string;
-    accountType?: string;
-    avatarUrl?: string;
-}
-
-export interface I_NotificationRedirect {
-    kind?: string;
-    id?: string;
+export enum E_RedicrectType {
+    PROFILE = 'PROFILE',
+    MEDIA = 'MEDIA',
+    BLOG = 'BLOG',
+    PODCAST = 'PODCAST',
+    MESSAGE_THREAD = 'MESSAGE_THREAD',
+    GUESTBOOK_ENTRY = 'GUESTBOOK_ENTRY',
+    PAYMENT = 'PAYMENT',
+    EVENT = 'EVENT',
+    DESTINATION = 'DESTINATION',
+    CONVERSATION = 'CONVERSATION',
 }
 
 export interface I_NotificationPresentation {
-    actor?: I_NotificationPresentationActor;
+    id?: string;
+    actor?: {
+        displayName?: string;
+        accountType?: string;
+        avatarUrls?: string[];
+    };
     thumbnailUrl?: string;
-    redirect?: I_NotificationRedirect;
+    redirect?: {
+        kind?: E_RedicrectType;
+        id?: string;
+    };
     headline?: string;
 }
 
@@ -87,14 +95,14 @@ export interface I_Notification extends I_GenericDocument {
     entityId?: string;
     title?: string;
     body?: string;
-    data?: Record<string, unknown>;
+    data?: any;
     presentation?: I_NotificationPresentation;
     channels?: E_NotificationChannel[];
     status?: E_NotificationStatus;
     scheduledAt?: Date;
     readAt?: Date;
     dismissedAt?: Date;
-    isEmailSuppressed: boolean;
+    isEmailSuppressed?: boolean;
 }
 
 export type T_Notification_Populate = never;

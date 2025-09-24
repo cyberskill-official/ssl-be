@@ -26,7 +26,7 @@ export const NotificationModel = mongo.createModel<I_Notification>({
         entityId: { type: String },
         title: { type: String },
         body: { type: String },
-        data: { type: Object },
+        // legacy `data` removed; use `presentation` + denormalized fields
         channels: {
             type: [String],
             enum: Object.values(E_NotificationChannel),

@@ -23,7 +23,7 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { applyNameFilters, validate } from '#shared/util/index.js';
 import { getEffectiveLocation } from '#shared/util/location-map.js';
 
@@ -193,7 +193,6 @@ export const userCtr = {
             });
         }
 
-        // 🔔 Bắn notification cho nearby users
         if (userCreated.success && locationCreated.success) {
             const allUsers = await userCtr.getUsers(context, {
                 filter: { isActive: true },
@@ -214,9 +213,7 @@ export const userCtr = {
                             entityId: userCreated.result.id,
                             actorId: userCreated.result.id,
                             title: `There is a new member: "${username}"`,
-                            data: { redirect: { kind: 'PROFILE', id: userCreated.result.id } },
-                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                            isEmailSuppressed: false,
+                            presentation: { redirect: { kind: E_RedicrectType.PROFILE, id: userCreated.result.id } },
                         },
                     });
                 }

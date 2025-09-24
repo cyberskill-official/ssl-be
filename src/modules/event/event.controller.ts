@@ -16,7 +16,7 @@ import { destinationCtr } from '#modules/destination/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
 
@@ -109,7 +109,7 @@ export const eventCtr = {
             });
         }
 
-        if (!description || description.length < 25) {
+        if (!description || description.length < 50) {
             throwError({
                 message: 'Description minimum: 50 characters.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -404,9 +404,7 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
                         title: notifTitle,
-                        data: { redirect: { kind: 'ANNOUNCEMENT_MAP', id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
-                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                        isEmailSuppressed: false,
+                        presentation: { redirect: { kind: E_RedicrectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }
@@ -435,9 +433,7 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
                         title: notifTitle,
-                        data: { redirect: { kind: 'ANNOUNCEMENT_MAP', id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
-                        channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                        isEmailSuppressed: false,
+                        presentation: { redirect: { kind: E_RedicrectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }
