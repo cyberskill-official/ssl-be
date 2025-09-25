@@ -8,6 +8,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
@@ -121,37 +122,39 @@ export const blogCtr = {
                 });
             }
         }
-        catch {
-            // ignore
-        }
+        catch { /* noop */ }
 
+        // gửi notification cho mọi user active (trừ tác giả) — đã dedupe
         try {
             const users = await userCtr.getUsers(context, {
-                filter: { isActive: true },
+                filter: { isActive: true, rolesIds: { $ne: [E_Role_Staff.ADMIN, E_Role.STAFF] } },
                 options: { pagination: false },
             });
 
             if (users.success && users.result.docs.length > 0) {
-                await Promise.all(
+                const uniqueTargetIds = [...new Set(
                     users.result.docs
                         .map(u => u.id)
-                        .filter((id): id is string => !!id && id !== authorId)
-                        .map(targetId =>
-                            notificationCtr.createNotificationWithSettings(context, {
-                                doc: {
-                                    targetId,
-                                    type: E_NotificationType.NEW_BLOG_POST,
-                                    entityType: E_NotificationEntityType.BLOG,
-                                    entityId: blogResult.result.id,
-                                    actorId: authorId,
-                                    title: `There is a new blog: "${blogResult.result.title}"`,
-                                    presentation: {
-                                        redirect: { kind: E_RedirectType.BLOG, id: blogResult.result.id },
-                                        thumbnailUrl,
-                                    },
+                        .filter((id): id is string => !!id && id !== authorId),
+                )];
+
+                await Promise.all(
+                    uniqueTargetIds.map(targetId =>
+                        notificationCtr.createNotificationWithSettings(context, {
+                            doc: {
+                                targetId,
+                                type: E_NotificationType.NEW_BLOG_POST,
+                                entityType: E_NotificationEntityType.BLOG,
+                                entityId: blogResult.result.id,
+                                actorId: authorId,
+                                presentation: {
+                                    redirect: { kind: E_RedirectType.BLOG, id: blogResult.result.id },
+                                    thumbnailUrl: blogResult.result.featuredImage ? thumbnailUrl : undefined,
+                                    // không gửi headline theo yêu cầu
                                 },
-                            }),
-                        ),
+                            },
+                        }),
+                    ),
                 );
             }
         }

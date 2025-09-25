@@ -211,13 +211,13 @@ export const userCtr = {
                             entityType: E_NotificationEntityType.USER,
                             entityId: userCreated.result.id,
                             actorId: userCreated.result.id,
-                            title: `There is a new member: "${username}"`,
                             presentation: {
                                 redirect: { kind: E_RedirectType.PROFILE, id: userCreated.result.id },
                                 actor: {
                                     username,
                                     accountType: userCreated.result.accountType,
                                     avatarUrl: userCreated.result.partner1?.gallery?.url,
+                                    gender: userCreated.result.partner1?.gender,
                                 },
                             },
                         },

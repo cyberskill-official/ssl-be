@@ -8,6 +8,7 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/authn.controller.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/user.controller.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
@@ -54,7 +55,9 @@ export const notificationCtr = {
     },
 
     getNotificationCounters: async (context: I_Context) => {
-        const userId = context.req?.session?.user?.id;
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const userId = currentUser.id;
+
         if (!userId) {
             return { numberOfConversationUnRead: 0, numberOfOtherUnRead: 0 };
         }

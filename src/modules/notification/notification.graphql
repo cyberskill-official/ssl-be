@@ -71,8 +71,8 @@ type T_Notification {
     entityType: E_NotificationEntityType
     entityId: String
     title: String
-    body: String
-    data: JSON
+    # body: String
+    # data: JSON
     presentation: T_NotificationPresentation
     channels: [E_NotificationChannel]
     status: E_NotificationStatus
@@ -86,6 +86,7 @@ type T_NotificationPresentationActor {
     username: String
     accountType: String
     avatarUrl: String
+    gender: String
 }
 
 type T_NotificationRedirect {

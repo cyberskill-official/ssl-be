@@ -75,6 +75,7 @@ export interface T_NotificationPresentationActor {
     username?: string;
     accountType?: string;
     avatarUrl?: string;
+    gender?: string;
 }
 
 export interface I_NotificationRedirect {
@@ -87,6 +88,7 @@ export interface I_NotificationPresentation {
     actor?: T_NotificationPresentationActor;
     thumbnailUrl?: string;
     redirect?: I_NotificationRedirect;
+    headline?: string;
 }
 
 export interface I_Notification extends I_GenericDocument {
@@ -95,7 +97,6 @@ export interface I_Notification extends I_GenericDocument {
     targetId?: string; // Ai nhận noti
     entityType?: E_NotificationEntityType;
     entityId?: string;
-    title?: string;
     body?: string;
     // data?: any;
     presentation?: I_NotificationPresentation;

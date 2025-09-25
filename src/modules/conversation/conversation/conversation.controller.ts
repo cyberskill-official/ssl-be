@@ -656,13 +656,13 @@ export const conversationCtr = {
                         targetId: recipientId,
                         type: E_NotificationType.NEW_MESSAGE,
                         entityType: E_NotificationEntityType.CONVERSATION,
-                        entityId: directMessageResult.conversationId, // <-- only change: use conversationId
+                        entityId: directMessageResult.conversationId,
                         actorId: senderId,
-                        title: 'New message',
                         presentation: { redirect: { kind: E_RedirectType.CONVERSATION, id: directMessageResult.conversationId }, actor: {
                             username: finalConversationResult.result.participants?.find(p => p.userId === senderId)?.user?.username,
                             accountType: finalConversationResult.result.participants?.find(p => p.userId === senderId)?.user?.accountType,
                             avatarUrl: finalConversationResult.result.participants?.find(p => p.userId === senderId)?.user?.partner1?.gallery?.url,
+                            gender: finalConversationResult.result.participants?.find(p => p.userId === senderId)?.user?.partner1?.gender,
                         } },
                     },
                 });
@@ -789,11 +789,11 @@ export const conversationCtr = {
                             type: E_NotificationType.NEW_MESSAGE,
                             entityType: E_NotificationEntityType.CONVERSATION,
                             entityId: conversation.id,
-                            title: 'New message',
-                            body: content.value, // tuỳ nội dung message
+                            body: content.value,
                             presentation: { redirect: { kind: E_RedirectType.CONVERSATION, id: conversation.id }, actor: {
                                 username: conversation.participants?.find(p => p.userId === senderId)?.user?.username,
                                 accountType: conversation.participants?.find(p => p.userId === senderId)?.user?.accountType,
+                                gender: conversation.participants?.find(p => p.userId === senderId)?.user?.partner1?.gender,
                             } },
                         },
                     });

@@ -161,13 +161,13 @@ export const followCtr = {
                     targetId: followId, // người được follow
                     entityType: E_NotificationEntityType.USER,
                     entityId: currentUser.id, // profile của người follow
-                    title: `${currentUser.username} is now following you`, // text hiển thị
                     presentation: {
                         redirect: { kind: E_RedirectType.PROFILE, id: currentUser.id },
                         actor: {
                             username: currentUser.username,
                             accountType: currentUser.accountType,
                             avatarUrl: currentUser.partner1?.gallery?.url,
+                            gender: currentUser.partner1?.gender,
                         },
                     },
                 },

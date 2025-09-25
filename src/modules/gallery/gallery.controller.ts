@@ -237,7 +237,6 @@ export const galleryCtr = {
                                 entityType: E_NotificationEntityType.MEDIA,
                                 entityId: galleryResult.result.id,
                                 actorId: uploaderId,
-                                title: `${uploaderName} has posted a new ${galleryResult.result.type?.toLowerCase() ?? 'media'}`,
                                 presentation: {
                                     redirect: { kind: E_RedirectType.MEDIA, id: galleryResult.result.id },
                                     ...(thumbnailUrl ? { thumbnailUrl } : {}),
@@ -245,6 +244,7 @@ export const galleryCtr = {
                                         username: uploaderName,
                                         accountType: uploaderFound.result.accountType,
                                         avatarUrl: uploaderFound.result.partner1?.gallery?.url,
+                                        gender: uploaderFound.result.partner1?.gender,
                                     },
                                 },
                             },

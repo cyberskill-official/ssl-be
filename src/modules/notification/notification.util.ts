@@ -5,6 +5,7 @@ import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
 import { userCtr } from '#modules/user/user.controller.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Notification, I_NotificationPresentation } from './notification.type.js';
 
@@ -13,6 +14,8 @@ import {
     E_NotificationEntityType,
     E_RedirectType,
 } from './notification.type.js';
+
+const env = getEnv();
 
 export function deriveRedirect(n: I_Notification) {
     switch (n.entityType) {
@@ -42,12 +45,18 @@ export function safeRedirect(r?: { kind?: string; id?: string }) {
     return undefined;
 }
 
-// Whitelist CDN để nhận thumbnail/avatar từ hint một cách an toàn
+const TRUSTED_HOSTS = new Set(
+    [
+        env.BUNNY_CDN_HOSTNAME,
+        'media.bunnycdn.com',
+        'cdn.yourdomain.com',
+    ].filter(Boolean) as string[],
+);
+
 function isTrustedCdn(u?: string): boolean {
     try {
         const host = new URL(String(u)).hostname;
-        // Cập nhật theo hạ tầng CDN của bạn
-        return ['cdn.yourdomain.com', 'media.bunnycdn.com'].includes(host);
+        return TRUSTED_HOSTS.has(host);
     }
     catch {
         return false;
@@ -81,26 +90,26 @@ export async function buildPresentation(
 ): Promise<I_NotificationPresentation> {
     const presentation: I_NotificationPresentation = { id: notification.id };
 
-    /* 1) ACTOR (populate từ DB + fallback sang hint) */
+    /* 1) ACTOR: ưu tiên DB, fallback sang hint */
     let actorUsername: string | undefined;
     let actorAccountType: string | undefined;
     let actorAvatarUrl: string | undefined;
+    let actorGender: string | undefined;
 
-    // a) lấy từ DB nếu có actorId
     if (notification.actorId) {
         try {
             const actorFound = await userCtr.getUser(context, {
                 filter: { id: notification.actorId },
-                // BẮT BUỘC: populate để có gallery.url
+                // Populate để có gallery.url và gender
                 populate: [
                     {
                         path: 'partner1',
-                        select: 'id galleryId',
+                        select: 'id galleryId gender',
                         populate: [{ path: 'gallery', select: 'id url' }],
                     },
                     {
                         path: 'partner2',
-                        select: 'id galleryId',
+                        select: 'id galleryId gender',
                         populate: [{ path: 'gallery', select: 'id url' }],
                     },
                 ],
@@ -110,7 +119,7 @@ export async function buildPresentation(
                 const actor = actorFound.result;
                 actorUsername = actor.username;
                 actorAccountType = actor.accountType;
-
+                // ưu tiên partner1, sau đó partner2
                 const rawAvatar
                     = actor.partner1?.gallery?.url
                         ?? actor.partner2?.gallery?.url
@@ -122,6 +131,7 @@ export async function buildPresentation(
                         extraQueryParams: { class: 'normal' },
                     });
                 }
+                actorGender = actor.partner1?.gender ?? actor.partner2?.gender ?? actorGender;
             }
         }
         catch {
@@ -129,7 +139,7 @@ export async function buildPresentation(
         }
     }
 
-    // b) fallback sang hint nếu DB không có avatar/username/accountType
+    // Fallback từ hint nếu thiếu
     if (!actorUsername && presentationHint?.actor?.username) {
         actorUsername = presentationHint.actor.username;
     }
@@ -139,16 +149,20 @@ export async function buildPresentation(
     if (!actorAvatarUrl && presentationHint?.actor?.avatarUrl && isTrustedCdn(presentationHint.actor.avatarUrl)) {
         actorAvatarUrl = presentationHint.actor.avatarUrl;
     }
+    if (!actorGender && presentationHint?.actor?.gender) {
+        actorGender = presentationHint.actor.gender;
+    }
 
-    if (actorUsername || actorAccountType || actorAvatarUrl) {
+    if (actorUsername || actorAccountType || actorAvatarUrl || actorGender) {
         presentation.actor = {
             username: actorUsername,
             accountType: actorAccountType,
             avatarUrl: actorAvatarUrl,
+            gender: actorGender,
         };
     }
 
-    /* 2) THUMBNAIL (hint hợp lệ -> derive cho MEDIA) */
+    /* 2) THUMBNAIL: ưu tiên hint hợp lệ → derive cho MEDIA */
     try {
         if (presentationHint?.thumbnailUrl && isTrustedCdn(presentationHint.thumbnailUrl)) {
             presentation.thumbnailUrl = presentationHint.thumbnailUrl;
@@ -164,7 +178,7 @@ export async function buildPresentation(
         // ignore
     }
 
-    /* 3) Redirect: safe override -> derive */
+    /* 3) Redirect: safe override → derive */
     presentation.redirect = safeRedirect(presentationHint?.redirect) ?? deriveRedirect(notification);
 
     return presentation;

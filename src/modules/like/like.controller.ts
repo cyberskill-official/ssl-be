@@ -120,6 +120,7 @@ export const likeCtr = {
 
         // 3) Create like
         const created = await mongooseCtr.createOne({ ...doc, userId: currentUser.id });
+
         // 4) Notification (Gallery only)
         if (created.success && doc.entityType === E_LikeEntityType.GALLERY) {
             const galleryFound = await galleryCtr.getGallery(context, { filter: { id: doc.entityId } });
@@ -132,20 +133,23 @@ export const likeCtr = {
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
                             targetId: ownerId,
-                            type: E_NotificationType.MEDIA_LIKED,
+                            type: E_NotificationType.MEDIA_LIKED, // IN_APP only theo settings
                             entityType: E_NotificationEntityType.MEDIA,
                             entityId: doc.entityId,
                             actorId: currentUser.id,
-                            title: `${currentUser.username} liked your ${
-                                galleryFound.result.type?.toLowerCase() ?? 'media'
-                            }`,
                             presentation: {
-                                redirect: { kind: E_RedirectType.MEDIA, id: doc.entityId },
+                                // CLICK → profile của người like (đúng guideline)
+                                redirect: { kind: E_RedirectType.PROFILE, id: currentUser.id },
+
+                                // Thumbnail media bên trái chuông
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
+
+                                // Dùng để UI tô màu tên theo loại profile
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,
                                     avatarUrl: currentUser.partner1?.gallery?.url,
+                                    gender: currentUser.partner1?.gender,
                                 },
                             },
                         },
@@ -156,6 +160,7 @@ export const likeCtr = {
 
         return created;
     },
+
     deleteLike: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryLike>,
