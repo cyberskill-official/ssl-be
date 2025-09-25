@@ -18,9 +18,8 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
-import { buildNotifThumbnail } from '#modules/notification/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
+import { buildNotifThumbnail, notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -240,7 +239,7 @@ export const galleryCtr = {
                                 actorId: uploaderId,
                                 title: `${uploaderName} has posted a new ${galleryResult.result.type?.toLowerCase() ?? 'media'}`,
                                 presentation: {
-                                    redirect: { kind: E_RedicrectType.MEDIA, id: galleryResult.result.id },
+                                    redirect: { kind: E_RedirectType.MEDIA, id: galleryResult.result.id },
                                     ...(thumbnailUrl ? { thumbnailUrl } : {}),
                                 },
                             },

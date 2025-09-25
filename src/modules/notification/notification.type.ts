@@ -50,7 +50,6 @@ export enum E_NotificationEntityType {
     CONVERSATION = 'CONVERSATION',
 }
 
-// 🔹 Notification Subscription Events
 export enum E_NOTIFICATION_EVENTS {
     NOTIFICATION_ADDED = 'NOTIFICATION_ADDED',
     NOTIFICATION_UPDATED = 'NOTIFICATION_UPDATED',
@@ -59,7 +58,7 @@ export enum E_NOTIFICATION_EVENTS {
     NOTIFICATION_DELETED = 'NOTIFICATION_DELETED',
 }
 
-export enum E_RedicrectType {
+export enum E_RedirectType {
     PROFILE = 'PROFILE',
     MEDIA = 'MEDIA',
     BLOG = 'BLOG',
@@ -75,13 +74,13 @@ export enum E_RedicrectType {
 export interface I_NotificationPresentation {
     id?: string;
     actor?: {
-        displayName?: string;
+        username?: string;
         accountType?: string;
         avatarUrls?: string[];
     };
     thumbnailUrl?: string;
     redirect?: {
-        kind?: E_RedicrectType;
+        kind?: E_RedirectType;
         id?: string;
     };
     headline?: string;

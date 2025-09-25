@@ -16,11 +16,11 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { blogCtr } from '#modules/blog/index.js';
 import { galleryCtr } from '#modules/gallery/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationEntityType,
     E_NotificationType,
-    E_RedicrectType,
+    E_RedirectType,
 } from '#modules/notification/notification.type.js';
 import { buildNotifThumbnail } from '#modules/notification/notification.util.js';
 
@@ -140,7 +140,7 @@ export const likeCtr = {
                                 galleryFound.result.type?.toLowerCase() ?? 'media'
                             }`,
                             presentation: {
-                                redirect: { kind: E_RedicrectType.MEDIA, id: doc.entityId },
+                                redirect: { kind: E_RedirectType.MEDIA, id: doc.entityId },
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             },
                         },

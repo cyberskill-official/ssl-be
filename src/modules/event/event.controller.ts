@@ -15,8 +15,8 @@ import { conversationCtr, E_ConversationType } from '#modules/conversation/index
 import { destinationCtr } from '#modules/destination/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
 
@@ -394,7 +394,7 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
                         title: notifTitle,
-                        presentation: { redirect: { kind: E_RedicrectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }
@@ -423,7 +423,7 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
                         title: notifTitle,
-                        presentation: { redirect: { kind: E_RedicrectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }

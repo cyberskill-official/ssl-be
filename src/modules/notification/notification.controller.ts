@@ -318,7 +318,7 @@ export const notificationCtr = {
     subscribeToNotificationAdded: () =>
         withFilter<I_NotificationAddedPayload, { userId?: string }, I_WsContext>(
             () => pubsub.asyncIterableIterator([E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED]),
-            async (payload, _vars, context) => {
+            async (payload, _variables, context) => {
                 const currentUserId = context?.req?.session?.user?.id;
                 return !!currentUserId && payload?.notification.targetId === currentUserId;
             },
@@ -327,7 +327,7 @@ export const notificationCtr = {
     subscribeToNotificationUpdated: () =>
         withFilter<I_NotificationUpdatedPayload, { userId?: string }, I_WsContext>(
             () => pubsub.asyncIterableIterator([E_NOTIFICATION_EVENTS.NOTIFICATION_UPDATED]),
-            async (payload, _vars, context) => {
+            async (payload, _variables, context) => {
                 const currentUserId = context?.req?.session?.user?.id;
                 return !!currentUserId && payload?.notification.targetId === currentUserId;
             },

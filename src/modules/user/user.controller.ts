@@ -22,8 +22,8 @@ import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { applyNameFilters, validate } from '#shared/util/index.js';
 import { getEffectiveLocation } from '#shared/util/location-map.js';
 
@@ -212,7 +212,7 @@ export const userCtr = {
                             entityId: userCreated.result.id,
                             actorId: userCreated.result.id,
                             title: `There is a new member: "${username}"`,
-                            presentation: { redirect: { kind: E_RedicrectType.PROFILE, id: userCreated.result.id } },
+                            presentation: { redirect: { kind: E_RedirectType.PROFILE, id: userCreated.result.id } },
                         },
                     });
                 }

@@ -13,6 +13,7 @@ import type {
     I_Input_UpdateNotification,
     I_NotificationAddedPayload,
     I_NotificationDeletedPayload,
+    I_NotificationDismissedPayload,
     I_NotificationReadPayload,
     I_NotificationUpdatedPayload,
 } from './notification.type.js';
@@ -27,8 +28,6 @@ const notificationResolver = {
             args: I_Input_FindPaging<I_Input_QueryNotification>,
             context: I_Context,
         ) => notificationCtr.getNotifications(context, args),
-        getNotificationCounters: (_parent: unknown, _args: unknown, context: I_Context) =>
-            notificationCtr.getNotificationCounters(context),
     },
     Mutation: {
         createNotification: (
@@ -59,19 +58,23 @@ const notificationResolver = {
     },
     Subscription: {
         notificationAdded: {
-            subscribe: () => notificationCtr.subscribeToNotificationAdded(),
+            subscribe: notificationCtr.subscribeToNotificationAdded(),
             resolve: (payload: I_NotificationAddedPayload) => payload.notification,
         },
         notificationUpdated: {
-            subscribe: () => notificationCtr.subscribeToNotificationUpdated(),
+            subscribe: notificationCtr.subscribeToNotificationUpdated(),
             resolve: (payload: I_NotificationUpdatedPayload) => payload.notification,
         },
         notificationRead: {
-            subscribe: () => notificationCtr.subscribeToNotificationRead(),
+            subscribe: notificationCtr.subscribeToNotificationRead(),
             resolve: (payload: I_NotificationReadPayload) => payload,
         },
+        notificationDismissed: {
+            subscribe: notificationCtr.subscribeToNotificationDismissed(),
+            resolve: (payload: I_NotificationDismissedPayload) => payload,
+        },
         notificationDeleted: {
-            subscribe: () => notificationCtr.subscribeToNotificationDeleted(),
+            subscribe: notificationCtr.subscribeToNotificationDeleted(),
             resolve: (payload: I_NotificationDeletedPayload) => payload,
         },
     },

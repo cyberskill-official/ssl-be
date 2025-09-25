@@ -48,7 +48,7 @@ enum E_NotificationAction {
     DELETED
 }
 
-enum E_RedicrectType {
+enum E_RedirectType {
     PROFILE
     MEDIA
     BLOG
@@ -84,13 +84,13 @@ type T_Notification {
 
 type T_NotificationPresentationActor {
     id: String
-    displayName: String
+    username: String
     accountType: String
     avatarUrls: [String]
 }
 
 type T_NotificationRedirect {
-    kind: E_RedicrectType
+    kind: E_RedirectType
     id: String
 }
 
@@ -140,7 +140,7 @@ input Input_QueryNotification {
 }
 
 input Input_NotificationRedirect {
-    kind: E_RedicrectType
+    kind: E_RedirectType
     id: String
 }
 
@@ -183,8 +183,8 @@ type T_NotificationEvent {
 }
 
 type T_NotificationCounters {
-  numberOfConversationUnRead: Int!
-  numberOfOtherUnRead: Int!
+    numberOfConversationUnRead: Int!
+    numberOfOtherUnRead: Int!
 }
 
 type Query {

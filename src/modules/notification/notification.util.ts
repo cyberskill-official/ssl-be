@@ -8,32 +8,32 @@ import { userCtr } from '#modules/user/user.controller.js';
 
 import type { I_Notification, I_NotificationPresentation } from './index.js';
 
-import { E_NotificationChannel, E_NotificationEntityType, E_RedicrectType } from './index.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_RedirectType } from './notification.type.js';
 
 export function deriveRedirect(n: I_Notification) {
     switch (n.entityType) {
         case E_NotificationEntityType.MEDIA:
-            return { kind: E_RedicrectType.MEDIA, id: n.entityId };
+            return { kind: E_RedirectType.MEDIA, id: n.entityId };
         case E_NotificationEntityType.BLOG:
-            return { kind: E_RedicrectType.BLOG, id: n.entityId };
+            return { kind: E_RedirectType.BLOG, id: n.entityId };
         case E_NotificationEntityType.PODCAST:
-            return { kind: E_RedicrectType.PODCAST, id: n.entityId };
+            return { kind: E_RedirectType.PODCAST, id: n.entityId };
         case E_NotificationEntityType.ANNOUNCEMENT:
-            return { kind: E_RedicrectType.EVENT, id: n.entityId };
+            return { kind: E_RedirectType.EVENT, id: n.entityId };
         case E_NotificationEntityType.CONVERSATION:
         case E_NotificationEntityType.MESSAGE_THREAD:
-            return { kind: E_RedicrectType.CONVERSATION, id: n.entityId };
+            return { kind: E_RedirectType.CONVERSATION, id: n.entityId };
         case E_NotificationEntityType.GUESTBOOK_ENTRY:
-            return { kind: E_RedicrectType.GUESTBOOK_ENTRY, id: n.entityId };
+            return { kind: E_RedirectType.GUESTBOOK_ENTRY, id: n.entityId };
         default:
-            return n.actorId ? { kind: E_RedicrectType.PROFILE, id: n.actorId } : undefined;
+            return n.actorId ? { kind: E_RedirectType.PROFILE, id: n.actorId } : undefined;
     }
 }
 
-const WHITELIST = new Set(Object.values(E_RedicrectType));
+const WHITELIST = new Set(Object.values(E_RedirectType));
 export function safeRedirect(r?: { kind?: string; id?: string }) {
-    if (r?.id && r?.kind && WHITELIST.has(r.kind as E_RedicrectType)) {
-        return { kind: r.kind as E_RedicrectType, id: r.id };
+    if (r?.id && r?.kind && WHITELIST.has(r.kind as E_RedirectType)) {
+        return { kind: r.kind as E_RedirectType, id: r.id };
     }
     return undefined;
 }
@@ -82,7 +82,6 @@ export async function buildPresentation(
 ): Promise<I_NotificationPresentation> {
     const presentation: I_NotificationPresentation = {};
 
-    // actor snapshot
     // actor snapshot
     if (notification.actorId) {
         const actorFound = await userCtr.getUser(context, { filter: { id: notification.actorId } });

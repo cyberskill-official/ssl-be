@@ -18,8 +18,8 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
@@ -658,7 +658,7 @@ export const conversationCtr = {
                         entityType: E_NotificationEntityType.CONVERSATION,
                         entityId: directMessageResult.conversationId, // <-- only change: use conversationId
                         actorId: senderId,
-                        presentation: { redirect: { kind: E_RedicrectType.CONVERSATION, id: directMessageResult.conversationId } },
+                        presentation: { redirect: { kind: E_RedirectType.CONVERSATION, id: directMessageResult.conversationId } },
                     },
                 });
             }
@@ -786,7 +786,7 @@ export const conversationCtr = {
                             entityId: conversation.id,
                             title: 'New message',
                             body: content.value, // tuỳ nội dung message
-                            presentation: { redirect: { kind: E_RedicrectType.CONVERSATION, id: conversation.id } },
+                            presentation: { redirect: { kind: E_RedirectType.CONVERSATION, id: conversation.id } },
                         },
                     });
                 }

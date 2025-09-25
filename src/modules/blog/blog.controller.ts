@@ -10,8 +10,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
-import { notificationCtr } from '#modules/notification/notification.controller.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedicrectType } from '#modules/notification/notification.type.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
@@ -149,7 +149,7 @@ export const blogCtr = {
                                     actorId: authorId,
                                     title,
                                     presentation: {
-                                        redirect: { kind: E_RedicrectType.BLOG, id: blogResult.result.id },
+                                        redirect: { kind: E_RedirectType.BLOG, id: blogResult.result.id },
                                         ...(thumbnailUrl ? { thumbnailUrl } : {}),
                                     },
                                 },
