@@ -30,14 +30,18 @@ export const messageStatusCtr = {
     },
 
     countUnreadConversations: async (_context: I_Context, userId: string): Promise<number> => {
-        const agg = await mongooseCtr.aggregate([
-            { $match: { userId, readAt: null } },
+        const aggRes = await mongooseCtr.aggregate([
+            { $match: { userId, $or: [{ readAt: null }, { readAt: { $exists: false } }] } },
             { $group: { _id: '$conversationId' } },
             { $count: 'cnt' },
-        ]) as unknown as Array<{ cnt: number }>;
+        ]);
+
+        if (!aggRes.success)
+            return 0;
+
+        const agg = aggRes.result as unknown as Array<{ cnt: number }>;
         return agg?.[0]?.cnt ?? 0;
     },
-
     createMessageStatusOnly: async (
         messageId: string,
         userId: string,

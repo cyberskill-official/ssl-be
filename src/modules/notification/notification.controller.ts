@@ -8,9 +8,9 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/authn.controller.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
-import { userCtr } from '#modules/user/user.controller.js';
+import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type {

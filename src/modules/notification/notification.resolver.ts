@@ -28,7 +28,7 @@ const notificationResolver = {
             args: I_Input_FindPaging<I_Input_QueryNotification>,
             context: I_Context,
         ) => notificationCtr.getNotifications(context, args),
-        getNotificationCounters: (_parent: unknown, context: I_Context) => notificationCtr.getNotificationCounters(context),
+        getNotificationCounters: (_parent: unknown, _agrs: unknown, context: I_Context) => notificationCtr.getNotificationCounters(context),
     },
     Mutation: {
         createNotification: (
