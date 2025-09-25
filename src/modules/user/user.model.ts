@@ -537,9 +537,7 @@ export const UserModel = mongo.createModel<I_User>({
         ageVerify: {
             type: AgeVerifySchema,
         },
-        displayName: {
-            type: String,
-        },
+
         accountType: {
             type: String,
             enum: Object.values(E_AccountType),

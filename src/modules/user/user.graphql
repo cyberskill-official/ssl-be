@@ -188,7 +188,6 @@ type T_User {
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
     ageVerify: T_AgeVerify
-    displayName: String
     accountType: E_AccountType
     partner1: T_UserPartner
     partner2: T_UserPartner
@@ -228,7 +227,6 @@ input Input_QueryUser {
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
     ageVerify: Input_AgeVerify
-    displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner
@@ -256,7 +254,6 @@ input Input_CreateUser {
     rolesIds: [String]!
     registerStep: E_RegisterStep!
     isEmailVerified: Boolean
-    displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner
@@ -284,7 +281,6 @@ input Input_UpdateUser {
     rolesIds: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
-    displayName: String
     accountType: E_AccountType
     partner1: Input_UserPartner
     partner2: Input_UserPartner

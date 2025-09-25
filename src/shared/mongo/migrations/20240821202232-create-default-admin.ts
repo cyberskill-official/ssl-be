@@ -27,7 +27,6 @@ export async function up(db: C_Db) {
         rolesIds: [adminRoleFound.result.id],
         isActive: true,
         isEmailVerified: true,
-        displayName: 'Admin',
     };
 
     const filteredUsers = await mongo.getNewRecords(

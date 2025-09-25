@@ -222,8 +222,8 @@ export const galleryCtr = {
                     return galleryResult;
                 }
 
-                const { displayName = '', username = '' } = uploaderFound.result;
-                const uploaderName = (displayName || username);
+                const { username = '' } = uploaderFound.result;
+                const uploaderName = (username);
 
                 if (followers.success) {
                     for (const f of followers.result.docs) {

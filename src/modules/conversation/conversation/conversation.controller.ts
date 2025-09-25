@@ -113,7 +113,7 @@ export const conversationCtr = {
                 populate: [
                     {
                         path: 'sender',
-                        select: 'id displayName username email accountType partner1 partner2',
+                        select: 'id username email accountType partner1 partner2',
                         populate: [
                             {
                                 path: 'partner1',

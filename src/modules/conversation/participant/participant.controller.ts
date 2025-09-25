@@ -380,7 +380,6 @@ export const participantCtr = {
                     $match: {
                         $or: [
                             { 'otherUser.username': { $regex: search.trim(), $options: 'i' } },
-                            { 'otherUser.displayName': { $regex: search.trim(), $options: 'i' } },
                         ],
                     },
                 },

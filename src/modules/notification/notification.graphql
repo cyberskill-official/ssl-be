@@ -182,10 +182,10 @@ type T_NotificationEvent {
     notification: T_Notification
 }
 
-# --- ROOT OPERATIONS ---
 type Query {
     getNotifications(filter: Input_QueryNotification, options: JSON): T_Response_Notifications!
     getNotification(filter: Input_QueryNotification): T_Response_Notification!
+    getNotificationCounters: T_NotificationCounters!
 }
 
 type Mutation {

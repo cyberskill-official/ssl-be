@@ -118,7 +118,7 @@ export const invitationCtr = {
             populate: [
                 {
                     path: 'user',
-                    select: 'id displayName username email accountType partner1 partner2',
+                    select: 'id username email accountType partner1 partner2',
                     populate: [
                         {
                             path: 'partner1',
@@ -144,7 +144,7 @@ export const invitationCtr = {
                 },
                 {
                     path: 'inviter',
-                    select: 'id displayName username email accountType partner1 partner2',
+                    select: 'id username email accountType partner1 partner2',
                     populate: [
                         {
                             path: 'partner1',

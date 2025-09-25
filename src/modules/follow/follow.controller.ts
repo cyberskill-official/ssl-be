@@ -24,6 +24,29 @@ import { FollowModel } from './follow.model.js';
 
 const mongooseCtr = new MongooseController<I_Follow>(FollowModel);
 
+// Helpers to recompute denormalized counts from the Follow collection
+async function recomputeFollowerCount(_context: I_Context, userId: string): Promise<number | null> {
+    try {
+        const res = await FollowModel.countDocuments({ followId: userId });
+        await userCtr.updateUsers(_context, { filter: { id: userId }, update: { followerCount: res } });
+        return res;
+    }
+    catch {
+        return null;
+    }
+}
+
+async function recomputeFollowingCount(_context: I_Context, userId: string): Promise<number | null> {
+    try {
+        const res = await FollowModel.countDocuments({ userId });
+        await userCtr.updateUsers(_context, { filter: { id: userId }, update: { followingCount: res } });
+        return res;
+    }
+    catch {
+        return null;
+    }
+}
+
 export const followCtr = {
     getFollow: async (
         _context: I_Context,
@@ -127,17 +150,9 @@ export const followCtr = {
         const followResult = await followCtr.createFollow(context, { doc: { userId: currentUser.id, followId } });
 
         if (followResult.success) {
-            // Increment follower count for the user being followed
-            await userCtr.updateUsers(context, {
-                filter: { id: followId },
-                update: { $inc: { followerCount: 1 } },
-            });
-
-            // Increment following count for the current user
-            await userCtr.updateUsers(context, {
-                filter: { id: currentUser.id },
-                update: { $inc: { followingCount: 1 } },
-            });
+            // Recompute counts to avoid denormalization drift/race conditions
+            await recomputeFollowerCount(context, followId);
+            await recomputeFollowingCount(context, currentUser.id);
 
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
@@ -146,7 +161,7 @@ export const followCtr = {
                     targetId: followId, // người được follow
                     entityType: E_NotificationEntityType.USER,
                     entityId: currentUser.id, // profile của người follow
-                    title: `${currentUser.displayName || currentUser.username} is now following you`, // text hiển thị
+                    title: `${currentUser.username} is now following you`, // text hiển thị
                     presentation: {
                         redirect: { kind: E_RedicrectType.PROFILE, id: currentUser.id },
                     },
@@ -179,17 +194,9 @@ export const followCtr = {
         const unfollowResult = await followCtr.deleteFollow(context, { filter: { userId: currentUser.id, followId: filter.followId } });
 
         if (unfollowResult.success) {
-            // Decrement follower count for the user being unfollowed
-            await userCtr.updateUsers(context, {
-                filter: { id: filter.followId },
-                update: { $inc: { followerCount: -1 } },
-            });
-
-            // Decrement following count for the current user
-            await userCtr.updateUsers(context, {
-                filter: { id: currentUser.id },
-                update: { $inc: { followingCount: -1 } },
-            });
+            // Recompute counts to avoid denormalization drift/race conditions
+            await recomputeFollowerCount(context, filter.followId!);
+            await recomputeFollowingCount(context, currentUser.id);
         }
 
         return unfollowResult;

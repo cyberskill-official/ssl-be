@@ -1,11 +1,4 @@
-import type {
-    I_Input_CreateOne,
-    I_Input_DeleteOne,
-    I_Input_FindOne,
-    I_Input_FindPaging,
-    I_Input_UpdateOne,
-    T_PaginateResult,
-} from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -15,9 +8,7 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { bunnyCtr } from '#modules/bunny/index.js';
-import { E_GalleryType } from '#modules/gallery/gallery.type.js';
-import { galleryCtr } from '#modules/gallery/index.js';
+import { messageStatusCtr } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/user.controller.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
@@ -29,7 +20,6 @@ import type {
     I_NotificationAddedPayload,
     I_NotificationDeletedPayload,
     I_NotificationDismissedPayload,
-    I_NotificationPresentation,
     I_NotificationReadPayload,
     I_NotificationUpdatedPayload,
 } from './notification.type.js';
@@ -38,123 +28,12 @@ import { NotificationModel } from './notification.model.js';
 import {
     E_NOTIFICATION_EVENTS,
     E_NotificationChannel,
-    E_NotificationEntityType,
     E_NotificationStatus,
     E_NotificationType,
 } from './notification.type.js';
-import { deriveRedirect, safeRedirect } from './notification.util.js';
+import { buildPresentation, hasInApp } from './notification.util.js';
 
 const mongooseCtr = new MongooseController<I_Notification>(NotificationModel);
-
-interface NotificationData {
-    mediaType?: 'image' | 'video';
-    videoEmbedUrl?: string;
-    [k: string]: unknown;
-}
-
-// Whitelist CDN để nhận thumbnailUrl từ hint một cách an toàn
-function isTrustedCdn(u?: string): boolean {
-    try {
-        const host = new URL(String(u)).hostname;
-        return ['cdn.yourdomain.com', 'media.bunnycdn.com'].includes(host);
-    }
-    catch {
-        return false;
-    }
-}
-
-export async function buildPresentation(
-    context: I_Context,
-    notification: I_Notification,
-    presentationHint?: I_NotificationPresentation,
-): Promise<I_NotificationPresentation> {
-    const presentation: I_NotificationPresentation = {};
-
-    // actor snapshot
-    // actor snapshot
-    if (notification.actorId) {
-        const actorFound = await userCtr.getUser(context, { filter: { id: notification.actorId } });
-        if (actorFound.success) {
-            const actor = actorFound.result;
-
-            const rawUrls: Array<string | undefined> = [
-                actor.partner1?.gallery?.url,
-                actor.partner2?.gallery?.url,
-            ];
-
-            const avatarUrls: string[] = [];
-            for (const u of rawUrls) {
-                if (!u)
-                    continue;
-                try {
-                    avatarUrls.push(
-                        bunnyCtr.generateSignedUrl({
-                            fullUrl: u,
-                            extraQueryParams: { class: 'normal' },
-                        }),
-                    );
-                }
-                catch { /* ignore */ }
-            }
-
-            presentation.actor = {
-                displayName: actor.displayName,
-                accountType: actor.accountType,
-                avatarUrls: avatarUrls.length ? avatarUrls : undefined,
-            };
-        }
-    }
-
-    // thumbnail (ưu tiên hint nếu hợp lệ, nếu không derive từ gallery)
-    let thumbnailUrl: string | undefined;
-    try {
-        if (presentationHint?.thumbnailUrl && isTrustedCdn(presentationHint.thumbnailUrl)) {
-            thumbnailUrl = presentationHint.thumbnailUrl;
-        }
-        else if (notification.entityType === E_NotificationEntityType.MEDIA && notification.entityId) {
-            const galleryFound = await galleryCtr.getGallery(context, { filter: { id: notification.entityId } });
-            if (galleryFound.success && galleryFound.result.url) {
-                const dataObj = (notification.data ??= {}) as NotificationData;
-                if (galleryFound.result.type === E_GalleryType.IMAGE) {
-                    thumbnailUrl = bunnyCtr.generateSignedUrl({
-                        fullUrl: galleryFound.result.url,
-                        extraQueryParams: { class: 'normal' },
-                    });
-                    dataObj.mediaType = 'image';
-                }
-                else if (galleryFound.result.type === E_GalleryType.VIDEO) {
-                    // Chuông chỉ dùng thumbnail/poster đã ký — không iframe
-                    thumbnailUrl = bunnyCtr.generateSignedUrl({
-                        fullUrl: galleryFound.result.url,
-                        extraQueryParams: { class: 'free' },
-                    });
-                    dataObj.mediaType = 'video';
-                }
-            }
-        }
-    }
-    catch {
-    /* ignore */
-    }
-
-    if (thumbnailUrl) {
-        presentation.thumbnailUrl = thumbnailUrl;
-    }
-
-    // redirect: ưu tiên override an toàn, nếu không derive
-    presentation.redirect = safeRedirect(presentationHint?.redirect) ?? deriveRedirect(notification);
-
-    // headline
-    if (notification.title) {
-        presentation.headline = notification.title;
-    }
-
-    return presentation;
-}
-
-function hasInApp(n: I_Notification): boolean {
-    return Array.isArray(n.channels) && n.channels.includes(E_NotificationChannel.IN_APP);
-}
 
 export const notificationCtr = {
     getNotification: async (
@@ -163,14 +42,36 @@ export const notificationCtr = {
     ): Promise<I_Return<I_Notification>> => {
         return mongooseCtr.findOne(filter, projection, options);
     },
+    countOtherUnreadInApp: async (_context: I_Context, userId: string): Promise<number> => {
+        const res = await mongooseCtr.count({
+            targetId: userId,
+            channels: { $in: [E_NotificationChannel.IN_APP] },
+            type: { $ne: E_NotificationType.NEW_MESSAGE },
+            status: { $ne: E_NotificationStatus.READ },
+            dismissedAt: null,
+        });
+        return res.success ? res.result : 0;
+    },
 
+    getNotificationCounters: async (context: I_Context) => {
+        const userId = context.req?.session?.user?.id;
+        if (!userId) {
+            return { numberOfConversationUnRead: 0, numberOfOtherUnRead: 0 };
+        }
+
+        const [numberOfOtherUnRead, numberOfConversationUnRead] = await Promise.all([
+            notificationCtr.countOtherUnreadInApp(context, userId),
+            messageStatusCtr.countUnreadConversations(context, userId),
+        ]);
+
+        return { numberOfConversationUnRead, numberOfOtherUnRead };
+    },
     getNotifications: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryNotification>,
     ): Promise<I_Return<T_PaginateResult<I_Notification>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
-
     createNotification: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
@@ -187,9 +88,7 @@ export const notificationCtr = {
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
-
-        const channels
-      = doc.channels && doc.channels.length > 0 ? doc.channels : [E_NotificationChannel.EMAIL];
+        const channels = doc.channels && doc.channels.length > 0 ? doc.channels : [E_NotificationChannel.EMAIL];
 
         const { presentation: _drop, ...docToPersist } = { ...doc, channels };
 
@@ -197,19 +96,28 @@ export const notificationCtr = {
             ...docToPersist,
             status: E_NotificationStatus.QUEUED,
         });
-
-        if (result.success && hasInApp(result.result)) {
+        if (result.success) {
+            // persist server-built presentation into data.presentation
             try {
                 const presentation = await buildPresentation(context, result.result, presentationHint);
-                const payload: I_NotificationAddedPayload = {
-                    notification: result.result,
-                    presentation,
-                };
-                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
+                await mongooseCtr.updateOne(
+                    { id: result.result.id },
+                    { data: { ...(result.result.data ?? {}), presentation } },
+                );
+
+                if (hasInApp(result.result)) {
+                    const payload: I_NotificationAddedPayload = {
+                        notification: result.result,
+                        presentation,
+                    };
+                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
+                }
             }
             catch {
-                const payload: I_NotificationAddedPayload = { notification: result.result };
-                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
+                if (hasInApp(result.result)) {
+                    const payload: I_NotificationAddedPayload = { notification: result.result };
+                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
+                }
             }
         }
 
@@ -230,24 +138,21 @@ export const notificationCtr = {
             throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        // 1) Giữ nguyên ngữ cảnh input (không mutate)
         const contextDoc: Readonly<I_Input_CreateNotification> = Object.freeze({ ...doc });
 
-        // 2) Lấy settings user
         const userFound = await userCtr.getUser(context, { filter: { id: targetId } });
         if (!userFound.success) {
             throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
         const s = userFound.result.settings?.notification ?? {};
 
-        // 3) Quyết định channels theo type + toggle (user sở hữu quyền email)
         let channels: E_NotificationChannel[] = [E_NotificationChannel.IN_APP];
         switch (type) {
             case E_NotificationType.MEDIA_LIKED:
             case E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA:
             case E_NotificationType.GUESTBOOK_POST:
             case E_NotificationType.PROFILE_VISIT:
-                break; // in-app only
+                break;
             case E_NotificationType.NEW_FOLLOWER:
                 if (s.gainFollower)
                     channels.push(E_NotificationChannel.EMAIL);
@@ -270,13 +175,12 @@ export const notificationCtr = {
                 break;
             case E_NotificationType.RECEIPT_EMAIL_ONLY:
             case E_NotificationType.PAYMENT_ISSUE:
-                channels = [E_NotificationChannel.EMAIL]; // email bắt buộc
+                channels = [E_NotificationChannel.EMAIL];
                 break;
             default:
                 channels.push(E_NotificationChannel.EMAIL);
         }
 
-        // 4) Lọc doc để persist (không cho caller override channels/isEmailSuppressed/presentation)
         const {
             presentation: _dropPresentation,
             channels: _dropChannels,
@@ -292,26 +196,27 @@ export const notificationCtr = {
         });
 
         if (result.success) {
-            // 5) Publish IN_APP
-            if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
-                try {
-                    const presentation = await buildPresentation(context, result.result, contextDoc.presentation);
+            try {
+                const presentation = await buildPresentation(context, result.result, contextDoc.presentation);
+                await mongooseCtr.updateOne(
+                    { id: result.result.id },
+                    { data: { ...(result.result.data ?? {}), presentation } },
+                );
+
+                if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
                     const payload: I_NotificationAddedPayload = { notification: result.result, presentation };
                     pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
                 }
-                catch {
+            }
+            catch {
+                if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
                     const payload: I_NotificationAddedPayload = { notification: result.result };
                     pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
                 }
             }
 
-            // 6) Email (nếu được phép) — giữ contextDoc để render template
             if (result.result.channels?.includes(E_NotificationChannel.EMAIL)) {
-                // await mailer.enqueueNotificationEmail({
-                //   notification: result.result,
-                //   contextDoc, // giữ ngữ cảnh gốc: title/body/data/... để templating
-                //   user: userFound.result,
-                // });
+                // enqueue email here if needed
             }
         }
 
@@ -348,21 +253,23 @@ export const notificationCtr = {
 
         return result;
     },
-
     markNotificationRead: async (
-        _context: I_Context,
+        context: I_Context,
         { filter }: I_Input_UpdateOne<I_Input_UpdateNotification>,
     ): Promise<I_Return<I_Notification>> => {
-        if (!filter) {
-            throwError({ message: 'Filter is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (!filter?.['id']) {
+            throwError({ message: 'Filter.id is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const userId = context.req?.session?.user?.id;
+        const owned = await mongooseCtr.findOne({ id: filter['id'], targetId: userId });
+        if (!owned.success) {
+            throwError({ message: 'Notification not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         const result = await mongooseCtr.updateOne(
-            { filter:
-            {
-                status: E_NotificationStatus.READ,
-                readAt: new Date(),
-            } },
+            { id: filter['id'], targetId: userId },
+            { status: E_NotificationStatus.READ, readAt: new Date() },
         );
 
         if (result.success && hasInApp(result.result)) {
@@ -378,18 +285,22 @@ export const notificationCtr = {
     },
 
     dismissNotification: async (
-        _context: I_Context,
+        context: I_Context,
         { filter }: I_Input_UpdateOne<I_Input_UpdateNotification>,
     ): Promise<I_Return<I_Notification>> => {
-        if (!filter) {
-            throwError({ message: 'Filter is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (!filter?.['id']) {
+            throwError({ message: 'Filter.id is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const userId = context.req?.session?.user?.id;
+        const owned = await mongooseCtr.findOne({ id: filter['id'], targetId: userId });
+        if (!owned.success) {
+            throwError({ message: 'Notification not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         const result = await mongooseCtr.updateOne(
-            { filter: {
-                status: E_NotificationStatus.DISMISSED,
-                dismissedAt: new Date(),
-            } },
+            { id: filter['id'], targetId: userId },
+            { status: E_NotificationStatus.DISMISSED, dismissedAt: new Date() },
         );
 
         if (result.success && hasInApp(result.result)) {

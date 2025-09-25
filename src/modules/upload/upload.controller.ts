@@ -11,7 +11,8 @@ import { Readable } from 'node:stream';
 import type { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { aiModerationCtr, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
@@ -35,6 +36,25 @@ export const uploadCtr = {
 
         if (!fileData.success) {
             return fileData;
+        }
+
+        const isStaff = await authnCtr.isStaff(context);
+        if (!isStaff) {
+            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            const hasPaidRole
+                = Array.isArray(currentUser?.roles)
+                    ? currentUser.roles.some(r => r?.name === E_Role_User.PAID_MEMBER)
+                    : Array.isArray((currentUser as any)?.rolesIdsNames)
+                        ? (currentUser as any).rolesIdsNames.includes(E_Role_User.PAID_MEMBER)
+                        : false;
+            const membershipActive = authnCtr.isMembershipActive(currentUser);
+
+            if (!(isAgeApproved && hasPaidRole && membershipActive)) {
+                throwError({
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                    message: 'Uploads require active paid membership and completed age verification.',
+                });
+            }
         }
 
         const { filename, createReadStream } = fileData.result;
@@ -61,8 +81,6 @@ export const uploadCtr = {
         });
 
         const uploadPath = path.posix.join(folderPath, fullPath);
-
-        const isStaff = await authnCtr.isStaff(context);
         const shouldBypassModeration = isStaff || !!skipModeration;
 
         if (shouldBypassModeration) {

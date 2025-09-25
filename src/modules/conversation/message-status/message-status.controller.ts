@@ -29,6 +29,15 @@ export const messageStatusCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
 
+    countUnreadConversations: async (_context: I_Context, userId: string): Promise<number> => {
+        const agg = await mongooseCtr.aggregate([
+            { $match: { userId, readAt: null } },
+            { $group: { _id: '$conversationId' } },
+            { $count: 'cnt' },
+        ]) as unknown as Array<{ cnt: number }>;
+        return agg?.[0]?.cnt ?? 0;
+    },
+
     createMessageStatusOnly: async (
         messageId: string,
         userId: string,

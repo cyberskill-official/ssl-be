@@ -294,16 +294,6 @@ export const eventCtr = {
             }
         }
 
-        if (doc.title) {
-            const duplicate = await eventCtr.getEvent(context, { filter: { title: doc.title } });
-            if (duplicate.success) {
-                throwError({
-                    message: 'Event title already exists',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-        }
-
         const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
         if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
             const pricingFound = await pricingCtr.getPricing(context, {
@@ -367,7 +357,7 @@ export const eventCtr = {
             return locationCreated;
         }
 
-        const actorName = currentUser.displayName;
+        const actorName = currentUser.username;
         const headline = doc.title || '';
         const notifTitle = `There is a new announcement from: ${actorName}${headline ? ` ${headline}` : ''}.`;
 
@@ -491,7 +481,6 @@ export const eventCtr = {
             }
         }
 
-        // Maintain hasUpcomingEvent if isActive toggled or endDate changed
         if (eventFound.success && eventFound.result.createdById) {
             const beforeActive = eventFound.result.isActive === true;
             const beforeFuture = !eventFound.result.endDate || isAfter(eventFound.result.endDate, new Date());

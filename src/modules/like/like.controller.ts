@@ -136,7 +136,7 @@ export const likeCtr = {
                             entityType: E_NotificationEntityType.MEDIA,
                             entityId: doc.entityId,
                             actorId: currentUser.id,
-                            title: `${currentUser.displayName || currentUser.username} liked your ${
+                            title: `${currentUser.username} liked your ${
                                 galleryFound.result.type?.toLowerCase() ?? 'media'
                             }`,
                             presentation: {

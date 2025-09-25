@@ -90,7 +90,6 @@ export const userCtr = {
             { ...(filter || {}) },
             [
                 { key: 'username', value: filter?.username, mode: 'startsWith' },
-                { key: 'displayName', value: filter?.email, mode: 'startsWith' },
             ],
         );
 

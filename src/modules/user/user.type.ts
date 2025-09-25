@@ -100,7 +100,6 @@ export interface I_User extends I_GenericDocument {
     registerStep?: E_RegisterStep;
     isEmailVerified?: boolean;
     ageVerify?: I_AgeVerify;
-    displayName?: string;
     accountType?: E_AccountType;
     partner1?: I_UserPartner;
     partner2?: I_UserPartner;
