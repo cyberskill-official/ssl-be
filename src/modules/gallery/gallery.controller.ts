@@ -71,7 +71,7 @@ export const galleryCtr = {
             });
         }
 
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        return galleryFound;
     },
     getGalleries: async (
         context: I_Context,
@@ -241,6 +241,11 @@ export const galleryCtr = {
                                 presentation: {
                                     redirect: { kind: E_RedirectType.MEDIA, id: galleryResult.result.id },
                                     ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                                    actor: {
+                                        username: uploaderName,
+                                        accountType: uploaderFound.result.accountType,
+                                        avatarUrl: uploaderFound.result.partner1?.gallery?.url,
+                                    },
                                 },
                             },
                         });

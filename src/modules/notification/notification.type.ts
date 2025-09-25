@@ -71,19 +71,22 @@ export enum E_RedirectType {
     CONVERSATION = 'CONVERSATION',
 }
 
+export interface T_NotificationPresentationActor {
+    username?: string;
+    accountType?: string;
+    avatarUrl?: string;
+}
+
+export interface I_NotificationRedirect {
+    kind?: E_RedirectType;
+    id?: string;
+}
+
 export interface I_NotificationPresentation {
     id?: string;
-    actor?: {
-        username?: string;
-        accountType?: string;
-        avatarUrls?: string[];
-    };
+    actor?: T_NotificationPresentationActor;
     thumbnailUrl?: string;
-    redirect?: {
-        kind?: E_RedirectType;
-        id?: string;
-    };
-    headline?: string;
+    redirect?: I_NotificationRedirect;
 }
 
 export interface I_Notification extends I_GenericDocument {
@@ -94,7 +97,7 @@ export interface I_Notification extends I_GenericDocument {
     entityId?: string;
     title?: string;
     body?: string;
-    data?: any;
+    // data?: any;
     presentation?: I_NotificationPresentation;
     channels?: E_NotificationChannel[];
     status?: E_NotificationStatus;

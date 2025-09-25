@@ -26,7 +26,7 @@ export const NotificationModel = mongo.createModel<I_Notification>({
         entityId: { type: String },
         title: { type: String },
         body: { type: String },
-        data: { type: mongoose.Schema.Types.Mixed },
+        // data: { type: mongoose.Schema.Types.Mixed },
         channels: {
             type: [String],
             enum: Object.values(E_NotificationChannel),

@@ -164,6 +164,11 @@ export const followCtr = {
                     title: `${currentUser.username} is now following you`, // text hiển thị
                     presentation: {
                         redirect: { kind: E_RedirectType.PROFILE, id: currentUser.id },
+                        actor: {
+                            username: currentUser.username,
+                            accountType: currentUser.accountType,
+                            avatarUrl: currentUser.partner1?.gallery?.url,
+                        },
                     },
                 },
             });

@@ -359,7 +359,6 @@ export const eventCtr = {
 
         const actorName = currentUser.username;
         const headline = doc.title || '';
-        const notifTitle = `There is a new announcement from: ${actorName}${headline ? ` ${headline}` : ''}.`;
 
         const followers = await followCtr.getFollowers(context, {
             filter: { followId: currentUser.id },
@@ -393,8 +392,8 @@ export const eventCtr = {
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
-                        title: notifTitle,
-                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        title: `There is a new announcement from: ${actorName}${headline ? ` ${headline}` : ''}.`,
+                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }
@@ -422,8 +421,8 @@ export const eventCtr = {
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
-                        title: notifTitle,
-                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, headline, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
+                        title: `There is a new announcement from: ${actorName}${headline ? ` ${headline}` : ''}.`,
+                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
                     },
                 });
             }

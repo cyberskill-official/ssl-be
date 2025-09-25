@@ -125,9 +125,6 @@ export const blogCtr = {
             // ignore
         }
 
-        const title = `There is a new blog: "${blogResult.result.title}"`;
-
-        // không giới hạn: lấy tất cả user active, bắn noti cho tất cả (trừ tác giả)
         try {
             const users = await userCtr.getUsers(context, {
                 filter: { isActive: true },
@@ -147,10 +144,10 @@ export const blogCtr = {
                                     entityType: E_NotificationEntityType.BLOG,
                                     entityId: blogResult.result.id,
                                     actorId: authorId,
-                                    title,
+                                    title: `There is a new blog: "${blogResult.result.title}"`,
                                     presentation: {
                                         redirect: { kind: E_RedirectType.BLOG, id: blogResult.result.id },
-                                        ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                                        thumbnailUrl,
                                     },
                                 },
                             }),

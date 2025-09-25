@@ -83,10 +83,9 @@ type T_Notification {
 }
 
 type T_NotificationPresentationActor {
-    id: String
     username: String
     accountType: String
-    avatarUrls: [String]
+    avatarUrl: String
 }
 
 type T_NotificationRedirect {
@@ -148,21 +147,19 @@ input Input_NotificationPresentation {
     id: String
     thumbnailUrl: String
     redirect: Input_NotificationRedirect
-    headline: String
 }
 
 input Input_CreateNotification {
     type: E_NotificationType!
     actorId: String
     targetId: String!
-    entityType: E_NotificationEntityType
-    entityId: String
+    entityType: E_NotificationEntityType!
+    entityId: String!
     title: String
-    body: String
-    data: JSON
+    # body: String
+    # data: JSON
     channels: [E_NotificationChannel]
     scheduledAt: DateTime
-    # 🔹 hint từ client; server sẽ safe-merge/derive
     presentation: Input_NotificationPresentation
 }
 

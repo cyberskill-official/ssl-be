@@ -142,6 +142,11 @@ export const likeCtr = {
                             presentation: {
                                 redirect: { kind: E_RedirectType.MEDIA, id: doc.entityId },
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
+                                actor: {
+                                    username: currentUser.username,
+                                    accountType: currentUser.accountType,
+                                    avatarUrl: currentUser.partner1?.gallery?.url,
+                                },
                             },
                         },
                     });

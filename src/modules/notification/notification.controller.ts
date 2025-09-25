@@ -75,7 +75,7 @@ export const notificationCtr = {
     createNotification: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
-    ): Promise<I_Return<I_Notification>> => {
+    ) => {
         const { targetId, type, entityType, entityId, presentation: presentationHint } = doc;
 
         if (!targetId)
@@ -88,7 +88,9 @@ export const notificationCtr = {
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
-        const channels = doc.channels && doc.channels.length > 0 ? doc.channels : [E_NotificationChannel.EMAIL];
+
+        const channels
+      = doc.channels && doc.channels.length > 0 ? doc.channels : [E_NotificationChannel.EMAIL];
 
         const { presentation: _drop, ...docToPersist } = { ...doc, channels };
 
@@ -96,14 +98,13 @@ export const notificationCtr = {
             ...docToPersist,
             status: E_NotificationStatus.QUEUED,
         });
+
         if (result.success) {
-            // persist server-built presentation into data.presentation
             try {
                 const presentation = await buildPresentation(context, result.result, presentationHint);
-                await mongooseCtr.updateOne(
-                    { id: result.result.id },
-                    { data: { ...(result.result.data ?? {}), presentation } },
-                );
+
+                await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
+                result.result.presentation = presentation;
 
                 if (hasInApp(result.result)) {
                     const payload: I_NotificationAddedPayload = {
@@ -127,7 +128,7 @@ export const notificationCtr = {
     createNotificationWithSettings: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
-    ): Promise<I_Return<I_Notification>> => {
+    ) => {
         const { targetId, type, entityType, entityId } = doc;
 
         if (!targetId)
@@ -198,10 +199,10 @@ export const notificationCtr = {
         if (result.success) {
             try {
                 const presentation = await buildPresentation(context, result.result, contextDoc.presentation);
-                await mongooseCtr.updateOne(
-                    { id: result.result.id },
-                    { data: { ...(result.result.data ?? {}), presentation } },
-                );
+
+                // persist to DB
+                await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
+                result.result.presentation = presentation;
 
                 if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
                     const payload: I_NotificationAddedPayload = { notification: result.result, presentation };
@@ -215,9 +216,7 @@ export const notificationCtr = {
                 }
             }
 
-            if (result.result.channels?.includes(E_NotificationChannel.EMAIL)) {
-                // enqueue email here if needed
-            }
+            // if email channel selected: enqueue email here
         }
 
         return result;

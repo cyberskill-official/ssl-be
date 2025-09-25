@@ -212,7 +212,14 @@ export const userCtr = {
                             entityId: userCreated.result.id,
                             actorId: userCreated.result.id,
                             title: `There is a new member: "${username}"`,
-                            presentation: { redirect: { kind: E_RedirectType.PROFILE, id: userCreated.result.id } },
+                            presentation: {
+                                redirect: { kind: E_RedirectType.PROFILE, id: userCreated.result.id },
+                                actor: {
+                                    username,
+                                    accountType: userCreated.result.accountType,
+                                    avatarUrl: userCreated.result.partner1?.gallery?.url,
+                                },
+                            },
                         },
                     });
                 }
@@ -432,7 +439,7 @@ export const userCtr = {
                 // Get all subscribers
                 break;
 
-            case E_UserGroup.FREE_MEMBERS:{
+            case E_UserGroup.FREE_MEMBERS: {
                 const freeMember = await roleCtr.getRole({}, { filter: { name: E_Role_User.FREE_MEMBER } });
                 if (!freeMember.success) {
                     throwError({
@@ -444,7 +451,7 @@ export const userCtr = {
                 break;
             }
 
-            case E_UserGroup.PAID_MEMBERS:{
+            case E_UserGroup.PAID_MEMBERS: {
                 const paidMember = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
                 if (!paidMember.success) {
                     throwError({
