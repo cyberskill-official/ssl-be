@@ -182,6 +182,11 @@ type T_NotificationEvent {
     notification: T_Notification
 }
 
+type T_NotificationCounters {
+  numberOfConversationUnRead: Int!
+  numberOfOtherUnRead: Int!
+}
+
 type Query {
     getNotifications(filter: Input_QueryNotification, options: JSON): T_Response_Notifications!
     getNotification(filter: Input_QueryNotification): T_Response_Notification!
