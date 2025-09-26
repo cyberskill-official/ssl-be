@@ -45,7 +45,7 @@ export const NotificationModel = mongo.createModel<I_Notification>({
     name: 'Notification',
     schema: {
         type: {
-            type: String,
+            type: [String],
             enum: Object.values(E_NotificationType),
             required: true,
         },

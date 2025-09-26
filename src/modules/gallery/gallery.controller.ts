@@ -233,7 +233,7 @@ export const galleryCtr = {
                         await notificationCtr.createNotificationWithSettings(_context, {
                             doc: {
                                 targetId,
-                                type: E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA,
+                                type: [E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA],
                                 entityType: E_NotificationEntityType.MEDIA,
                                 entityId: galleryResult.result.id,
                                 actorId: uploaderId,

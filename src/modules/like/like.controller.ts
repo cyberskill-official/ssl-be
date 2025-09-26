@@ -133,18 +133,13 @@ export const likeCtr = {
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
                             targetId: ownerId,
-                            type: E_NotificationType.MEDIA_LIKED, // IN_APP only theo settings
+                            type: [E_NotificationType.MEDIA_LIKED],
                             entityType: E_NotificationEntityType.MEDIA,
                             entityId: doc.entityId,
                             actorId: currentUser.id,
                             presentation: {
-                                // CLICK → profile của người like (đúng guideline)
                                 redirect: { kind: E_RedirectType.PROFILE, id: currentUser.id },
-
-                                // Thumbnail media bên trái chuông
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
-
-                                // Dùng để UI tô màu tên theo loại profile
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,

@@ -385,7 +385,7 @@ export const eventCtr = {
                 await notificationCtr.createNotificationWithSettings(context, {
                     doc: {
                         targetId,
-                        type: E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED,
+                        type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
@@ -417,7 +417,7 @@ export const eventCtr = {
                 await notificationCtr.createNotificationWithSettings(context, {
                     doc: {
                         targetId: u.id,
-                        type: E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED,
+                        type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,

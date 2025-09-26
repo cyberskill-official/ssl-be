@@ -65,7 +65,7 @@ type T_Notification {
     id: String
     createdAt: DateTime
     updatedAt: DateTime
-    type: E_NotificationType
+    type: [E_NotificationType]
     actorId: String
     targetId: String
     entityType: E_NotificationEntityType
@@ -131,7 +131,7 @@ type T_Response_Notifications {
 
 input Input_QueryNotification {
     id: String
-    type: E_NotificationType
+    type: [E_NotificationType]
     actorId: String
     targetId: String
     entityType: E_NotificationEntityType
@@ -151,7 +151,7 @@ input Input_NotificationPresentation {
 }
 
 input Input_CreateNotification {
-    type: E_NotificationType!
+    type: [E_NotificationType]!
     actorId: String
     targetId: String!
     entityType: E_NotificationEntityType!
@@ -175,7 +175,7 @@ input Input_UpdateNotification {
 
 type T_NotificationEvent {
     notificationId: String!
-    type: E_NotificationType!
+    type: [E_NotificationType]!
     action: E_NotificationAction!
     notification: T_Notification
 }

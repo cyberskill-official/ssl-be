@@ -102,6 +102,14 @@ export const messageStatusCtr = {
         return mongooseCtr.deleteMany(filter, options);
     },
 
+    markManyAsRead: async (messageIds: string[], userId: string) => {
+        const res = await MessageStatusModel.updateMany(
+            { messageId: { $in: messageIds }, userId, $or: [{ readAt: null }, { readAt: { $exists: false } }] },
+            { $set: { readAt: new Date() } },
+        );
+        return { success: true, message: 'OK', result: res as any };
+    },
+
     markAsRead: async (
         messageId: string,
         userId: string,

@@ -207,7 +207,7 @@ export const userCtr = {
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
                             targetId: u.id,
-                            type: E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST,
+                            type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
                             entityType: E_NotificationEntityType.USER,
                             entityId: userCreated.result.id,
                             actorId: userCreated.result.id,

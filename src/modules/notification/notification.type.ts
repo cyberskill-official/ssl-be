@@ -89,10 +89,15 @@ export interface I_NotificationPresentation {
     thumbnailUrl?: string;
     redirect?: I_NotificationRedirect;
     headline?: string;
+    context?: {
+        conversationType?: string;
+        groupName?: string;
+        participantCount?: number;
+    };
 }
 
 export interface I_Notification extends I_GenericDocument {
-    type?: E_NotificationType;
+    type?: E_NotificationType[];
     actorId?: string; // Ai gây ra noti
     targetId?: string; // Ai nhận noti
     entityType?: E_NotificationEntityType;

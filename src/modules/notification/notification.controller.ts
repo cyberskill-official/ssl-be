@@ -75,48 +75,55 @@ export const notificationCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Notification>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
-    createNotification: async (
-        context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
-    ) => {
-        const { targetId, type, entityType, entityId, presentation: presentationHint } = doc;
+    createNotification: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
+        const { targetId, entityType, entityId, presentation: presentationHint } = doc;
 
-        if (!targetId)
-            throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (!type)
-            throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (entityType && !entityId) {
-            throwError({
-                message: 'entityId is required when entityType is provided',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+        const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
+
+        if (!targetId) {
+            throwError(
+                {
+                    message: 'targetId is required',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
         }
 
-        const channels
-      = doc.channels && doc.channels.length > 0 ? doc.channels : [E_NotificationChannel.EMAIL];
+        if (types.length === 0) {
+            throwError(
+                {
+                    message: 'Notification type is required',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
+        }
 
-        const { presentation: _drop, ...docToPersist } = { ...doc, channels };
+        if (entityType && !entityId) {
+            throwError(
+                {
+                    message: 'entityId is required when entityType is provided',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
+        }
 
-        const result = await mongooseCtr.createOne({
-            ...docToPersist,
-            status: E_NotificationStatus.QUEUED,
-        });
+        const ch = (doc.channels && doc.channels.length > 0) ? doc.channels : [E_NotificationChannel.EMAIL];
+        const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
+        const { presentation: _drop, ...docToPersist } = { ...doc, type: persistType, channels: ch };
 
+        const result = await mongooseCtr.createOne({ ...docToPersist, status: E_NotificationStatus.QUEUED });
         if (result.success) {
             try {
                 const presentation = await buildPresentation(context, result.result, presentationHint);
-
                 await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
                 result.result.presentation = presentation;
 
                 if (hasInApp(result.result)) {
-                    const payload: I_NotificationAddedPayload = {
-                        notification: result.result,
-                        presentation,
-                    };
+                    const payload: I_NotificationAddedPayload = { notification: result.result, presentation };
                     pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
                 }
             }
+
             catch {
                 if (hasInApp(result.result)) {
                     const payload: I_NotificationAddedPayload = { notification: result.result };
@@ -124,86 +131,79 @@ export const notificationCtr = {
                 }
             }
         }
-
         return result;
     },
 
-    createNotificationWithSettings: async (
-        context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
-    ) => {
-        const { targetId, type, entityType, entityId } = doc;
+    createNotificationWithSettings: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
+        const { targetId, entityType, entityId } = doc;
 
-        if (!targetId)
-            throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (!type)
-            throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (entityType && !entityId) {
-            throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
+        const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
+
+        if (!targetId) {
+            throwError(
+                {
+                    message: 'targetId is required',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
         }
 
-        const contextDoc: Readonly<I_Input_CreateNotification> = Object.freeze({ ...doc });
+        if (types.length === 0) {
+            throwError(
+                {
+                    message: 'Notification type is required',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
+        }
+
+        if (entityType && !entityId) {
+            throwError(
+                {
+                    message: 'entityId is required when entityType is provided',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                },
+            );
+        }
 
         const userFound = await userCtr.getUser(context, { filter: { id: targetId } });
+
         if (!userFound.success) {
-            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
+            throwError(
+                {
+                    message: 'Target user not found',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                },
+            );
         }
+
         const s = userFound.result.settings?.notification ?? {};
+        const has = (t: E_NotificationType) => types.includes(t);
 
-        let channels: E_NotificationChannel[] = [E_NotificationChannel.IN_APP];
-        switch (type) {
-            case E_NotificationType.MEDIA_LIKED:
-            case E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA:
-            case E_NotificationType.GUESTBOOK_POST:
-            case E_NotificationType.PROFILE_VISIT:
-                break;
-            case E_NotificationType.NEW_FOLLOWER:
-                if (s.gainFollower)
-                    channels.push(E_NotificationChannel.EMAIL);
-                break;
-            case E_NotificationType.NEW_MESSAGE:
-                if (s.receiveMessage)
-                    channels.push(E_NotificationChannel.EMAIL);
-                break;
-            case E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST:
-                if (s.newMemberJoined)
-                    channels.push(E_NotificationChannel.EMAIL);
-                break;
-            case E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED:
-                if (s.followingPostAnnouncement)
-                    channels.push(E_NotificationChannel.EMAIL);
-                break;
-            case E_NotificationType.NEW_BLOG_POST:
-            case E_NotificationType.NEW_PODCAST:
-                channels.push(E_NotificationChannel.EMAIL);
-                break;
-            case E_NotificationType.RECEIPT_EMAIL_ONLY:
-            case E_NotificationType.PAYMENT_ISSUE:
-                channels = [E_NotificationChannel.EMAIL];
-                break;
-            default:
-                channels.push(E_NotificationChannel.EMAIL);
+        const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
+        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower)
+            channelSet.add(E_NotificationChannel.EMAIL);
+        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage)
+            channelSet.add(E_NotificationChannel.EMAIL);
+        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined)
+            channelSet.add(E_NotificationChannel.EMAIL);
+        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement)
+            channelSet.add(E_NotificationChannel.EMAIL);
+        if (has(E_NotificationType.NEW_BLOG_POST) || has(E_NotificationType.NEW_PODCAST))
+            channelSet.add(E_NotificationChannel.EMAIL);
+        if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE)) {
+            channelSet.clear();
+            channelSet.add(E_NotificationChannel.EMAIL);
         }
 
-        const {
-            presentation: _dropPresentation,
-            channels: _dropChannels,
-            isEmailSuppressed: _dropSuppressed,
-            ...persistBase
-        } = contextDoc;
+        const channels = Array.from(channelSet);
+        const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
+        const { presentation: _p, channels: _c, isEmailSuppressed: _s, ...persistBase } = { ...(doc as I_Input_CreateNotification), type: persistType };
 
-        const result = await mongooseCtr.createOne({
-            ...persistBase,
-            channels,
-            status: E_NotificationStatus.QUEUED,
-            isEmailSuppressed: false,
-        });
-
+        const result = await mongooseCtr.createOne({ ...persistBase, channels, status: E_NotificationStatus.QUEUED, isEmailSuppressed: false });
         if (result.success) {
             try {
-                const presentation = await buildPresentation(context, result.result, contextDoc.presentation);
-
-                // persist to DB
+                const presentation = await buildPresentation(context, result.result, doc.presentation);
                 await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
                 result.result.presentation = presentation;
 
@@ -218,10 +218,7 @@ export const notificationCtr = {
                     pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
                 }
             }
-
-            // if email channel selected: enqueue email here
         }
-
         return result;
     },
 
@@ -238,7 +235,6 @@ export const notificationCtr = {
 
         return result;
     },
-
     deleteNotification: async (
         _context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryNotification>,
@@ -252,7 +248,6 @@ export const notificationCtr = {
             };
             pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, payload);
         }
-
         return result;
     },
     markNotificationRead: async (
@@ -285,7 +280,6 @@ export const notificationCtr = {
 
         return result;
     },
-
     dismissNotification: async (
         context: I_Context,
         { filter }: I_Input_UpdateOne<I_Input_UpdateNotification>,
@@ -316,7 +310,6 @@ export const notificationCtr = {
 
         return result;
     },
-
     subscribeToNotificationAdded: () =>
         withFilter<I_NotificationAddedPayload, { userId?: string }, I_WsContext>(
             () => pubsub.asyncIterableIterator([E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED]),

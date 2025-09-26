@@ -156,7 +156,7 @@ export const followCtr = {
 
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
-                    type: E_NotificationType.NEW_FOLLOWER,
+                    type: [E_NotificationType.NEW_FOLLOWER],
                     actorId: currentUser.id, // người follow
                     targetId: followId, // người được follow
                     entityType: E_NotificationEntityType.USER,

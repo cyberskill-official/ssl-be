@@ -8,65 +8,44 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
 import { BlogModel } from './blog.model.js';
 
+const env = getEnv();
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
-    getBlog: async (
-        _context: I_Context,
-        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>,
-    ): Promise<I_Return<I_Blog>> => {
+    getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
-
-        if (!blogFound.success) {
+        if (!blogFound.success)
             return blogFound;
-        }
-
         const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
-
         for (const field of imageFields) {
             if (blogFound.result[field]) {
-                blogFound.result[field] = bunnyCtr.generateSignedUrl({
-                    fullUrl: blogFound.result[field]!,
-                    extraQueryParams: {
-                        class: 'normal',
-                    },
-                });
+                blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' } });
             }
         }
-
         return blogFound;
     },
-    getBlogs: async (
-        _context: I_Context,
-        { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>,
-    ): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
+    getBlogs: async (_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
         const blogs = await mongooseCtr.findPaging(filter, options);
-
-        if (!blogs.success) {
+        if (!blogs.success)
             return blogs;
-        }
 
         blogs.result.docs = blogs.result.docs.map((blog) => {
             const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
             for (const field of imageFields) {
                 if (blog[field]) {
-                    blog[field] = bunnyCtr.generateSignedUrl({
-                        fullUrl: blog[field]!,
-                        extraQueryParams: {
-                            class: 'normal',
-                        },
-                    });
+                    blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
                 }
             }
 
@@ -75,17 +54,13 @@ export const blogCtr = {
 
         return blogs;
     },
-    createBlog: async (
-        context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateBlog>,
-    ): Promise<I_Return<I_Blog>> => {
+    createBlog: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateBlog>): Promise<I_Return<I_Blog>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+
         const authorId = currentUser.id;
 
-        // gán tác giả
         doc.authorId = authorId;
 
-        // validate language (nếu có)
         if (doc.languageId) {
             const language = await languageCtr.getLanguage(context, { filter: { id: doc.languageId } });
             if (!language.success) {
@@ -93,12 +68,8 @@ export const blogCtr = {
             }
         }
 
-        // validate relatedBlogsIds (nếu có)
         if (doc.relatedBlogsIds?.length) {
-            const blogsFound = await blogCtr.getBlogs(context, {
-                filter: { id: { $in: doc.relatedBlogsIds } },
-                options: { limit: doc.relatedBlogsIds.length },
-            });
+            const blogsFound = await blogCtr.getBlogs(context, { filter: { id: { $in: doc.relatedBlogsIds } }, options: { limit: doc.relatedBlogsIds.length } });
             if (!blogsFound.success) {
                 throwError({ message: 'Error fetching related blogs', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
@@ -107,125 +78,89 @@ export const blogCtr = {
             }
         }
 
-        // tạo blog
         const blogResult = await mongooseCtr.createOne(doc);
         if (!blogResult.success)
             return blogResult;
+        const notifType = doc.type === 'PODCAST' ? E_NotificationType.NEW_PODCAST : E_NotificationType.NEW_BLOG_POST;
+        const redirectKind = doc.type === 'PODCAST' ? E_RedirectType.PODCAST : E_RedirectType.BLOG;
+        const notifEntity = doc.type === 'PODCAST' ? E_NotificationEntityType.PODCAST : E_NotificationEntityType.BLOG;
 
-        // ký thumbnail (nếu có) — không iframe
         let thumbnailUrl: string | undefined;
         try {
             if (blogResult.result.featuredImage) {
-                thumbnailUrl = bunnyCtr.generateSignedUrl({
-                    fullUrl: blogResult.result.featuredImage,
-                    extraQueryParams: { class: 'normal' },
-                });
+                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' } });
             }
         }
-        catch { /* noop */ }
-
-        // gửi notification cho mọi user active (trừ tác giả) — đã dedupe
+        catch {}
         try {
-            const users = await userCtr.getUsers(context, {
-                filter: { isActive: true, rolesIds: { $ne: [E_Role_Staff.ADMIN, E_Role.STAFF] } },
-                options: { pagination: false },
-            });
-
+            const [adminRole, staffRole] = await Promise.all([
+                roleCtr.getRole(context, { filter: { name: E_Role_Staff.ADMIN } }),
+                roleCtr.getRole(context, { filter: { name: E_Role.STAFF } }),
+            ]);
+            const excludeRoleIds = [
+                adminRole.success ? adminRole.result.id : undefined,
+                staffRole.success ? staffRole.result.id : undefined,
+            ].filter(Boolean) as string[];
+            const users = await userCtr.getUsers(context, { filter: { isActive: true, ...(excludeRoleIds.length ? { rolesIds: { $nin: excludeRoleIds } } : {}) }, options: { pagination: false } });
             if (users.success && users.result.docs.length > 0) {
-                const uniqueTargetIds = [...new Set(
-                    users.result.docs
-                        .map(u => u.id)
-                        .filter((id): id is string => !!id && id !== authorId),
-                )];
-
-                await Promise.all(
-                    uniqueTargetIds.map(targetId =>
-                        notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId,
-                                type: E_NotificationType.NEW_BLOG_POST,
-                                entityType: E_NotificationEntityType.BLOG,
-                                entityId: blogResult.result.id,
-                                actorId: authorId,
-                                presentation: {
-                                    redirect: { kind: E_RedirectType.BLOG, id: blogResult.result.id },
-                                    thumbnailUrl: blogResult.result.featuredImage ? thumbnailUrl : undefined,
-                                    // không gửi headline theo yêu cầu
-                                },
+                const uniqueTargetIds = [...new Set(users.result.docs.map(u => u.id).filter((id): id is string => !!id && id !== authorId))];
+                await Promise.all(uniqueTargetIds.map(targetId =>
+                    notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId,
+                            type: [notifType],
+                            entityType: notifEntity,
+                            entityId: blogResult.result.id,
+                            actorId: authorId,
+                            presentation: {
+                                redirect: { kind: redirectKind, id: blogResult.result.id },
+                                thumbnailUrl: blogResult.result.featuredImage ? thumbnailUrl : undefined,
+                                headline: blogResult.result.title,
                             },
-                        }),
-                    ),
-                );
+                        },
+                    }),
+                ));
             }
         }
-        catch {
-            // không chặn flow tạo blog nếu notify lỗi
-        }
-
+        catch {}
         return blogResult;
     },
-
-    updateBlog: async (
-        context: I_Context,
-        { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>,
-    ): Promise<I_Return<I_Blog>> => {
+    updateBlog: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter });
 
         if (!blogFound.success) {
-            throwError({
-                message: 'Blog not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
+            throwError({ message: 'Blog not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         const { languageId, relatedBlogsIds } = update;
 
         if (languageId) {
-            const language = await languageCtr.getLanguage(context, {
-                filter: { id: languageId },
-            });
-
+            const language = await languageCtr.getLanguage(context, { filter: { id: languageId } });
             if (!language) {
-                throwError({
-                    message: 'Language does not exist',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Language does not exist', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
         if (relatedBlogsIds) {
-            const blogs = await blogCtr.getBlogs(context, {
-                filter: { id: { $in: relatedBlogsIds } },
-                options: {
-                    limit: relatedBlogsIds?.length,
-                },
-            });
+            const blogs = await blogCtr.getBlogs(context, { filter: { id: { $in: relatedBlogsIds } }, options: { limit: relatedBlogsIds?.length } });
             if (!blogs.success) {
-                throwError({
-                    message: 'Error fetching related blogs',
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
+                throwError({ message: 'Error fetching related blogs', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
             if (blogs.result.docs.length !== relatedBlogsIds?.length) {
-                throwError({
-                    message: 'One or more relatedBlogsIds do not exist',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'One or more relatedBlogsIds do not exist', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
         if (update.featuredImage || update.logo || update.cover || update.file) {
-            const existingBlog = await blogCtr.getBlog(context, {
-                filter,
-            });
-
+            const existingBlog = await blogCtr.getBlog(context, { filter });
             if (existingBlog.success) {
                 const mediaFields: Array<keyof Pick<I_Input_UpdateBlog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
                 for (const field of mediaFields) {
                     if (update[field] && existingBlog.result[field] && existingBlog.result[field] !== update[field]) {
-                        await bunnyCtr.deleteFile(context, existingBlog.result[field]);
+                        const path = String(existingBlog.result[field]).replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
+                        await bunnyCtr.deleteFile(context, path);
                     }
                 }
             }
@@ -233,46 +168,30 @@ export const blogCtr = {
 
         return mongooseCtr.updateOne(filter, update, options);
     },
-    deleteBlog: async (
-        context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>,
-    ): Promise<I_Return<I_Blog>> => {
+    deleteBlog: async (context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter, options });
 
         if (!blogFound.success) {
-            throwError({
-                message: 'Blog not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
+            throwError({ message: 'Blog not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         const mediaFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
         for (const field of mediaFields) {
             if (blogFound.result[field]) {
-                await bunnyCtr.deleteFile(context, blogFound.result[field]);
+                const path = String(blogFound.result[field]).replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
+                await bunnyCtr.deleteFile(context, path);
             }
         }
 
         return mongooseCtr.deleteOne(filter, options);
     },
-    updateReadCount: async (
-        context: I_Context,
-        { filter }: I_Input_FindOne<I_Input_QueryBlog>,
-    ): Promise<I_Return<I_Blog>> => {
+    updateReadCount: async (context: I_Context, { filter }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter });
 
         if (!blogFound.success) {
-            throwError({
-                message: 'Blog not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
+            throwError({ message: 'Blog not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
-
-        return mongooseCtr.updateOne(
-            filter,
-            { $inc: { readCount: 1 } },
-            { new: true },
-        );
+        return mongooseCtr.updateOne(filter, { $inc: { readCount: 1 } }, { new: true });
     },
 };
