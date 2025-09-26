@@ -283,6 +283,29 @@ export const authnCtr = {
             || (role.ancestorsIds && role.ancestorsIds.includes(staffRoleId)),
         );
     },
+    // add near other role helpers in authnCtr
+    isPaidMember: async (context: I_Context): Promise<boolean> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const paidMemberRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_User.PAID_MEMBER },
+        });
+
+        if (!paidMemberRole.success) {
+            throwError({
+                message: 'Paid member role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const paidMemberRoleId = paidMemberRole.result.id;
+
+        return !!currentUser.roles?.some(role =>
+            (role.id === paidMemberRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
+        );
+    },
+
     isUser: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 

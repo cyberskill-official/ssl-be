@@ -121,27 +121,28 @@ export const conversationCtr = {
                         path: 'sender',
                         select: 'id username email accountType partner1 partner2',
                         populate: [
-                            {
-                                path: 'partner1',
-                                select: 'id galleryId',
-                                populate: [{ path: 'gallery', select: 'id url' }],
-                            },
-                            {
-                                path: 'partner2',
-                                select: 'id galleryId',
-                                populate: [{ path: 'gallery', select: 'id url' }],
-                            },
+                            { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                            { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
                         ],
                     },
+                    { path: 'messageStatuses', select: 'id status userId', match: { readAt: null } },
+                ],
+            },
+            {
+                path: 'participants',
+                populate: [
                     {
-                        path: 'messageStatuses',
-                        select: 'id status userId',
-                        match: { readAt: null },
+                        path: 'user',
+                        select: 'id username accountType partner1 partner2',
+                        populate: [
+                            { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                            { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                        ],
                     },
                 ],
             },
-            { path: 'participants' },
         ];
+
         return mongooseCtr.findOne({ id: conversationId }, undefined, undefined, populatePaths);
     },
 

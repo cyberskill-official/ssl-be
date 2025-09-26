@@ -31,6 +31,7 @@ import {
     E_NotificationChannel,
     E_NotificationStatus,
     E_NotificationType,
+    OTHER_TYPES,
 } from './notification.type.js';
 import { hasInApp } from './notification.util.js';
 
@@ -71,9 +72,63 @@ export const notificationCtr = {
     },
     getNotifications: async (
         _context: I_Context,
-        { filter, options }: I_Input_FindPaging<I_Input_QueryNotification>,
+        { filter = {}, options }: I_Input_FindPaging<I_Input_QueryNotification>,
     ): Promise<I_Return<T_PaginateResult<I_Notification>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const f = { ...filter };
+
+        // Chuẩn hoá channels: mảng -> $in
+        if (Array.isArray(f.channels)) {
+            f.channels = { $in: f.channels };
+        }
+
+        const inputType = f.type;
+        delete f.type;
+
+        const emptyResult: T_PaginateResult<I_Notification> = {
+            docs: [],
+            totalDocs: 0,
+            limit: options?.limit ?? 0,
+            totalPages: 0,
+            page: options?.page ?? 1,
+            pagingCounter: 0,
+            hasPrevPage: false,
+            hasNextPage: false,
+            prevPage: null,
+            nextPage: null,
+            offset: 0,
+        };
+
+        if (inputType === undefined) {
+            // Mặc định: chỉ OTHER_TYPES
+            f.type = { $in: OTHER_TYPES };
+        }
+        else if (Array.isArray(inputType)) {
+            // Client truyền mảng -> tôn trọng nguyên si
+            if (inputType.length === 0) {
+                return { success: true, message: '', result: emptyResult };
+            }
+            f.type = { $in: inputType };
+        }
+        else {
+            // String
+            if (inputType === E_NotificationType.NEW_MESSAGE) {
+                f.type = E_NotificationType.NEW_MESSAGE;
+            }
+            else if (OTHER_TYPES.includes(inputType)) {
+                f.type = inputType;
+            }
+            else {
+                // Loại không hợp lệ theo rule -> rỗng
+                return { success: true, message: 'OK', result: emptyResult };
+            }
+        }
+
+        const opts = {
+            sort: { createdAt: -1 },
+            ...options,
+        };
+
+        return mongooseCtr.findPaging(f, opts);
     },
 
     createNotification: async (_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {

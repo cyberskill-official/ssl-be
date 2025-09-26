@@ -11,8 +11,8 @@ import { Readable } from 'node:stream';
 import type { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { E_Role_User } from '#modules/authz/index.js';
+import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
+// import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { aiModerationCtr, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
@@ -20,6 +20,7 @@ import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type { I_Input_Upload } from './upload.type.js';
 
@@ -39,17 +40,22 @@ export const uploadCtr = {
         }
 
         const isStaff = await authnCtr.isStaff(context);
-        if (!isStaff) {
-            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            const hasPaidRole
-                = Array.isArray(currentUser?.roles)
-                    ? currentUser.roles.some(r => r?.name === E_Role_User.PAID_MEMBER)
-                    : Array.isArray((currentUser as any)?.rolesIdsNames)
-                        ? (currentUser as any).rolesIdsNames.includes(E_Role_User.PAID_MEMBER)
-                        : false;
-            const membershipActive = authnCtr.isMembershipActive(currentUser);
+        const isInRegistration = currentUser.registerStep !== E_RegisterStep.COMPLETE;
+        const isGallery
+            = entity === E_UploadEntity.GALLERY;
 
-            if (!(isAgeApproved && hasPaidRole && membershipActive)) {
+        const shouldGateUpload
+            = !isStaff
+                && !skipModeration
+                && !isInRegistration
+                && isGallery;
+
+        if (shouldGateUpload) {
+            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            const isPaidMember = await authnCtr.isPaidMember(context);
+            const membershipOk = authnCtr.isMembershipActive(currentUser);
+
+            if (!(isAgeApproved && isPaidMember && membershipOk)) {
                 throwError({
                     status: RESPONSE_STATUS.FORBIDDEN,
                     message: 'Uploads require active paid membership and completed age verification.',

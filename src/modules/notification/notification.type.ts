@@ -18,6 +18,20 @@ export enum E_NotificationType {
     PROFILE_VISIT = 'PROFILE_VISIT',
 }
 
+export const OTHER_TYPES = [
+    E_NotificationType.NEW_FOLLOWER,
+    E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST,
+    E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED,
+    E_NotificationType.PAYMENT_ISSUE,
+    E_NotificationType.RECEIPT_EMAIL_ONLY,
+    E_NotificationType.MEDIA_LIKED,
+    E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA,
+    E_NotificationType.NEW_BLOG_POST,
+    E_NotificationType.NEW_PODCAST,
+    E_NotificationType.GUESTBOOK_POST,
+    E_NotificationType.PROFILE_VISIT,
+];
+
 export enum E_NotificationChannel {
     IN_APP = 'IN_APP',
     EMAIL = 'EMAIL',
