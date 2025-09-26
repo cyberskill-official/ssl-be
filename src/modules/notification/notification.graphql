@@ -84,14 +84,20 @@ type T_Notification {
 
 type T_NotificationPresentationActor {
     username: String
-    accountType: String
+    accountType: E_AccountType
     avatarUrl: String
-    gender: String
+    gender: E_Gender
 }
 
 type T_NotificationRedirect {
     kind: E_RedirectType
     id: String
+}
+
+type T_NotificationContext {
+    conversationType: E_ConversationType
+    groupName: String
+    participantCount: Int
 }
 
 type T_NotificationPresentation {
@@ -100,6 +106,7 @@ type T_NotificationPresentation {
     thumbnailUrl: String
     redirect: T_NotificationRedirect
     headline: String
+    context: T_NotificationContext
 }
 
 type T_Notifications {
@@ -141,7 +148,7 @@ input Input_QueryNotification {
     title: String
     # body: String
     # data: JSON
-    presentation: Input_NotificationPresentationActor
+    presentation: Input_NotificationPresentation
     channels: [E_NotificationChannel]
     status: E_NotificationStatus
     scheduledAt: DateTime
@@ -162,12 +169,19 @@ input Input_NotificationPresentationActor {
     gender: String
 }
 
+input Input_NotificationContext {
+    conversationType: E_ConversationType
+    groupName: String
+    participantCount: Int
+}
+
 input Input_NotificationPresentation {
     id: String
     actor: Input_NotificationPresentationActor
     thumbnailUrl: String
     redirect: Input_NotificationRedirect
     headline: String
+    context: Input_NotificationContext
 }
 
 input Input_CreateNotification {
