@@ -131,12 +131,23 @@ type T_Response_Notifications {
 
 input Input_QueryNotification {
     id: String
+    createdAt: DateTime
+    updatedAt: DateTime
     type: [E_NotificationType]
     actorId: String
     targetId: String
     entityType: E_NotificationEntityType
     entityId: String
+    title: String
+    # body: String
+    # data: JSON
+    presentation: Input_NotificationPresentationActor
+    channels: [E_NotificationChannel]
     status: E_NotificationStatus
+    scheduledAt: DateTime
+    readAt: DateTime
+    dismissedAt: DateTime
+    isEmailSuppressed: Boolean
 }
 
 input Input_NotificationRedirect {
@@ -144,10 +155,19 @@ input Input_NotificationRedirect {
     id: String
 }
 
+input Input_NotificationPresentationActor {
+    username: String
+    accountType: String
+    avatarUrl: String
+    gender: String
+}
+
 input Input_NotificationPresentation {
     id: String
+    actor: Input_NotificationPresentationActor
     thumbnailUrl: String
     redirect: Input_NotificationRedirect
+    headline: String
 }
 
 input Input_CreateNotification {

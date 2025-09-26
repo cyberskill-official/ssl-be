@@ -375,6 +375,23 @@ export const eventCtr = {
             // ignore
         }
 
+        let actorAvatarUrl: string | undefined;
+
+        try {
+            const rawAvatar
+    = currentUser.partner1?.gallery?.url
+        ?? currentUser.partner2?.gallery?.url
+        ?? undefined;
+
+            if (rawAvatar) {
+                actorAvatarUrl = bunnyCtr.generateSignedUrl({
+                    fullUrl: rawAvatar,
+                    extraQueryParams: { class: 'normal' },
+                });
+            }
+        }
+        catch { /* ignore */ }
+
         if (followers.success) {
             for (const f of followers.result.docs) {
                 const targetId = f.userId;
@@ -390,9 +407,15 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
                         presentation: {
+                            actor: {
+                                username: currentUser.username,
+                                accountType: currentUser.accountType,
+                                avatarUrl: actorAvatarUrl,
+                                gender: currentUser.partner1?.gender,
+                            },
                             redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id },
-                            thumbnailUrl: eventCreated.result.image ? thumbnailUrl : undefined,
                             headline: eventCreated.result.title,
+                            thumbnailUrl,
                         },
                     },
                 });
@@ -421,7 +444,16 @@ export const eventCtr = {
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
-                        presentation: { redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id }, thumbnailUrl: eventCreated.result.image ? thumbnailUrl : undefined, headline: eventCreated.result.title,
+                        presentation: {
+                            actor: {
+                                username: currentUser.username,
+                                avatarUrl: actorAvatarUrl,
+                                accountType: currentUser.accountType,
+                                gender: currentUser.partner1?.gender,
+                            },
+                            redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id },
+                            headline: eventCreated.result.title,
+                            thumbnailUrl,
                         },
                     },
                 });

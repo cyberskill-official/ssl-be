@@ -1,5 +1,8 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { E_ConversationType } from '#modules/conversation/index.js';
+import type { E_AccountType, E_Gender } from '#modules/user/user.type.js';
+
 export enum E_NotificationType {
     MEDIA_LIKED = 'MEDIA_LIKED',
     NEW_FOLLOWER = 'NEW_FOLLOWER',
@@ -73,14 +76,20 @@ export enum E_RedirectType {
 
 export interface T_NotificationPresentationActor {
     username?: string;
-    accountType?: string;
+    accountType?: E_AccountType;
     avatarUrl?: string;
-    gender?: string;
+    gender?: E_Gender;
 }
 
 export interface I_NotificationRedirect {
     kind?: E_RedirectType;
     id?: string;
+}
+
+export interface I_NotificationContext {
+    conversationType?: E_ConversationType;
+    groupName?: string;
+    participantCount?: number;
 }
 
 export interface I_NotificationPresentation {
@@ -89,11 +98,7 @@ export interface I_NotificationPresentation {
     thumbnailUrl?: string;
     redirect?: I_NotificationRedirect;
     headline?: string;
-    context?: {
-        conversationType?: string;
-        groupName?: string;
-        participantCount?: number;
-    };
+    context?: I_NotificationContext;
 }
 
 export interface I_Notification extends I_GenericDocument {

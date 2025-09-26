@@ -1,7 +1,10 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_Notification, I_NotificationPresentation, I_NotificationRedirect, T_NotificationPresentationActor } from './notification.type.js';
+import { E_ConversationType } from '#modules/conversation/conversation/index.js';
+import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
+
+import type { I_Notification, I_NotificationContext, I_NotificationPresentation, I_NotificationRedirect, T_NotificationPresentationActor } from './notification.type.js';
 
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationStatus, E_NotificationType, E_RedirectType } from './notification.type.js';
 
@@ -22,9 +25,19 @@ export const ActorSchema = mongo.createSchema<T_NotificationPresentationActor>({
     mongoose,
     schema: {
         username: { type: String },
-        accountType: { type: String },
+        accountType: { type: String, enum: Object.values(E_AccountType) },
         avatarUrl: { type: String },
-        gender: { type: String },
+        gender: { type: String, enum: Object.values(E_Gender) },
+    },
+});
+
+export const ContextSchema = mongo.createSchema<I_NotificationContext>({
+    standalone: true,
+    mongoose,
+    schema: {
+        conversationType: { type: String, enum: Object.values(E_ConversationType) },
+        groupName: { type: String },
+        participantCount: { type: Number },
     },
 });
 
@@ -33,10 +46,11 @@ export const PresentationSchema = mongo.createSchema<I_NotificationPresentation>
     mongoose,
     schema: {
         id: { type: String },
-        actor: { type: ActorSchema },
+        actor: ActorSchema,
         thumbnailUrl: { type: String },
-        redirect: { type: RedirectSchema },
+        redirect: RedirectSchema,
         headline: { type: String },
+        context: ContextSchema,
     },
 });
 
@@ -61,10 +75,18 @@ export const NotificationModel = mongo.createModel<I_Notification>({
         entityId: { type: String },
         body: { type: String },
         // data: { type: mongoose.Schema.Types.Mixed },
-        presentation: { type: PresentationSchema },
+        presentation: PresentationSchema,
         channels: {
             type: [String],
             enum: Object.values(E_NotificationChannel),
+            required: true,
+            default: [E_NotificationChannel.IN_APP],
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select at least one channel for notification',
+                },
+            ],
         },
         status: {
             type: String,

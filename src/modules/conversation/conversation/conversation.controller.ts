@@ -552,6 +552,7 @@ export const conversationCtr = {
                             avatarUrl: avatar,
                             gender: senderUser?.partner1?.gender ?? senderUser?.partner2?.gender,
                         },
+                        context: { conversationType: E_ConversationType.PRIVATE },
                     },
                 },
             });
@@ -670,6 +671,11 @@ export const conversationCtr = {
                                     accountType: senderUser?.accountType,
                                     avatarUrl: avatar,
                                     gender: senderUser?.partner1?.gender ?? senderUser?.partner2?.gender,
+                                },
+                                context: {
+                                    conversationType: conversation.type!,
+                                    groupName: conversation.name || '',
+                                    participantCount: conversation.participants?.length || 0,
                                 },
                             },
                         },

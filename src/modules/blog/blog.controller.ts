@@ -114,6 +114,12 @@ export const blogCtr = {
                             actorId: authorId,
                             presentation: {
                                 redirect: { kind: redirectKind, id: blogResult.result.id },
+                                actor: {
+                                    username: currentUser.username,
+                                    accountType: currentUser.accountType,
+                                    avatarUrl: currentUser.partner1?.gallery?.url,
+                                    gender: currentUser.partner1?.gender,
+                                },
                                 thumbnailUrl: blogResult.result.featuredImage ? thumbnailUrl : undefined,
                                 headline: blogResult.result.title,
                             },

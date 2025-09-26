@@ -32,7 +32,7 @@ import {
     E_NotificationStatus,
     E_NotificationType,
 } from './notification.type.js';
-import { buildPresentation, hasInApp } from './notification.util.js';
+import { hasInApp } from './notification.util.js';
 
 const mongooseCtr = new MongooseController<I_Notification>(NotificationModel);
 
@@ -75,60 +75,42 @@ export const notificationCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Notification>>> => {
         return mongooseCtr.findPaging(filter, options);
     },
-    createNotification: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
-        const { targetId, entityType, entityId, presentation: presentationHint } = doc;
 
+    createNotification: async (_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
+        const { targetId, entityType, entityId } = doc;
         const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
 
-        if (!targetId) {
-            throwError(
-                {
-                    message: 'targetId is required',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
+        if (!targetId)
+            throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (types.length === 0)
+            throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (entityType && !entityId)
+            throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
 
-        if (types.length === 0) {
-            throwError(
-                {
-                    message: 'Notification type is required',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
+        // channels mặc định đã có default IN_APP ở model, nhưng nếu muốn override từ doc thì dùng doc.channels
+        const channels = (doc.channels && doc.channels.length > 0) ? doc.channels : undefined;
 
-        if (entityType && !entityId) {
-            throwError(
-                {
-                    message: 'entityId is required when entityType is provided',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
-
-        const ch = (doc.channels && doc.channels.length > 0) ? doc.channels : [E_NotificationChannel.EMAIL];
+        // LƯU Y NGUYÊN SI presentation TỪ CLIENT
         const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
-        const { presentation: _drop, ...docToPersist } = { ...doc, type: persistType, channels: ch };
+        const { ...base } = doc as I_Input_CreateNotification;
 
-        const result = await mongooseCtr.createOne({ ...docToPersist, status: E_NotificationStatus.QUEUED });
+        const result = await mongooseCtr.createOne({
+            ...base,
+            type: persistType,
+            channels,
+            status: E_NotificationStatus.QUEUED,
+        });
+
         if (result.success) {
-            try {
-                const presentation = await buildPresentation(context, result.result, presentationHint);
-                await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
-                result.result.presentation = presentation;
-
-                if (hasInApp(result.result)) {
-                    const payload: I_NotificationAddedPayload = { notification: result.result, presentation };
-                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
-                }
+            // gán lại presentation từ client (nếu có)
+            if (doc.presentation) {
+                await mongooseCtr.updateOne({ id: result.result.id }, { presentation: doc.presentation });
+                result.result.presentation = doc.presentation;
             }
 
-            catch {
-                if (hasInApp(result.result)) {
-                    const payload: I_NotificationAddedPayload = { notification: result.result };
-                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
-                }
+            if (hasInApp(result.result)) {
+                const payload: I_NotificationAddedPayload = { notification: result.result, presentation: result.result.presentation };
+                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
             }
         }
         return result;
@@ -136,87 +118,65 @@ export const notificationCtr = {
 
     createNotificationWithSettings: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
         const { targetId, entityType, entityId } = doc;
-
         const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
 
-        if (!targetId) {
-            throwError(
-                {
-                    message: 'targetId is required',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
-
-        if (types.length === 0) {
-            throwError(
-                {
-                    message: 'Notification type is required',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
-
-        if (entityType && !entityId) {
-            throwError(
-                {
-                    message: 'entityId is required when entityType is provided',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                },
-            );
-        }
+        if (!targetId)
+            throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (types.length === 0)
+            throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (entityType && !entityId)
+            throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
 
         const userFound = await userCtr.getUser(context, { filter: { id: targetId } });
+        if (!userFound.success)
+            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
 
-        if (!userFound.success) {
-            throwError(
-                {
-                    message: 'Target user not found',
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                },
-            );
-        }
-
+        // Tính channels theo user settings (giữ nguyên logic hiện có)
         const s = userFound.result.settings?.notification ?? {};
         const has = (t: E_NotificationType) => types.includes(t);
-
         const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
-        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower)
+
+        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower) {
             channelSet.add(E_NotificationChannel.EMAIL);
-        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage)
+        }
+
+        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage) {
             channelSet.add(E_NotificationChannel.EMAIL);
-        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined)
+        }
+
+        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined) {
             channelSet.add(E_NotificationChannel.EMAIL);
-        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement)
+        }
+
+        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement) {
             channelSet.add(E_NotificationChannel.EMAIL);
-        if (has(E_NotificationType.NEW_BLOG_POST) || has(E_NotificationType.NEW_PODCAST))
-            channelSet.add(E_NotificationChannel.EMAIL);
+        }
         if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE)) {
             channelSet.clear();
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-
         const channels = Array.from(channelSet);
+
         const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
-        const { presentation: _p, channels: _c, isEmailSuppressed: _s, ...persistBase } = { ...(doc as I_Input_CreateNotification), type: persistType };
 
-        const result = await mongooseCtr.createOne({ ...persistBase, channels, status: E_NotificationStatus.QUEUED, isEmailSuppressed: false });
+        const result = await mongooseCtr.createOne({
+            ...(doc as I_Input_CreateNotification),
+            type: persistType,
+            channels,
+            status: E_NotificationStatus.QUEUED,
+            isEmailSuppressed: false,
+        });
+
         if (result.success) {
-            try {
-                const presentation = await buildPresentation(context, result.result, doc.presentation);
-                await mongooseCtr.updateOne({ id: result.result.id }, { presentation });
-                result.result.presentation = presentation;
-
-                if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
-                    const payload: I_NotificationAddedPayload = { notification: result.result, presentation };
-                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
-                }
+            // LƯU NGUYÊN SI presentation từ client, KHÔNG build/enrich
+            if (doc.presentation) {
+                await mongooseCtr.updateOne({ id: result.result.id }, { presentation: doc.presentation });
+                result.result.presentation = doc.presentation;
             }
-            catch {
-                if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
-                    const payload: I_NotificationAddedPayload = { notification: result.result };
-                    pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
-                }
+
+            if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
+                const payload: I_NotificationAddedPayload = { notification: result.result, presentation: result.result.presentation };
+                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
             }
         }
         return result;
