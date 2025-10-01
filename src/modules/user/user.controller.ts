@@ -254,25 +254,85 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
-        const { password } = update;
+        // ---------- helpers ----------
+        const uniq = <T>(a: T[]) => Array.from(new Set(a));
 
+        const isPrimitive = (v: unknown) =>
+            ['string', 'number', 'boolean'].includes(typeof v);
+
+        // Dedup tổng quát theo quy ước tên field / cấu trúc
+        const dedupArraysRecursively = (node: any) => {
+            if (!node || typeof node !== 'object')
+                return;
+
+            // Nếu là mảng object/primitive, xử lý tại chỗ
+            if (Array.isArray(node)) {
+                // không có key -> xử lý ở cấp cha, nên bỏ qua
+                return;
+            }
+
+            for (const key of Object.keys(node)) {
+                const val = (node as any)[key];
+
+                if (Array.isArray(val)) {
+                    // 1) key kết thúc bằng ...Ids  -> dedup theo giá trị
+                    const isIdsKey = key.toLowerCase().endsWith('ids');
+
+                    // 2) mảng primitive -> nếu là ...Ids thì chắc chắn dedup
+                    if (val.every(isPrimitive)) {
+                        if (isIdsKey)
+                            (node as any)[key] = uniq(val);
+                    }
+                    // 3) mảng object có trường id:string -> dedup theo id
+                    else if (
+                        val.length > 0
+                        && val.every(
+                            x => x && typeof x === 'object' && typeof (x as any).id === 'string',
+                        )
+                    ) {
+                        const seen = new Set<string>();
+                        (node as any)[key] = val.filter((x) => {
+                            const id = (x as any).id as string;
+                            if (seen.has(id))
+                                return false;
+                            seen.add(id);
+                            return true;
+                        });
+                    }
+
+                    // tiếp tục đệ quy xuống phần tử (phòng lồng sâu)
+                    for (const item of val) dedupArraysRecursively(item);
+                }
+                else if (val && typeof val === 'object') {
+                    dedupArraysRecursively(val);
+                }
+            }
+        };
+        // ---------- end helpers ----------
+
+        // 0) Chuẩn hoá input update trước (tránh đưa trùng vào merge)
+        dedupArraysRecursively(update);
+
+        // 1) password
+        const { password } = update;
         if (password) {
             validate.password.validate(password);
             update.password = bcrypt.hashSync(password);
         }
 
+        // 2) chặn free dùng temp location
         if (update.settings?.temporaryLocation) {
             const isFreeMember = await authnCtr.isFreeMember(context);
             if (isFreeMember) {
                 throwError({
-                    message: 'Free users cannot use temporary location feature. Please upgrade your membership.',
+                    message:
+          'Free users cannot use temporary location feature. Please upgrade your membership.',
                     status: RESPONSE_STATUS.FORBIDDEN,
                 });
             }
         }
 
         const userFound = await userCtr.getUser(context, { filter });
-
         if (!userFound.success) {
             throwError({
                 message: 'User not found.',
@@ -280,14 +340,12 @@ export const userCtr = {
             });
         }
 
+        // 3) cập nhật location nếu có
         if (update?.partner1?.location) {
             const locationUpdated = await locationCtr.updateLocation(context, {
                 filter: { id: userFound.result.partner1?.locationId },
-                update: {
-                    ...update?.partner1?.location,
-                },
+                update: { ...update.partner1.location },
             });
-
             if (!locationUpdated.success) {
                 throwError({
                     message: locationUpdated.message,
@@ -298,17 +356,15 @@ export const userCtr = {
 
         if (update.settings?.temporaryLocation) {
             const temp = update.settings.temporaryLocation;
-            const existingTempLocationId = userFound.result.settings?.temporaryLocation?.locationId;
+            const existingTempLocationId
+      = userFound.result.settings?.temporaryLocation?.locationId;
 
             if (temp.location) {
                 if (existingTempLocationId) {
                     const locationUpdated = await locationCtr.updateLocation(context, {
                         filter: { id: existingTempLocationId },
-                        update: {
-                            ...temp.location,
-                        },
+                        update: { ...temp.location },
                     });
-
                     if (!locationUpdated.success) {
                         throwError({
                             message: locationUpdated.message,
@@ -324,30 +380,29 @@ export const userCtr = {
                             entityId: userFound.result.id,
                         },
                     });
-
                     if (!locationCreated.success) {
                         throwError({
                             message: locationCreated.message,
                             status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                         });
                     }
-
-                    // Ensure the new locationId is saved back to user settings
                     update.settings.temporaryLocation.locationId = locationCreated.result.id;
                 }
-
-                // Do not persist the virtual `location` object in user settings
-                // It is a virtual populated from `locationId` in the schema
-                delete (update.settings.temporaryLocation as unknown as Record<string, unknown>)['location'];
+                delete (update.settings.temporaryLocation as any)['location'];
             }
         }
 
+        // 4) deepMerge vào doc hiện tại
         const mergeUpdate = deepMerge(
             userFound.result as unknown as Record<string, unknown>,
             update as Record<string, unknown>,
         );
+
+        dedupArraysRecursively(mergeUpdate);
+
         return mongooseCtr.updateOne(filter, mergeUpdate, options);
     },
+
     updateUsers: async (
         _: I_Context,
         { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
