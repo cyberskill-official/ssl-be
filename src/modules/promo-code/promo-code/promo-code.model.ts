@@ -46,9 +46,5 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         globalUsageLimit: {
             type: Number,
         },
-        membershipDurationDays: {
-            type: Number,
-            default: 1,
-        },
     },
 });

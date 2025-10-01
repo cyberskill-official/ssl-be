@@ -674,11 +674,7 @@ export const authnCtr = {
                     });
                 }
 
-                const membershipDurationDays = promoCodeCtr.calculateMembershipDuration(applyPromo.result);
-
-                // Calculate expiration date by adding days
-                membershipExpiresAt = new Date();
-                membershipExpiresAt.setDate(membershipExpiresAt.getDate() + membershipDurationDays);
+                membershipExpiresAt = applyPromo.result.expiresAt;
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {

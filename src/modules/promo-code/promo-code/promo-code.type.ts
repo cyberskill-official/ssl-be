@@ -7,7 +7,6 @@ export interface I_PromoCode extends I_GenericDocument {
     isLimit?: boolean;
     usageLimit?: number;
     globalUsageLimit?: number;
-    membershipDurationDays?: number;
 }
 
 export interface I_Input_QueryPromoCode extends I_PromoCode { }
