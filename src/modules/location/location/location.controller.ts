@@ -15,6 +15,7 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_Destination } from '#modules/destination/destination.type.js';
 import type { I_Event } from '#modules/event/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
@@ -181,6 +182,15 @@ export const locationCtr = {
         }
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
+
+        // Ẩn pin mồ côi và những bản ghi đã đánh dấu xóa (isDel, isDeleted, deletedAt, status = DELETED)
+        docs = docs.filter((d) => {
+            const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
+            const hasKey = !!e && !!(e.id || e._id);
+            const entityDeleted = Boolean(e?.isDel);
+            const locationDeleted = Boolean((d)?.isDel);
+            return hasKey && !entityDeleted && !locationDeleted;
+        });
 
         // filter eventType nếu có
         if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
