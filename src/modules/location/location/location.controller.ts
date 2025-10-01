@@ -190,7 +190,7 @@ export const locationCtr = {
             });
         }
 
-        // ⚡ chọn location duy nhất cho user (TEMP > DEFAULT)
+        // chọn location duy nhất cho user (TEMP > DEFAULT)
         docs = docs.map((d) => {
             const user = d.entity as I_User;
             if (!user?.id) {
@@ -224,7 +224,7 @@ export const locationCtr = {
             };
         });
 
-        // ⚡ loại duplicate user
+        // loại duplicate user
         const seenUsers = new Set<string>();
         docs = docs.filter((d) => {
             const user = d.entity as I_User;

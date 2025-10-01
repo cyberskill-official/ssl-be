@@ -2,6 +2,8 @@ import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
 import { E_ConversationType } from '#modules/conversation/conversation/index.js';
+import { E_EventType } from '#modules/event/event.type.js';
+import { MapSchema } from '#modules/location/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
 import type { I_Notification, I_NotificationContext, I_NotificationPresentation, I_NotificationRedirect, T_NotificationPresentationActor } from './notification.type.js';
@@ -17,6 +19,10 @@ export const RedirectSchema = mongo.createSchema<I_NotificationRedirect>({
             enum: Object.values(E_RedirectType),
         },
         id: { type: String },
+        map: {
+            type: MapSchema,
+        },
+        eventType: { type: String, enum: Object.values(E_EventType) },
     },
 });
 

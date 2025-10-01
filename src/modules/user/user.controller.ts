@@ -24,7 +24,7 @@ import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
-import { applyNameFilters, validate } from '#shared/util/index.js';
+import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 import { getEffectiveLocation } from '#shared/util/location-map.js';
 
 import type { I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
@@ -254,68 +254,19 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
-        // ---------- helpers ----------
-        const uniq = <T>(a: T[]) => Array.from(new Set(a));
-        const isPrim = (v: unknown) => ['string', 'number', 'boolean'].includes(typeof v);
-
-        function dedupArraysIterative(root: any) {
-            if (!root || typeof root !== 'object')
-                return;
-            const stack: any[] = [root];
-
-            while (stack.length) {
-                const node = stack.pop();
-                if (!node || typeof node !== 'object' || Array.isArray(node))
-                    continue;
-
-                for (const k of Object.keys(node)) {
-                    const v = node[k];
-
-                    if (Array.isArray(v)) {
-                        const isIds = k.toLowerCase().endsWith('ids');
-
-                        if (v.every(isPrim) && isIds) {
-                            node[k] = uniq(v);
-                        }
-                        else if (
-                            v.length > 0
-                            && v.every(o => o && typeof o === 'object' && typeof o.id === 'string')
-                        ) {
-                            const seen = new Set<string>();
-                            node[k] = v.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)));
-                        }
-
-                        for (const item of v) {
-                            if (item && typeof item === 'object')
-                                stack.push(item);
-                        }
-                    }
-                    else if (v && typeof v === 'object') {
-                        stack.push(v);
-                    }
-                }
-            }
-        }
-
-        // ---------- end helpers ----------
-
-        // 0) Chuẩn hoá input update trước (tránh đưa trùng vào merge)
         dedupArraysIterative(update);
 
-        // 1) password
         const { password } = update;
         if (password) {
             validate.password.validate(password);
             update.password = bcrypt.hashSync(password);
         }
 
-        // 2) chặn free dùng temp location
         if (update.settings?.temporaryLocation) {
             const isFreeMember = await authnCtr.isFreeMember(context);
             if (isFreeMember) {
                 throwError({
-                    message:
-          'Free users cannot use temporary location feature. Please upgrade your membership.',
+                    message: 'Free users cannot use temporary location feature. Please upgrade your membership.',
                     status: RESPONSE_STATUS.FORBIDDEN,
                 });
             }
@@ -329,7 +280,7 @@ export const userCtr = {
             });
         }
 
-        // 3) cập nhật location nếu có
+        //  cập nhật location nếu có
         if (update?.partner1?.location) {
             const locationUpdated = await locationCtr.updateLocation(context, {
                 filter: { id: userFound.result.partner1?.locationId },
@@ -346,7 +297,7 @@ export const userCtr = {
         if (update.settings?.temporaryLocation) {
             const temp = update.settings.temporaryLocation;
             const existingTempLocationId
-      = userFound.result.settings?.temporaryLocation?.locationId;
+                = userFound.result.settings?.temporaryLocation?.locationId;
 
             if (temp.location) {
                 if (existingTempLocationId) {
@@ -381,7 +332,7 @@ export const userCtr = {
             }
         }
 
-        // 4) deepMerge vào doc hiện tại
+        // deepMerge vào doc hiện tại
         const mergeUpdate = deepMerge(
             userFound.result as unknown as Record<string, unknown>,
             update as Record<string, unknown>,

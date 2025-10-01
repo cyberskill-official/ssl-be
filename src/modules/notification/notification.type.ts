@@ -1,6 +1,8 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
 import type { E_ConversationType } from '#modules/conversation/index.js';
+import type { E_EventType } from '#modules/event/index.js';
+import type { I_Map } from '#modules/location/index.js';
 import type { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
 export enum E_NotificationType {
@@ -98,6 +100,8 @@ export interface T_NotificationPresentationActor {
 export interface I_NotificationRedirect {
     kind?: E_RedirectType;
     id?: string;
+    map?: I_Map;
+    eventType?: E_EventType;
 }
 
 export interface I_NotificationContext {

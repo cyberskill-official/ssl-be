@@ -175,19 +175,30 @@ export const notificationCtr = {
         const { targetId, entityType, entityId } = doc;
         const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
 
-        if (!targetId)
+        if (!targetId) {
             throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (types.length === 0)
+        }
+
+        if (types.length === 0) {
             throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
-        if (entityType && !entityId)
+        }
+
+        if (entityType && !entityId) {
             throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
 
         const userFound = await userCtr.getUser(context, { filter: { id: targetId } });
-        if (!userFound.success)
-            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
 
-        // Tính channels theo user settings (giữ nguyên logic hiện có)
+        if (!userFound.success) {
+            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
         const s = userFound.result.settings?.notification ?? {};
+
+        if (userFound.result.isDel === true) {
+            return { success: true, message: null };
+        }
+
         const has = (t: E_NotificationType) => types.includes(t);
         const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
 

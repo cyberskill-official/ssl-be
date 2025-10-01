@@ -92,6 +92,8 @@ type T_NotificationPresentationActor {
 type T_NotificationRedirect {
     kind: E_RedirectType
     id: String
+    map: T_Map
+    eventType: E_EventType
 }
 
 type T_NotificationContext {
@@ -160,6 +162,8 @@ input Input_QueryNotification {
 input Input_NotificationRedirect {
     kind: E_RedirectType
     id: String
+    map: Input_Map
+    eventType: E_EventType
 }
 
 input Input_NotificationPresentationActor {

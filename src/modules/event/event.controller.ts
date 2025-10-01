@@ -1,4 +1,13 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateMany, I_Input_UpdateOne, T_PaginateResult, T_UpdateResult } from '@cyberskill/shared/node/mongo';
+import type {
+    I_Input_CreateOne,
+    I_Input_DeleteOne,
+    I_Input_FindOne,
+    I_Input_FindPaging,
+    I_Input_UpdateMany,
+    I_Input_UpdateOne,
+    T_PaginateResult,
+    T_UpdateResult,
+} from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -14,13 +23,28 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr } from '#modules/destination/index.js';
 import { followCtr } from '#modules/follow/index.js';
-import { cityCtr, countryCtr, E_Event_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
-import { notificationCtr } from '#modules/notification/index.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import {
+    cityCtr,
+    countryCtr,
+    E_Event_PinStyle,
+    E_LocationEntityType,
+    locationCtr,
+} from '#modules/location/index.js';
+import { isValidMap, notificationCtr } from '#modules/notification/index.js';
+import {
+    E_NotificationEntityType,
+    E_NotificationType,
+    E_RedirectType,
+} from '#modules/notification/notification.type.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
 
-import type { I_Event, I_Input_CreateEvent, I_Input_QueryEvent, I_Input_UpdateEvent } from './event.type.js';
+import type {
+    I_Event,
+    I_Input_CreateEvent,
+    I_Input_QueryEvent,
+    I_Input_UpdateEvent,
+} from './event.type.js';
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
@@ -54,9 +78,7 @@ export const eventCtr = {
         if (eventFound.result.image) {
             eventFound.result.image = bunnyCtr.generateSignedUrl({
                 fullUrl: eventFound.result.image,
-                extraQueryParams: {
-                    class: 'normal',
-                },
+                extraQueryParams: { class: 'normal' },
             });
         }
 
@@ -67,23 +89,18 @@ export const eventCtr = {
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
         const events = await mongooseCtr.findPaging(filter, options);
-
-        if (!events.success) {
+        if (!events.success)
             return events;
-        }
 
         events.result.docs = events.result.docs.map((event) => {
             if (event.image) {
                 event.image = bunnyCtr.generateSignedUrl({
                     fullUrl: event.image,
-                    extraQueryParams: {
-                        class: 'normal',
-                    },
+                    extraQueryParams: { class: 'normal' },
                 });
             }
             return event;
         });
-
         return events;
     },
     createEvent: async (
@@ -91,7 +108,19 @@ export const eventCtr = {
         { doc }: I_Input_CreateOne<I_Input_CreateEvent>,
     ): Promise<I_Return<I_Event>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const { type, title, description, startDate, endDate, startTime, endTime, location, image, destinationId } = doc;
+        const {
+            type,
+            title,
+            description,
+            startDate,
+            endDate,
+            startTime,
+            endTime,
+            location,
+            image,
+            destinationId,
+        } = doc;
+
         doc.createdById = currentUser.id;
 
         const membershipExpiresAt = currentUser.membershipExpiresAt;
@@ -103,38 +132,20 @@ export const eventCtr = {
         }
 
         if (!type) {
-            throwError({
-                message: 'Event type is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Event type is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-
         if (!description || description.length < 50) {
-            throwError({
-                message: 'Description minimum: 50 characters.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Description minimum: 50 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-
         if (!description || description.length > 130) {
-            throwError({
-                message: 'Description maximum: 130 characters.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Description maximum: 130 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-
         if (!image && type !== E_EventType.CLUB_VISIT) {
-            throwError({
-                message: 'Image upload is required for all events.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Image upload is required for all events.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const eventActiveCountResult = await mongooseCtr.count({
-            isActive: true,
-            createdById: currentUser.id,
-        });
-
+        // Max active announcements per user
+        const eventActiveCountResult = await mongooseCtr.count({ isActive: true, createdById: currentUser.id });
         if (eventActiveCountResult.success && eventActiveCountResult.result >= 10) {
             throwError({
                 message: 'Maximum of 10 active announcements per user at the same time.',
@@ -142,18 +153,15 @@ export const eventCtr = {
             });
         }
 
+        // CLUB_VISIT: resolve destination & optional location fallback
+        let destLocationCandidate: typeof location | undefined;
         if (type === E_EventType.CLUB_VISIT) {
             if (!destinationId) {
-                throwError({
-                    message: 'Club/Resort selection is required.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Club/Resort selection is required.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
-
             const destinationFound = await destinationCtr.getDestination(context, {
                 filter: { id: destinationId, isActive: true },
             });
-
             if (!destinationFound.success) {
                 throwError({
                     message: 'Selected club/resort not found or is not active.',
@@ -162,12 +170,13 @@ export const eventCtr = {
             }
 
             const destination = destinationFound.result;
+
+            // Try to ensure we know country/city for auto title
             let countryName = destination.location?.country?.name ?? '';
             let cityName = destination.location?.city?.name ?? '';
 
             if ((!countryName || !cityName) && destination.locationId) {
                 const locationFound = await locationCtr.getLocation(context, { filter: { id: destination.locationId } });
-
                 if (locationFound.success && locationFound.result) {
                     const countryId = locationFound.result.countryId;
                     const cityId = locationFound.result.cityId;
@@ -177,37 +186,31 @@ export const eventCtr = {
                         if (countryFound.success && countryFound.result)
                             countryName = countryFound.result.name ?? countryName;
                     }
-
                     if (cityId) {
                         const cityFound = await cityCtr.getCity(context, { filter: { id: cityId } });
                         if (cityFound.success && cityFound.result)
                             cityName = cityFound.result.name ?? cityName;
                     }
-
-                    if (!destination.location) {
-                        doc.location = locationFound.result;
-                    }
+                    // fallback location candidate from locationId
+                    destLocationCandidate = destination.location ?? (locationFound.result as any);
                 }
+            }
+            else {
+                destLocationCandidate = destination.location ?? destLocationCandidate;
             }
 
             const autoTitle = `Going clubbing in ${countryName}${countryName && cityName ? ', ' : ''}${cityName}`.trim();
             doc.title = autoTitle || title;
             doc.image = (destination.images && destination.images[0]) ?? image;
-            doc.location = doc.location || destination.location!;
         }
 
+        // TRAVEL validations
         if (type === E_EventType.TRAVEL) {
-            if (!description || description.trim().length === 0) {
-                throwError({
-                    message: 'Description is required for Travel Announcements',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+            if (!description?.trim()) {
+                throwError({ message: 'Description is required for Travel Announcements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (!location) {
-                throwError({
-                    message: 'Location is required for Travel Announcements',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Location is required for Travel Announcements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (!startDate || !endDate) {
                 throwError({
@@ -217,12 +220,10 @@ export const eventCtr = {
             }
         }
 
+        // BOOTY_CALL validations
         if (type === E_EventType.BOOTY_CALL) {
-            if (!description || description.trim().length === 0) {
-                throwError({
-                    message: 'Text description is required for Booty Calls.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+            if (!description?.trim()) {
+                throwError({ message: 'Text description is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (!startDate || !startTime || !endTime) {
                 throwError({
@@ -230,30 +231,19 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.BOOTY_CALL);
-
             if (!location) {
-                throwError({
-                    message: 'Location is required for Booty Calls.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Location is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
-
             if (!endDate) {
-                throwError({
-                    message: 'End time is required for Booty Calls.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'End time is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
+        // PRIVATE validations
         if (type === E_EventType.PRIVATE) {
             if (!location) {
-                throwError({
-                    message: 'Event location is required for Event Announcements.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Event location is required for Event Announcements.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (startDate && startTime && endTime) {
                 validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.PRIVATE);
@@ -264,70 +254,56 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-
             const createdConversation = await conversationCtr.createConversation(context, {
                 doc: { name: title, type: E_ConversationType.GROUP, createdById: currentUser.id },
             });
-
             if (!createdConversation.success) {
-                throwError({
-                    message: 'Failed to create conversation for event',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Failed to create conversation for event', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
+        // Date logic
         if (isAfter(startDate, endDate)) {
-            throwError({
-                message: 'Start date cannot be after end date.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Start date cannot be after end date.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        // Coordinate format check if client sent location.map
         if (location?.map) {
-            const { latitude, longitude } = location.map;
+            const { latitude, longitude } = location.map as any;
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
-                throwError({
-                    message: 'Coordinates must be valid numbers',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+                throwError({ message: 'Coordinates must be valid numbers', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
+        // Pricing for free member
         const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
         if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
             const pricingFound = await pricingCtr.getPricing(context, {
                 filter: { 'type': E_PricingType.ANNOUNCEMENT, 'location.countryId': location?.countryId, 'isActive': true },
             });
-
             if (!pricingFound.success) {
-                throwError({
-                    message: 'Can not found pricing for event',
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                });
+                throwError({ message: 'Can not found pricing for event', status: RESPONSE_STATUS.NOT_FOUND });
             }
-
             const basePrice = pricingFound.result.price ?? 0;
             const taxRate = pricingFound.result.taxRate ?? 0;
-            const totalFee = Math.ceil((basePrice + (basePrice * taxRate / 100)) * 100) / 100;
+            const totalFee = Math.ceil((basePrice + (basePrice * taxRate) / 100) * 100) / 100;
             doc.fee = totalFee;
         }
 
+        // Create event
         const eventCreated = await mongooseCtr.createOne(doc);
-        if (!eventCreated.success) {
+        if (!eventCreated.success)
             return eventCreated;
+
+        if (eventCreated.result.createdById && eventCreated.result.isActive) {
+            await userCtr.updateUser(context, {
+                filter: { id: eventCreated.result.createdById },
+                update: { hasUpcomingEvent: true },
+            });
         }
 
-        if (eventCreated.result.createdById) {
-            if (eventCreated.result.isActive) {
-                await userCtr.updateUser(context, {
-                    filter: { id: eventCreated.result.createdById },
-                    update: { hasUpcomingEvent: true },
-                });
-            }
-        }
-
-        let pinStyle;
+        // pinStyle by type
+        let pinStyle: E_Event_PinStyle | undefined;
         if (type === E_EventType.CLUB_VISIT)
             pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
         if (type === E_EventType.TRAVEL)
@@ -335,10 +311,21 @@ export const eventCtr = {
         if (type === E_EventType.BOOTY_CALL)
             pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
 
+        const sourceLocation = location ?? destLocationCandidate;
+
         const locationCreated = await locationCtr.createLocation(context, {
-            doc: doc.location
+            doc: sourceLocation
                 ? (() => {
-                        const { _id: _omitMongoId, id: _omitId, isDel: _omitIsDel, createdAt: _omitCA, updatedAt: _omitUA, entityType: _omitET, entityId: _omitEID, ...rest } = doc.location as any;
+                        const {
+                            _id: _omitMongoId,
+                            id: _omitId,
+                            isDel: _omitIsDel,
+                            createdAt: _omitCA,
+                            updatedAt: _omitUA,
+                            entityType: _omitET,
+                            entityId: _omitEID,
+                            ...rest
+                        } = sourceLocation as any;
                         return {
                             ...rest,
                             pinStyle,
@@ -352,37 +339,28 @@ export const eventCtr = {
                         entityId: eventCreated.result.id,
                     },
         });
-
-        if (!locationCreated.success) {
+        if (!locationCreated.success)
             return locationCreated;
-        }
 
-        const followers = await followCtr.getFollowers(context, {
-            filter: { followId: currentUser.id },
-            options: { pagination: false },
-        });
-
-        const notifiedTargets = new Set<string>();
-
-        // prepare thumbnail for announcement if available
+        // Thumbnail for notification
         let thumbnailUrl: string | undefined;
         try {
             if (eventCreated.result.image) {
-                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: eventCreated.result.image, extraQueryParams: { class: 'normal' } });
+                thumbnailUrl = bunnyCtr.generateSignedUrl({
+                    fullUrl: eventCreated.result.image,
+                    extraQueryParams: { class: 'normal' },
+                });
             }
         }
-        catch {
-            // ignore
-        }
+        catch { /* ignore */ }
 
+        // Actor avatar (signed) nếu có
         let actorAvatarUrl: string | undefined;
-
         try {
             const rawAvatar
-    = currentUser.partner1?.gallery?.url
-        ?? currentUser.partner2?.gallery?.url
-        ?? undefined;
-
+                = currentUser.partner1?.gallery?.url
+                    ?? currentUser.partner2?.gallery?.url
+                    ?? undefined;
             if (rawAvatar) {
                 actorAvatarUrl = bunnyCtr.generateSignedUrl({
                     fullUrl: rawAvatar,
@@ -392,6 +370,35 @@ export const eventCtr = {
         }
         catch { /* ignore */ }
 
+        // Build redirect 1 lần từ locationCreated.result.map
+        const locMap = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+        const eventRedirect = {
+            kind: E_RedirectType.EVENT,
+            id: eventCreated.result.id,
+            eventType: eventCreated.result.type,
+            ...(isValidMap(locMap) ? { map: { latitude: locMap!.latitude!, longitude: locMap!.longitude! } } : {}),
+        } as const;
+
+        // Common presentation
+        const commonPresentation = {
+            actor: {
+                username: currentUser.username,
+                accountType: currentUser.accountType,
+                avatarUrl: actorAvatarUrl,
+                gender: currentUser.partner1?.gender,
+            },
+            redirect: eventRedirect,
+            headline: eventCreated.result.title,
+            thumbnailUrl,
+        } as const;
+
+        // Notify followers
+        const followers = await followCtr.getFollowers(context, {
+            filter: { followId: currentUser.id },
+            options: { pagination: false },
+        });
+
+        const notifiedTargets = new Set<string>();
         if (followers.success) {
             for (const f of followers.result.docs) {
                 const targetId = f.userId;
@@ -406,28 +413,15 @@ export const eventCtr = {
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
-                        presentation: {
-                            actor: {
-                                username: currentUser.username,
-                                accountType: currentUser.accountType,
-                                avatarUrl: actorAvatarUrl,
-                                gender: currentUser.partner1?.gender,
-                            },
-                            redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id,
-                            },
-                            headline: eventCreated.result.title,
-                            thumbnailUrl,
-                        },
+                        presentation: commonPresentation,
                     },
                 });
             }
         }
 
+        // Notify nearby users (chưa theo radius, giữ nguyên logic cũ)
         const nearbyUsers = await userCtr.getUsers(context, {
-            filter: {
-                'isActive': true,
-                'partner1.locationId': { $exists: true },
-            },
+            filter: { 'isActive': true, 'partner1.locationId': { $exists: true } },
             options: { pagination: false },
         });
 
@@ -445,47 +439,34 @@ export const eventCtr = {
                         entityType: E_NotificationEntityType.EVENT,
                         entityId: eventCreated.result.id,
                         actorId: currentUser.id,
-                        presentation: {
-                            actor: {
-                                username: currentUser.username,
-                                avatarUrl: actorAvatarUrl,
-                                accountType: currentUser.accountType,
-                                gender: currentUser.partner1?.gender,
-                            },
-                            redirect: { kind: E_RedirectType.EVENT, id: eventCreated.result.id },
-                            headline: eventCreated.result.title,
-                            thumbnailUrl,
-                        },
+                        presentation: commonPresentation,
                     },
                 });
             }
         }
 
+        // Link event với locationId
         return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: locationCreated.result.id });
     },
 
-    updateEvent: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>): Promise<I_Return<I_Event>> => {
+    updateEvent: async (
+        context: I_Context,
+        { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>,
+    ): Promise<I_Return<I_Event>> => {
         const eventFound = await eventCtr.getEvent(context, { filter });
 
         if (!eventFound.success) {
-            throwError({
-                message: 'Event not found',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
+            throwError({ message: 'Event not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         if (update.image) {
-            const existingEvent = await eventCtr.getEvent(context, {
-                filter,
-            });
-
+            const existingEvent = await eventCtr.getEvent(context, { filter });
             if (existingEvent.success && existingEvent.result.image && existingEvent.result.image !== update.image) {
                 await bunnyCtr.deleteFile(context, existingEvent.result.image);
             }
         }
 
         if (update.location) {
-            // Enforce mapping from event type to valid pinStyle
             const effectiveType = update.type ?? eventFound.result.type;
             const allowedPinStyle = mapEventTypeToPinStyle(effectiveType);
 
@@ -502,15 +483,10 @@ export const eventCtr = {
 
             const locationUpdated = await locationCtr.updateLocation(context, {
                 filter: { id: eventFound.result.locationId },
-                update: {
-                    ...update.location,
-                    ...(pinStyle !== undefined ? { pinStyle } : {}),
-                },
+                update: { ...update.location, ...(pinStyle !== undefined ? { pinStyle } : {}) },
             });
-
-            if (!locationUpdated.success) {
+            if (!locationUpdated.success)
                 return locationUpdated;
-            }
         }
 
         if (eventFound.success && eventFound.result.createdById) {
@@ -524,13 +500,19 @@ export const eventCtr = {
             const after = afterActive && afterFuture;
 
             if (before !== after) {
-                await userCtr.updateUser(context, { filter: { id: eventFound.result.createdById }, update: { hasUpcomingEvent: after } });
+                await userCtr.updateUser(context, {
+                    filter: { id: eventFound.result.createdById },
+                    update: { hasUpcomingEvent: after },
+                });
             }
         }
 
         return mongooseCtr.updateOne(filter, update, options);
     },
-    updateEvents: async (_context: I_Context, { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>): Promise<I_Return<T_UpdateResult>> => {
+    updateEvents: async (
+        _context: I_Context,
+        { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateEvent>,
+    ): Promise<I_Return<T_UpdateResult>> => {
         return mongooseCtr.updateMany(filter, update, options);
     },
     deleteEvent: async (
@@ -538,12 +520,8 @@ export const eventCtr = {
         { filter, options }: I_Input_DeleteOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
         const eventFound = await eventCtr.getEvent(context, { filter });
-
         if (!eventFound.success) {
-            throwError({
-                message: 'Event not found.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Event not found.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         if (eventFound.result.image) {
@@ -552,19 +530,17 @@ export const eventCtr = {
 
         if (eventFound.result.locationId) {
             const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: eventFound.result.locationId } });
-
             if (!locationDeleted.success) {
                 return locationDeleted;
             }
         }
 
-        // If deleting an upcoming/active event, recompute hasUpcomingEvent for the owner
         if (eventFound.result.createdById) {
             const ownerId = eventFound.result.createdById;
-            const agg = await mongooseCtr.aggregate([
+            const agg = (await mongooseCtr.aggregate([
                 { $match: { createdById: ownerId, isActive: true, isDel: { $ne: true }, $expr: { $gt: ['$endDate', new Date()] } } },
                 { $limit: 1 },
-            ]) as unknown as Array<unknown>;
+            ])) as unknown as Array<unknown>;
             const hasAny = Array.isArray(agg) && agg.length > 0;
             await userCtr.updateUser(context, { filter: { id: ownerId }, update: { hasUpcomingEvent: hasAny } });
         }
