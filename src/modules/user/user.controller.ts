@@ -256,62 +256,51 @@ export const userCtr = {
     ): Promise<I_Return<I_User>> => {
         // ---------- helpers ----------
         const uniq = <T>(a: T[]) => Array.from(new Set(a));
+        const isPrim = (v: unknown) => ['string', 'number', 'boolean'].includes(typeof v);
 
-        const isPrimitive = (v: unknown) =>
-            ['string', 'number', 'boolean'].includes(typeof v);
-
-        // Dedup tổng quát theo quy ước tên field / cấu trúc
-        const dedupArraysRecursively = (node: any) => {
-            if (!node || typeof node !== 'object')
+        function dedupArraysIterative(root: any) {
+            if (!root || typeof root !== 'object')
                 return;
+            const stack: any[] = [root];
 
-            // Nếu là mảng object/primitive, xử lý tại chỗ
-            if (Array.isArray(node)) {
-                // không có key -> xử lý ở cấp cha, nên bỏ qua
-                return;
-            }
+            while (stack.length) {
+                const node = stack.pop();
+                if (!node || typeof node !== 'object' || Array.isArray(node))
+                    continue;
 
-            for (const key of Object.keys(node)) {
-                const val = (node as any)[key];
+                for (const k of Object.keys(node)) {
+                    const v = node[k];
 
-                if (Array.isArray(val)) {
-                    // 1) key kết thúc bằng ...Ids  -> dedup theo giá trị
-                    const isIdsKey = key.toLowerCase().endsWith('ids');
+                    if (Array.isArray(v)) {
+                        const isIds = k.toLowerCase().endsWith('ids');
 
-                    // 2) mảng primitive -> nếu là ...Ids thì chắc chắn dedup
-                    if (val.every(isPrimitive)) {
-                        if (isIdsKey)
-                            (node as any)[key] = uniq(val);
+                        if (v.every(isPrim) && isIds) {
+                            node[k] = uniq(v);
+                        }
+                        else if (
+                            v.length > 0
+                            && v.every(o => o && typeof o === 'object' && typeof o.id === 'string')
+                        ) {
+                            const seen = new Set<string>();
+                            node[k] = v.filter(o => (seen.has(o.id) ? false : (seen.add(o.id), true)));
+                        }
+
+                        for (const item of v) {
+                            if (item && typeof item === 'object')
+                                stack.push(item);
+                        }
                     }
-                    // 3) mảng object có trường id:string -> dedup theo id
-                    else if (
-                        val.length > 0
-                        && val.every(
-                            x => x && typeof x === 'object' && typeof (x as any).id === 'string',
-                        )
-                    ) {
-                        const seen = new Set<string>();
-                        (node as any)[key] = val.filter((x) => {
-                            const id = (x as any).id as string;
-                            if (seen.has(id))
-                                return false;
-                            seen.add(id);
-                            return true;
-                        });
+                    else if (v && typeof v === 'object') {
+                        stack.push(v);
                     }
-
-                    // tiếp tục đệ quy xuống phần tử (phòng lồng sâu)
-                    for (const item of val) dedupArraysRecursively(item);
-                }
-                else if (val && typeof val === 'object') {
-                    dedupArraysRecursively(val);
                 }
             }
-        };
+        }
+
         // ---------- end helpers ----------
 
         // 0) Chuẩn hoá input update trước (tránh đưa trùng vào merge)
-        dedupArraysRecursively(update);
+        dedupArraysIterative(update);
 
         // 1) password
         const { password } = update;
@@ -398,7 +387,7 @@ export const userCtr = {
             update as Record<string, unknown>,
         );
 
-        dedupArraysRecursively(mergeUpdate);
+        dedupArraysIterative(mergeUpdate);
 
         return mongooseCtr.updateOne(filter, mergeUpdate, options);
     },
