@@ -34,7 +34,10 @@ export const blockCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Block>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        return mongooseCtr.findPaging({ userId: currentUser.id }, options);
+        return mongooseCtr.findPaging(
+            { $or: [{ userId: currentUser.id }, { blockId: currentUser.id }] },
+            { ...options, populate: [{ path: 'user' }, { path: 'block' }] },
+        );
     },
     createBlock: async (
         context: I_Context,
