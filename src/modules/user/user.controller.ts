@@ -39,7 +39,19 @@ export const userCtr = {
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         // Admin được phép xem; người thường bị lọc
-        const isAdmin = await (authnCtr.isAdmin?.(context).catch(() => false) ?? false);
+        // Avoid circular dependency by checking session directly instead of calling isAdmin
+        let isAdmin = false;
+        try {
+            const sessionUser = context?.req?.session?.user as I_User | undefined;
+            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
+                isAdmin = sessionUser.roles.some(role =>
+                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
+                );
+            }
+        }
+        catch {
+            // Ignore error and default to false
+        }
 
         const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
         const effectiveFilter = isAdmin
@@ -93,7 +105,19 @@ export const userCtr = {
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
 
-        const isAdmin = await (authnCtr.isAdmin?.(context).catch(() => false) ?? false);
+        // Avoid circular dependency by checking session directly instead of calling isAdmin
+        let isAdmin = false;
+        try {
+            const sessionUser = context?.req?.session?.user as I_User | undefined;
+            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
+                isAdmin = sessionUser.roles.some(role =>
+                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
+                );
+            }
+        }
+        catch {
+            // Ignore error and default to false
+        }
 
         const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
         const effectiveFilter = isAdmin
@@ -444,7 +468,20 @@ export const userCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_AdminBlockUser>,
     ): Promise<I_Return<I_User>> => {
-        const isAdmin = await (authnCtr.isAdmin?.(context) ?? false);
+        // Avoid circular dependency by checking session directly instead of calling isAdmin
+        let isAdmin = false;
+        try {
+            const sessionUser = context?.req?.session?.user as I_User | undefined;
+            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
+                isAdmin = sessionUser.roles.some(role =>
+                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
+                );
+            }
+        }
+        catch {
+            // Ignore error and default to false
+        }
+
         if (!isAdmin) {
             throwError({ status: RESPONSE_STATUS.FORBIDDEN, message: 'Forbidden' });
         }
@@ -472,7 +509,20 @@ export const userCtr = {
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_AdminUnBlockUser>,
     ): Promise<I_Return<I_User>> => {
-        const isAdmin = await (authnCtr.isAdmin?.(context) ?? false);
+        // Avoid circular dependency by checking session directly instead of calling isAdmin
+        let isAdmin = false;
+        try {
+            const sessionUser = context?.req?.session?.user as I_User | undefined;
+            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
+                isAdmin = sessionUser.roles.some(role =>
+                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
+                );
+            }
+        }
+        catch {
+            // Ignore error and default to false
+        }
+
         if (!isAdmin) {
             throwError({ status: RESPONSE_STATUS.FORBIDDEN, message: 'Forbidden' });
         }
