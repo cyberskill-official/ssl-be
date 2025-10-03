@@ -16,7 +16,7 @@ import type { I_Input_UploadMany } from '#modules/upload/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
@@ -120,6 +120,10 @@ export const authnCtr = {
                 };
             }
 
+            if (userFound.result.isAdminBlocked) {
+                return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
+            }
+
             return {
                 success: true,
                 result: {
@@ -195,6 +199,10 @@ export const authnCtr = {
                 message: 'Session expired.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
+        }
+        if (userFound.result.isAdminBlocked) {
+            context.req.session.destroy(() => {});
+            return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
         }
 
         if (userFound.result.isDel) {
@@ -283,6 +291,27 @@ export const authnCtr = {
             || (role.ancestorsIds && role.ancestorsIds.includes(staffRoleId)),
         );
     },
+
+    isAdmin: async (context: I_Context): Promise<boolean> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const adminRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_Staff.ADMIN },
+        });
+        if (!adminRole.success) {
+            throwError({
+                message: 'Admin role not found.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+        const adminRoleId = adminRole.result.id;
+
+        return !!currentUser.roles?.some(role =>
+            (role.id === adminRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(adminRoleId)),
+        );
+    },
+
     // add near other role helpers in authnCtr
     isPaidMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
@@ -438,6 +467,10 @@ export const authnCtr = {
             });
         }
 
+        if (userFound.result.isAdminBlocked) {
+            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
         const otp = helper.generateOTP();
 
         const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
@@ -503,6 +536,10 @@ export const authnCtr = {
                 message: 'User not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        if (userFound.result.isAdminBlocked) {
+            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
@@ -798,6 +835,10 @@ export const authnCtr = {
             });
         }
 
+        if (userFound.result.isAdminBlocked) {
+            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
         const isPasswordMatched = bcrypt.compareSync(
             password,
             userFound.result.password!,
@@ -887,6 +928,10 @@ export const authnCtr = {
             });
         }
 
+        if (userFound.result.isAdminBlocked) {
+            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
         await authnCtr.sendForgotPasswordEmail(context, args.email);
 
         return {
@@ -930,6 +975,10 @@ export const authnCtr = {
                 message: 'User not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
+        }
+
+        if (userFound.result.isAdminBlocked) {
+            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         const updateResult = await userCtr.updateUser(context, {

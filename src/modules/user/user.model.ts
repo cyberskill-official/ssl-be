@@ -483,7 +483,8 @@ export const UserModel = mongo.createModel<I_User>({
         email: {
             type: String,
             required: true,
-            unique: true,
+            lowercase: true,
+            trim: true,
             validate: [
                 {
                     validator: mongo.validator.isUnique(['email']),
@@ -603,6 +604,7 @@ export const UserModel = mongo.createModel<I_User>({
             type: Number,
             default: 0,
         },
+        isAdminBlocked: { type: Boolean, default: false },
     },
     virtuals: [
         {

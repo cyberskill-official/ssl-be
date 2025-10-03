@@ -214,6 +214,7 @@ type T_User {
     membershipExpiresAt: DateTime
     followerCount: Int
     followingCount: Int
+    isAdminBlocked: Boolean
 }
 
 input Input_QueryUser {
@@ -245,6 +246,7 @@ input Input_QueryUser {
     membershipExpiresAt: DateTime
     followerCount: Int
     followingCount: Int
+    isAdminBlocked: Boolean
 }
 
 input Input_CreateUser {
@@ -300,6 +302,13 @@ input Input_UpdateUser {
     followerCount: Int
 }
 
+input Input_AdminBlockUser {
+    userId: String!
+}
+input Input_AdminUnblockUser {
+    userId: String!
+}
+
 type T_Response_User {
     success: Boolean
     message: String
@@ -338,4 +347,6 @@ type Mutation {
     deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
     softDeleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
+    adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
+    adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!
 }

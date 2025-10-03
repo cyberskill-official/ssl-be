@@ -126,6 +126,7 @@ export interface I_User extends I_GenericDocument {
     membershipExpiresAt?: Date;
     followerCount?: number;
     followingCount?: number;
+    isAdminBlocked?: boolean;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';
@@ -149,4 +150,12 @@ export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
     settings?: I_Input_UserSettings;
+}
+
+export interface I_Input_AdminBlockUser {
+    userId: string;
+}
+
+export interface I_Input_AdminUnBlockUser {
+    userId: string;
 }
