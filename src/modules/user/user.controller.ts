@@ -332,7 +332,12 @@ export const userCtr = {
             }
         }
 
-        // deepMerge vào doc hiện tại
+        if (update.rolesIds && Array.isArray(update.rolesIds)) {
+            const finalUpdate = { ...update };
+            dedupArraysIterative(finalUpdate);
+            return mongooseCtr.updateOne(filter, finalUpdate, options);
+        }
+
         const mergeUpdate = deepMerge(
             userFound.result as unknown as Record<string, unknown>,
             update as Record<string, unknown>,
