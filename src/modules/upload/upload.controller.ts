@@ -40,12 +40,15 @@ export const uploadCtr = {
         }
 
         const isStaff = await authnCtr.isStaff(context);
+        const isAdmin = await authnCtr.isAdmin(context);
+
         const isInRegistration = currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery
             = entity === E_UploadEntity.GALLERY;
 
         const shouldGateUpload
             = !isStaff
+                && !isAdmin
                 && !skipModeration
                 && !isInRegistration
                 && isGallery;
@@ -87,7 +90,7 @@ export const uploadCtr = {
         });
 
         const uploadPath = path.posix.join(folderPath, fullPath);
-        const shouldBypassModeration = isStaff || !!skipModeration;
+        const shouldBypassModeration = isStaff || !!skipModeration || isAdmin;
 
         if (shouldBypassModeration) {
             if (type === E_UploadType.VIDEO) {

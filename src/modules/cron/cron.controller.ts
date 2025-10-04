@@ -203,17 +203,16 @@ export const cron = {
         });
     },
     checkUserOnlineStatus: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_MINUTE, async () => {
+    // chạy mỗi 5 phút
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
             try {
-                log.info('Checking user online status...');
-
-                // Find users who haven't had API activity in the last 30 seconds
-                const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+                // Find users who haven't had API activity in the last 5 minutes
+                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); // 5 phút
 
                 const offlineUsers = await userCtr.getUsers({}, {
                     filter: {
                         isOnline: true,
-                        lastOnline: { $lt: thirtySecondsAgo },
+                        lastOnline: { $lt: fiveMinutesAgo },
                     },
                     options: { pagination: false },
                 });
@@ -230,7 +229,7 @@ export const cron = {
                     });
 
                     if (updateResult.success) {
-                        log.success(`[CRON] Marked ${offlineUserIds.length} users as offline due to inactivity (lastOnline > 30 seconds ago)`);
+                        log.success(`[CRON] Marked ${offlineUserIds.length} users as offline due to inactivity (lastOnline > 5 minutes ago)`);
                     }
                     else {
                         log.error('[CRON] Failed to update offline users:', updateResult.message);

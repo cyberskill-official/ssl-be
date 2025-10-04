@@ -5,6 +5,7 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
+import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
@@ -171,58 +172,76 @@ export const notificationCtr = {
         return result;
     },
 
-    createNotificationWithSettings: async (context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {
+    createNotificationWithSettings: async (
+        context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreateNotification>,
+    ) => {
         const { targetId, entityType, entityId } = doc;
-        const types: E_NotificationType[] = Array.isArray(doc.type) ? doc.type as E_NotificationType[] : (doc.type ? [doc.type as E_NotificationType] : []);
+
+        const types: E_NotificationType[] = Array.isArray(doc.type)
+            ? (doc.type as E_NotificationType[])
+            : (doc.type ? [doc.type as E_NotificationType] : []);
 
         if (!targetId) {
             throwError({ message: 'targetId is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-
         if (types.length === 0) {
             throwError({ message: 'Notification type is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-
         if (entityType && !entityId) {
             throwError({ message: 'entityId is required when entityType is provided', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const userFound = await userCtr.getUser(context, { filter: { id: targetId } });
-
-        if (!userFound.success) {
-            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
+        // normalize id (UUID/string/ObjectId)
+        const tid = String(targetId).trim();
+        const orFilters: any[] = [{ targetId: tid }, { id: tid }];
+        if (isValidObjectId(tid)) {
+            orFilters.push({ _id: new Types.ObjectId(tid) });
         }
 
-        const s = userFound.result.settings?.notification ?? {};
-
-        if (userFound.result.isDel === true) {
+        // optional: skip notifying current session user
+        const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
+        const currentUserId = currentUser?.id;
+        if (currentUserId && String(currentUserId) === tid) {
             return { success: true, message: null };
         }
 
+        // lookup recipient by any supported key
+        const userFound = await userCtr.getUser(context, { filter: { $or: orFilters } });
+        if (!userFound?.success) {
+            throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        if (userFound.result?.isDel === true) {
+            return { success: true, message: null };
+        }
+
+        const s = userFound.result.settings?.notification ?? {};
         const has = (t: E_NotificationType) => types.includes(t);
+
+        // channels
         const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
 
         if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-
         if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-
         if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-
         if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
+
+        // force email-only for receipts/payment issues
         if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE)) {
             channelSet.clear();
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-        const channels = Array.from(channelSet);
 
+        const channels = Array.from(channelSet);
         const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
 
         const result = await mongooseCtr.createOne({
@@ -241,10 +260,14 @@ export const notificationCtr = {
             }
 
             if (result.result.channels?.includes(E_NotificationChannel.IN_APP)) {
-                const payload: I_NotificationAddedPayload = { notification: result.result, presentation: result.result.presentation };
+                const payload: I_NotificationAddedPayload = {
+                    notification: result.result,
+                    presentation: result.result.presentation,
+                };
                 pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
             }
         }
+
         return result;
     },
 
