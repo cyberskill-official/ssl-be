@@ -183,13 +183,38 @@ export const locationCtr = {
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
 
-        // Ẩn pin mồ côi và những bản ghi đã đánh dấu xóa (isDel, isDeleted, deletedAt, status = DELETED)
+        // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
+        const now = new Date();
+
         docs = docs.filter((d) => {
             const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
             const hasKey = !!e && !!(e.id || e._id);
             const entityDeleted = Boolean(e?.isDel);
             const locationDeleted = Boolean((d)?.isDel);
-            return hasKey && !entityDeleted && !locationDeleted;
+            const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
+
+            // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
+            let isEventExpired = false;
+            if (e && (filter.entityType === E_LocationEntityType.EVENT || (e as any)?.startDate || (e as any)?.endDate || (e as any)?.type !== undefined)) {
+                const ev = e as I_Event | undefined;
+                const endCandidate = ev?.endDate ?? null;
+                const startCandidate = ev?.startDate ?? null;
+
+                if (endCandidate) {
+                    const endDate = new Date(endCandidate);
+                    if (!Number.isNaN(endDate.getTime()) && endDate <= now) {
+                        isEventExpired = true;
+                    }
+                }
+                else if (startCandidate) {
+                    const startDate = new Date(startCandidate);
+                    if (!Number.isNaN(startDate.getTime()) && startDate <= now) {
+                        isEventExpired = true;
+                    }
+                }
+            }
+
+            return hasKey && !entityDeleted && !locationDeleted && !isAdminBlocked && !isEventExpired;
         });
 
         // filter eventType nếu có
@@ -207,12 +232,12 @@ export const locationCtr = {
                 return d;
             }
 
-            const now = new Date();
+            const nowInner = new Date();
             let finalLocation: Partial<I_Location> | undefined;
             let finalLocationId: string | undefined;
             const tempLoc = user?.settings?.temporaryLocation;
 
-            if (tempLoc?.locationId && tempLoc.endAt && new Date(tempLoc.endAt) > now) {
+            if (tempLoc?.locationId && tempLoc.endAt && new Date(tempLoc.endAt) > nowInner) {
                 finalLocation = tempLoc.location ?? { id: tempLoc.locationId };
                 finalLocationId = tempLoc.locationId;
             }
@@ -249,7 +274,33 @@ export const locationCtr = {
             return true;
         });
 
-        return { success: true, result: { ...pagingResult.result, docs } };
+        // --- điều chỉnh metadata paging sau khi post-process docs ---
+        const pageSize = (pagingResult.result?.limit ?? options?.limit ?? docs.length) as number;
+        const currentPage = (pagingResult.result?.page ?? options?.page ?? 1) as number;
+
+        const originalTotalDocs = typeof pagingResult.result?.totalDocs === 'number' ? pagingResult.result!.totalDocs : undefined;
+        const confirmedUpToThisPage = (currentPage - 1) * pageSize + docs.length;
+
+        const totalDocsAdjusted = typeof originalTotalDocs === 'number'
+            ? Math.min(originalTotalDocs, confirmedUpToThisPage)
+            : docs.length;
+
+        const totalPagesAdjusted = Math.max(1, Math.ceil(totalDocsAdjusted / pageSize));
+
+        const adjustedPagingResult = {
+            ...pagingResult.result,
+            docs,
+            totalDocs: totalDocsAdjusted,
+            totalPages: totalPagesAdjusted,
+            limit: pageSize,
+            page: currentPage,
+            hasNextPage: currentPage < totalPagesAdjusted,
+            hasPrevPage: currentPage > 1,
+            nextPage: currentPage < totalPagesAdjusted ? currentPage + 1 : null,
+            prevPage: currentPage > 1 ? currentPage - 1 : null,
+        };
+
+        return { success: true, result: adjustedPagingResult };
     },
 
 };

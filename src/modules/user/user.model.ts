@@ -483,8 +483,7 @@ export const UserModel = mongo.createModel<I_User>({
         email: {
             type: String,
             required: true,
-            lowercase: true,
-            trim: true,
+            unique: true,
             validate: [
                 {
                     validator: mongo.validator.isUnique(['email']),

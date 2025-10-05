@@ -134,8 +134,8 @@ export const eventCtr = {
         if (!type) {
             throwError({ message: 'Event type is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        if (!description || description.length < 50) {
-            throwError({ message: 'Description minimum: 50 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (!description || description.length < 25) {
+            throwError({ message: 'Description minimum: 25 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
         if (!description || description.length > 130) {
             throwError({ message: 'Description maximum: 130 characters.', status: RESPONSE_STATUS.BAD_REQUEST });

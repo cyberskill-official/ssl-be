@@ -336,16 +336,26 @@ export const participantCtr = {
         conversationType: E_ConversationType.PRIVATE | E_ConversationType.GROUP,
         search?: string,
     ): Promise<string[]> => {
-        function groupSearchPipeline(search: string): PipelineStage[] {
-            return [{
-                $match: {
-                    'conversation.name': { $regex: search.trim(), $options: 'i' },
-                },
-            }];
-        }
+        const hasSearch = !!(search && search.trim());
+        const regex = hasSearch ? { $regex: search!.trim(), $options: 'i' } : undefined;
 
-        function privateSearchPipeline(search: string): PipelineStage[] {
-            return [
+        const pipeline: PipelineStage[] = [
+            { $match: { userId } },
+            {
+                $lookup: {
+                    from: 'conversations',
+                    localField: 'conversationId',
+                    foreignField: 'id',
+                    as: 'conversation',
+                },
+            },
+            { $unwind: '$conversation' },
+            { $match: { 'conversation.type': conversationType } },
+        ];
+
+        if (conversationType === E_ConversationType.PRIVATE) {
+            // always resolve the "other" user to enforce deleted/isDel filter even when no search term
+            pipeline.push(
                 {
                     $lookup: {
                         from: 'participants',
@@ -378,31 +388,34 @@ export const participantCtr = {
                 { $unwind: '$otherUser' },
                 {
                     $match: {
-                        $or: [
-                            { 'otherUser.username': { $regex: search.trim(), $options: 'i' } },
-                        ],
+                        'otherUser.isDel': { $ne: true },
+                        'otherUser.isAdminBlocked': { $ne: true },
                     },
                 },
-            ];
+            );
+
+            if (hasSearch) {
+                pipeline.push({
+                    $match: {
+                        $or: [
+                            { 'otherUser.username': regex! },
+                        ],
+                    },
+                });
+            }
+        }
+        else {
+            // GROUP search by conversation name
+            if (hasSearch) {
+                pipeline.push({
+                    $match: {
+                        'conversation.name': regex!,
+                    },
+                });
+            }
         }
 
-        const pipeline: PipelineStage[] = [
-            { $match: { userId } },
-            {
-                $lookup: {
-                    from: 'conversations',
-                    localField: 'conversationId',
-                    foreignField: 'id',
-                    as: 'conversation',
-                },
-            },
-            { $unwind: '$conversation' },
-            { $match: { 'conversation.type': conversationType } },
-            ...(search && search.trim()
-                ? (conversationType === E_ConversationType.GROUP
-                        ? groupSearchPipeline(search)
-                        : privateSearchPipeline(search))
-                : []),
+        pipeline.push(
             {
                 $group: {
                     _id: null,
@@ -410,7 +423,7 @@ export const participantCtr = {
                 },
             },
             { $project: { _id: 0, conversationIds: 1 } },
-        ];
+        );
 
         const participantCtrResult = await mongooseCtr.aggregate(pipeline) as I_Return<{ conversationIds: string[] }[]>;
 

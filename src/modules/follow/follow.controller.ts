@@ -61,26 +61,62 @@ export const followCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     getFollowers: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetFollowers>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        return followCtr.getFollows(context, {
-            filter: {
-                followId: filter?.followId,
+        // lấy danh sách id của Follow hợp lệ bằng aggregate
+        const idsAgg = await mongooseCtr.aggregate([
+            { $match: { followId: filter?.followId } },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'userId', // follower
+                    foreignField: 'id',
+                    as: 'u',
+                },
             },
-            options,
-        });
+            { $unwind: '$u' },
+            {
+                $match: {
+                    'u.isDel': { $ne: true },
+                    'u.isAdminblock': { $ne: true },
+                },
+            },
+            { $project: { _id: 0, id: '$id' } }, // giữ lại id của Follow doc
+        ]) as I_Return<Array<{ id: string }>>;
+
+        const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
+
+        // trả về bằng findPaging (nếu ids rỗng, $in: [] sẽ trả về rỗng)
+        return mongooseCtr.findPaging({ id: { $in: ids } }, options);
     },
     getFollowings: async (
-        context: I_Context,
+        _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetFollowings>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
-        return followCtr.getFollows(context, {
-            filter: {
-                userId: filter?.userId,
+        const idsAgg = await mongooseCtr.aggregate([
+            { $match: { userId: filter?.userId } },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'followId', // người được follow
+                    foreignField: 'id',
+                    as: 'u',
+                },
             },
-            options,
-        });
+            { $unwind: '$u' },
+            {
+                $match: {
+                    'u.isDel': { $ne: true },
+                    'u.isAdminblock': { $ne: true },
+                },
+            },
+            { $project: { _id: 0, id: '$id' } },
+        ]) as I_Return<Array<{ id: string }>>;
+
+        const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
+
+        return mongooseCtr.findPaging({ id: { $in: ids } }, options);
     },
     createFollow: async (
         context: I_Context,

@@ -382,42 +382,38 @@ export const authnCtr = {
         { doc }: I_Input_CreateOne<I_Input_Register>,
     ): Promise<I_Return<I_Response_Auth>> => {
         if (!context.req?.session) {
-            throwError({
-                message: 'Session not found.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Session not found.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         const { email, username, password, accountType } = doc;
-        const emailLowerCase = email.toLowerCase();
+        const emailLowerCase = email.trim().toLowerCase();
 
-        validate.email.validate(email);
+        validate.email.validate(emailLowerCase);
         validate.username.validate(username);
 
-        const existingUserFound = await userCtr.getUser(context, {
-            filter: {
-                $or: [{ email: emailLowerCase }, { username }],
-            },
-        });
-
-        if (existingUserFound.success) {
-            throwError({
-                message: `Email or username already exists.`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+        const existingByEmail = await userCtr.getUser(context, { filter: { email: emailLowerCase } });
+        if (existingByEmail.success) {
+            if (existingByEmail.result.isAdminBlocked === true) {
+                throwError({ message: 'This email is banned.', status: RESPONSE_STATUS.FORBIDDEN });
+            }
+            if (existingByEmail.result.isDel === true) {
+                throwError({
+                    message: 'This email belongs to a deleted profile and cannot be used to create a new one.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+            throwError({ message: 'Email already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const roleFound = await roleCtr.getRole(context, {
-            filter: {
-                name: E_Role.USER,
-            },
-        });
+        const existingByUsername = await userCtr.getUser(context, { filter: { username } });
+        if (existingByUsername.success) {
+            throwError({ message: 'Username already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
 
+        // role
+        const roleFound = await roleCtr.getRole(context, { filter: { name: E_Role.USER } });
         if (!roleFound.success) {
-            throwError({
-                message: 'Role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+            throwError({ message: 'Role not found.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
         const userCreated = await userCtr.createUser(context, {
@@ -431,23 +427,15 @@ export const authnCtr = {
                 isActive: true,
             },
         });
-
         if (!userCreated.success) {
-            throwError({
-                message: userCreated.message,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+            throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
         context.req.session.user = omit(userCreated.result, 'password');
 
-        return {
-            success: true,
-            result: {
-                user: context.req.session.user,
-            },
-        };
+        return { success: true, result: { user: context.req.session.user } };
     },
+
     registerSendVerifyEmail: async (
         context: I_Context,
         { email }: I_Input_Register_SendVerifyEmail,
