@@ -119,10 +119,16 @@ export const userCtr = {
             // Ignore error and default to false
         }
 
-        const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-        const effectiveFilter = isAdmin
-            ? (computedFilter as any)
-            : { $and: [...baseConds, computedFilter as any] };
+        const baseConds = [{ isAdminBlocked: { $ne: true } }];
+
+        let effectiveFilter;
+        if (isAdmin) {
+            effectiveFilter = { $and: [...baseConds, computedFilter as any] };
+        }
+        else {
+            const userBaseConds = [...baseConds, { isDel: { $ne: true } }];
+            effectiveFilter = { $and: [...userBaseConds, computedFilter as any] };
+        }
 
         const users = await mongooseCtr.findPaging(effectiveFilter as unknown as never, options);
         if (!users.success)
