@@ -53,10 +53,16 @@ export const userCtr = {
             // Ignore error and default to false
         }
 
-        const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-        const effectiveFilter = isAdmin
-            ? (filter || {})
-            : { $and: [...baseConds, (filter || {})] };
+        let effectiveFilter;
+        if (isAdmin) {
+            // Admin có thể xem tất cả user (kể cả admin blocked và deleted)
+            effectiveFilter = filter || {};
+        }
+        else {
+            // User thường chỉ xem được user không bị admin block và không bị delete
+            const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
+            effectiveFilter = { $and: [...baseConds, (filter || {})] };
+        }
 
         const userFound = await mongooseCtr.findOne(
             effectiveFilter,
@@ -119,14 +125,12 @@ export const userCtr = {
             // Ignore error and default to false
         }
 
-        const baseConds = [{ isAdminBlocked: { $ne: true } }];
-
         let effectiveFilter;
         if (isAdmin) {
-            effectiveFilter = { $and: [...baseConds, computedFilter as any] };
+            effectiveFilter = computedFilter as any;
         }
         else {
-            const userBaseConds = [...baseConds, { isDel: { $ne: true } }];
+            const userBaseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
             effectiveFilter = { $and: [...userBaseConds, computedFilter as any] };
         }
 
