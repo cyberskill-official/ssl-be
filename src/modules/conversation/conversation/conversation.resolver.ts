@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -21,6 +21,8 @@ import { E_CONVERSATION_EVENTS } from './conversation.type.js';
 
 const conversationResolver = {
     Query: {
+        getConversation: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryConversation>, context: I_Context) =>
+            conversationCtr.getConversation(context, args),
         getConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation>, context: I_Context) =>
             conversationCtr.getConversations(context, args),
         getMyPrivateConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>
