@@ -53,6 +53,8 @@ input Input_CreateConversation {
     name: String
     createdById: String!
     lastMessageId: String
+    entityId: String
+    entityType: E_ConversationType
 }
 
 input Input_CreateGroupConversation {
