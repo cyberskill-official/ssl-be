@@ -43,6 +43,7 @@ input Input_QueryConversation {
     updatedAt: DateTime
     type: E_ConversationType
     name: String
+    entityId: String
     createdById: String
     lastMessageId: String
 }
@@ -63,6 +64,8 @@ input Input_UpdateConversation {
     type: E_ConversationType
     name: String
     createdById: String
+    entityId: String
+    entityType: E_ConversationType
     lastMessageId: String
 }
 
@@ -149,6 +152,7 @@ type T_Response_Conversations {
 }
 
 type Query {
+    getConversation(filter: Input_QueryConversation!, projection: JSON, options: JSON, populate: JSON): T_Response_Conversation!
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
     getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
     getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
