@@ -99,6 +99,9 @@ type T_NotificationRedirect {
 type T_NotificationContext {
     conversationType: E_ConversationType
     groupName: String
+    isOpenComment: Boolean
+    parentMessageId: String
+    profileOwnerId: String
     participantCount: Int
 }
 

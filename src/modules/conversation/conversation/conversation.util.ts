@@ -1,3 +1,7 @@
+import type { I_Conversation } from './index.js';
+
+import { E_ConversationType } from './index.js';
+
 /**
  * Helper function to check if a user is a participant in a private conversation by checking participants
  * @param participants - Array of participants in the conversation
@@ -25,4 +29,12 @@ export function getOtherParticipantId(participants: { userId?: string }[], curre
 
     const otherParticipant = participants.find(participant => participant.userId !== currentUserId);
     return otherParticipant?.userId || null;
+}
+
+export function isOpenPublicThread(c: I_Conversation) {
+    return c?.type === E_ConversationType.PROFILE_COMMENT
+        || (c?.type === E_ConversationType.GROUP && (
+            (c?.participants?.length ?? 0) <= 1
+            || (typeof c?.name === 'string' && c.name.startsWith('profile:'))
+        ));
 }

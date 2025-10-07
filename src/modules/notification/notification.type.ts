@@ -107,6 +107,9 @@ export interface I_NotificationRedirect {
 export interface I_NotificationContext {
     conversationType?: E_ConversationType;
     groupName?: string;
+    isOpenComment?: boolean;
+    parentMessageId?: string;
+    profileOwnerId?: string;
     participantCount?: number;
 }
 
