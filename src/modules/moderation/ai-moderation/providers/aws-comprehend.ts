@@ -39,7 +39,9 @@ export class AWSComprehendProvider {
     }
 
     async analyzeText(input: I_Input_TextModeration, setting: I_AIModerationConfig): Promise<I_TextModerationResult> {
-        const threshold = setting?.autoRejectThreshold ?? 0.8;
+        // Use more conservative (less strict) defaults
+        const autoRejectThreshold = setting?.autoRejectThreshold ?? 0.95;
+        const humanReviewThreshold = setting?.humanReviewThreshold ?? 0.7;
 
         if (!input?.text?.trim()) {
             throwError({
@@ -70,10 +72,7 @@ export class AWSComprehendProvider {
             }
         }
         catch {
-            throwError({
-                message: 'Failed to detect dominant language, defaulting to English',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+            // Fail open: keep default 'en' without throwing
         }
 
         // PII detection commented out
@@ -99,7 +98,7 @@ export class AWSComprehendProvider {
         //     reasons.push(`PII entities detected: ${piiResult.Entities.map(entity => entity.Type).join(', ')}`);
         // }
 
-        let sentimentResult = null;
+        let sentimentResult: any = null;
 
         try {
             const sentimentCommand = new DetectSentimentCommand({
@@ -109,27 +108,24 @@ export class AWSComprehendProvider {
             sentimentResult = await this.getClient().send(sentimentCommand);
         }
         catch {
-            throwError({
-                message: 'Failed to detect sentiment',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+            // Fail open on provider errors; proceed with neutral
+            sentimentResult = null;
         }
 
-        if (sentimentResult?.SentimentScore?.Negative && sentimentResult.SentimentScore.Negative > threshold) {
+        if (sentimentResult?.SentimentScore?.Negative && sentimentResult.SentimentScore.Negative > autoRejectThreshold) {
             categories.push(E_ModerationCategory.SENTIMENT);
             reasons.push(`Negative sentiment detected (${(sentimentResult.SentimentScore.Negative * 100).toFixed(1)}%)`);
         }
 
-        const confidence = Math.max(
-            sentimentResult?.SentimentScore?.Negative ?? 0,
-        );
+        const negativeScore = sentimentResult?.SentimentScore?.Negative ?? 0;
+        const confidence = Math.max(negativeScore);
 
         let decision = E_TextModerationDecision.ALLOW;
 
-        if (confidence >= threshold) {
+        if (confidence >= autoRejectThreshold) {
             decision = E_TextModerationDecision.BLOCK;
         }
-        else if (confidence >= 0.5) {
+        else if (confidence >= humanReviewThreshold) {
             decision = E_TextModerationDecision.REVIEW;
         }
 
@@ -137,11 +133,13 @@ export class AWSComprehendProvider {
             output: [
                 {
                     category: E_ModerationCategory.SENTIMENT,
-                    decision: sentimentResult.Sentiment,
-                    score: sentimentResult?.SentimentScore?.[toCapitalized(sentimentResult.Sentiment!) as keyof typeof sentimentResult.SentimentScore],
+                    decision: sentimentResult?.Sentiment,
+                    score: sentimentResult?.Sentiment
+                        ? sentimentResult?.SentimentScore?.[toCapitalized(sentimentResult.Sentiment!) as keyof typeof sentimentResult.SentimentScore]
+                        : 0,
                 },
             ],
-            reasons,
+            reasons: sentimentResult ? reasons : ['Sentiment detection unavailable; defaulted to allow/review thresholds'],
             decision,
             language,
             // piiResult: piiResult?.Entities?.map(entity => ({

@@ -20,6 +20,8 @@ import { authnCtr } from '#modules/authn/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/conversation/index.js';
 import { E_ParticipantRole, participantCtr } from '#modules/conversation/participant/index.js';
 import { eventCtr } from '#modules/event/index.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
 
@@ -178,6 +180,33 @@ export const invitationCtr = {
             invitation: populateInvitationResult.result,
             eventType: E_InvitationEvent.INVITATION_SENT,
         });
+
+        // Load conversation to include group name in notification context
+        const conversationFound = await conversationCtr.getConversation({} as I_Context, { filter: { id: conversationId } });
+
+        try {
+            await notificationCtr.createNotificationWithSettings({}, {
+                doc: {
+                    targetId: userId,
+                    actorId: currentUserId,
+                    type: [E_NotificationType.CONVERSATION_INVITATION],
+                    entityType: E_NotificationEntityType.CONVERSATION,
+                    entityId: conversationId,
+                    channels: [E_NotificationChannel.IN_APP],
+                    presentation: {
+                        redirect: { kind: E_RedirectType.CONVERSATION, id: conversationId },
+                        context: {
+                            conversationType: E_ConversationType.GROUP,
+                            groupName: conversationFound?.success ? (conversationFound.result?.name || '') : '',
+                        },
+                        headline: 'You have been invited to a group chat',
+                    },
+                },
+            });
+        }
+        catch {
+            // Non-blocking: invitation still succeeds even if notification fails
+        }
 
         return invitationResult;
     },
@@ -417,6 +446,32 @@ export const invitationCtr = {
                                 role: E_ParticipantRole.MEMBER,
                             },
                         });
+
+                        // Notify inviter that the user accepted and joined the group
+                        // Load conversation to include group name
+                        const conversationFound = await conversationCtr.getConversation(context, { filter: { id: invitation.result.entityId } });
+
+                        try {
+                            await notificationCtr.createNotificationWithSettings(context, {
+                                doc: {
+                                    targetId: invitation.result.inviterId!,
+                                    actorId: currentUser.id,
+                                    type: [E_NotificationType.CONVERSATION_INVITATION],
+                                    entityType: E_NotificationEntityType.CONVERSATION,
+                                    entityId: invitation.result.entityId,
+                                    channels: [E_NotificationChannel.IN_APP],
+                                    presentation: {
+                                        redirect: { kind: E_RedirectType.CONVERSATION, id: invitation.result.entityId },
+                                        context: {
+                                            conversationType: E_ConversationType.GROUP,
+                                            groupName: conversationFound?.success ? (conversationFound.result?.name || '') : '',
+                                        },
+                                        headline: 'accepted your group invitation',
+                                    },
+                                },
+                            });
+                        }
+                        catch {}
                     }
                     break;
 
