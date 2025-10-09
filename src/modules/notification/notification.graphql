@@ -72,7 +72,7 @@ type T_Notification {
     entityType: E_NotificationEntityType
     entityId: String
     title: String
-    # body: String
+    body: String
     # data: JSON
     presentation: T_NotificationPresentation
     channels: [E_NotificationChannel]
@@ -152,7 +152,7 @@ input Input_QueryNotification {
     entityType: E_NotificationEntityType
     entityId: String
     title: String
-    # body: String
+    body: String
     # data: JSON
     presentation: Input_NotificationPresentation
     channels: [E_NotificationChannel]
@@ -199,7 +199,7 @@ input Input_CreateNotification {
     entityType: E_NotificationEntityType!
     entityId: String!
     title: String
-    # body: String
+    body: String
     # data: JSON
     channels: [E_NotificationChannel]
     scheduledAt: DateTime

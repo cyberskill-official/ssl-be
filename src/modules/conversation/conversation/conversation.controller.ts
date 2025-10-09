@@ -712,10 +712,8 @@ export const conversationCtr = {
             const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversationResult.result };
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
-            // 7.1 Actor (who caused the notification)
-            let actorUser
-                = populatedConversationResult.result.participants?.find(p => p.userId === senderId)?.user;
-
+            // Actor (who caused the notification)
+            let actorUser = populatedConversationResult.result.participants?.find(p => p.userId === senderId)?.user;
             if (!actorUser) {
                 const actorRes = await userCtr.getUser(context, {
                     filter: { id: senderId },
@@ -744,10 +742,7 @@ export const conversationCtr = {
 
             const nameIsProfile = typeof conversation.name === 'string' && conversation.name.startsWith('profile:');
             const profileOwnerId: string | undefined
-                = (conversation).profileOwnerId
-                    ?? conversation.entityId
-                    ?? (nameIsProfile ? conversation.name?.slice('profile:'.length) : undefined)
-                    ?? conversation.createdById;
+                = conversation.profileOwnerId ?? conversation.entityId ?? (nameIsProfile ? conversation.name?.slice('profile:'.length) : undefined);
 
             const isOwner = senderId === profileOwnerId;
 
@@ -793,19 +788,33 @@ export const conversationCtr = {
             recipients.delete(senderId);
 
             if (recipients.size > 0) {
-                const slugOrId = actorUser?.username && actorUser.username.trim().length ? actorUser.username : senderId;
-                const redirect = slugOrId ? { kind: E_RedirectType.PROFILE, id: slugOrId } : { kind: E_RedirectType.CONVERSATION, id: conversation.id };
-
                 const entityType = E_NotificationEntityType.CONVERSATION;
                 const entityId = conversation.id;
 
                 for (const targetId of recipients) {
                     try {
+                        let redirect;
+                        if (isPublicThread) {
+                            redirect = { kind: E_RedirectType.PROFILE, id: targetId };
+                            try {
+                                const targetUserRes = await userCtr.getUser(context, { filter: { id: targetId }, projection: 'username' });
+                                if (targetUserRes?.success && targetUserRes.result?.username) {
+                                    (redirect as any).displayName = targetUserRes.result.username;
+                                }
+                            }
+                            catch {
+                                // ignore
+                            }
+                        }
+                        else {
+                            redirect = { kind: E_RedirectType.CONVERSATION, id: conversation.id };
+                        }
+
                         await notificationCtr.createNotificationWithSettings(context, {
                             doc: {
                                 targetId,
                                 actorId: senderId,
-                                type: [E_NotificationType.NEW_MESSAGE],
+                                type: [E_NotificationType.GUESTBOOK_POST],
                                 entityType,
                                 entityId,
                                 body: preview,
@@ -813,23 +822,16 @@ export const conversationCtr = {
                                 presentation: {
                                     redirect,
                                     actor: actorView,
-                                    context: {
-                                        conversationType: conversation.type,
-                                        isOpenComment: isPublicThread,
-                                        parentMessageId: parentId,
-                                        profileOwnerId,
-                                        groupName: conversation.name || '',
-                                        participantCount: conversation.participants?.length || 0,
-                                    },
                                 },
                             },
                         });
                     }
                     catch {
-                        //
+                        // swallow notification errors (do not break send flow)
                     }
                 }
             }
+
             return { success: true, message: 'Message sent successfully', result: messageResult.result };
         }
         catch (error) {
