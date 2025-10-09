@@ -5,7 +5,7 @@ import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/email-template.type.js';
 
-import { EMAIL_VERIFICATION, FORGOT_PASSWORD } from '#modules/authn/authn.constant.js';
+import { EMAIL_VERIFICATION, FORGOT_PASSWORD, NEW_FOLLOWER, NEW_MESSAGE } from '#modules/authn/authn.constant.js';
 
 interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 }
@@ -37,7 +37,25 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         <p>The Support Team</p>`,
         variables: ['email', 'otp', 'expireIn'],
     },
-
+    {
+        templateKey: NEW_FOLLOWER,
+        name: 'New follower',
+        subject: '[Secret Swinger Lust] You have new follower',
+        content: `<h1>Hello <a href="mailto:<%= email %>" target="_blank"><%= email %></a></h1>
+        <p>You have new follower from: <strong><%= follower %></strong></p>
+        <p>System Notification</p>`,
+        variables: ['email', 'follower'],
+    },
+    {
+        templateKey: NEW_MESSAGE,
+        name: 'New message',
+        subject: '[Secret Swinger Lust] You have new message',
+        content: `<h1>Hello <a href="mailto:<%= email %>" target="_blank"><%= email %></a></h1>
+        <p>Content message: <%= message %></p>
+        <p>From the: <%= sender %></p>
+        <p>System Notification</p>`,
+        variables: ['email', 'message', 'sender'],
+    },
 ];
 export async function up(db: C_Db) {
     const emailTplCtr = new MongoController<I_EmailTemplate>(db, 'emailtemplates');

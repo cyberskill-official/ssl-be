@@ -20,6 +20,8 @@ import type { I_Event } from '#modules/event/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_RegisterStep } from '#modules/authn/authn.type.js';
+
 import type {
     I_Input_CreateLocation,
     I_Input_GetLocationInViewport,
@@ -214,7 +216,21 @@ export const locationCtr = {
                 }
             }
 
-            return hasKey && !entityDeleted && !locationDeleted && !isAdminBlocked && !isEventExpired;
+            let isIncompleteUser = false;
+            if (d.entityType === E_LocationEntityType.USER
+                || (!d.entityType && (e as any)?.rolesIds)) {
+                const userEntity = e as I_User;
+                const step = (userEntity as any)?.registerStep as E_RegisterStep;
+                const isActiveUser = (userEntity)?.isActive as boolean;
+                if (step && step !== E_RegisterStep.COMPLETE) {
+                    isIncompleteUser = true;
+                }
+                if (isActiveUser === false) {
+                    isIncompleteUser = true;
+                }
+            }
+
+            return hasKey && !entityDeleted && !locationDeleted && !isAdminBlocked && !isEventExpired && !isIncompleteUser;
         });
 
         // filter eventType nếu có

@@ -48,7 +48,8 @@ export const emailCtr = {
                 const { content, subject: templateSubject } = templateFromCache;
 
                 if (templateSubject) {
-                    subjectText = subject || templateSubject;
+                    const rendered = subject || await ejs.render(templateSubject, templateData);
+                    subjectText = rendered || subjectText;
                     if (env.IS_DEV || env.IS_STAG) {
                         subjectText = `[TEST] ${subjectText}`;
                     }
@@ -64,11 +65,12 @@ export const emailCtr = {
 
                     emailTemplateCache.set(templateKey, content || '', templateSubject);
 
-                    if (templateSubject)
-                        subjectText = subject || templateSubject;
-
-                    if (env.IS_DEV || env.IS_STAG) {
-                        subjectText = `[TEST] ${subjectText}`;
+                    if (templateSubject) {
+                        const rendered = subject || await ejs.render(templateSubject, templateData);
+                        subjectText = rendered || subjectText;
+                        if (env.IS_DEV || env.IS_STAG) {
+                            subjectText = `[TEST] ${subjectText}`;
+                        }
                     }
 
                     if (content) {

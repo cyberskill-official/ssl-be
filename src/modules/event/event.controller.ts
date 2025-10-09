@@ -55,12 +55,18 @@ const mongooseCtr = new MongooseController<I_Event>(EventModel);
 function mapEventTypeToPinStyle(eventType?: E_EventType) {
     if (!eventType)
         return undefined;
-    if (eventType === E_EventType.CLUB_VISIT)
+    if (eventType === E_EventType.CLUB_VISIT) {
         return E_Event_PinStyle.EVENT_PRIVATE;
-    if (eventType === E_EventType.TRAVEL)
+    }
+    if (eventType === E_EventType.PRIVATE) {
+        return E_Event_PinStyle.EVENT_PRIVATE;
+    }
+    if (eventType === E_EventType.TRAVEL) {
         return E_Event_PinStyle.EVENT_TRAVEL;
-    if (eventType === E_EventType.BOOTY_CALL)
+    }
+    if (eventType === E_EventType.BOOTY_CALL) {
         return E_Event_PinStyle.EVENT_BOOTY_CALL;
+    }
     return undefined;
 }
 
@@ -306,6 +312,8 @@ export const eventCtr = {
         let pinStyle: E_Event_PinStyle | undefined;
         if (type === E_EventType.CLUB_VISIT)
             pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
+        if (type === E_EventType.PRIVATE)
+            pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
         if (type === E_EventType.TRAVEL)
             pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
         if (type === E_EventType.BOOTY_CALL)
@@ -313,34 +321,48 @@ export const eventCtr = {
 
         const sourceLocation = location ?? destLocationCandidate;
 
-        const locationCreated = await locationCtr.createLocation(context, {
-            doc: sourceLocation
-                ? (() => {
-                        const {
-                            _id: _omitMongoId,
-                            id: _omitId,
-                            isDel: _omitIsDel,
-                            createdAt: _omitCA,
-                            updatedAt: _omitUA,
-                            entityType: _omitET,
-                            entityId: _omitEID,
-                            ...rest
-                        } = sourceLocation as any;
-                        return {
-                            ...rest,
+        // For CLUB_VISIT, reuse the destination's existing location (no new location document)
+        const reuseDestinationLocation = type === E_EventType.CLUB_VISIT && !!destLocationCandidate;
+
+        let finalLocationId: string | undefined;
+        let locMapForRedirect: { latitude?: number; longitude?: number } | undefined;
+
+        if (reuseDestinationLocation) {
+            finalLocationId = destLocationCandidate?.id;
+            locMapForRedirect = destLocationCandidate?.map;
+        }
+        else {
+            const locationCreated = await locationCtr.createLocation(context, {
+                doc: sourceLocation
+                    ? (() => {
+                            const {
+                                _id: _omitMongoId,
+                                id: _omitId,
+                                isDel: _omitIsDel,
+                                createdAt: _omitCA,
+                                updatedAt: _omitUA,
+                                entityType: _omitET,
+                                entityId: _omitEID,
+                                ...rest
+                            } = sourceLocation as any;
+                            return {
+                                ...rest,
+                                pinStyle,
+                                entityType: E_LocationEntityType.EVENT,
+                                entityId: eventCreated.result.id,
+                            };
+                        })()
+                    : {
                             pinStyle,
                             entityType: E_LocationEntityType.EVENT,
                             entityId: eventCreated.result.id,
-                        };
-                    })()
-                : {
-                        pinStyle,
-                        entityType: E_LocationEntityType.EVENT,
-                        entityId: eventCreated.result.id,
-                    },
-        });
-        if (!locationCreated.success)
-            return locationCreated;
+                        },
+            });
+            if (!locationCreated.success)
+                return locationCreated;
+            finalLocationId = locationCreated.result.id;
+            locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+        }
 
         // Thumbnail for notification
         let thumbnailUrl: string | undefined;
@@ -371,7 +393,7 @@ export const eventCtr = {
         catch { /* ignore */ }
 
         // Build redirect 1 lần từ locationCreated.result.map
-        const locMap = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+        const locMap = locMapForRedirect;
         const eventRedirect = {
             kind: E_RedirectType.EVENT,
             id: eventCreated.result.id,
@@ -445,8 +467,8 @@ export const eventCtr = {
             }
         }
 
-        // Link event với locationId
-        return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: locationCreated.result.id });
+        // Link event với locationId (reuse for CLUB_VISIT or newly created for other types)
+        return mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: finalLocationId });
     },
 
     updateEvent: async (

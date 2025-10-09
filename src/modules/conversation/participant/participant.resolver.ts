@@ -18,6 +18,8 @@ const participantResolver = {
             participantCtr.createParticipant(context, args),
         transferAdminRights: (_parent: unknown, args: { conversationId: string; targetUserId: string }, context: I_Context) =>
             participantCtr.transferAdminRights(context, args.conversationId, args.targetUserId),
+        grantAdminRights: (_parent: unknown, args: { conversationId: string; targetUserId: string }, context: I_Context) =>
+            participantCtr.grantAdminRights(context, args.conversationId, args.targetUserId),
         leaveGroup: (_parent: unknown, args: { conversationId: string }, context: I_Context) =>
             participantCtr.leaveGroup(context, args.conversationId),
         removeMember: (_parent: unknown, args: { conversationId: string; userId: string }, context: I_Context) =>

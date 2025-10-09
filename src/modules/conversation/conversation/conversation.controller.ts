@@ -15,9 +15,10 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, NEW_MESSAGE } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/index.js';
+import { emailCtr } from '#modules/email/email.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -28,6 +29,7 @@ import {
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
+import { validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
 import type {
@@ -583,6 +585,32 @@ export const conversationCtr = {
                 },
             });
 
+            try {
+                const recipientRes = await userCtr.getUser(context, {
+                    filter: { id: recipientId },
+                    projection: 'id email settings.notification username',
+                });
+
+                if (recipientRes?.success) {
+                    const targetEmail = recipientRes.result.email || '';
+                    const wantsEmail = (recipientRes.result.settings?.notification?.receiveMessage) !== false;
+
+                    if (wantsEmail && targetEmail) {
+                        validate.email.validate(targetEmail);
+                        const templateData = {
+                            email: targetEmail,
+                            sender: senderUser?.username || senderId,
+                            message: preview,
+                            preview,
+                        };
+                        await emailCtr.sendEmail(NEW_MESSAGE, targetEmail, templateData);
+                    }
+                }
+            }
+            catch {
+
+            }
+
             return {
                 success: true,
                 message: 'Message sent successfully',
@@ -605,7 +633,7 @@ export const conversationCtr = {
         parentId?: string,
     ): Promise<I_Return<I_Message>> => {
         try {
-            // 1) Load conversation
+            // 1) Load conversation (participants populated)
             const conversationResult = await conversationCtr.getConversation(context, {
                 filter: { id: conversationId },
                 populate: ['participants'],
@@ -656,7 +684,7 @@ export const conversationCtr = {
                 throwError({ message: 'Failed to create message', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            // 4) Update last message
+            // 4) Update last message on conversation
             const updateResult = await conversationCtr._updateLastMessageId(conversationId, messageResult.result.id);
             if (!updateResult.success) {
                 throwError({ message: 'Failed to update conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -671,6 +699,7 @@ export const conversationCtr = {
                 await participantCtr.updateLastReadMessage(conversationId, senderId, messageResult.result.id);
             }
 
+            // Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
             const populatedConversationResult = await conversationCtr._populateConversationWithParticipants(conversation.id);
             if (!populatedConversationResult.success) {
                 throwError({
@@ -679,7 +708,7 @@ export const conversationCtr = {
                 });
             }
 
-            // Pubsub
+            // Pubsub publish
             const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversationResult.result };
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
@@ -709,22 +738,20 @@ export const conversationCtr = {
                     }
                 : undefined;
 
-            const preview
-                = 'value' in content && typeof content.value === 'string'
-                    ? content.value.slice(0, 140)
-                    : '';
+            const preview = 'value' in content && typeof content.value === 'string' ? content.value.slice(0, 140) : '';
 
             const isPublicThread = isOpenPublicThread(conversation);
 
-            // Profile owner: prefer createdById; fallback to "profile:<ownerId>" stored in name
-            const profileOwnerId
-                = conversation.createdById
-                    || ((typeof conversation.name === 'string' && conversation.name.startsWith('profile:'))
-                        ? conversation.name.slice('profile:'.length)
-                        : undefined);
+            const nameIsProfile = typeof conversation.name === 'string' && conversation.name.startsWith('profile:');
+            const profileOwnerId: string | undefined
+                = (conversation).profileOwnerId
+                    ?? conversation.entityId
+                    ?? (nameIsProfile ? conversation.name?.slice('profile:'.length) : undefined)
+                    ?? conversation.createdById;
 
             const isOwner = senderId === profileOwnerId;
 
+            // parent sender resolution
             let parentSenderId: string | undefined;
             if (parentId) {
                 const parentRes = await messageCtr.getMessages(context, {
@@ -732,8 +759,7 @@ export const conversationCtr = {
                     options: { pagination: false, projection: { id: 1, senderId: 1 } },
                 });
                 if (parentRes.success && parentRes.result.docs.length > 0) {
-                    const parentDoc = parentRes.result.docs[0];
-                    parentSenderId = parentDoc?.senderId;
+                    parentSenderId = parentRes.result.docs[0]?.senderId;
                 }
             }
 
@@ -763,45 +789,47 @@ export const conversationCtr = {
                         recipients.add(p.userId);
                 }
             }
-            recipients.delete(senderId); // never notify sender
+            // never notify sender
+            recipients.delete(senderId);
 
             if (recipients.size > 0) {
                 const slugOrId = actorUser?.username && actorUser.username.trim().length ? actorUser.username : senderId;
-                const redirect
-                    = slugOrId
-                        ? { kind: E_RedirectType.PROFILE, id: slugOrId }
-                        : { kind: E_RedirectType.CONVERSATION, id: conversation.id };
+                const redirect = slugOrId ? { kind: E_RedirectType.PROFILE, id: slugOrId } : { kind: E_RedirectType.CONVERSATION, id: conversation.id };
 
                 const entityType = E_NotificationEntityType.CONVERSATION;
                 const entityId = conversation.id;
 
                 for (const targetId of recipients) {
-                    await notificationCtr.createNotificationWithSettings(context, {
-                        doc: {
-                            targetId,
-                            actorId: senderId,
-                            type: [E_NotificationType.NEW_MESSAGE],
-                            entityType,
-                            entityId,
-                            body: preview,
-                            channels: [E_NotificationChannel.IN_APP],
-                            presentation: {
-                                redirect,
-                                actor: actorView,
-                                context: {
-                                    conversationType: conversation.type,
-                                    isOpenComment: isPublicThread,
-                                    parentMessageId: parentId,
-                                    profileOwnerId,
-                                    groupName: conversation.name || '',
-                                    participantCount: conversation.participants?.length || 0,
+                    try {
+                        await notificationCtr.createNotificationWithSettings(context, {
+                            doc: {
+                                targetId,
+                                actorId: senderId,
+                                type: [E_NotificationType.NEW_MESSAGE],
+                                entityType,
+                                entityId,
+                                body: preview,
+                                channels: [E_NotificationChannel.IN_APP],
+                                presentation: {
+                                    redirect,
+                                    actor: actorView,
+                                    context: {
+                                        conversationType: conversation.type,
+                                        isOpenComment: isPublicThread,
+                                        parentMessageId: parentId,
+                                        profileOwnerId,
+                                        groupName: conversation.name || '',
+                                        participantCount: conversation.participants?.length || 0,
+                                    },
                                 },
                             },
-                        },
-                    });
+                        });
+                    }
+                    catch {
+                        //
+                    }
                 }
             }
-
             return { success: true, message: 'Message sent successfully', result: messageResult.result };
         }
         catch (error) {

@@ -62,6 +62,9 @@ export interface I_Conversation extends I_GenericDocument {
     participants?: I_Participant[];
     retentionDays?: number;
     lastMessageAt?: Date;
+    profileOwnerId?: string;
+    ownerId?: string;
+    meta?: { profileOwnerId?: string };
 }
 
 export interface I_BroadcastResult {

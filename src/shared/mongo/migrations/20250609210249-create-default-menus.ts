@@ -23,13 +23,7 @@ const menus: I_MenuExtended[] = [
         order: 2,
     },
     {
-        text: 'Swingers Clubs',
-        url: '/club',
-        icon: 'map',
-        order: 3,
-    },
-    {
-        text: 'Swinger holiday destinations',
+        text: 'Swinger destinations',
         url: '/resort',
         icon: 'beach',
         order: 4,

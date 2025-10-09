@@ -206,6 +206,59 @@ export const participantCtr = {
         };
     },
 
+    // Grant admin rights to another member without losing current admin role
+    grantAdminRights: async (
+        context: I_Context,
+        conversationId: string,
+        targetUserId: string,
+    ): Promise<I_Return<boolean>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (targetUserId === currentUser.id) {
+            // already admin; nothing to do
+            return { success: true, message: 'You already have admin rights', result: true };
+        }
+
+        const currentUserParticipant = await participantCtr.getParticipant(context, {
+            filter: { conversationId, userId: currentUser.id },
+        });
+
+        if (!currentUserParticipant.success) {
+            throwError({
+                message: 'You are not a participant in this group',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+        if (currentUserParticipant.result.role !== E_ParticipantRole.ADMIN) {
+            throwError({
+                message: 'Only admin can grant admin rights',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const targetParticipant = await participantCtr.getParticipant(context, {
+            filter: { conversationId, userId: targetUserId },
+        });
+
+        if (!targetParticipant.success) {
+            throwError({
+                message: 'Target user is not a participant in this group',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const updateTargetResult = await mongooseCtr.updateOne(
+            { conversationId, userId: targetUserId },
+            { role: E_ParticipantRole.ADMIN },
+        );
+
+        if (!updateTargetResult.success) {
+            throwError({ message: 'Failed to grant admin rights to target user', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return { success: true, message: 'Admin rights granted successfully', result: true };
+    },
+
     leaveGroup: async (
         context: I_Context,
         conversationId: string,
@@ -229,33 +282,29 @@ export const participantCtr = {
         const participant = participantFound.result!;
 
         if (participant.role === E_ParticipantRole.ADMIN) {
-            const oldest = await participantCtr.getParticipant(context, {
-                filter: {
-                    conversationId,
-                    userId: { $ne: currentUser.id },
-                },
-                options: {
-                    sort: { createdAt: 1 },
-                },
+            // Check if there is another admin. If so, no need to transfer.
+            const otherAdmin = await mongooseCtr.findOne({
+                filter: { conversationId, userId: { $ne: currentUser.id }, role: E_ParticipantRole.ADMIN },
             });
 
-            if (!oldest.success) {
-                throwError({
-                    message: 'You cannot leave the group as the only admin',
-                    status: RESPONSE_STATUS.FORBIDDEN,
+            if (!otherAdmin.success) {
+                // No other admin; promote the oldest remaining member to admin before leaving
+                const oldest = await participantCtr.getParticipant(context, {
+                    filter: { conversationId, userId: { $ne: currentUser.id } },
+                    options: { sort: { createdAt: 1 } },
                 });
-            }
-            if (oldest) {
+
+                if (!oldest.success) {
+                    throwError({ message: 'You cannot leave the group as the only admin', status: RESPONSE_STATUS.FORBIDDEN });
+                }
+
                 const transferResult = await mongooseCtr.updateOne(
                     { conversationId, userId: oldest.result.userId },
                     { role: E_ParticipantRole.ADMIN },
                 );
 
                 if (!transferResult.success) {
-                    throwError({
-                        message: 'Failed to transfer admin role to the longest-standing member',
-                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                    });
+                    throwError({ message: 'Failed to assign admin role to the longest-standing member', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                 }
             }
         }

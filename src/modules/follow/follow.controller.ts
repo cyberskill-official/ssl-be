@@ -13,10 +13,12 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, NEW_FOLLOWER } from '#modules/authn/index.js';
+import { emailCtr } from '#modules/email/email.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { validate } from '#shared/util/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
@@ -215,6 +217,27 @@ export const followCtr = {
             filter: { userId: currentUser.id, followId },
             populate: ['user', 'follow'],
         });
+
+        if (populatedFollow.success && populatedFollow.result) {
+            const targetUser = populatedFollow.result.follow;
+            const targetEmail = targetUser?.email ?? '';
+            const follower = currentUser.username;
+
+            validate.email.validate(targetEmail);
+
+            const targetWantsEmail = (targetUser?.settings?.notification?.gainFollower) !== false;
+
+            if (targetWantsEmail && targetEmail) {
+                const followerObj = { name: follower, toString: () => follower };
+                const templateData = {
+                    email: targetEmail,
+                    follower: followerObj,
+                    followerName: follower,
+                };
+
+                await emailCtr.sendEmail(NEW_FOLLOWER, targetEmail, templateData);
+            }
+        }
 
         return populatedFollow.success ? populatedFollow : followResult;
     },

@@ -81,6 +81,7 @@ type Query {
 type Mutation {
     createParticipant(doc: Input_CreateParticipant!): T_Response_Participant!
     transferAdminRights(conversationId: String!, targetUserId: String!): T_Response_ParticipantAction!
+    grantAdminRights(conversationId: String!, targetUserId: String!): T_Response_ParticipantAction!
     leaveGroup(conversationId: String!): T_Response_ParticipantAction!
     removeMember(conversationId: String!, userId: String!): T_Response_ParticipantAction!
 }
