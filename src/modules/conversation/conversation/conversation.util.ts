@@ -1,40 +1,122 @@
+import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+
 import type { I_Conversation } from './index.js';
 
 import { E_ConversationType } from './index.js';
 
 /**
- * Helper function to check if a user is a participant in a private conversation by checking participants
- * @param participants - Array of participants in the conversation
- * @param userId - The user ID to check
- * @returns boolean indicating if the user is a participant
+ * Kiểm tra người dùng có trong cuộc trò chuyện riêng không
  */
-export function isPrivateConversationParticipant(participants: { userId?: string }[], userId: string): boolean {
-    if (!participants || participants.length !== 2) {
+export function isPrivateConversationParticipant(
+    participants: { userId?: string }[],
+    userId: string,
+): boolean {
+    if (!participants || participants.length !== 2)
         return false;
-    }
-
-    return participants.some(participant => participant.userId === userId);
+    return participants.some(p => p.userId === userId);
 }
 
 /**
- * Helper function to get the other participant in a private conversation
- * @param participants - Array of participants in the conversation
- * @param currentUserId - The current user's ID
- * @returns The other participant's user ID, or null if not found
+ * Lấy ID của người còn lại trong cuộc trò chuyện riêng
  */
-export function getOtherParticipantId(participants: { userId?: string }[], currentUserId: string): string | null {
-    if (!participants || participants.length !== 2) {
+export function getOtherParticipantId(
+    participants: { userId?: string }[],
+    currentUserId: string,
+): string | null {
+    if (!participants || participants.length !== 2)
         return null;
-    }
-
-    const otherParticipant = participants.find(participant => participant.userId !== currentUserId);
-    return otherParticipant?.userId || null;
+    const other = participants.find(p => p.userId !== currentUserId);
+    return other?.userId || null;
 }
 
-export function isOpenPublicThread(c: I_Conversation) {
-    return c?.type === E_ConversationType.PROFILE_COMMENT
-        || (c?.type === E_ConversationType.GROUP && (
-            (c?.participants?.length ?? 0) <= 1
-            || (typeof c?.name === 'string' && c.name.startsWith('profile:'))
-        ));
+/**
+ * Giới hạn chuỗi về 140 ký tự (có hỗ trợ Unicode)
+ */
+export function safeSlice140(s: string): string {
+    return Array.from(s).slice(0, 140).join('');
+}
+
+/** name helpers */
+function nameIsProfile(name?: unknown): boolean {
+    return typeof name === 'string' && name.startsWith('profile:');
+}
+function nameIsBlog(name?: unknown): boolean {
+    return typeof name === 'string' && name.startsWith('blog:');
+}
+
+/**
+ * Xác định cuộc trò chuyện mở công khai (public)
+ */
+export function isOpenPublicThread(c: I_Conversation): boolean {
+    const isProfileOpen
+        = c?.type === E_ConversationType.PROFILE_COMMENT || nameIsProfile(c?.name);
+
+    const isBlogOpen
+        = c?.type === (E_ConversationType as Record<string, string>)['BLOG_COMMENT']
+            || nameIsBlog(c?.name)
+            || Boolean((c as Partial<I_Conversation> & { blogId?: string }).blogId);
+
+    const isGroupOpen
+        = c?.type === E_ConversationType.GROUP
+            && (((c?.participants?.length ?? 0) <= 1) || nameIsProfile(c?.name) || nameIsBlog(c?.name));
+
+    return isProfileOpen || isBlogOpen || isGroupOpen;
+}
+
+/**
+ * Phân loại hội thoại để sử dụng thống nhất ở controller
+ */
+export function classifyConversation(c: I_Conversation): {
+    isPublic: boolean;
+    notifType: E_NotificationType;
+    memberCount: number;
+    profileOwnerId?: string;
+    publicTargetId?: string;
+    redirectKind: E_RedirectType;
+} {
+    const memberCount = (c.participants?.filter(p => !!p.userId).length) ?? 0;
+    const isPublic = isOpenPublicThread(c);
+
+    const profileFromName = nameIsProfile(c?.name)
+        ? String(c.name).slice('profile:'.length)
+        : undefined;
+    const blogFromName = nameIsBlog(c?.name)
+        ? String(c.name).slice('blog:'.length)
+        : undefined;
+
+    // Chủ thể cho profile
+    const profileOwnerId: string | undefined
+        = c.profileOwnerId ?? c.entityId ?? profileFromName;
+
+    // Chủ thể cho blog
+    const blogId: string | undefined
+        = (c as Partial<I_Conversation> & { blogId?: string }).blogId
+            ?? c.entityId
+            ?? blogFromName;
+
+    // Ngữ cảnh blog
+    const isBlogContext
+        = c?.type === (E_ConversationType as Record<string, string>)['BLOG_COMMENT']
+            || Boolean(blogId)
+            || Boolean(blogFromName);
+
+    // Redirect cho public (blog hoặc profile)
+    const redirectKindPublic: E_RedirectType = isBlogContext
+        ? ((E_RedirectType as Record<string, E_RedirectType>)['BLOG']
+            ?? E_RedirectType.PROFILE
+            ?? E_RedirectType.CONVERSATION)
+        : (E_RedirectType.PROFILE ?? E_RedirectType.CONVERSATION);
+
+    const redirectKind: E_RedirectType = isPublic
+        ? redirectKindPublic
+        : E_RedirectType.CONVERSATION;
+
+    // Đích public: blogId (blog) hoặc profileOwnerId (profile)
+    const publicTargetId = isBlogContext ? blogId : profileOwnerId;
+
+    const notifType: E_NotificationType = isPublic
+        ? E_NotificationType.GUESTBOOK_POST
+        : E_NotificationType.NEW_MESSAGE;
+
+    return { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind };
 }

@@ -852,7 +852,7 @@ export const authnCtr = {
             let clientIp = headerIp;
             if (!clientIp) {
                 const myIpInfo = await ipInfoCtr.getMyIp();
-                clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+                clientIp = myIpInfo?.result?.ip as string | undefined;
             }
             if (clientIp) {
                 await userCtr.updateUser(context, {
@@ -1088,8 +1088,8 @@ export const authnCtr = {
                     status: E_AgeVerifyStatus.PENDING,
                     method: E_AgeVerifyMethod.PASSPORT,
                     preApproval: {
-                        documentPic: (documentUpload as any).result?.url || (documentUpload as any).result,
-                        selfiePic: (selfieUpload as any).result?.url || (selfieUpload as any).result,
+                        documentPic: documentUpload.result?.url || documentUpload.result,
+                        selfiePic: selfieUpload.result?.url || selfieUpload.result,
                         aiResult: {
                             documentAge: compareFaceResult.result.documentAge,
                             selfieAgeRange: compareFaceResult.result.selfieAgeRange,

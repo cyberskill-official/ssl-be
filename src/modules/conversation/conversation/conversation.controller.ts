@@ -25,7 +25,6 @@ import {
     E_NotificationEntityType,
     E_NotificationType,
     E_RedirectType,
-
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
@@ -54,7 +53,7 @@ import {
     E_ConversationAction,
     E_ConversationType,
 } from './conversation.type.js';
-import { isOpenPublicThread, isPrivateConversationParticipant } from './conversation.util.js';
+import { classifyConversation, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140 } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
 
@@ -299,7 +298,6 @@ export const conversationCtr = {
                 }
             }
             else if (conversation.type === E_ConversationType.GROUP) {
-                // Open comment thread (no participants) does not support read status
                 if (isOpenPublicThread(conversation)) {
                     return {
                         success: true,
@@ -349,7 +347,7 @@ export const conversationCtr = {
                 .map(m => m.id);
 
             const bulk = await messageStatusCtr.markManyAsRead(idsToMark, userId);
-            const totalMarked = (bulk as any).result?.modifiedCount ?? idsToMark.length;
+            const totalMarked = bulk.result?.modifiedCount ?? idsToMark.length;
 
             const latest = messages[messages.length - 1];
             if (latest?.id) {
@@ -384,7 +382,6 @@ export const conversationCtr = {
             if (!conversation)
                 return false;
 
-            // Không gửi event cho chính người gửi
             if (conversation.lastMessage?.senderId === userId)
                 return false;
 
@@ -403,21 +400,15 @@ export const conversationCtr = {
                     }
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
-
-                        if (conversation.lastMessage?.senderId === userId) {
+                        if (conversation.lastMessage?.senderId === userId)
                             return false;
-                        }
-
-                        if (isOpen) {
+                        if (isOpen)
                             return true;
-                        } // public
-
                         const participants = conversation.participants || [];
                         return participants.some(p => p.userId === userId);
                     }
-                    case E_ConversationType.ADMIN_BROADCAST: {
+                    case E_ConversationType.ADMIN_BROADCAST:
                         return true;
-                    }
                     default:
                         return false;
                 }
@@ -463,19 +454,16 @@ export const conversationCtr = {
                         return isPrivateConversationParticipant(participants, userId);
                     }
                     case E_ConversationType.GROUP: {
-                        // PATCH: dùng isOpenCommentGroup
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
-                        if (isOpen) {
-                            return false;
-                        } // không track read cho public
+                        if (isOpen)
+                            return false; // không track read cho public
                         const participantCheck = await participantCtr.getParticipant({} as I_Context, {
                             filter: { conversationId: messageRead.conversationId, userId },
                         });
                         return participantCheck.success && !!participantCheck.result;
                     }
-                    case E_ConversationType.ADMIN_BROADCAST: {
+                    case E_ConversationType.ADMIN_BROADCAST:
                         return false;
-                    }
                     default:
                         return false;
                 }
@@ -562,7 +550,7 @@ export const conversationCtr = {
             const avatar = senderUser?.partner1?.gallery?.url
                 ?? senderUser?.partner2?.gallery?.url
                 ?? undefined;
-            const preview = typeof (content as any)?.value === 'string' ? (content as any).value.slice(0, 140) : '';
+            const preview = typeof content?.value === 'string' ? safeSlice140(content.value) : '';
 
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
@@ -572,6 +560,7 @@ export const conversationCtr = {
                     entityId: directMessageResult.conversationId,
                     actorId: senderId,
                     body: preview,
+                    channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
                     presentation: {
                         redirect: { kind: E_RedirectType.CONVERSATION, id: directMessageResult.conversationId },
                         actor: {
@@ -580,7 +569,7 @@ export const conversationCtr = {
                             avatarUrl: avatar,
                             gender: senderUser?.partner1?.gender ?? senderUser?.partner2?.gender,
                         },
-                        context: { conversationType: E_ConversationType.PRIVATE },
+                        context: { conversationType: E_ConversationType.PRIVATE, isOpenComment: false, participantCount: 2 },
                     },
                 },
             });
@@ -607,9 +596,7 @@ export const conversationCtr = {
                     }
                 }
             }
-            catch {
-
-            }
+            catch { /* ignore */ }
 
             return {
                 success: true,
@@ -624,6 +611,8 @@ export const conversationCtr = {
             });
         }
     },
+
+    // conversation.controller.ts — replace the sendMessage() method with this version
 
     sendMessage: async (
         context: I_Context,
@@ -658,7 +647,7 @@ export const conversationCtr = {
             }
             else {
                 const isParticipant = conversation.participants?.some(p => p.userId === senderId);
-                const isPublicThread = isOpenPublicThread(conversation);
+                const isPublicThread = isOpenPublicThread(conversation); // đã nhận diện BLOG/PROFILE/GROUP mở
                 if (!isParticipant && !isPublicThread) {
                     throwError({
                         message: 'You are not a participant in this group conversation',
@@ -675,9 +664,9 @@ export const conversationCtr = {
                     content,
                     parentId,
                     expiresAt:
-                        conversation.type === E_ConversationType.GROUP && conversation.retentionDays
-                            ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)
-                            : undefined,
+          conversation.type === E_ConversationType.GROUP && conversation.retentionDays
+              ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)
+              : undefined,
                 },
             });
             if (!messageResult.success) {
@@ -699,7 +688,7 @@ export const conversationCtr = {
                 await participantCtr.updateLastReadMessage(conversationId, senderId, messageResult.result.id);
             }
 
-            // Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
+            // 6) Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
             const populatedConversationResult = await conversationCtr._populateConversationWithParticipants(conversation.id);
             if (!populatedConversationResult.success) {
                 throwError({
@@ -708,11 +697,11 @@ export const conversationCtr = {
                 });
             }
 
-            // Pubsub publish
+            // 7) Pubsub publish
             const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversationResult.result };
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
-            // Actor (who caused the notification)
+            // 8) Actor (who caused the notification)
             let actorUser = populatedConversationResult.result.participants?.find(p => p.userId === senderId)?.user;
             if (!actorUser) {
                 const actorRes = await userCtr.getUser(context, {
@@ -736,46 +725,33 @@ export const conversationCtr = {
                     }
                 : undefined;
 
-            const preview = 'value' in content && typeof content.value === 'string' ? content.value.slice(0, 140) : '';
+            const preview = 'value' in content && typeof content.value === 'string' ? safeSlice140(content.value) : '';
 
-            const isPublicThread = isOpenPublicThread(conversation);
+            // 9) Classify (PUBLIC/BLOG/PROFILE/GROUP) & derive
+            const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind }
+      = classifyConversation(conversation);
 
-            const nameIsProfile = typeof conversation.name === 'string' && conversation.name.startsWith('profile:');
-            const profileOwnerId: string | undefined
-                = conversation.profileOwnerId ?? conversation.entityId ?? (nameIsProfile ? conversation.name?.slice('profile:'.length) : undefined);
-
-            const isOwner = senderId === profileOwnerId;
-
-            // parent sender resolution
+            // 10) Parent sender (only when public)
             let parentSenderId: string | undefined;
-            if (parentId) {
-                const parentRes = await messageCtr.getMessages(context, {
+            if (isPublic && parentId) {
+                const res = await messageCtr.getMessages(context, {
                     filter: { id: parentId },
                     options: { pagination: false, projection: { id: 1, senderId: 1 } },
                 });
-                if (parentRes.success && parentRes.result.docs.length > 0) {
-                    parentSenderId = parentRes.result.docs[0]?.senderId;
-                }
+                parentSenderId = res.success ? res.result.docs[0]?.senderId : undefined;
             }
 
-            // Compute recipients
+            // 11) Compute recipients
             const recipients = new Set<string>();
-            if (isPublicThread) {
+            if (isPublic) {
                 if (parentSenderId) {
-                    if (isOwner) {
-                        if (parentSenderId !== senderId)
-                            recipients.add(parentSenderId);
-                    }
-                    else {
-                        if (profileOwnerId)
-                            recipients.add(profileOwnerId);
-                        if (parentSenderId !== senderId)
-                            recipients.add(parentSenderId);
-                    }
+                    if (senderId !== parentSenderId)
+                        recipients.add(parentSenderId);
+                    if (publicTargetId && senderId !== publicTargetId)
+                        recipients.add(publicTargetId);
                 }
-                else {
-                    if (!isOwner && profileOwnerId)
-                        recipients.add(profileOwnerId);
+                else if (publicTargetId && senderId !== publicTargetId) {
+                    recipients.add(publicTargetId);
                 }
             }
             else {
@@ -784,51 +760,42 @@ export const conversationCtr = {
                         recipients.add(p.userId);
                 }
             }
-            // never notify sender
-            recipients.delete(senderId);
 
+            // 12) Notifications
             if (recipients.size > 0) {
                 const entityType = E_NotificationEntityType.CONVERSATION;
                 const entityId = conversation.id;
 
+                const makeRedirect = (targetId: string) =>
+                    isPublic
+                        ? { kind: redirectKind, id: publicTargetId ?? targetId } as const
+                        : { kind: E_RedirectType.CONVERSATION, id: conversation.id } as const;
+
                 for (const targetId of recipients) {
                     try {
-                        let redirect;
-                        if (isPublicThread) {
-                            redirect = { kind: E_RedirectType.PROFILE, id: targetId };
-                            try {
-                                const targetUserRes = await userCtr.getUser(context, { filter: { id: targetId }, projection: 'username' });
-                                if (targetUserRes?.success && targetUserRes.result?.username) {
-                                    (redirect as any).displayName = targetUserRes.result.username;
-                                }
-                            }
-                            catch {
-                                // ignore
-                            }
-                        }
-                        else {
-                            redirect = { kind: E_RedirectType.CONVERSATION, id: conversation.id };
-                        }
-
                         await notificationCtr.createNotificationWithSettings(context, {
                             doc: {
                                 targetId,
                                 actorId: senderId,
-                                type: [E_NotificationType.GUESTBOOK_POST],
+                                type: [notifType],
                                 entityType,
                                 entityId,
                                 body: preview,
-                                channels: [E_NotificationChannel.IN_APP],
+                                channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
                                 presentation: {
-                                    redirect,
+                                    redirect: makeRedirect(targetId),
                                     actor: actorView,
+                                    context: {
+                                        conversationType: conversation.type,
+                                        isOpenComment: isPublic,
+                                        participantCount: memberCount,
+                                        profileOwnerId,
+                                    },
                                 },
                             },
                         });
                     }
-                    catch {
-                        // swallow notification errors (do not break send flow)
-                    }
+                    catch { /* swallow */ }
                 }
             }
 
