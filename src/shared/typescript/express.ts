@@ -2,11 +2,16 @@ import type { NextFunction, Request, Response } from '@cyberskill/shared/node/ex
 import type { Session, SessionData } from 'express-session';
 import type { IncomingMessage } from 'node:http';
 
+import type { I_SessionPayload } from '#modules/authn/authn.type.js';
 import type { I_User } from '#modules/user/index.js';
 
 export interface I_Request extends Partial<Request> {
     session?: Session & Partial<SessionData> & {
         user?: I_User;
+        guardianView?: {
+            ownerId: string;
+            issuedAt: number;
+        };
     };
     body?: { fileName: string; query?: string; src?: string };
 }
@@ -17,6 +22,10 @@ export interface I_NextFunction extends NextFunction { }
 
 export interface I_Context {
     req?: I_Request;
+}
+
+export interface I_GuardianTokenPayload extends I_SessionPayload {
+    guardian: true;
 }
 
 export interface I_IncomingMessage extends IncomingMessage {

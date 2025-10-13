@@ -27,6 +27,10 @@ export interface I_Input_Login {
     rememberMe?: boolean;
 }
 
+export interface I_Input_GuardianLogin {
+    token: string;
+}
+
 export interface I_Response_Auth {
     user?: Omit<I_User, 'password'>;
     token?: string;

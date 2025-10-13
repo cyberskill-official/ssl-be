@@ -101,4 +101,6 @@ type Mutation {
     verifyAge(files: [Upload]!): T_Response_VerifyAge!
     approveAgeVerify(userId: String!): T_Response_VerifyAge!
     rejectAgeVerify(userId: String!, reason: String!): T_Response_VerifyAge!
+    createGuardianVisitToken: T_Response_Auth!
+    guardianLogin(token: String!): T_Response_Auth!
 }

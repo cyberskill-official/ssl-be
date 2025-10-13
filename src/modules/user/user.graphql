@@ -215,6 +215,8 @@ type T_User {
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
+    isGuardianView: Boolean
+    guardianOwnerId: String
 }
 
 input Input_QueryUser {

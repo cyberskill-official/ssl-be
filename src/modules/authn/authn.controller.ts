@@ -38,6 +38,7 @@ import type {
     I_Input_CheckAuth,
     I_Input_CheckToken,
     I_Input_ForgotPasswordRequest,
+    I_Input_GuardianLogin,
     I_Input_Login,
     I_Input_Register,
     I_Input_Register_Membership,
@@ -54,12 +55,46 @@ import type {
 import {
     EMAIL_VERIFICATION,
     FORGOT_PASSWORD,
+    GUARDIAN_VISIT_TOKEN_EXPIRES,
     TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
 } from './authn.constant.js';
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
+
+interface I_GuardianTokenPayload extends I_SessionPayload {
+    guardian: true;
+}
+
+let cachedAdminRoleId: string | null = null;
+
+async function getAdminRoleId(context: I_Context): Promise<string> {
+    if (cachedAdminRoleId)
+        return cachedAdminRoleId;
+
+    const adminRole = await roleCtr.getRole(context, {
+        filter: { name: E_Role_Staff.ADMIN },
+    });
+    if (!adminRole.success) {
+        throwError({
+            message: 'Admin role not found.',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    }
+    cachedAdminRoleId = adminRole.result.id;
+    return cachedAdminRoleId;
+}
+
+function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
+    if (!user?.roles || !roleId)
+        return false;
+
+    return user.roles.some(role =>
+        role.id === roleId
+        || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(roleId)),
+    );
+}
 
 // extractClientIp is now shared in env.util
 
@@ -120,14 +155,24 @@ export const authnCtr = {
                 };
             }
 
-            if (userFound.result.isAdminBlocked) {
+            const adminRoleId = await getAdminRoleId(context);
+            const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+
+            if (!isAdmin && userFound.result.isAdminBlocked) {
                 return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
+            }
+
+            const sanitizedUser = omit(userFound.result, 'password') as I_User;
+            if (isAdmin) {
+                sanitizedUser.isActive = true;
+                sanitizedUser.isEmailVerified = true;
+                sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
             }
 
             return {
                 success: true,
                 result: {
-                    user: userFound.result,
+                    user: sanitizedUser,
                     token,
                 },
             };
@@ -200,7 +245,25 @@ export const authnCtr = {
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
         }
-        if (userFound.result.isAdminBlocked) {
+
+        const guardianViewMeta = context.req.session.guardianView;
+        const isGuardianSession = Boolean(
+            guardianViewMeta?.ownerId
+            && guardianViewMeta.ownerId === context.req.session.user.id,
+        );
+
+        const adminRoleId = await getAdminRoleId(context);
+        const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+
+        if (isGuardianSession && !isAdmin) {
+            context.req.session.destroy(() => {});
+            throwError({
+                message: 'Guardian access revoked.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        if (!isAdmin && userFound.result.isAdminBlocked) {
             context.req.session.destroy(() => {});
             return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
         }
@@ -213,7 +276,7 @@ export const authnCtr = {
             };
         }
 
-        if (!userFound.result.isActive) {
+        if (!isGuardianSession && !isAdmin && !userFound.result.isActive) {
             return {
                 success: false,
                 message: 'Account is not active.',
@@ -221,7 +284,7 @@ export const authnCtr = {
             };
         }
 
-        if (!userFound.result.isEmailVerified) {
+        if (!isGuardianSession && !isAdmin && !userFound.result.isEmailVerified) {
             return {
                 success: false,
                 message: 'Email not verified.',
@@ -229,7 +292,22 @@ export const authnCtr = {
             };
         }
 
-        context.req.session.user = omit(userFound.result, 'password');
+        const sanitizedUser = omit(userFound.result, 'password') as I_User;
+        if (isGuardianSession) {
+            sanitizedUser.isGuardianView = true;
+            sanitizedUser.guardianOwnerId = guardianViewMeta?.ownerId;
+            sanitizedUser.isActive = true;
+            sanitizedUser.isEmailVerified = true;
+            sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+        }
+
+        else if (isAdmin) {
+            sanitizedUser.isActive = true;
+            sanitizedUser.isEmailVerified = true;
+            sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+        }
+
+        context.req.session.user = sanitizedUser;
 
         try {
             // Prefer client IP from request headers (proxied environments)
@@ -295,21 +373,9 @@ export const authnCtr = {
     isAdmin: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const adminRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_Staff.ADMIN },
-        });
-        if (!adminRole.success) {
-            throwError({
-                message: 'Admin role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-        const adminRoleId = adminRole.result.id;
+        const adminRoleId = await getAdminRoleId(context);
 
-        return !!currentUser.roles?.some(role =>
-            (role.id === adminRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(adminRoleId)),
-        );
+        return userHasRoleId(currentUser, adminRoleId);
     },
 
     // add near other role helpers in authnCtr
@@ -455,7 +521,10 @@ export const authnCtr = {
             });
         }
 
-        if (userFound.result.isAdminBlocked) {
+        const adminRoleId = await getAdminRoleId(context);
+        const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+
+        if (!isAdmin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
@@ -771,6 +840,112 @@ export const authnCtr = {
             },
         };
     },
+
+    createGuardianVisitToken: async (context: I_Context): Promise<I_Return<I_Response_Auth>> => {
+        if (!context.req?.session) {
+            throwError({
+                message: 'Session not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const adminRoleId = await getAdminRoleId(context);
+
+        if (!userHasRoleId(currentUser, adminRoleId)) {
+            throwError({
+                message: 'Forbidden.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const payload: I_GuardianTokenPayload = {
+            guardian: true,
+            userId: currentUser.id,
+            createdAt: Date.now(),
+        };
+
+        const token = jwt.sign(payload, env.JWT_SECRET, { expiresIn: GUARDIAN_VISIT_TOKEN_EXPIRES });
+
+        return {
+            success: true,
+            result: {
+                token,
+            },
+        };
+    },
+
+    guardianLogin: async (
+        context: I_Context,
+        { token }: I_Input_GuardianLogin,
+    ): Promise<I_Return<I_Response_Auth>> => {
+        if (!context.req?.session) {
+            throwError({
+                message: 'Session not found.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        let decoded: I_GuardianTokenPayload | undefined;
+
+        try {
+            decoded = jwt.verify(token, env.JWT_SECRET) as I_GuardianTokenPayload;
+        }
+        catch {
+            throwError({
+                message: 'Guardian token invalid.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        if (!decoded?.guardian || !decoded.userId) {
+            throwError({
+                message: 'Guardian token invalid.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        const payload = decoded;
+
+        const adminUser = await userCtr.getUser(context, {
+            filter: { id: payload.userId },
+        });
+
+        if (!adminUser.success) {
+            throwError({
+                message: 'Guardian token invalid.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        const adminRoleId = await getAdminRoleId(context);
+        if (!userHasRoleId(adminUser.result, adminRoleId)) {
+            throwError({
+                message: 'Forbidden.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const sanitizedUser = omit(adminUser.result, 'password') as I_User;
+        sanitizedUser.isGuardianView = true;
+        sanitizedUser.guardianOwnerId = adminUser.result.id;
+        sanitizedUser.isActive = true;
+        sanitizedUser.isEmailVerified = true;
+        sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+
+        context.req.session.user = sanitizedUser;
+        context.req.session.guardianView = {
+            ownerId: adminUser.result.id,
+            issuedAt: Date.now(),
+        };
+
+        return {
+            success: true,
+            result: {
+                user: sanitizedUser,
+            },
+        };
+    },
     login: async (
         context: I_Context,
         args: I_Input_Login,
@@ -787,6 +962,8 @@ export const authnCtr = {
         if (authChecked.success) {
             return authChecked;
         }
+
+        delete context.req.session.guardianView;
 
         const { identity, password, rememberMe } = args;
 
@@ -888,6 +1065,7 @@ export const authnCtr = {
             });
         }
 
+        delete context.req.session.guardianView;
         context.req.session.destroy(() => { });
 
         return {

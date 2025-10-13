@@ -3,7 +3,7 @@ import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/no
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_ApproveAgeVerify, I_Input_CheckAuth, I_Input_ForgotPasswordRequest, I_Input_Login, I_Input_Register, I_Input_Register_Membership, I_Input_Register_PersonalInfo, I_Input_Register_Preferences, I_Input_Register_SendVerifyEmail, I_Input_Register_VerifyEmail, I_Input_RejectAgeVerify, I_Input_ResetPassword } from './authn.type.js';
+import type { I_Input_ApproveAgeVerify, I_Input_CheckAuth, I_Input_ForgotPasswordRequest, I_Input_GuardianLogin, I_Input_Login, I_Input_Register, I_Input_Register_Membership, I_Input_Register_PersonalInfo, I_Input_Register_Preferences, I_Input_Register_SendVerifyEmail, I_Input_Register_VerifyEmail, I_Input_RejectAgeVerify, I_Input_ResetPassword } from './authn.type.js';
 
 import { authnCtr } from './authn.controller.js';
 
@@ -25,6 +25,8 @@ const authResolver = {
         verifyAge: (_parent: unknown, args: I_Input_UploadMany, context: I_Context) => authnCtr.verifyAge(context, args),
         approveAgeVerify: async (_parent: unknown, args: I_Input_ApproveAgeVerify, context: I_Context) => authnCtr.approveAgeVerify(context, args),
         rejectAgeVerify: async (_parent: unknown, args: I_Input_RejectAgeVerify, context: I_Context) => authnCtr.rejectAgeVerify(context, args),
+        createGuardianVisitToken: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.createGuardianVisitToken(context),
+        guardianLogin: (_parent: unknown, args: I_Input_GuardianLogin, context: I_Context) => authnCtr.guardianLogin(context, args),
     },
 };
 
