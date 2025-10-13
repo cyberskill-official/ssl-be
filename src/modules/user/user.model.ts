@@ -604,6 +604,8 @@ export const UserModel = mongo.createModel<I_User>({
             default: 0,
         },
         isAdminBlocked: { type: Boolean, default: false },
+        isGuardianView: { type: Boolean, default: false },
+        guardianOwnerId: { type: String, default: null },
     },
     virtuals: [
         {

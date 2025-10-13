@@ -87,13 +87,17 @@ async function getAdminRoleId(context: I_Context): Promise<string> {
 }
 
 function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
-    if (!user?.roles || !roleId)
+    if (!user || !roleId)
         return false;
 
-    return user.roles.some(role =>
+    if (Array.isArray(user.roles) && user.roles.some(role =>
         role.id === roleId
         || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(roleId)),
-    );
+    )) {
+        return true;
+    }
+
+    return Array.isArray(user.rolesIds) && user.rolesIds.includes(roleId);
 }
 
 // extractClientIp is now shared in env.util
@@ -263,6 +267,15 @@ export const authnCtr = {
             });
         }
 
+        if (!isGuardianSession && isAdmin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
+            await userCtr.updateUser(context, {
+                filter: { id: userFound.result.id },
+                update: { isGuardianView: false, guardianOwnerId: null },
+            }).catch(() => { /* best-effort */ });
+            userFound.result.isGuardianView = false;
+            userFound.result.guardianOwnerId = undefined;
+        }
+
         if (!isAdmin && userFound.result.isAdminBlocked) {
             context.req.session.destroy(() => {});
             return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
@@ -305,6 +318,8 @@ export const authnCtr = {
             sanitizedUser.isActive = true;
             sanitizedUser.isEmailVerified = true;
             sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+            sanitizedUser.isGuardianView = false;
+            sanitizedUser.guardianOwnerId = undefined;
         }
 
         context.req.session.user = sanitizedUser;
@@ -595,7 +610,10 @@ export const authnCtr = {
             });
         }
 
-        if (userFound.result.isAdminBlocked) {
+        const adminRoleIdLogin = await getAdminRoleId(context);
+        const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
+
+        if (!isAdminLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
@@ -926,6 +944,11 @@ export const authnCtr = {
             });
         }
 
+        await userCtr.updateUser(context, {
+            filter: { id: adminUser.result.id },
+            update: { isGuardianView: true, guardianOwnerId: adminUser.result.id },
+        }).catch(() => { /* best-effort */ });
+
         const sanitizedUser = omit(adminUser.result, 'password') as I_User;
         sanitizedUser.isGuardianView = true;
         sanitizedUser.guardianOwnerId = adminUser.result.id;
@@ -1000,7 +1023,10 @@ export const authnCtr = {
             });
         }
 
-        if (userFound.result.isAdminBlocked) {
+        const adminRoleIdLogin = await getAdminRoleId(context);
+        const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
+
+        if (!isAdminLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
@@ -1047,7 +1073,25 @@ export const authnCtr = {
             ? authnCtr.generateToken(context, userFound.result.id)
             : '';
 
-        context.req.session.user = omit(userFound.result, 'password');
+        if (isAdminLogin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
+            await userCtr.updateUser(context, {
+                filter: { id: userFound.result.id },
+                update: { isGuardianView: false, guardianOwnerId: null },
+            }).catch(() => { /* best-effort */ });
+            userFound.result.isGuardianView = false;
+            userFound.result.guardianOwnerId = undefined;
+        }
+
+        const sanitizedLoginUser = omit(userFound.result, 'password') as I_User;
+        if (isAdminLogin) {
+            sanitizedLoginUser.isActive = true;
+            sanitizedLoginUser.isEmailVerified = true;
+            sanitizedLoginUser.registerStep = sanitizedLoginUser.registerStep ?? E_RegisterStep.COMPLETE;
+            sanitizedLoginUser.isGuardianView = false;
+            sanitizedLoginUser.guardianOwnerId = undefined;
+        }
+
+        context.req.session.user = sanitizedLoginUser;
 
         return {
             success: true,
@@ -1063,6 +1107,14 @@ export const authnCtr = {
                 message: 'Session not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        const sessionUser = context.req.session.user;
+        if (sessionUser?.id && sessionUser.isGuardianView) {
+            await userCtr.updateUser(context, {
+                filter: { id: sessionUser.id },
+                update: { isGuardianView: false, guardianOwnerId: null },
+            }).catch(() => { /* best-effort */ });
         }
 
         delete context.req.session.guardianView;
