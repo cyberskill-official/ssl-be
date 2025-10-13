@@ -35,6 +35,9 @@ export const PricingModel = mongo.createModel<I_Pricing>({
         locationId: {
             type: String,
         },
+        currencyId: {
+            type: String,
+        },
     },
     virtuals: [
         {
@@ -42,6 +45,15 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             options: {
                 ref: 'Location',
                 localField: 'locationId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'currency',
+            options: {
+                ref: 'Currency',
+                localField: 'currencyId',
                 foreignField: 'id',
                 justOne: true,
             },

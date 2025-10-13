@@ -15,10 +15,9 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr, NEW_MESSAGE } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/index.js';
-import { emailCtr } from '#modules/email/email.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -28,7 +27,6 @@ import {
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
-import { validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
 import type {
@@ -581,19 +579,19 @@ export const conversationCtr = {
                 });
 
                 if (recipientRes?.success) {
-                    const targetEmail = recipientRes.result.email || '';
-                    const wantsEmail = (recipientRes.result.settings?.notification?.receiveMessage) !== false;
+                    // const targetEmail = recipientRes.result.email || '';
+                    // const wantsEmail = (recipientRes.result.settings?.notification?.receiveMessage) !== false;
 
-                    if (wantsEmail && targetEmail) {
-                        validate.email.validate(targetEmail);
-                        const templateData = {
-                            email: targetEmail,
-                            sender: senderUser?.username || senderId,
-                            message: preview,
-                            preview,
-                        };
-                        await emailCtr.sendEmail(NEW_MESSAGE, targetEmail, templateData);
-                    }
+                    // if (wantsEmail && targetEmail) {
+                    //     validate.email.validate(targetEmail);
+                    //     const templateData = {
+                    //         email: targetEmail,
+                    //         sender: senderUser?.username || senderId,
+                    //         message: preview,
+                    //         preview,
+                    //     };
+                    //     await emailCtr.sendEmail(NEW_MESSAGE, targetEmail, templateData);
+                    // }
                 }
             }
             catch { /* ignore */ }

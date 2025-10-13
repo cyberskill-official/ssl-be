@@ -23,9 +23,8 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
-import { getEffectiveLocation } from '#shared/util/location-map.js';
 
 import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
 
@@ -193,75 +192,40 @@ export const userCtr = {
             throwError({ message: 'User already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        // 3) Tạo user mới
         const userCreated = await mongooseCtr.createOne({
             ...doc,
             email, // lưu email đã chuẩn hoá
             password: bcrypt.hashSync(password),
         });
-
         if (!userCreated.success) {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        // Tạo location mặc định
+        // 4) Tạo location mặc định
         const locationCreated = await locationCtr.createLocation(context, {
             doc: {
                 entityType: E_LocationEntityType.USER,
                 entityId: userCreated.result.id,
             },
         });
-
         if (!locationCreated.success) {
             throwError({ message: locationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        if (userCreated.success && locationCreated.success) {
-            const allUsers = await userCtr.getUsers(context, {
-                filter: { isActive: true },
-                options: { pagination: false },
-            });
-
-            if (allUsers.success) {
-                for (const u of allUsers.result.docs) {
-                    const effectiveLoc = getEffectiveLocation(u);
-                    if (!effectiveLoc)
-                        continue;
-
-                    await notificationCtr.createNotificationWithSettings(context, {
-                        doc: {
-                            targetId: u.id,
-                            type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
-                            entityType: E_NotificationEntityType.USER,
-                            entityId: userCreated.result.id,
-                            actorId: userCreated.result.id,
-                            presentation: {
-                                redirect: { kind: E_RedirectType.PROFILE, id: userCreated.result.id },
-                                actor: {
-                                    username,
-                                    accountType: userCreated.result.accountType,
-                                    avatarUrl: userCreated.result.partner1?.gallery?.url,
-                                    gender: userCreated.result.partner1?.gender,
-                                },
-                            },
-                        },
-                    });
-                }
-            }
-        }
-
-        // Tạo temporary location
+        // 5) Tạo temporary location
         const temporaryLocationCreated = await locationCtr.createLocation(context, {
             doc: {
                 entityType: E_LocationEntityType.USER,
                 entityId: userCreated.result.id,
             },
         });
-
         if (!temporaryLocationCreated.success) {
             throwError({ message: temporaryLocationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        return mongooseCtr.updateOne(
+        // 6) Cập nhật lại user với locationId
+        const updatedUser = await mongooseCtr.updateOne(
             { id: userCreated.result.id },
             {
                 partner1: { locationId: locationCreated.result.id },
@@ -272,6 +236,75 @@ export const userCtr = {
                 },
             },
         );
+
+        // 7) Sau khi update thành công → gửi thông báo + email “New member in your area”
+        try {
+            const [newUserHydrated, allUsers] = await Promise.all([
+                userCtr.getUser(context, { filter: { id: userCreated.result.id } }),
+                userCtr.getUsers(context, { filter: { isActive: true }, options: { pagination: false } }),
+            ]);
+
+            if (newUserHydrated.success && allUsers.success) {
+                const newUser = newUserHydrated.result;
+                // IN-APP notification đến tất cả user đang active (trừ chính chủ)
+                const notifTasks = allUsers.result.docs
+                    .filter(u => u.id !== newUser.id)
+                    .map(u =>
+                        notificationCtr.createNotificationWithSettings(context, {
+                            doc: {
+                                targetId: u.id,
+                                type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
+                                entityType: E_NotificationEntityType.USER,
+                                entityId: newUser.id,
+                                actorId: newUser.id,
+                                channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                                presentation: {
+                                    redirect: { kind: E_RedirectType.PROFILE, id: newUser.id },
+                                    actor: {
+                                        username: newUser.username,
+                                        accountType: newUser.accountType,
+                                        avatarUrl: newUser.partner1?.gallery?.url,
+                                        gender: newUser.partner1?.gender,
+                                    },
+                                },
+                            },
+                        }).catch(() => undefined),
+                    );
+
+                const emailTasks = allUsers.result.docs
+                    .filter(u => u.id !== newUser.id)
+                    .map(async (u) => {
+                        const targetEmail = u?.email ?? '';
+                        const wantsEmail = (u?.settings?.notification?.newMemberJoined) !== false;
+                        if (!wantsEmail || !targetEmail)
+                            return;
+
+                        try {
+                            // validate.email.validate(targetEmail);
+                            // const templateData = {
+                            //     email: targetEmail,
+                            //     account: newUser.username,
+                            // };
+                            // await emailCtr.sendEmail(
+                            //     NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST,
+                            //     targetEmail,
+                            //     templateData,
+                            // );
+                        }
+                        catch {
+                        // swallow email error per recipient
+                        }
+                    });
+
+                await Promise.allSettled([...notifTasks, ...emailTasks]);
+            }
+        }
+        catch {
+        // swallow batch notification/email errors
+        }
+
+        // 8) Trả kết quả cuối cùng
+        return updatedUser;
     },
 
     updateUser: async (

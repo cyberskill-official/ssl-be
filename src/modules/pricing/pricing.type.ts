@@ -1,5 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { I_Currency } from '#modules/location/currency/index.js';
 import type { I_Location } from '#modules/location/index.js';
 
 export enum E_PricingType {
@@ -14,6 +15,8 @@ export interface I_Pricing extends I_GenericDocument {
     isActive?: boolean;
     locationId?: string;
     location?: I_Location;
+    currencyId: string;
+    currency: I_Currency;
 }
 
 export interface I_Input_QueryPricing extends I_Pricing {

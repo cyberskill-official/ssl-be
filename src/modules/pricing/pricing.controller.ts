@@ -15,6 +15,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_PricingDefault } from '#modules/setting/setting.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/authn.controller.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { countryCtr } from '#modules/location/country/country.controller.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
@@ -115,15 +116,17 @@ export const pricingCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     async getSubscriptionPrice(context: I_Context): Promise<I_Return<I_Response_SubscriptionPrice>> {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
         let countryCode: string | undefined;
         let countryName: string | undefined;
 
         // Get IP from user's lastLoginIp
         let userIp: string | undefined;
-        if (context.req?.session?.user?.id) {
+        if (currentUser?.id) {
             try {
                 const userFound = await userCtr.getUser(context, {
-                    filter: { id: context.req.session.user.id },
+                    filter: { id: currentUser.id },
                 });
                 if (userFound.success) {
                     userIp = userFound.result.lastLoginIp;

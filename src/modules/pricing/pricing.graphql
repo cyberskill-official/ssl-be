@@ -14,6 +14,8 @@ type T_Pricing {
     isActive: Boolean
     locationId: String
     location: T_Location
+    currencyId: String
+    currency: T_Currency
 }
 
 input Input_QueryPricing {
@@ -26,6 +28,7 @@ input Input_QueryPricing {
     taxRate: Float
     isActive: Boolean
     locationId: String
+    currencyId: String
 }
 
 input Input_CreatePricing {
@@ -34,6 +37,7 @@ input Input_CreatePricing {
     taxRate: Float
     isActive: Boolean
     location: Input_Location
+    currencyId: String
 }
 
 input Input_UpdatePricing {
@@ -43,6 +47,7 @@ input Input_UpdatePricing {
     taxRate: Float
     isActive: Boolean
     location: Input_Location
+    currencyId: String
 }
 
 type T_Response_Pricing {
