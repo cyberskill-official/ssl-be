@@ -39,6 +39,7 @@ enum E_PinStyle {
     EVENT_TRAVEL
     EVENT_BOOTY_CALL
     EVENT_PRIVATE
+    EVENT_CLUB
     # Destination
     HOTEL
     CLUB_BRONZE
