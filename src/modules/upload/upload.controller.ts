@@ -41,6 +41,14 @@ export const uploadCtr = {
 
         const isStaff = await authnCtr.isStaff(context);
         const isAdmin = await authnCtr.isAdmin(context);
+        const isFreeMember = await authnCtr.isFreeMember(context);
+
+        if (type === E_UploadType.VIDEO && isFreeMember && !isStaff && !isAdmin) {
+            throwError({
+                message: 'Free members can upload images only.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
 
         const isInRegistration = currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery

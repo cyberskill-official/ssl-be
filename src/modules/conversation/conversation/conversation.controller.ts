@@ -478,8 +478,23 @@ export const conversationCtr = {
         recipientId: string,
         content: I_MessageContent,
     ): Promise<I_Return<I_Conversation>> => {
+        let isFreeMember = false;
+        try {
+            isFreeMember = await authnCtr.isFreeMember(context);
+        }
+        catch {
+            isFreeMember = false;
+        }
+
         try {
             const directMessageResult = await participantCtr.directMessageBetween(context, recipientId);
+
+            if (isFreeMember && !directMessageResult.exists && !directMessageResult.conversationId) {
+                throwError({
+                    message: 'Free users cannot initiate new chats. Please upgrade your membership.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
 
             if (!directMessageResult.conversationId && !directMessageResult.exists) {
                 const newConversationResult = await conversationCtr.createConversationInternal(context, {

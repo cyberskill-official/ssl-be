@@ -35,6 +35,7 @@ import type {
 
 import { GalleryModel } from './gallery.model.js';
 import { E_GalleryType } from './gallery.type.js';
+import { assertCanUploadVideo } from './gallery.validate.js';
 
 const env = getEnv();
 
@@ -197,9 +198,13 @@ export const galleryCtr = {
     },
 
     createGallery: async (
-        _context: I_Context,
+        context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        if (doc.type === E_GalleryType.VIDEO) {
+            await assertCanUploadVideo(context, doc.uploadedById);
+        }
+
         const galleryResult = await mongooseCtr.createOne(doc);
 
         if (galleryResult.success) {
@@ -210,12 +215,12 @@ export const galleryCtr = {
 
             // 2) Notify followers (IN_APP luôn có, EMAIL theo toggle — handled by WithSettings)
             try {
-                const followers = await followCtr.getFollowers(_context, {
+                const followers = await followCtr.getFollowers(context, {
                     filter: { followId: uploaderId },
                     options: { pagination: false },
                 });
 
-                const uploaderFound = await userCtr.getUser(_context, { filter: { id: uploaderId } });
+                const uploaderFound = await userCtr.getUser(context, { filter: { id: uploaderId } });
 
                 if (!uploaderFound.success) {
                     return galleryResult;
@@ -230,7 +235,7 @@ export const galleryCtr = {
                         if (!targetId || targetId === uploaderId)
                             continue;
 
-                        await notificationCtr.createNotificationWithSettings(_context, {
+                        await notificationCtr.createNotificationWithSettings(context, {
                             doc: {
                                 targetId,
                                 type: [E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA],
@@ -263,6 +268,20 @@ export const galleryCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        if (update.type === E_GalleryType.VIDEO) {
+            const existingGallery = await galleryCtr.getGallery(context, { filter });
+
+            if (!existingGallery.success) {
+                throwError({
+                    message: existingGallery.message ?? 'Gallery not found',
+                    status: existingGallery.message ? RESPONSE_STATUS.BAD_REQUEST : RESPONSE_STATUS.NOT_FOUND,
+                });
+            }
+
+            const uploaderId = existingGallery.result.uploadedById ?? update.uploadedById;
+            await assertCanUploadVideo(context, uploaderId);
+        }
+
         if (update.url) {
             const existingGallery = await galleryCtr.getGallery(context, { filter });
 

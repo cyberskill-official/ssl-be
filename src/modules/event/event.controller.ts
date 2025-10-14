@@ -15,6 +15,9 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isAfter } from 'date-fns';
 
+import type {
+    E_Destination_PinStyle,
+} from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
@@ -56,7 +59,7 @@ function mapEventTypeToPinStyle(eventType?: E_EventType) {
     if (!eventType)
         return undefined;
     if (eventType === E_EventType.CLUB_VISIT) {
-        return E_Event_PinStyle.EVENT_PRIVATE;
+        return E_Event_PinStyle.EVENT_CLUB;
     }
     if (eventType === E_EventType.PRIVATE) {
         return E_Event_PinStyle.EVENT_PRIVATE;
@@ -168,8 +171,18 @@ export const eventCtr = {
             });
         }
 
+        // helper: valid map check
+        const hasValidMap = (loc?: any) => {
+            if (!loc || !loc.map)
+                return false;
+            const { latitude, longitude } = loc.map;
+            return typeof latitude === 'number' && typeof longitude === 'number' && !Number.isNaN(latitude) && !Number.isNaN(longitude);
+        };
+
         // CLUB_VISIT: resolve destination & optional location fallback
         let destLocationCandidate: typeof location | undefined;
+        let destinationPinStyle: E_Destination_PinStyle | undefined;
+
         if (type === E_EventType.CLUB_VISIT) {
             if (!destinationId) {
                 throwError({ message: 'Club/Resort selection is required.', status: RESPONSE_STATUS.BAD_REQUEST });
@@ -185,6 +198,9 @@ export const eventCtr = {
             }
 
             const destination = destinationFound.result;
+
+            // read destination pin style (if destination model exposes it)
+            destinationPinStyle = (destination as any)?.pinStyle as E_Destination_PinStyle | undefined;
 
             // Try to ensure we know country/city for auto title
             let countryName = destination.location?.country?.name ?? '';
@@ -218,6 +234,14 @@ export const eventCtr = {
             if (autoTitle)
                 doc.title = autoTitle;
             doc.image = (destination.images && destination.images[0]) ?? image;
+
+            // persist pinStyle on the event doc to make UI rendering easier (if available)
+            if (destinationPinStyle) {
+                (doc as any).pinStyle = destinationPinStyle;
+            }
+            else {
+                (doc as any).pinStyle = mapEventTypeToPinStyle(type);
+            }
         }
 
         // TRAVEL validations
@@ -274,7 +298,7 @@ export const eventCtr = {
             throwError({ message: 'Start date cannot be after end date.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        // Coordinate format check if client sent location.map
+        // Coordinate format check if client sent location.map (preserve previous strictness)
         if (location?.map) {
             const { latitude, longitude } = location.map as any;
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
@@ -308,7 +332,7 @@ export const eventCtr = {
                 doc: { name: doc.title ?? title, type: E_ConversationType.GROUP, createdById: currentUser.id },
             });
             if (!createdConversation.success) {
-            // cleanup event to avoid orphaned event
+                // cleanup event to avoid orphaned event
                 await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
                 throwError({ message: 'Failed to create conversation for event', status: RESPONSE_STATUS.BAD_REQUEST });
             }
@@ -320,17 +344,6 @@ export const eventCtr = {
                 update: { hasUpcomingEvent: true },
             });
         }
-
-        // pinStyle by type
-        let pinStyle: E_Event_PinStyle | undefined;
-        if (type === E_EventType.CLUB_VISIT)
-            pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
-        if (type === E_EventType.PRIVATE)
-            pinStyle = E_Event_PinStyle.EVENT_PRIVATE;
-        if (type === E_EventType.TRAVEL)
-            pinStyle = E_Event_PinStyle.EVENT_TRAVEL;
-        if (type === E_EventType.BOOTY_CALL)
-            pinStyle = E_Event_PinStyle.EVENT_BOOTY_CALL;
 
         // --- NEW: determine temporaryLocation and partner1 location fallback ---
         let tempLocationCandidate: typeof location | undefined;
@@ -357,19 +370,62 @@ export const eventCtr = {
         }
         catch { /* ignore partner location errors */ }
 
-        const sourceLocation = tempLocationCandidate ?? location ?? partnerLocationCandidate ?? destLocationCandidate;
+        // prioritize candidate that has a valid map (lat/lon)
+        const candidates = [tempLocationCandidate, location, partnerLocationCandidate, destLocationCandidate];
+        const sourceWithMap = candidates.find(c => hasValidMap(c)) as any | undefined;
+
+        // If we found a candidate with map, prefer it; otherwise fallback to original priority
+        const sourceLocation = sourceWithMap ?? (tempLocationCandidate ?? location ?? partnerLocationCandidate ?? destLocationCandidate);
         const reuseDestinationLocation = type === E_EventType.CLUB_VISIT && !!destLocationCandidate && !tempLocationCandidate && !location && !partnerLocationCandidate;
+
+        // For non-club events we require coordinates (map) so event shows on map
+        if (type !== E_EventType.CLUB_VISIT) {
+            if (!sourceWithMap) {
+            // no candidate with map -> error (client must supply coordinates or user/partner/temp/destination must have)
+            // This prevents creating locations without map for non-club events.
+                await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
+                throwError({
+                    message: 'Location coordinates are required for this event type. Please provide location.map with numeric latitude and longitude.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
 
         let finalLocationId: string | undefined;
         let locMapForRedirect: { latitude?: number; longitude?: number } | undefined;
 
         try {
             if (reuseDestinationLocation) {
-                finalLocationId = destLocationCandidate?.id;
-                locMapForRedirect = destLocationCandidate?.map;
+            // create a fresh EVENT location copied from destination so it has entityType === EVENT and includes map
+                const newLocDoc = {
+                    ...(destLocationCandidate?.map ? { map: destLocationCandidate.map } : {}),
+                    ...(destLocationCandidate?.address ? { address: destLocationCandidate.address } : {}),
+                    ...(destLocationCandidate?.countryId ? { countryId: destLocationCandidate.countryId } : {}),
+                    ...(destLocationCandidate?.cityId ? { cityId: destLocationCandidate.cityId } : {}),
+                    pinStyle: (destinationPinStyle as any) ?? mapEventTypeToPinStyle(type),
+                    entityType: E_LocationEntityType.EVENT,
+                    entityId: eventCreated.result.id,
+                };
+
+                const locationCreated = await locationCtr.createLocation(context, { doc: newLocDoc });
+                if (!locationCreated.success) {
+                    await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort */ });
+                    return locationCreated;
+                }
+                finalLocationId = locationCreated.result.id;
+                locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
             }
             else {
             // Always create a new location doc for this event (avoid reusing partner/user location)
+            // determine pinStyle: destinationPinStyle for CLUB_VISIT else mapEventTypeToPinStyle
+                let locationPinStyle: E_Event_PinStyle | E_Destination_PinStyle | undefined;
+                if (type === E_EventType.CLUB_VISIT) {
+                    locationPinStyle = destinationPinStyle ?? mapEventTypeToPinStyle(type);
+                }
+                else {
+                    locationPinStyle = mapEventTypeToPinStyle(type);
+                }
+
                 const locationDoc = sourceLocation
                     ? (() => {
                             const {
@@ -384,13 +440,15 @@ export const eventCtr = {
                             } = sourceLocation as any;
                             return {
                                 ...rest,
-                                pinStyle,
+                                // ensure we pass map if present; pinStyle may be destination-specific
+                                ...(hasValidMap(sourceLocation) ? { map: sourceLocation.map } : {}),
+                                pinStyle: (locationPinStyle as any),
                                 entityType: E_LocationEntityType.EVENT,
                                 entityId: eventCreated.result.id,
                             };
                         })()
                     : {
-                            pinStyle,
+                            pinStyle: (locationPinStyle as any),
                             entityType: E_LocationEntityType.EVENT,
                             entityId: eventCreated.result.id,
                         };
@@ -420,9 +478,9 @@ export const eventCtr = {
             let actorAvatarUrl: string | undefined;
             try {
                 const rawAvatar
-                = currentUser.partner1?.gallery?.url
-                    ?? currentUser.partner2?.gallery?.url
-                    ?? undefined;
+            = currentUser.partner1?.gallery?.url
+                ?? currentUser.partner2?.gallery?.url
+                ?? undefined;
                 if (rawAvatar) {
                     actorAvatarUrl = bunnyCtr.generateSignedUrl({
                         fullUrl: rawAvatar,
@@ -454,9 +512,6 @@ export const eventCtr = {
                 thumbnailUrl,
             } as const;
 
-            // prepare eventDescription once and reuse for all emails
-            // const eventDescription = safeSlice140(eventCreated.result.description ?? '');
-
             // Notify followers
             const followers = await followCtr.getFollowers(context, {
                 filter: { followId: currentUser.id },
@@ -487,40 +542,7 @@ export const eventCtr = {
                     }
                     catch { /* swallow */ }
 
-                    // email per recipient (respecting their setting)
-                    try {
-                        const recipientRes = await userCtr.getUser(context, {
-                            filter: { id: targetId },
-                            projection: 'id email settings.notification username',
-                        });
-
-                        if (recipientRes?.success && recipientRes.result) {
-                            // const recipient = recipientRes.result;
-                            // const targetEmail = recipient.email || '';
-                            // const wantsEmail = (recipient.settings?.notification?.followingPostAnnouncement) !== false;
-
-                            // if (wantsEmail && targetEmail) {
-                            //     try {
-                            //         validate.email.validate(targetEmail);
-
-                            //         const templateData = {
-                            //             email: targetEmail,
-                            //             account: currentUser.username ?? '',
-                            //             eventTitle: eventCreated.result.title ?? '',
-                            //             eventDescription, // always provided
-                            //         };
-
-                            //         await emailCtr.sendEmail(NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, targetEmail, templateData);
-                            //     }
-                            //     catch {
-                            //     /* ignore per-recipient email errors */
-                            //     }
-                            // }
-                        }
-                    }
-                    catch {
-                    /* ignore lookup/email errors to avoid breaking event creation */
-                    }
+                // email per recipient (respecting their setting) - left commented like original
                 }
             }
 
@@ -553,53 +575,20 @@ export const eventCtr = {
                         });
                     }
                     catch { /* swallow */ }
-
-                    // optional: send email (respecting their setting)
-                    try {
-                        const recipientRes = await userCtr.getUser(context, {
-                            filter: { id: u.id },
-                            projection: 'id email settings.notification username',
-                        });
-                        if (recipientRes?.success && recipientRes.result) {
-                            // const recipient = recipientRes.result;
-                            // const targetEmail = recipient.email || '';
-                            // const wantsEmail = (recipient.settings?.notification?.followingPostAnnouncement) !== false;
-
-                            // if (wantsEmail && targetEmail) {
-                            //     try {
-                            //         validate.email.validate(targetEmail);
-
-                            //         const templateData = {
-                            //             email: targetEmail,
-                            //             account: currentUser.username ?? '',
-                            //             eventTitle: eventCreated.result.title ?? '',
-                            //             eventDescription, // always provided
-                            //         };
-
-                            //         await emailCtr.sendEmail(NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, targetEmail, templateData);
-                            //     }
-                            //     catch {
-                            //     /* ignore per-recipient email errors */
-                            //     }
-                            // }
-                        }
-                    }
-                    catch {
-                    /* ignore */
-                    }
                 }
             }
 
-            // Link event với locationId (reuse for CLUB_VISIT or newly created for other types)
+            // Link event with locationId
             const updated = await mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: finalLocationId });
             return updated;
         }
         catch (err) {
-        // best-effort cleanup if something unexpected happens
+            // best-effort cleanup if something unexpected happens
             await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* ignore */ });
             throw err;
         }
     },
+
     updateEvent: async (
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateEvent>,
@@ -622,14 +611,22 @@ export const eventCtr = {
             const allowedPinStyle = mapEventTypeToPinStyle(effectiveType);
 
             let pinStyle = update.location.pinStyle;
-            if (pinStyle !== undefined && allowedPinStyle !== undefined && pinStyle !== allowedPinStyle) {
-                throwError({
-                    message: 'Invalid pinStyle for the selected event type',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
+
+            // For CLUB_VISIT we allow destination-specific pin styles (e.g. CLUB_BRONZE, RESORT_GOLD)
+            if (effectiveType !== E_EventType.CLUB_VISIT) {
+                if (pinStyle !== undefined && allowedPinStyle !== undefined && pinStyle !== allowedPinStyle) {
+                    throwError({
+                        message: 'Invalid pinStyle for the selected event type',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+                if (pinStyle === undefined) {
+                    pinStyle = allowedPinStyle;
+                }
             }
-            if (pinStyle === undefined) {
-                pinStyle = allowedPinStyle;
+            else {
+                // CLUB_VISIT: if caller provided pinStyle accept it; otherwise leave as-is so existing location pinStyle (likely from destination) remains.
+                // Optionally you could set a default here, but we preserve existing location pinStyle to avoid overwriting destination semantics.
             }
 
             const locationUpdated = await locationCtr.updateLocation(context, {

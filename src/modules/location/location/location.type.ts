@@ -28,6 +28,7 @@ export enum E_Event_PinStyle {
     EVENT_TRAVEL = 'EVENT_TRAVEL',
     EVENT_BOOTY_CALL = 'EVENT_BOOTY_CALL',
     EVENT_PRIVATE = 'EVENT_PRIVATE',
+    EVENT_CLUB = 'EVENT_CLUB'
 }
 
 export enum E_Destination_PinStyle {
