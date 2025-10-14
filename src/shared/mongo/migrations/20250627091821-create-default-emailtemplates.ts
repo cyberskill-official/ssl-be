@@ -5,7 +5,7 @@ import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/email-template.type.js';
 
-import { EMAIL_VERIFICATION, FORGOT_PASSWORD, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE } from '#modules/authn/authn.constant.js';
+import { EMAIL_VERIFICATION, FORGOT_PASSWORD, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, REPLY_FROM_ADMIN } from '#modules/authn/authn.constant.js';
 
 interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 }
@@ -84,6 +84,23 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         <hr/>
         <p>System Notification</p>`,
         variables: ['email', 'account', 'eventTitle', 'eventDescription'],
+    },
+    {
+        templateKey: REPLY_FROM_ADMIN,
+        name: 'Reply from Admin',
+        subject: '[Secret Swinger Lust] Reply from admin: <%= reply_subject %>',
+        content: `<h1>Hello <a href="mailto:<%= email %>" target="_blank" rel="noopener noreferrer"><%= email %></a>,</h1>
+        <blockquote style="border-left:4px solid #ddd;padding-left:12px;color:#333;">
+        <%= message %>
+        </blockquote>
+        <hr/>
+        <p>Admin Reply</p>`,
+        variables: [
+            'email',
+            'message',
+            'original_subject',
+            'reply_subject',
+        ],
     },
 ];
 export async function up(db: C_Db) {

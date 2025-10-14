@@ -6,6 +6,8 @@ import { pubsub } from '#shared/graphql/index.js';
 
 import type {
     I_ConversationEventPayload,
+    I_Input_AdminReplyGuest,
+    I_Input_ContactAdmin,
     I_Input_CreateConversation,
     I_Input_CreateGroupConversation,
     I_Input_DeleteGroupConversation,
@@ -43,6 +45,10 @@ const conversationResolver = {
             conversationCtr.deleteGroupConversation(context, args),
         markAllMessagesAsRead: (_parent: unknown, args: I_Input_MarkAllMessagesAsRead, context: I_Context) =>
             conversationCtr.markAllMessagesAsRead(context, args.conversationId),
+        contactAdmin: (_parent: unknown, args: { input: I_Input_ContactAdmin }, context: I_Context) =>
+            conversationCtr.contactAdmin(context, args.input),
+        adminReplyGuest: (_parent: unknown, args: { input: I_Input_AdminReplyGuest }, context: I_Context) =>
+            conversationCtr.adminReplyGuest(context, args.input),
     },
     Subscription: {
         messageSent: {

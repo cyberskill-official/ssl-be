@@ -47,6 +47,10 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
         lastMessageAt: {
             type: Date,
         },
+        // meta: {
+        //     type: mongoose.Schema.Types.Mixed,
+        //     default: {},
+        // },
     },
     virtuals: [
         {

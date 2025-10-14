@@ -13,11 +13,13 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
-import { E_Role_User } from '#modules/authz/role/index.js';
+import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
+import { emailCtr } from '#modules/email/email.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -27,11 +29,16 @@ import {
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
+import { validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
 import type {
+    E_ContactTopic,
+    I_ContactAdminResult,
     I_Conversation,
     I_ConversationEventPayload,
+    I_Input_AdminReplyGuest,
+    I_Input_ContactAdmin,
     I_Input_CreateConversation,
     I_Input_CreateGroupConversation,
     I_Input_DeleteGroupConversation,
@@ -39,14 +46,16 @@ import type {
     I_Input_QueryConversation,
     I_MessageReadPayload,
     I_MessageSentPayload,
+
     I_MessageSubscriptionFilter,
 } from './conversation.type.js';
 
 import { messageStatusCtr } from '../message-status/index.js';
-import { messageCtr } from '../message/index.js';
+import { E_MessageType, messageCtr } from '../message/index.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
 import { ConversationModel } from './conversation.model.js';
 import {
+    E_ContactAdminMode,
     E_CONVERSATION_EVENTS,
     E_ConversationAction,
     E_ConversationType,
@@ -54,6 +63,73 @@ import {
 import { classifyConversation, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140 } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
+
+const CONTACT_MESSAGE_MAX_LENGTH = 2000;
+const CONTACT_SUBJECT_MAX_LENGTH = 140;
+
+async function getAdminUsers(context: I_Context): Promise<I_User[]> {
+    const adminRole = await roleCtr.getRole(context, {
+        filter: { name: E_Role_Staff.ADMIN },
+    });
+
+    if (!adminRole.success) {
+        throwError({
+            message: 'Admin role not found in system',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    }
+
+    const admins = await userCtr.getUsers(context, {
+        filter: { rolesIds: adminRole.result.id },
+        options: {
+            pagination: false,
+            projection: { id: 1, email: 1, username: 1 },
+        },
+    });
+
+    if (!admins.success || !admins.result?.docs?.length) {
+        throwError({
+            message: 'No admin account found.',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    }
+
+    return admins.result.docs;
+}
+
+function buildSupportTextBlock(params: {
+    topic: E_ContactTopic;
+    name: string;
+    email: string;
+    subject?: string;
+    message: string;
+    extras: Record<string, unknown>;
+    attachmentIds?: string[];
+}): string {
+    const { topic, name, email, subject, message, extras, attachmentIds } = params;
+
+    const lines: string[] = [
+        `Topic: ${topic}`,
+        `Name: ${name}`,
+        `Email: ${email}`,
+    ];
+
+    if (subject)
+        lines.push(`Subject: ${subject}`);
+
+    for (const [key, value] of Object.entries(extras)) {
+        if (value === undefined || value === null || value === '')
+            continue;
+        lines.push(`${key}: ${value}`);
+    }
+
+    if (attachmentIds?.length)
+        lines.push(`Attachments: ${attachmentIds.join(', ')}`);
+
+    lines.push('', message);
+
+    return lines.join('\n');
+}
 
 export const conversationCtr = {
     getConversation: async (
@@ -192,6 +268,327 @@ export const conversationCtr = {
         }
 
         return conversationResult;
+    },
+
+    contactAdmin: async (
+        context: I_Context,
+        input: I_Input_ContactAdmin,
+    ): Promise<I_Return<I_ContactAdminResult>> => {
+        const { message, topic } = input;
+        if (!topic) {
+            throwError({
+                message: 'Contact topic is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const trimmedMessage = message?.trim();
+        if (!trimmedMessage) {
+            throwError({
+                message: 'Message is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const trimmedSubject = input.subject?.trim();
+        if (trimmedSubject && trimmedSubject.length > CONTACT_SUBJECT_MAX_LENGTH) {
+            throwError({
+                message: `Subject cannot exceed ${CONTACT_SUBJECT_MAX_LENGTH} characters.`,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        const normalizedSubject = trimmedSubject?.slice(0, CONTACT_SUBJECT_MAX_LENGTH);
+
+        const attachments = Array.isArray(input.attachmentIds)
+            ? input.attachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+            : [];
+
+        const metaExtras: Record<string, unknown> = {};
+        const displayExtras: Record<string, unknown> = {};
+
+        if (input.paymentDate) {
+            const paymentDate = input.paymentDate instanceof Date ? input.paymentDate.toISOString() : input.paymentDate;
+            metaExtras['paymentDate'] = paymentDate;
+            displayExtras['Payment date'] = paymentDate;
+        }
+        if (input.transactionId) {
+            metaExtras['transactionId'] = input.transactionId;
+            displayExtras['Transaction ID'] = input.transactionId;
+        }
+        if (input.issueType) {
+            metaExtras['issueType'] = input.issueType;
+            displayExtras['Issue type'] = input.issueType;
+        }
+        if (input.device) {
+            metaExtras['device'] = input.device;
+            displayExtras['Device'] = input.device;
+        }
+        if (input.profileLink) {
+            metaExtras['profileLink'] = input.profileLink;
+            displayExtras['Profile or link'] = input.profileLink;
+        }
+        if (input.companyName) {
+            metaExtras['companyName'] = input.companyName;
+            displayExtras['Company name'] = input.companyName;
+        }
+        if (input.requestType) {
+            metaExtras['requestType'] = input.requestType;
+            displayExtras['Request type'] = input.requestType;
+        }
+
+        let currentUser: I_User | null = null;
+        try {
+            currentUser = await authnCtr.getUserFromSession(context);
+        }
+        catch {
+            currentUser = null;
+        }
+
+        const normalizedEmail = (currentUser?.email ?? input.email ?? '').trim().toLowerCase();
+        if (!normalizedEmail) {
+            throwError({
+                message: 'Email is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        validate.email.validate(normalizedEmail);
+
+        const displayName = input.name?.trim() || currentUser?.username || 'Guest';
+        if (!currentUser?.id && (!input.name || !input.name.trim())) {
+            throwError({
+                message: 'Name is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const adminUsers = await getAdminUsers(context);
+        const primaryAdmin = adminUsers[0];
+
+        const supportTextBlock = buildSupportTextBlock({
+            topic,
+            name: displayName,
+            email: normalizedEmail,
+            subject: normalizedSubject,
+            message: trimmedMessage,
+            extras: displayExtras,
+            attachmentIds: attachments,
+        });
+
+        if (currentUser?.id) {
+            const conversationResult = await conversationCtr.createConversationInternal(context, {
+                doc: {
+                    type: E_ConversationType.PRIVATE,
+                    createdById: currentUser?.id,
+                    meta: {
+                        contactTopic: topic,
+                        contactEmail: normalizedEmail,
+                        contactName: displayName,
+                        contactSubject: normalizedSubject,
+                        attachmentIds: attachments,
+                        extras: metaExtras,
+                    },
+                },
+            });
+
+            if (!conversationResult.success || !conversationResult.result) {
+                throwError({
+                    message: conversationResult.message ?? 'Failed to create support conversation.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            const conversationId = conversationResult.result.id;
+
+            const participantDocs = adminUsers.map(admin => ({
+                conversationId,
+                userId: admin.id,
+                role: E_ParticipantRole.ADMIN,
+            }));
+
+            if (!participantDocs.some(doc => doc.userId === currentUser!.id)) {
+                participantDocs.push({
+                    conversationId,
+                    userId: currentUser.id,
+                    role: E_ParticipantRole.MEMBER,
+                });
+            }
+
+            await participantCtr.createParticipants(context, { docs: participantDocs });
+
+            const messageResult = await conversationCtr.sendMessage(context, conversationId, currentUser.id, {
+                type: E_MessageType.TEXT,
+                value: supportTextBlock,
+            });
+
+            if (!messageResult.success) {
+                throwError({
+                    message: messageResult.message ?? 'Failed to create support message.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            return {
+                success: true,
+                message: 'Support request sent via conversation.',
+                result: {
+                    mode: E_ContactAdminMode.CONVERSATION,
+                    conversationId,
+                    adminId: primaryAdmin?.id,
+                },
+            };
+        }
+
+        if (!primaryAdmin) {
+            throwError({
+                message: 'Support team is not configured.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const guestConversation = await conversationCtr.createConversationInternal(context, {
+            doc: {
+                type: E_ConversationType.PRIVATE,
+                createdById: primaryAdmin.id,
+                meta: {
+                    contactTopic: topic,
+                    contactEmail: normalizedEmail,
+                    contactName: displayName,
+                    contactSubject: normalizedSubject,
+                    attachmentIds: attachments,
+                    extras: metaExtras,
+                },
+            },
+        });
+
+        if (!guestConversation.success || !guestConversation.result) {
+            throwError({
+                message: guestConversation.message ?? 'Failed to create support conversation.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const guestConversationId = guestConversation.result.id;
+
+        await participantCtr.createParticipants(context, {
+            docs: adminUsers.map(admin => ({
+                conversationId: guestConversationId,
+                userId: admin.id,
+                role: E_ParticipantRole.ADMIN,
+            })),
+        });
+
+        const guestMessageText = [
+            `Guest support request from ${displayName} <${normalizedEmail}>`,
+            normalizedSubject ? `Subject: ${normalizedSubject}` : undefined,
+            '',
+            supportTextBlock,
+        ]
+            .filter(Boolean)
+            .join('\n');
+
+        const guestMessageResult = await messageCtr.createMessageOnly(context, {
+            doc: {
+                conversationId: guestConversationId,
+                senderId: primaryAdmin.id,
+                content: {
+                    type: E_MessageType.TEXT,
+                    value: guestMessageText,
+                },
+            },
+        });
+
+        if (!guestMessageResult.success || !guestMessageResult.result) {
+            throwError({
+                message: guestMessageResult.message ?? 'Failed to record support message.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        await conversationCtr._updateLastMessageId(guestConversationId, guestMessageResult.result.id);
+
+        return {
+            success: true,
+            message: 'Support request recorded for admins.',
+            result: {
+                mode: E_ContactAdminMode.EMAIL,
+                adminId: primaryAdmin.id,
+                conversationId: guestConversationId,
+            },
+        };
+    },
+
+    adminReplyGuest: async (
+        context: I_Context,
+        input: I_Input_AdminReplyGuest,
+    ): Promise<I_Return<boolean>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+
+        if (!isAdmin) {
+            throwError({
+                message: 'Only admins can reply to guest messages.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const normalizedEmail = input.email.trim().toLowerCase();
+        validate.email.validate(normalizedEmail);
+
+        const trimmedMessage = input.message.trim();
+        if (!trimmedMessage) {
+            throwError({
+                message: 'Message is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (trimmedMessage.length > CONTACT_MESSAGE_MAX_LENGTH) {
+            throwError({
+                message: `Message cannot exceed ${CONTACT_MESSAGE_MAX_LENGTH} characters.`,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const trimmedSubject = input.replySubject.trim();
+        if (!trimmedSubject) {
+            throwError({
+                message: 'Reply subject is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (trimmedSubject.length > CONTACT_SUBJECT_MAX_LENGTH) {
+            throwError({
+                message: `Reply subject cannot exceed ${CONTACT_SUBJECT_MAX_LENGTH} characters.`,
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const replySubject = trimmedSubject.slice(0, CONTACT_SUBJECT_MAX_LENGTH);
+
+        const sendResult = await emailCtr.sendEmail(
+            REPLY_FROM_ADMIN,
+            normalizedEmail,
+            {
+                email: normalizedEmail,
+                message: trimmedMessage,
+                reply_subject: replySubject,
+                original_subject: input.originalSubject ?? '',
+            },
+            replySubject,
+        );
+
+        if (!sendResult.success) {
+            throwError({
+                message: sendResult.message ?? 'Failed to send reply email.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        return {
+            success: true,
+            message: 'Reply sent to guest.',
+            result: true,
+        };
     },
 
     createGroupConversation: async (

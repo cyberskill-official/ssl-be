@@ -4,6 +4,7 @@ export const NEW_FOLLOWER = 'new-follower';
 export const NEW_MESSAGE = 'new-message';
 export const NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST = 'new-member-join-in-your-area-interest';
 export const NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY = 'new-announcement-followed-or-nearby';
+export const REPLY_FROM_ADMIN = 'reply-from-admin';
 export const TOKEN_EXPIRES = '30d'; // 30 days
 export const GUARDIAN_VISIT_TOKEN_EXPIRES = '60m'; // 60 minutes
 export const VERIFICATION_EXPIRES = {

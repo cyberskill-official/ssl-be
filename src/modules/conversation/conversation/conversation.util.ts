@@ -1,6 +1,6 @@
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 
-import type { I_Conversation } from './index.js';
+import type { I_Conversation, I_ConversationMeta } from './index.js';
 
 import { E_ConversationType } from './index.js';
 
@@ -60,7 +60,11 @@ export function isOpenPublicThread(c: I_Conversation): boolean {
         = c?.type === E_ConversationType.GROUP
             && (((c?.participants?.length ?? 0) <= 1) || nameIsProfile(c?.name) || nameIsBlog(c?.name));
 
-    return isProfileOpen || isBlogOpen || isGroupOpen;
+    const isDestinationOpen
+        = c?.type === E_ConversationType.DESTINATION_COMMENT
+            || (typeof c?.name === 'string' && c.name.startsWith('destination:'));
+
+    return isProfileOpen || isBlogOpen || isGroupOpen || isDestinationOpen;
 }
 
 /**
@@ -75,7 +79,12 @@ export function classifyConversation(c: I_Conversation): {
     redirectKind: E_RedirectType;
 } {
     const memberCount = (c.participants?.filter(p => !!p.userId).length) ?? 0;
-    const isPublic = isOpenPublicThread(c);
+    const meta = (c.meta ?? {}) as I_ConversationMeta;
+    const destinationId = meta.destinationId ?? (c.type === E_ConversationType.DESTINATION_COMMENT ? c.entityId : undefined);
+    const destinationOwnerId = meta.destinationOwnerId;
+
+    const isDestinationContext = c?.type === E_ConversationType.DESTINATION_COMMENT || Boolean(destinationId);
+    const isPublic = isOpenPublicThread(c) || isDestinationContext;
 
     const profileFromName = nameIsProfile(c?.name)
         ? String(c.name).slice('profile:'.length)
@@ -86,7 +95,7 @@ export function classifyConversation(c: I_Conversation): {
 
     // Chủ thể cho profile
     const profileOwnerId: string | undefined
-        = c.profileOwnerId ?? c.entityId ?? profileFromName;
+        = c.profileOwnerId ?? meta.profileOwnerId ?? c.entityId ?? profileFromName;
 
     // Chủ thể cho blog
     const blogId: string | undefined
@@ -101,22 +110,35 @@ export function classifyConversation(c: I_Conversation): {
             || Boolean(blogFromName);
 
     // Redirect cho public (blog hoặc profile)
-    const redirectKindPublic: E_RedirectType = isBlogContext
-        ? ((E_RedirectType as Record<string, E_RedirectType>)['BLOG']
+    let redirectKindPublic: E_RedirectType;
+    if (isDestinationContext) {
+        redirectKindPublic = E_RedirectType.DESTINATION;
+    }
+    else if (isBlogContext) {
+        redirectKindPublic = (E_RedirectType as Record<string, E_RedirectType>)['BLOG']
             ?? E_RedirectType.PROFILE
-            ?? E_RedirectType.CONVERSATION)
-        : (E_RedirectType.PROFILE ?? E_RedirectType.CONVERSATION);
+            ?? E_RedirectType.CONVERSATION;
+    }
+    else {
+        redirectKindPublic = E_RedirectType.PROFILE ?? E_RedirectType.CONVERSATION;
+    }
 
     const redirectKind: E_RedirectType = isPublic
         ? redirectKindPublic
         : E_RedirectType.CONVERSATION;
 
     // Đích public: blogId (blog) hoặc profileOwnerId (profile)
-    const publicTargetId = isBlogContext ? blogId : profileOwnerId;
+    const publicTargetId = isDestinationContext
+        ? (destinationOwnerId ?? destinationId)
+        : (isBlogContext ? blogId : profileOwnerId);
 
     const notifType: E_NotificationType = isPublic
         ? E_NotificationType.GUESTBOOK_POST
         : E_NotificationType.NEW_MESSAGE;
 
-    return { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind };
+    const resolvedProfileOwnerId = isDestinationContext
+        ? (destinationOwnerId ?? profileOwnerId)
+        : profileOwnerId;
+
+    return { isPublic, notifType, memberCount, profileOwnerId: resolvedProfileOwnerId, publicTargetId, redirectKind };
 }

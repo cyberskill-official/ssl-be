@@ -8,6 +8,15 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Message, I_MessageContent } from '../message/message.type.js';
 import type { I_Participant } from '../participant/participant.type.js';
 
+export enum E_ContactTopic {
+    BILLING_MEMBERSHIP = 'BILLING_MEMBERSHIP',
+    TECHNICAL_ACCOUNT = 'TECHNICAL_ACCOUNT',
+    CONTENT_MODERATION = 'CONTENT_MODERATION',
+    CLUB_EVENT = 'CLUB_EVENT',
+    LEGAL_COMPLIANCE = 'LEGAL_COMPLIANCE',
+    GENERAL_FEEDBACK = 'GENERAL_FEEDBACK',
+}
+
 export enum E_ConversationType {
     PRIVATE = 'PRIVATE',
     GROUP = 'GROUP',
@@ -15,6 +24,11 @@ export enum E_ConversationType {
     BLOG_COMMENT = 'BLOG_COMMENT',
     DESTINATION_COMMENT = 'DESTINATION_COMMENT',
     ADMIN_BROADCAST = 'ADMIN_BROADCAST',
+}
+
+export enum E_ContactAdminMode {
+    CONVERSATION = 'CONVERSATION',
+    EMAIL = 'EMAIL',
 }
 
 // Conversation Subscription Events
@@ -50,6 +64,18 @@ export enum E_ConversationAction {
     DELETED = 'DELETED',
 }
 
+export interface I_ConversationMeta {
+    profileOwnerId?: string;
+    destinationId?: string;
+    destinationOwnerId?: string;
+    contactTopic?: E_ContactTopic;
+    contactEmail?: string;
+    contactName?: string;
+    contactSubject?: string;
+    attachmentIds?: string[];
+    extras?: Record<string, unknown>;
+}
+
 export interface I_Conversation extends I_GenericDocument {
     type?: E_ConversationType;
     name?: string;
@@ -64,7 +90,7 @@ export interface I_Conversation extends I_GenericDocument {
     lastMessageAt?: Date;
     profileOwnerId?: string;
     ownerId?: string;
-    meta?: { profileOwnerId?: string };
+    meta?: I_ConversationMeta | null;
 }
 
 export interface I_BroadcastResult {
@@ -104,6 +130,29 @@ export interface I_Input_DeleteGroupConversation {
     conversationId: string;
 }
 
+export interface I_Input_ContactAdmin {
+    topic: E_ContactTopic;
+    name: string;
+    email?: string;
+    subject?: string;
+    message: string;
+    attachmentIds?: string[];
+    paymentDate?: Date;
+    transactionId?: string;
+    issueType?: string;
+    device?: string;
+    profileLink?: string;
+    companyName?: string;
+    requestType?: string;
+}
+
+export interface I_Input_AdminReplyGuest {
+    email: string;
+    replySubject: string;
+    message: string;
+    originalSubject?: string;
+}
+
 export interface I_MessageSentPayload {
     conversation: I_Conversation;
 }
@@ -131,4 +180,10 @@ export interface I_ConversationEventPayload {
 // Subscription filter types
 export interface I_MessageSubscriptionFilter {
     conversationId?: string;
+}
+
+export interface I_ContactAdminResult {
+    mode: E_ContactAdminMode;
+    conversationId?: string;
+    adminId?: string;
 }
