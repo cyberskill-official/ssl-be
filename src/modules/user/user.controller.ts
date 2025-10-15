@@ -126,7 +126,11 @@ export const userCtr = {
 
         let effectiveFilter;
         if (isAdmin) {
-            effectiveFilter = computedFilter as any;
+            // Admin xem tất cả - loại bỏ các filter về isDel và isAdminBlocked từ frontend
+            const adminFilter = { ...computedFilter };
+            delete adminFilter['isDel'];
+            delete adminFilter['isAdminBlocked'];
+            effectiveFilter = adminFilter;
         }
         else {
             const userBaseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
