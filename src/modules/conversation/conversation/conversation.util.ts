@@ -2,7 +2,7 @@ import { E_NotificationType, E_RedirectType } from '#modules/notification/notifi
 
 import type { I_Conversation, I_ConversationMeta } from './index.js';
 
-import { E_ConversationType } from './index.js';
+import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './index.js';
 
 /**
  * Kiểm tra người dùng có trong cuộc trò chuyện riêng không
@@ -65,6 +65,46 @@ export function isOpenPublicThread(c: I_Conversation): boolean {
             || (typeof c?.name === 'string' && c.name.startsWith('destination:'));
 
     return isProfileOpen || isBlogOpen || isGroupOpen || isDestinationOpen;
+}
+/**
+ * Xác định type cho topic admin contact
+ */
+
+export function getRequestTypesByTopic(): Record<E_ContactTopic, readonly string[]> {
+    return {
+        [E_ContactTopic.TECHNICAL_ACCOUNT]: Object.values(E_ContactTechnicalAccountType),
+        [E_ContactTopic.BILLING_MEMBERSHIP]: Object.values(E_ContactBillingMembershipType),
+        [E_ContactTopic.CONTENT_MODERATION]: Object.values(E_ContactContentModerationType),
+        [E_ContactTopic.CLUB_EVENT]: Object.values(E_ContactClubEventType),
+        [E_ContactTopic.LEGAL_COMPLIANCE]: Object.values(E_ContactLegalComplianceType),
+        [E_ContactTopic.GENERAL_FEEDBACK]: Object.values(E_ContactGeneralFeedbackType),
+    };
+}
+
+export function buildSupportTextBlock(params: {
+    topic: E_ContactTopic;
+    username: string;
+    email: string;
+    message: string;
+    extras: Record<string, unknown>;
+}): string {
+    const { topic, username, email, message, extras } = params;
+
+    const lines: string[] = [
+        `Topic: ${topic}`,
+        `Name: ${username}`,
+        `Email: ${email}`,
+    ];
+
+    for (const [key, value] of Object.entries(extras)) {
+        if (value === undefined || value === null || value === '')
+            continue;
+        lines.push(`${key}: ${value}`);
+    }
+
+    lines.push('', message);
+
+    return lines.join('\n');
 }
 
 /**

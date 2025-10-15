@@ -8,17 +8,52 @@ enum E_ConversationType {
 }
 
 enum E_ContactTopic {
-    BILLING_MEMBERSHIP
     TECHNICAL_ACCOUNT
+    BILLING_MEMBERSHIP
     CONTENT_MODERATION
     CLUB_EVENT
     LEGAL_COMPLIANCE
     GENERAL_FEEDBACK
 }
 
-enum E_ContactAdminMode {
-    CONVERSATION
-    EMAIL
+enum E_ContactAdminType {
+    #Technical account
+    LOGIN_OR_ACCESS_PROBLEM 
+    PROFILE_VERIFICATION_ID_CHECK_UPLOADING 
+    PHOTO_OR_VIDEO_UPLOAD_ISSUES 
+    TECHNICAL_BUG_OR_ERROR_ON_THE_SITE 
+    #Billing membership
+    MEMBERSHIP_UPGRADE_DOWGRADE 
+    SUBSCRIPTION_OR_PAYMENT_ISSUE 
+    BILLING_OR_REFUND_INQUIRY
+    PAYMENT_METHOD_OR_CARD_DECLINE 
+    PROMO_CODE_OR_DISCOUNT_PROBLEM 
+    #Content moderation
+    REPORT_INAPPROPRIATE_CONTENT 
+    REPORT_FAKE_OR_SUSPICIOUS_PROFILE 
+    REQUEST_CONTENT_REMOVAL
+    QUESTIONS_ABOUT_AI_MODERATION_RULES 
+    #Club event
+    REPORT_EXPIRED_OR_INCORRECT_CLUB_INFORMATION
+    SUGGEST_A_NEW_CLUB_OR_RESORT
+    PROBLEMS_WITH_ANNOUNCEMENTS 
+    #Legal compliance
+    TERMS_OF_USE_PRIVACY_POLICY_QUESTIONS
+    DATA_ACCESS_OR_DELETION_REQUEST_GDPR 
+    REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY 
+    #General feedback
+    FEEDBACK_ON_DESIGN_OR_USABILITY
+    FEATURE_SUGGESTION 
+    COLLABORATION_PARTNERSHIP_INQUIRY 
+    PRESS_OR_MEDIA_REQUEST 
+
+    OTHER
+}
+
+enum E_Device {
+    DESKTOP 
+    MOBILE 
+    TABLET
 }
 
 union U_ConversationEntity = T_User | T_Blog | T_Destination
@@ -38,6 +73,21 @@ type T_Conversation {
     entity: U_ConversationEntity
     participants: [T_Participant]
     meta: JSON
+    contact: T_ContactAdmin
+}
+
+type T_ContactAdmin {
+    topic: E_ContactTopic!
+    username: String!
+    email: String!
+    requestType: E_ContactAdminType
+    device: E_Device
+    message: String!
+    image: String
+    paymentDate: DateTime
+    transactionId: String
+    profileLink: String
+    companyName: String
 }
 
 type T_BroadcastResult {
@@ -52,9 +102,7 @@ type T_Response_BroadcastResult {
 }
 
 type T_ContactAdminResult {
-    mode: E_ContactAdminMode
     conversationId: String
-    adminId: String
 }
 
 type T_Response_ContactAdmin {
@@ -84,7 +132,7 @@ input Input_QueryConversation {
 input Input_CreateConversation {
     type: E_ConversationType!
     name: String
-    createdById: String!
+    createdById: String
     lastMessageId: String
     entityId: String
     entityType: E_ConversationType
@@ -96,25 +144,24 @@ input Input_CreateGroupConversation {
 
 input Input_ContactAdmin {
     topic: E_ContactTopic!
-    name: String!
-    email: String
-    subject: String
+    username: String!
+    email: String!
+    requestType: E_ContactAdminType
+    device: E_Device
     message: String!
-    attachmentIds: [String!]
+    image: String
     paymentDate: DateTime
     transactionId: String
-    issueType: String
-    device: String
     profileLink: String
     companyName: String
-    requestType: String
 }
 
 input Input_AdminReplyGuest {
+    conversationId: String
     email: String!
-    replySubject: String!
+    topic: E_ContactTopic!
+    requestType: E_ContactAdminType
     message: String!
-    originalSubject: String
 }
 
 input Input_UpdateConversation {
