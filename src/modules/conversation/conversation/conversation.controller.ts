@@ -33,12 +33,11 @@ import { validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
 import type {
-    E_ContactTopic,
+    I_ContactAdmin,
     I_ContactAdminResult,
     I_Conversation,
     I_ConversationEventPayload,
     I_Input_AdminReplyGuest,
-    I_Input_ContactAdmin,
     I_Input_CreateConversation,
     I_Input_CreateGroupConversation,
     I_Input_DeleteGroupConversation,
@@ -46,7 +45,6 @@ import type {
     I_Input_QueryConversation,
     I_MessageReadPayload,
     I_MessageSentPayload,
-
     I_MessageSubscriptionFilter,
 } from './conversation.type.js';
 
@@ -55,17 +53,124 @@ import { E_MessageType, messageCtr } from '../message/index.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
 import { ConversationModel } from './conversation.model.js';
 import {
-    E_ContactAdminMode,
     E_CONVERSATION_EVENTS,
     E_ConversationAction,
     E_ConversationType,
 } from './conversation.type.js';
-import { classifyConversation, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140 } from './conversation.util.js';
+import { buildSupportTextBlock, classifyConversation, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140 } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
 
-const CONTACT_MESSAGE_MAX_LENGTH = 2000;
-const CONTACT_SUBJECT_MAX_LENGTH = 140;
+// types (add near top of file)
+type T_ContactSource = 'createdBy' | 'lastMessage' | 'participant' | 'guest' | 'admin_fallback' | 'none';
+
+export interface I_ResolvedContact {
+    source: T_ContactSource;
+    // populated registered user, if resolved from user
+    user?: I_User;
+    // guest-provided contact information (conversation.contact)
+    guest?: I_ContactAdmin;
+    // admin fallback (first admin)
+    admin?: I_User;
+}
+
+async function resolveConversationContact(
+    context: I_Context,
+    conversationIdOrDoc: string | I_Conversation,
+): Promise<I_ResolvedContact> {
+    // ensure we have populated conversation (lastMessage, participants)
+    let conversation: I_Conversation | undefined;
+    if (typeof conversationIdOrDoc === 'string') {
+        const convRes = await mongooseCtr.findOne(
+            { id: conversationIdOrDoc },
+            undefined,
+            { populate: ['lastMessage', 'participants'] },
+        );
+        if (!convRes.success || !convRes.result) {
+            return { source: 'none' };
+        }
+        conversation = convRes.result;
+    }
+    else {
+        conversation = conversationIdOrDoc;
+        // ensure populated
+        if (!conversation.lastMessage || !Array.isArray(conversation.participants)) {
+            const convRes = await mongooseCtr.findOne(
+                { id: conversation.id },
+                undefined,
+                { populate: ['lastMessage', 'participants'] },
+            );
+            if (convRes.success && convRes.result)
+                conversation = convRes.result;
+        }
+    }
+
+    // get admin fallback
+    let admins: I_User[] = [];
+    try {
+        admins = await getAdminUsers(context);
+    }
+    catch {
+        admins = [];
+    }
+    const primaryAdmin = admins?.[0];
+
+    // 1) createdById -> user
+    if (conversation.createdById) {
+        try {
+            const uRes = await userCtr.getUser(context, { filter: { id: conversation.createdById }, projection: 'id email username' });
+            if (uRes.success && uRes.result) {
+                return { source: 'createdBy', user: uRes.result, admin: primaryAdmin };
+            }
+        }
+        catch { /* ignore */ }
+    }
+
+    // 2) guest contact: prefer contactAdmin, fallback to legacy contact -> guest + admin fallback
+    const guestInfo = (conversation).contactAdmin;
+    if (guestInfo) {
+        return { source: 'guest', guest: guestInfo as I_ContactAdmin, admin: primaryAdmin };
+    }
+
+    // 3) lastMessage.senderId -> user
+    if (conversation.lastMessage?.senderId) {
+        try {
+            const uRes = await userCtr.getUser(context, { filter: { id: conversation.lastMessage.senderId }, projection: 'id email username' });
+            if (uRes.success && uRes.result) {
+                return { source: 'lastMessage', user: uRes.result, admin: primaryAdmin };
+            }
+        }
+        catch { /* ignore */ }
+    }
+
+    // 4) participants -> first participant user
+    if (Array.isArray(conversation.participants) && conversation.participants.length) {
+        for (const p of conversation.participants) {
+            // if participant.user is already populated
+            if (p?.user && (p.user as I_User).id) {
+                return { source: 'participant', user: p.user as I_User, admin: primaryAdmin };
+            }
+            // else fetch by userId if available
+            if (p?.userId) {
+                try {
+                    const uRes = await userCtr.getUser(context, { filter: { id: p.userId }, projection: 'id email username' });
+                    if (uRes.success && uRes.result) {
+                        return { source: 'participant', user: uRes.result, admin: primaryAdmin };
+                    }
+                }
+                catch { /* ignore */ }
+            }
+        }
+    }
+
+    // 5) admin fallback
+    if (primaryAdmin) {
+        return { source: 'admin_fallback', admin: primaryAdmin };
+    }
+
+    // none
+    return { source: 'none' };
+}
 
 async function getAdminUsers(context: I_Context): Promise<I_User[]> {
     const adminRole = await roleCtr.getRole(context, {
@@ -97,53 +202,60 @@ async function getAdminUsers(context: I_Context): Promise<I_User[]> {
     return admins.result.docs;
 }
 
-function buildSupportTextBlock(params: {
-    topic: E_ContactTopic;
-    name: string;
-    email: string;
-    subject?: string;
-    message: string;
-    extras: Record<string, unknown>;
-    attachmentIds?: string[];
-}): string {
-    const { topic, name, email, subject, message, extras, attachmentIds } = params;
-
-    const lines: string[] = [
-        `Topic: ${topic}`,
-        `Name: ${name}`,
-        `Email: ${email}`,
-    ];
-
-    if (subject)
-        lines.push(`Subject: ${subject}`);
-
-    for (const [key, value] of Object.entries(extras)) {
-        if (value === undefined || value === null || value === '')
-            continue;
-        lines.push(`${key}: ${value}`);
-    }
-
-    if (attachmentIds?.length)
-        lines.push(`Attachments: ${attachmentIds.join(', ')}`);
-
-    lines.push('', message);
-
-    return lines.join('\n');
-}
-
 export const conversationCtr = {
+// replace existing getConversation with this version
     getConversation: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryConversation>,
-    ): Promise<I_Return<I_Conversation>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+    ): Promise<I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>> => {
+        // load conversation as before
+        const convRes = await mongooseCtr.findOne(filter, projection, options, populate);
+        if (!convRes.success || !convRes.result) {
+            return convRes as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
+        }
+
+        // resolve contact (safe, non-blocking: still awaited)
+        try {
+            const resolved = await resolveConversationContact(context, convRes.result);
+            const out = { ...convRes.result, resolvedContact: resolved };
+            return { success: true, message: convRes.message, result: out };
+        }
+        catch {
+            // if resolving fails, return original result without resolvedContact
+            return convRes as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
+        }
     },
 
+    // replace existing getConversations (paging) with this version
     getConversations: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryConversation>,
-    ): Promise<I_Return<T_PaginateResult<I_Conversation>>> => {
-        return mongooseCtr.findPaging(filter, options);
+    ): Promise<I_Return<T_PaginateResult<I_Conversation & { resolvedContact?: I_ResolvedContact }>>> => {
+        const res = await mongooseCtr.findPaging(filter, options);
+        if (!res.success || !res.result)
+            return res as any;
+
+        const docs = res.result.docs || [];
+
+        // resolve contacts in parallel (bounded)
+        const resolvedPromises = docs.map(async (doc) => {
+            try {
+                const resolved = await resolveConversationContact(context, doc);
+                return { ...doc, resolvedContact: resolved };
+            }
+            catch {
+                return doc;
+            }
+        });
+
+        const resolvedDocs = await Promise.all(resolvedPromises);
+
+        const out: T_PaginateResult<I_Conversation & { resolvedContact?: I_ResolvedContact }> = {
+            ...res.result,
+            docs: resolvedDocs,
+        };
+
+        return { success: true, message: res.message, result: out };
     },
 
     getMyPrivateConversations: async (
@@ -272,121 +384,123 @@ export const conversationCtr = {
 
     contactAdmin: async (
         context: I_Context,
-        input: I_Input_ContactAdmin,
+        input: I_ContactAdmin,
     ): Promise<I_Return<I_ContactAdminResult>> => {
-        const { message, topic } = input;
+        const {
+            message,
+            topic,
+            requestType,
+            device,
+            paymentDate,
+            transactionId,
+            profileLink,
+            companyName,
+            username: inputName,
+            image,
+            email: inputEmail,
+        } = input;
+
         if (!topic) {
-            throwError({
-                message: 'Contact topic is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Contact topic is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const trimmedMessage = message?.trim();
-        if (!trimmedMessage) {
-            throwError({
-                message: 'Message is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+        const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+        const imageRef = typeof image === 'string' ? image.trim() : '';
+
+        // validate requestType if provided
+        let validatedRequestType: I_ContactAdmin['requestType'] | undefined;
+        if (requestType) {
+            const allowedTypes = getRequestTypesByTopic()[topic];
+            if (!allowedTypes || !allowedTypes.includes(requestType)) {
+                throwError({ message: 'Request type is not valid for the selected topic.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+            validatedRequestType = requestType as I_ContactAdmin['requestType'];
         }
 
-        const trimmedSubject = input.subject?.trim();
-        if (trimmedSubject && trimmedSubject.length > CONTACT_SUBJECT_MAX_LENGTH) {
-            throwError({
-                message: `Subject cannot exceed ${CONTACT_SUBJECT_MAX_LENGTH} characters.`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        const normalizedSubject = trimmedSubject?.slice(0, CONTACT_SUBJECT_MAX_LENGTH);
-
-        const attachments = Array.isArray(input.attachmentIds)
-            ? input.attachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-            : [];
-
-        const metaExtras: Record<string, unknown> = {};
-        const displayExtras: Record<string, unknown> = {};
-
-        if (input.paymentDate) {
-            const paymentDate = input.paymentDate instanceof Date ? input.paymentDate.toISOString() : input.paymentDate;
-            metaExtras['paymentDate'] = paymentDate;
-            displayExtras['Payment date'] = paymentDate;
-        }
-        if (input.transactionId) {
-            metaExtras['transactionId'] = input.transactionId;
-            displayExtras['Transaction ID'] = input.transactionId;
-        }
-        if (input.issueType) {
-            metaExtras['issueType'] = input.issueType;
-            displayExtras['Issue type'] = input.issueType;
-        }
-        if (input.device) {
-            metaExtras['device'] = input.device;
-            displayExtras['Device'] = input.device;
-        }
-        if (input.profileLink) {
-            metaExtras['profileLink'] = input.profileLink;
-            displayExtras['Profile or link'] = input.profileLink;
-        }
-        if (input.companyName) {
-            metaExtras['companyName'] = input.companyName;
-            displayExtras['Company name'] = input.companyName;
-        }
-        if (input.requestType) {
-            metaExtras['requestType'] = input.requestType;
-            displayExtras['Request type'] = input.requestType;
-        }
-
+        // try current user
         let currentUser: I_User | null = null;
         try {
             currentUser = await authnCtr.getUserFromSession(context);
         }
-        catch {
-            currentUser = null;
-        }
+        catch { currentUser = null; }
 
-        const normalizedEmail = (currentUser?.email ?? input.email ?? '').trim().toLowerCase();
-        if (!normalizedEmail) {
-            throwError({
-                message: 'Email is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        validate.email.validate(normalizedEmail);
+        // name required: prefer provided username, fallback to session username
+        const finalName = (inputName && inputName.trim()) || currentUser?.username;
 
-        const displayName = input.name?.trim() || currentUser?.username || 'Guest';
-        if (!currentUser?.id && (!input.name || !input.name.trim())) {
+        if (!finalName) {
             throwError({
                 message: 'Name is required.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
+        // email required: prefer session email
+        const normalizedEmail = (currentUser?.email ?? inputEmail ?? '').trim().toLowerCase();
+
+        if (!normalizedEmail) {
+            throwError({
+                message: 'Email is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        try {
+            validate.email.validate(normalizedEmail);
+        }
+        catch {
+            throwError({
+                message: 'Email is invalid.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const contactTyped: I_ContactAdmin = {
+            topic,
+            username: finalName,
+            email: normalizedEmail,
+            requestType: validatedRequestType,
+            device,
+            message: trimmedMessage,
+            image: imageRef,
+            paymentDate: paymentDate ? (paymentDate instanceof Date ? paymentDate : new Date(paymentDate)) : undefined,
+            transactionId: transactionId || undefined,
+            profileLink: profileLink || undefined,
+            companyName: companyName || undefined,
+        };
+
+        // ensure admin users exist
         const adminUsers = await getAdminUsers(context);
+        if (!Array.isArray(adminUsers) || adminUsers.length === 0) {
+            throwError({
+                message: 'Support team is not configured.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
         const primaryAdmin = adminUsers[0];
 
         const supportTextBlock = buildSupportTextBlock({
             topic,
-            name: displayName,
-            email: normalizedEmail,
-            subject: normalizedSubject,
+            username: contactTyped.username,
+            email: contactTyped.email ?? '',
             message: trimmedMessage,
-            extras: displayExtras,
-            attachmentIds: attachments,
+            extras: {
+                'Request type': validatedRequestType ?? '',
+                'Device': device ?? '',
+                'Payment date': contactTyped.paymentDate ? (contactTyped.paymentDate instanceof Date ? contactTyped.paymentDate.toISOString() : String(contactTyped.paymentDate)) : '',
+                'Transaction ID': transactionId ?? '',
+                'Profile or link': profileLink ?? '',
+                'Company name': companyName ?? '',
+                'Image': imageRef || '',
+            },
         });
 
+        // --- logged-in user flow ---
         if (currentUser?.id) {
             const conversationResult = await conversationCtr.createConversationInternal(context, {
                 doc: {
                     type: E_ConversationType.PRIVATE,
-                    createdById: currentUser?.id,
-                    meta: {
-                        contactTopic: topic,
-                        contactEmail: normalizedEmail,
-                        contactName: displayName,
-                        contactSubject: normalizedSubject,
-                        attachmentIds: attachments,
-                        extras: metaExtras,
-                    },
+                    createdById: currentUser.id,
+                    contactAdmin: contactTyped,
                 },
             });
 
@@ -399,64 +513,50 @@ export const conversationCtr = {
 
             const conversationId = conversationResult.result.id;
 
-            const participantDocs = adminUsers.map(admin => ({
-                conversationId,
-                userId: admin.id,
-                role: E_ParticipantRole.ADMIN,
-            }));
+            // participants: admins + current user (if not already admin)
+            const participantDocs = adminUsers.map(admin => ({ conversationId, userId: admin.id, role: E_ParticipantRole.ADMIN }));
 
-            if (!participantDocs.some(doc => doc.userId === currentUser!.id)) {
-                participantDocs.push({
-                    conversationId,
-                    userId: currentUser.id,
-                    role: E_ParticipantRole.MEMBER,
+            if (!participantDocs.some(d => d.userId === currentUser.id)) {
+                participantDocs.push({ conversationId, userId: currentUser.id, role: E_ParticipantRole.MEMBER });
+            }
+
+            const pRes = await participantCtr.createParticipants(context, { docs: participantDocs });
+            if (!pRes.success) {
+                // cleanup
+                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => {});
+
+                throwError({
+                    message: pRes.message ?? 'Failed to create conversation participants.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                 });
             }
 
-            await participantCtr.createParticipants(context, { docs: participantDocs });
-
+            // send initial message from currentUser
             const messageResult = await conversationCtr.sendMessage(context, conversationId, currentUser.id, {
                 type: E_MessageType.TEXT,
                 value: supportTextBlock,
             });
 
             if (!messageResult.success) {
+                // rollback
+                await participantCtr.deleteParticipants(context, { filter: { conversationId } }).catch(() => {});
+                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => {});
+
                 throwError({
                     message: messageResult.message ?? 'Failed to create support message.',
                     status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                 });
             }
 
-            return {
-                success: true,
-                message: 'Support request sent via conversation.',
-                result: {
-                    mode: E_ContactAdminMode.CONVERSATION,
-                    conversationId,
-                    adminId: primaryAdmin?.id,
-                },
-            };
+            return { success: true, message: 'Support request sent via conversation.', result: { conversationId } };
         }
 
-        if (!primaryAdmin) {
-            throwError({
-                message: 'Support team is not configured.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
+        // --- guest flow ---
         const guestConversation = await conversationCtr.createConversationInternal(context, {
             doc: {
                 type: E_ConversationType.PRIVATE,
-                createdById: primaryAdmin.id,
-                meta: {
-                    contactTopic: topic,
-                    contactEmail: normalizedEmail,
-                    contactName: displayName,
-                    contactSubject: normalizedSubject,
-                    attachmentIds: attachments,
-                    extras: metaExtras,
-                },
+                createdById: null, // guest -> null owner
+                contactAdmin: contactTyped,
             },
         });
 
@@ -466,38 +566,41 @@ export const conversationCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
-
         const guestConversationId = guestConversation.result.id;
 
-        await participantCtr.createParticipants(context, {
-            docs: adminUsers.map(admin => ({
-                conversationId: guestConversationId,
-                userId: admin.id,
-                role: E_ParticipantRole.ADMIN,
-            })),
-        });
+        // add admin participants (admins must monitor)
+        const adminParticipantDocs = adminUsers.map(admin => ({ conversationId: guestConversationId, userId: admin.id, role: E_ParticipantRole.ADMIN }));
+        const pResGuest = await participantCtr.createParticipants(context, { docs: adminParticipantDocs });
 
+        if (!pResGuest.success) {
+            await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => {});
+
+            throwError({
+                message: pResGuest.message ?? 'Failed to add admin participants to conversation.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        // Create initial guest message authored by primaryAdmin so admins see it in the thread
         const guestMessageText = [
-            `Guest support request from ${displayName} <${normalizedEmail}>`,
-            normalizedSubject ? `Subject: ${normalizedSubject}` : undefined,
+            `Guest support request from ${contactTyped.username} <${contactTyped.email}>`,
             '',
             supportTextBlock,
-        ]
-            .filter(Boolean)
-            .join('\n');
+        ].filter(Boolean).join('\n');
 
         const guestMessageResult = await messageCtr.createMessageOnly(context, {
             doc: {
                 conversationId: guestConversationId,
-                senderId: primaryAdmin.id,
-                content: {
-                    type: E_MessageType.TEXT,
-                    value: guestMessageText,
-                },
+                senderId: primaryAdmin?.id,
+                content: { type: E_MessageType.TEXT, value: guestMessageText },
             },
         });
 
         if (!guestMessageResult.success || !guestMessageResult.result) {
+            await participantCtr.deleteParticipants(context, { filter: { conversationId: guestConversationId } }).catch(() => {});
+
+            await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => {});
+
             throwError({
                 message: guestMessageResult.message ?? 'Failed to record support message.',
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -506,21 +609,14 @@ export const conversationCtr = {
 
         await conversationCtr._updateLastMessageId(guestConversationId, guestMessageResult.result.id);
 
-        return {
-            success: true,
-            message: 'Support request recorded for admins.',
-            result: {
-                mode: E_ContactAdminMode.EMAIL,
-                adminId: primaryAdmin.id,
-                conversationId: guestConversationId,
-            },
-        };
+        return { success: true, message: 'Support request recorded for admins.', result: { conversationId: guestConversationId } };
     },
 
     adminReplyGuest: async (
         context: I_Context,
         input: I_Input_AdminReplyGuest,
     ): Promise<I_Return<boolean>> => {
+        const { requestType, topic, conversationId: providedConvId } = input;
         const currentUser = await authnCtr.getUserFromSession(context);
         const admins = await getAdminUsers(context);
         const isAdmin = admins.some(admin => admin.id === currentUser.id);
@@ -531,64 +627,98 @@ export const conversationCtr = {
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
         }
+        const rawEmail = (input.email ?? '').trim().toLowerCase();
 
-        const normalizedEmail = input.email.trim().toLowerCase();
-        validate.email.validate(normalizedEmail);
+        if (!rawEmail) {
+            throwError({ message: 'Email is required.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
 
-        const trimmedMessage = input.message.trim();
+        try {
+            validate.email.validate(rawEmail);
+        }
+        catch {
+            throwError({ message: 'Email is invalid.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const trimmedMessage = (input.message ?? '').trim();
         if (!trimmedMessage) {
-            throwError({
-                message: 'Message is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        if (trimmedMessage.length > CONTACT_MESSAGE_MAX_LENGTH) {
-            throwError({
-                message: `Message cannot exceed ${CONTACT_MESSAGE_MAX_LENGTH} characters.`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const trimmedSubject = input.replySubject.trim();
-        if (!trimmedSubject) {
-            throwError({
-                message: 'Reply subject is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-        if (trimmedSubject.length > CONTACT_SUBJECT_MAX_LENGTH) {
-            throwError({
-                message: `Reply subject cannot exceed ${CONTACT_SUBJECT_MAX_LENGTH} characters.`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const replySubject = trimmedSubject.slice(0, CONTACT_SUBJECT_MAX_LENGTH);
-
-        const sendResult = await emailCtr.sendEmail(
-            REPLY_FROM_ADMIN,
-            normalizedEmail,
-            {
-                email: normalizedEmail,
-                message: trimmedMessage,
-                reply_subject: replySubject,
-                original_subject: input.originalSubject ?? '',
-            },
-            replySubject,
-        );
-
-        if (!sendResult.success) {
-            throwError({
-                message: sendResult.message ?? 'Failed to send reply email.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        return {
-            success: true,
-            message: 'Reply sent to guest.',
-            result: true,
+            throwError({ message: 'Message is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         };
+
+        let validatedRequestType: I_ContactAdmin['requestType'] | undefined;
+
+        if (requestType) {
+            const allowedTypes = getRequestTypesByTopic()[topic!];
+            if (!allowedTypes || !allowedTypes.includes(requestType as any)) {
+                throwError({ message: 'Request type is not valid for the selected topic.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+            validatedRequestType = requestType as I_ContactAdmin['requestType'];
+        }
+
+        // prepare email payload
+        const emailPayload = { email: rawEmail, message: trimmedMessage, topic: topic ?? '', requestType: validatedRequestType ?? '' };
+
+        try {
+            const subject = '[Secret Swinger Lust] Reply from admin';
+            const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+            if (!sendResult.success)
+                throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+
+            // best-effort: if guest is a registered user, create/find DM conversation and append admin message
+            try {
+                let targetConversationId: string | undefined = providedConvId ?? undefined;
+
+                if (!targetConversationId) {
+                    const userRes = await userCtr.getUser(context, { filter: { email: rawEmail } });
+                    if (userRes.success && userRes.result) {
+                        const recipientId = userRes.result.id;
+
+                        // check existing direct message between admin (currentUser) and recipient
+                        const dm = await participantCtr.directMessageBetween(context, recipientId);
+                        if (dm && dm.conversationId) {
+                            targetConversationId = dm.conversationId;
+                        }
+                        else {
+                            // create new private conv and add participants (admin + recipient)
+                            const newConv = await conversationCtr.createConversationInternal(context, {
+                                doc: { type: E_ConversationType.PRIVATE, createdById: currentUser.id, contactAdmin: undefined as any },
+                            });
+                            if (newConv.success && newConv.result) {
+                                targetConversationId = newConv.result.id;
+                                await participantCtr.createParticipants(context, {
+                                    docs: [
+                                        { conversationId: targetConversationId, userId: currentUser.id, role: E_ParticipantRole.MEMBER },
+                                        { conversationId: targetConversationId, userId: recipientId, role: E_ParticipantRole.MEMBER },
+                                    ],
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (targetConversationId) {
+                    const createMsg = await messageCtr.createMessageOnly(context, {
+                        doc: {
+                            conversationId: targetConversationId,
+                            senderId: currentUser.id,
+                            content: { type: E_MessageType.TEXT, value: trimmedMessage },
+                        },
+                    });
+
+                    if (createMsg.success && createMsg.result) {
+                        await conversationCtr._updateLastMessageId(targetConversationId, createMsg.result.id);
+                    }
+                }
+            }
+            catch {
+                // swallow errors (do not break main flow)
+            }
+
+            return { success: true, message: 'Reply sent to guest.', result: true };
+        }
+        catch (err) {
+            throwError({ message: (err as Error).message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
     },
 
     createGroupConversation: async (

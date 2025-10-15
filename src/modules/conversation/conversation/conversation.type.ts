@@ -9,12 +9,64 @@ import type { I_Message, I_MessageContent } from '../message/message.type.js';
 import type { I_Participant } from '../participant/participant.type.js';
 
 export enum E_ContactTopic {
-    BILLING_MEMBERSHIP = 'BILLING_MEMBERSHIP',
     TECHNICAL_ACCOUNT = 'TECHNICAL_ACCOUNT',
+    BILLING_MEMBERSHIP = 'BILLING_MEMBERSHIP',
     CONTENT_MODERATION = 'CONTENT_MODERATION',
     CLUB_EVENT = 'CLUB_EVENT',
     LEGAL_COMPLIANCE = 'LEGAL_COMPLIANCE',
     GENERAL_FEEDBACK = 'GENERAL_FEEDBACK',
+}
+
+export enum E_ContactTechnicalAccountType {
+    LOGIN_OR_ACCESS_PROBLEM = 'LOGIN_OR_ACCESS_PROBLEM',
+    PROFILE_VERIFICATION_ID_CHECK_UPLOADING = 'PROFILE_VERIFICATION_ID_CHECK_UPLOADING',
+    PHOTO_OR_VIDEO_UPLOAD_ISSUES = 'PHOTO_OR_VIDEO_UPLOAD_ISSUES',
+    TECHNICAL_BUG_OR_ERROR_ON_THE_SITE = 'TECHNICAL_BUG_OR_ERROR_ON_THE_SITE',
+    OTHER = 'OTHER',
+}
+
+export enum E_ContactBillingMembershipType {
+    MEMBERSHIP_UPGRADE_DOWGRADE = 'MEMBERSHIP_UPGRADE_DOWGRADE',
+    SUBSCRIPTION_OR_PAYMENT_ISSUE = 'SUBSCRIPTION_OR_PAYMENT_ISSUE',
+    BILLING_OR_REFUND_INQUIRY = 'BILLING_OR_REFUND_INQUIRY',
+    PAYMENT_METHOD_OR_CARD_DECLINE = 'PAYMENT_METHOD_OR_CARD_DECLINE',
+    PROMO_CODE_OR_DISCOUNT_PROBLEM = 'PROMO_CODE_OR_DISCOUNT_PROBLEM',
+    OTHER = 'OTHER',
+}
+
+export enum E_ContactContentModerationType {
+    REPORT_INAPPROPRIATE_CONTENT = 'REPORT_INAPPROPRIATE_CONTENT',
+    REPORT_FAKE_OR_SUSPICIOUS_PROFILE = 'REPORT_FAKE_OR_SUSPICIOUS_PROFILE',
+    REQUEST_CONTENT_REMOVAL = 'REQUEST_CONTENT_REMOVAL',
+    QUESTIONS_ABOUT_AI_MODERATION_RULES = 'QUESTIONS_ABOUT_AI_MODERATION_RULES',
+    OTHER = 'OTHER',
+}
+
+export enum E_ContactClubEventType {
+    REPORT_EXPIRED_OR_INCORRECT_CLUB_INFORMATION = 'REPORT_EXPIRED_OR_INCORRECT_CLUB_INFORMATION',
+    SUGGEST_A_NEW_CLUB_OR_RESORT = 'SUGGEST_A_NEW_CLUB_OR_RESORT',
+    PROBLEMS_WITH_ANNOUNCEMENTS = 'PROBLEMS_WITH_ANNOUNCEMENTS',
+    OTHER = 'OTHER',
+}
+
+export enum E_ContactLegalComplianceType {
+    TERMS_OF_USE_PRIVACY_POLICY_QUESTIONS = 'TERMS_OF_USE_PRIVACY_POLICY_QUESTIONS',
+    DATA_ACCESS_OR_DELETION_REQUEST_GDPR = 'DATA_ACCESS_OR_DELETION_REQUEST_GDPR',
+    REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY = 'REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY',
+    OTHER = 'OTHER',
+}
+
+export enum E_ContactGeneralFeedbackType {
+    FEEDBACK_ON_DESIGN_OR_USABILITY = 'FEEDBACK_ON_DESIGN_OR_USABILITY',
+    FEATURE_SUGGESTION = 'FEATURE_SUGGESTION',
+    COLLABORATION_PARTNERSHIP_INQUIRY = 'COLLABORATION_PARTNERSHIP_INQUIRY',
+    PRESS_OR_MEDIA_REQUEST = 'PRESS_OR_MEDIA_REQUEST',
+}
+
+export enum E_Device {
+    DESKTOP = 'DESKTOP',
+    MOBILE = 'MOBILE',
+    TABLET = 'TABLET',
 }
 
 export enum E_ConversationType {
@@ -24,11 +76,6 @@ export enum E_ConversationType {
     BLOG_COMMENT = 'BLOG_COMMENT',
     DESTINATION_COMMENT = 'DESTINATION_COMMENT',
     ADMIN_BROADCAST = 'ADMIN_BROADCAST',
-}
-
-export enum E_ContactAdminMode {
-    CONVERSATION = 'CONVERSATION',
-    EMAIL = 'EMAIL',
 }
 
 // Conversation Subscription Events
@@ -79,7 +126,7 @@ export interface I_ConversationMeta {
 export interface I_Conversation extends I_GenericDocument {
     type?: E_ConversationType;
     name?: string;
-    createdById?: string;
+    createdById?: string | null;
     createdBy?: I_User;
     lastMessageId?: string;
     lastMessage?: I_Message;
@@ -90,7 +137,8 @@ export interface I_Conversation extends I_GenericDocument {
     lastMessageAt?: Date;
     profileOwnerId?: string;
     ownerId?: string;
-    meta?: I_ConversationMeta | null;
+    meta?: Record<string, unknown>;
+    contactAdmin?: I_ContactAdmin;
 }
 
 export interface I_BroadcastResult {
@@ -104,7 +152,8 @@ export interface I_Input_QueryConversation extends Omit<I_Conversation, T_Conver
 
 export interface I_Input_CreateConversation extends Omit<I_Conversation, T_Omit_Create | T_Conversation_Populate> {
     type: E_ConversationType;
-    createdById: string;
+    createdById?: string | null;
+    contactAdmin?: I_ContactAdmin;
 }
 
 export interface I_Input_CreateGroupConversation {
@@ -130,27 +179,26 @@ export interface I_Input_DeleteGroupConversation {
     conversationId: string;
 }
 
-export interface I_Input_ContactAdmin {
+export interface I_ContactAdmin {
     topic: E_ContactTopic;
-    name: string;
+    username: string;
     email?: string;
-    subject?: string;
+    requestType?: E_ContactTechnicalAccountType | E_ContactBillingMembershipType | E_ContactContentModerationType | E_ContactClubEventType | E_ContactLegalComplianceType | E_ContactGeneralFeedbackType;
+    device?: E_Device;
     message: string;
-    attachmentIds?: string[];
+    image?: string;
     paymentDate?: Date;
     transactionId?: string;
-    issueType?: string;
-    device?: string;
     profileLink?: string;
     companyName?: string;
-    requestType?: string;
 }
 
 export interface I_Input_AdminReplyGuest {
+    conversationId: string;
     email: string;
-    replySubject: string;
+    topic: E_ContactTopic;
+    requestType?: E_ContactTechnicalAccountType | E_ContactBillingMembershipType | E_ContactContentModerationType | E_ContactClubEventType | E_ContactLegalComplianceType | E_ContactGeneralFeedbackType;
     message: string;
-    originalSubject?: string;
 }
 
 export interface I_MessageSentPayload {
@@ -183,7 +231,5 @@ export interface I_MessageSubscriptionFilter {
 }
 
 export interface I_ContactAdminResult {
-    mode: E_ContactAdminMode;
     conversationId?: string;
-    adminId?: string;
 }
