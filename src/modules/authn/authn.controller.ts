@@ -34,6 +34,7 @@ import { E_UploadEntity } from '#shared/typescript/index.js';
 import { date, extractClientIp, helper, validate } from '#shared/util/index.js';
 
 import type {
+    I_AgeVerify,
     I_Input_ApproveAgeVerify,
     I_Input_CheckAuth,
     I_Input_CheckToken,
@@ -1311,24 +1312,46 @@ export const authnCtr = {
             await bunnyCtr.deleteFile(context, currentUser.ageVerify.preApproval?.selfiePic?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
+        const documentUrl = documentUpload.result?.url;
+        const selfieUrl = selfieUpload.result?.url;
+
+        if (!documentUrl || !selfieUrl) {
+            throwError({
+                message: 'Failed to store verification images.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const aiResult = compareFaceResult.result;
+        const isAiApproved = aiResult?.isOver18 === true;
+        const ageVerifyPayload: I_AgeVerify = {
+            status: isAiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING,
+            method: E_AgeVerifyMethod.PASSPORT,
+            preApproval: {
+                documentPic: documentUrl,
+                selfiePic: selfieUrl,
+                aiResult: {
+                    documentAge: aiResult.documentAge,
+                    selfieAgeRange: aiResult.selfieAgeRange,
+                    similarity: aiResult.similarity,
+                    isOver18: aiResult.isOver18,
+                    dateOfBirth: aiResult.dateOfBirth,
+                },
+            },
+        };
+
+        if (aiResult?.dateOfBirth) {
+            ageVerifyPayload.dateOfBirth = aiResult.dateOfBirth;
+        }
+
+        if (isAiApproved) {
+            ageVerifyPayload.approvedAt = new Date();
+        }
+
         return userCtr.updateUser(context, {
             filter: { id: currentUser.id },
             update: {
-                ageVerify: {
-                    status: E_AgeVerifyStatus.PENDING,
-                    method: E_AgeVerifyMethod.PASSPORT,
-                    preApproval: {
-                        documentPic: documentUpload.result?.url || documentUpload.result,
-                        selfiePic: selfieUpload.result?.url || selfieUpload.result,
-                        aiResult: {
-                            documentAge: compareFaceResult.result.documentAge,
-                            selfieAgeRange: compareFaceResult.result.selfieAgeRange,
-                            similarity: compareFaceResult.result.similarity,
-                            isOver18: compareFaceResult.result.isOver18,
-                            dateOfBirth: compareFaceResult.result.dateOfBirth,
-                        },
-                    },
-                },
+                ageVerify: ageVerifyPayload,
             },
         });
     },

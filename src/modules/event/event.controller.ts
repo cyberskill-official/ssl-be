@@ -134,11 +134,16 @@ export const eventCtr = {
 
         // membership check
         const membershipExpiresAt = currentUser.membershipExpiresAt;
-        if (!membershipExpiresAt || new Date(membershipExpiresAt) < new Date()) {
-            throwError({
-                message: 'Your membership has expired. Please renew your membership to create an event.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
+        const isClubVisit = type === E_EventType.CLUB_VISIT;
+
+        // If not a CLUB_VISIT, require an active membership
+        if (!isClubVisit) {
+            if (!membershipExpiresAt || new Date(membershipExpiresAt) < new Date()) {
+                throwError({
+                    message: 'Your membership has expired. Please renew your membership to create an event.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
         }
 
         // required type

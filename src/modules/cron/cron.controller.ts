@@ -4,6 +4,7 @@ import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
 
 import { eventCtr } from '#modules/event/index.js';
+import { E_LocationEntityType, LocationModel } from '#modules/location/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
@@ -153,11 +154,25 @@ export const cron = {
                 if (expiredEventIds.length > 0) {
                     const updateResult = await eventCtr.updateEvents({}, {
                         filter: { id: { $in: expiredEventIds } },
-                        update: { isActive: false },
+                        update: { isActive: false, isDel: true },
                     });
 
                     if (updateResult.success) {
-                        log.success(`Successfully marked ${expiredEventIds.length} events as expired`);
+                        try {
+                            const locationResult = await LocationModel.updateMany(
+                                {
+                                    entityType: E_LocationEntityType.EVENT,
+                                    entityId: { $in: expiredEventIds },
+                                },
+                                { $set: { isDel: true } },
+                            );
+
+                            const updatedLocations = locationResult?.modifiedCount ?? 0;
+                            log.success(`Successfully marked ${expiredEventIds.length} events as expired (locations updated: ${updatedLocations}).`);
+                        }
+                        catch (locationError) {
+                            log.error('Expired events updated, but failed to mark locations as deleted:', locationError);
+                        }
                     }
                     else {
                         log.error('Failed to update expired events:', updateResult.message);
