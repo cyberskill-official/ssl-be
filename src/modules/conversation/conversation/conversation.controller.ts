@@ -74,7 +74,6 @@ export interface I_ResolvedContact {
     admin?: I_User;
 }
 
-// helper: resolves full contact for a conversation id or doc
 async function resolveConversationContact(
     context: I_Context,
     conversationIdOrDoc: string | I_Conversation,
@@ -127,10 +126,10 @@ async function resolveConversationContact(
         catch { /* ignore */ }
     }
 
-    // 2) conversation.contact (guest info) -> guest + admin fallback
-    if ((conversation as any).contact) {
-        const guest = (conversation as any).contact as I_ContactAdmin;
-        return { source: 'guest', guest, admin: primaryAdmin };
+    // 2) guest contact: prefer contactAdmin, fallback to legacy contact -> guest + admin fallback
+    const guestInfo = (conversation).contactAdmin;
+    if (guestInfo) {
+        return { source: 'guest', guest: guestInfo as I_ContactAdmin, admin: primaryAdmin };
     }
 
     // 3) lastMessage.senderId -> user
@@ -501,7 +500,7 @@ export const conversationCtr = {
                 doc: {
                     type: E_ConversationType.PRIVATE,
                     createdById: currentUser.id,
-                    contact: contactTyped,
+                    contactAdmin: contactTyped,
                 },
             });
 
@@ -557,7 +556,7 @@ export const conversationCtr = {
             doc: {
                 type: E_ConversationType.PRIVATE,
                 createdById: null, // guest -> null owner
-                contact: contactTyped,
+                contactAdmin: contactTyped,
             },
         });
 
@@ -682,7 +681,7 @@ export const conversationCtr = {
                         else {
                             // create new private conv and add participants (admin + recipient)
                             const newConv = await conversationCtr.createConversationInternal(context, {
-                                doc: { type: E_ConversationType.PRIVATE, createdById: currentUser.id, contact: undefined as any },
+                                doc: { type: E_ConversationType.PRIVATE, createdById: currentUser.id, contactAdmin: undefined as any },
                             });
                             if (newConv.success && newConv.result) {
                                 targetConversationId = newConv.result.id;

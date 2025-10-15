@@ -153,7 +153,7 @@ export interface I_Input_QueryConversation extends Omit<I_Conversation, T_Conver
 export interface I_Input_CreateConversation extends Omit<I_Conversation, T_Omit_Create | T_Conversation_Populate> {
     type: E_ConversationType;
     createdById?: string | null;
-    contact?: I_ContactAdmin;
+    contactAdmin?: I_ContactAdmin;
 }
 
 export interface I_Input_CreateGroupConversation {
