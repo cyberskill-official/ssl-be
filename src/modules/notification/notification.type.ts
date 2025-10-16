@@ -8,6 +8,7 @@ import type { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 export enum E_NotificationType {
     MEDIA_LIKED = 'MEDIA_LIKED',
     NEW_FOLLOWER = 'NEW_FOLLOWER',
+    MODERATION_MEDIA_REJECTED = 'MODERATION_MEDIA_REJECTED',
     NEW_MESSAGE = 'NEW_MESSAGE',
     CONVERSATION_INVITATION = 'CONVERSATION_INVITATION',
     NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST = 'NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST',
@@ -29,6 +30,7 @@ export const OTHER_TYPES = [
     E_NotificationType.PAYMENT_ISSUE,
     E_NotificationType.RECEIPT_EMAIL_ONLY,
     E_NotificationType.MEDIA_LIKED,
+    E_NotificationType.MODERATION_MEDIA_REJECTED,
     E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA,
     E_NotificationType.NEW_BLOG_POST,
     E_NotificationType.NEW_PODCAST,
@@ -145,7 +147,9 @@ export type T_Notification_Populate = never;
 
 export interface I_Input_QueryNotification extends Omit<I_Notification, T_Notification_Populate> {}
 
-export interface I_Input_CreateNotification extends Omit<I_Notification, T_Omit_Create | T_Notification_Populate> {}
+export interface I_Input_CreateNotification extends Omit<I_Notification, T_Omit_Create | T_Notification_Populate> {
+    type?: E_NotificationType[];
+}
 
 export interface I_Input_UpdateNotification extends Omit<I_Notification, T_Omit_Update | T_Notification_Populate> {}
 

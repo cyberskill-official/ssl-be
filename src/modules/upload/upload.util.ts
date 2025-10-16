@@ -1,5 +1,18 @@
 import { path } from '@cyberskill/shared/node/path';
 
+import type { I_Context } from '#shared/typescript/index.js';
+
+import { galleryCtr } from '#modules/gallery/gallery.controller.js';
+import {
+    E_ModerationMediaStatus,
+    E_RiskLevel,
+    moderationMediaCtr,
+} from '#modules/moderation/index.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import {
+    E_NotificationEntityType,
+    E_NotificationType,
+} from '#modules/notification/notification.type.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type { I_UploadPathConfig } from './upload.type.js';
@@ -43,4 +56,93 @@ export function generateUploadPath(baseDir: string, config: I_UploadPathConfig):
             return path.posix.join(baseDir, String(entity).toLowerCase(), entityId || 'general', type.toLowerCase());
         }
     }
+}
+
+export function composeAiReason(result: any): string | undefined {
+    if (result?.reasons && Array.isArray(result.reasons) && result.reasons.length > 0) {
+        return result.reasons.join(', ');
+    }
+
+    if (result?.moderationLabels && Array.isArray(result.moderationLabels) && result.moderationLabels.length > 0) {
+        return result.moderationLabels
+            .map((label: any) => `${label.name}${typeof label.confidence === 'number' ? ` (${label.confidence.toFixed?.(1) ?? label.confidence}%)` : ''}`)
+            .join(', ');
+    }
+
+    return undefined;
+}
+
+export async function applyAiModerationDecision(
+    context: I_Context,
+    moderationId: string,
+    aiResult: any,
+): Promise<boolean> {
+    if (!aiResult || !moderationId) {
+        return false;
+    }
+
+    const aiDecision = aiResult.decision as E_ModerationMediaStatus | undefined;
+    const aiRiskLevel = aiResult.riskLevel as E_RiskLevel | undefined;
+    const aiReason = composeAiReason(aiResult);
+    const shouldAutoReject
+        = aiDecision === E_ModerationMediaStatus.REJECTED
+            || aiRiskLevel === E_RiskLevel.HIGH
+            || aiRiskLevel === E_RiskLevel.CRITICAL;
+
+    const autoRejectReason = shouldAutoReject
+        ? aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content'
+        : undefined;
+    const warnReason = !shouldAutoReject && aiReason ? `AI flagged for review: ${aiReason}` : undefined;
+
+    if (shouldAutoReject) {
+        const moderationUpdated = await moderationMediaCtr.updateModerationMedia(context, {
+            filter: { id: moderationId },
+            update: {
+                status: E_ModerationMediaStatus.REJECTED,
+                reason: autoRejectReason,
+                isPublished: false,
+                isDel: true,
+            },
+        });
+
+        if (moderationUpdated.success && moderationUpdated.result?.uploadedById) {
+            await notificationCtr.createNotification(context, {
+                doc: {
+                    targetId: moderationUpdated.result.uploadedById,
+                    type: [E_NotificationType.MODERATION_MEDIA_REJECTED],
+                    entityType: E_NotificationEntityType.MEDIA,
+                    entityId: moderationUpdated.result.entityId ?? undefined,
+                    presentation: {
+                        headline: 'The upload was flagged as sensitive content and has been removed. Please choose another image',
+                        context: {
+                            profileOwnerId: moderationUpdated.result.uploadedById,
+                        },
+                        thumbnailUrl: moderationUpdated.result.url,
+                    },
+                },
+            });
+        }
+
+        try {
+            await galleryCtr.updateGallery(context, {
+                filter: { moderationMediaId: moderationId },
+                update: {
+                    status: E_ModerationMediaStatus.REJECTED,
+                    isPublished: false,
+                    isDel: true,
+                },
+            });
+        }
+        catch {
+            /* ignore gallery sync errors */
+        }
+    }
+    else if (warnReason) {
+        await moderationMediaCtr.updateModerationMedia(context, {
+            filter: { id: moderationId },
+            update: { reason: warnReason },
+        });
+    }
+
+    return shouldAutoReject;
 }

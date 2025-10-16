@@ -33,6 +33,7 @@ import type {
 } from './moderation-media.type.js';
 
 import { aiModerationCtr } from '../ai-moderation/ai-moderation.controller.js';
+import { E_RiskLevel } from '../ai-moderation/ai-moderation.type.js';
 import { ModerationMediaModel } from './moderation-media.model.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
 import { mapModerationMediaTypeTo } from './moderation-media.util.js';
@@ -134,21 +135,21 @@ export const moderationMediaCtr = {
             };
 
             if (aiModerationResult) {
-                // Auto-reject path disabled; keep PENDING and attach reason for reviewers
-                initialStatus = E_ModerationMediaStatus.PENDING;
-                const reanson = composeReason(aiModerationResult);
-                if (reanson) {
-                    reason = `AI flagged for review: ${reanson}`;
+                const aiDecision = aiModerationResult.decision as E_ModerationMediaStatus | undefined;
+                const aiRiskLevel = aiModerationResult.riskLevel as E_RiskLevel | undefined;
+                const aiReason = composeReason(aiModerationResult);
+                const shouldAutoReject
+                    = aiDecision === E_ModerationMediaStatus.REJECTED
+                        || aiRiskLevel === E_RiskLevel.HIGH
+                        || aiRiskLevel === E_RiskLevel.CRITICAL;
+
+                if (shouldAutoReject) {
+                    initialStatus = E_ModerationMediaStatus.REJECTED;
+                    reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
                 }
-                // Auto-reject version kept for future use:
-                // if (
-                //     aiModerationResult.decision === E_ModerationMediaStatus.REJECTED
-                //     || aiModerationResult.riskLevel === E_RiskLevel.CRITICAL
-                // ) {
-                //     initialStatus = E_ModerationMediaStatus.REJECTED;
-                //     const r = composeReason(aiModerationResult);
-                //     reason = r ? `AI detected inappropriate content: ${r}` : 'AI detected inappropriate content';
-                // }
+                else if (aiReason) {
+                    reason = `AI flagged for review: ${aiReason}`;
+                }
             }
 
             const moderationCreated = await mongooseCtr.createOne({
@@ -156,6 +157,7 @@ export const moderationMediaCtr = {
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
+                isPublished: false,
             });
 
             if (!moderationCreated.success) {
@@ -291,8 +293,18 @@ export const moderationMediaCtr = {
                         },
                         update: {
                             status,
+                            isPublished: status === E_ModerationMediaStatus.APPROVED,
+                            ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                            ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                         },
                     });
+                    if (
+                        status === E_ModerationMediaStatus.APPROVED
+                        && currentStatus !== E_ModerationMediaStatus.APPROVED
+                        && moderation.entityId
+                    ) {
+                        await galleryCtr.notifyGalleryPublished(context, moderation.entityId);
+                    }
                     break;
 
                 case E_UploadEntity.CONVERSATION:
@@ -318,6 +330,9 @@ export const moderationMediaCtr = {
                     status,
                     moderatedById: currentUser.id,
                     reason: isAfterRejectToApprove ? null : reason,
+                    isPublished: status === E_ModerationMediaStatus.APPROVED,
+                    ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                    ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                 },
             );
         }

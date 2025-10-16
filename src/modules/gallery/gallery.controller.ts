@@ -16,10 +16,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { followCtr } from '#modules/follow/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
-import { buildNotifThumbnail, notificationCtr } from '#modules/notification/index.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -35,7 +33,7 @@ import type {
 
 import { GalleryModel } from './gallery.model.js';
 import { E_GalleryType } from './gallery.type.js';
-import { assertCanUploadVideo } from './gallery.validate.js';
+import { assertCanUploadVideo, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
 
 const env = getEnv();
 
@@ -63,6 +61,35 @@ export const galleryCtr = {
         if (!galleryFound.success) {
             return galleryFound;
         }
+
+        const currentUserId = context?.req?.session?.user?.id;
+        const isOwner = currentUserId && galleryFound.result.uploadedById === currentUserId;
+        let isStaff = false;
+        let isAdmin = false;
+
+        if (isLoggedIn) {
+            try {
+                isStaff = await authnCtr.isStaff(context);
+            }
+            catch {
+                isStaff = false;
+            }
+
+            try {
+                isAdmin = await authnCtr.isAdmin(context);
+            }
+            catch {
+                isAdmin = false;
+            }
+        }
+
+        if (!isOwner && !isStaff && !isAdmin && !shouldSendPublishNotification(galleryFound.result)) {
+            throwError({
+                message: 'Gallery not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
         if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
             galleryFound.result.url = bunnyCtr.generateSignedUrl({
                 fullUrl: galleryFound.result.url,
@@ -83,12 +110,28 @@ export const galleryCtr = {
         const isOwner = context.req?.session?.user?.id === filter?.uploadedById;
 
         let isFreeMember = false;
+        let isStaff = false;
+        let isAdmin = false;
         if (isLoggedIn) {
             try {
                 isFreeMember = await authnCtr.isFreeMember(context);
             }
             catch {
                 isFreeMember = true;
+            }
+
+            try {
+                isStaff = await authnCtr.isStaff(context);
+            }
+            catch {
+                isStaff = false;
+            }
+
+            try {
+                isAdmin = await authnCtr.isAdmin(context);
+            }
+            catch {
+                isAdmin = false;
             }
         }
 
@@ -102,7 +145,18 @@ export const galleryCtr = {
             delete modifiedFilter.uploadedByIds;
         }
 
-        const galleries = await mongooseCtr.findPaging(modifiedFilter, {
+        const mongoFilter: Record<string, unknown> = { ...(modifiedFilter as Record<string, unknown>) };
+
+        if (!isStaff && !isAdmin && !isOwner) {
+            if (mongoFilter['status'] === undefined) {
+                mongoFilter['status'] = { $in: [E_ModerationMediaStatus.APPROVED, null] };
+            }
+            if (mongoFilter['isPublished'] === undefined) {
+                mongoFilter['isPublished'] = { $ne: false };
+            }
+        }
+
+        const galleries = await mongooseCtr.findPaging(mongoFilter, {
             ...options,
             populate: [
                 {
@@ -207,58 +261,8 @@ export const galleryCtr = {
 
         const galleryResult = await mongooseCtr.createOne(doc);
 
-        if (galleryResult.success) {
-            const uploaderId = galleryResult.result.uploadedById;
-
-            // 1) Thumbnail poster cho notification (ký URL, không iframe)
-            const thumbnailUrl = buildNotifThumbnail(galleryResult.result);
-
-            // 2) Notify followers (IN_APP luôn có, EMAIL theo toggle — handled by WithSettings)
-            try {
-                const followers = await followCtr.getFollowers(context, {
-                    filter: { followId: uploaderId },
-                    options: { pagination: false },
-                });
-
-                const uploaderFound = await userCtr.getUser(context, { filter: { id: uploaderId } });
-
-                if (!uploaderFound.success) {
-                    return galleryResult;
-                }
-
-                const { username = '' } = uploaderFound.result;
-                const uploaderName = (username);
-
-                if (followers.success) {
-                    for (const f of followers.result.docs) {
-                        const targetId = f.userId;
-                        if (!targetId || targetId === uploaderId)
-                            continue;
-
-                        await notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId,
-                                type: [E_NotificationType.FOLLOWED_PROFILE_POSTED_MEDIA],
-                                entityType: E_NotificationEntityType.MEDIA,
-                                entityId: galleryResult.result.id,
-                                actorId: uploaderId,
-                                presentation: {
-                                    redirect: { kind: E_RedirectType.MEDIA, id: galleryResult.result.id },
-                                    ...(thumbnailUrl ? { thumbnailUrl } : {}),
-                                    actor: {
-                                        username: uploaderName,
-                                        accountType: uploaderFound.result.accountType,
-                                        avatarUrl: uploaderFound.result.partner1?.gallery?.url,
-                                        gender: uploaderFound.result.partner1?.gender,
-                                    },
-                                },
-                            },
-                        });
-                    }
-                }
-            }
-            catch {
-            }
+        if (galleryResult.success && shouldSendPublishNotification(galleryResult.result)) {
+            await notifyGalleryFollowersOnPublish(context, galleryResult.result);
         }
 
         return galleryResult;
@@ -301,6 +305,17 @@ export const galleryCtr = {
         }
 
         return mongooseCtr.updateOne(filter, update, options);
+    },
+    notifyGalleryPublished: async (context: I_Context, galleryId: string): Promise<void> => {
+        const galleryFound = await mongooseCtr.findOne({ id: galleryId });
+
+        if (!galleryFound.success || !galleryFound.result) {
+            return;
+        }
+
+        if (shouldSendPublishNotification(galleryFound.result)) {
+            await notifyGalleryFollowersOnPublish(context, galleryFound.result);
+        }
     },
     deleteGallery: async (
         context: I_Context,

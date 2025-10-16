@@ -8,14 +8,19 @@ import { Buffer } from 'node:buffer';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import type { E_ModerationMediaStatus } from '#modules/moderation/index.js';
+import type {
+    E_ModerationMediaStatus,
+} from '#modules/moderation/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
-// import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
-import { aiModerationCtr, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
+import {
+    aiModerationCtr,
+    E_ModerationMediaType,
+    moderationMediaCtr,
+} from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { userCtr } from '#modules/user/index.js';
@@ -25,7 +30,7 @@ import { E_UploadEntity } from '#shared/typescript/index.js';
 import type { I_Input_Upload } from './upload.type.js';
 
 import { UPLOAD_CONFIG } from './upload.constant.js';
-import { generateUploadPath } from './upload.util.js';
+import { applyAiModerationDecision, generateUploadPath } from './upload.util.js';
 
 const env = getEnv();
 
@@ -186,17 +191,16 @@ export const uploadCtr = {
                 const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
                 if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
                     const moderationId = moderationCreated.result.id;
-                    // Always log first
+                    const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
+
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
-                            action: E_ModerationLogAction.WARN,
+                            action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
                             userId: currentUser.id,
                             moderationMediaId: moderationId,
                             aiResult: moderationResult.result,
                         },
                     });
-
-                    // Auto-reject disabled; keep PENDING and only log reasons
                 }
             }
             catch (error) {
@@ -270,17 +274,16 @@ export const uploadCtr = {
 
             if (moderateImage.success && moderationCreated.success && moderationCreated.result?.id) {
                 const moderationId = moderationCreated.result.id;
+                const autoRejected = await applyAiModerationDecision(context, moderationId, moderateImage.result);
 
                 await moderationLogCtr.createModerationLog(context, {
                     doc: {
-                        action: E_ModerationLogAction.WARN,
+                        action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
                         userId: currentUser.id,
                         moderationMediaId: moderationId,
                         aiResult: moderateImage.result,
                     },
                 });
-
-                // Auto-reject disabled; keep PENDING and only log reasons
             }
         }
         catch (error) {
