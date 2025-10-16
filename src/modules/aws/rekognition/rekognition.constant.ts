@@ -1,9 +1,9 @@
 export const IMAGE_QUALITY_THRESHOLDS = {
-    sharpness: 10,
+    sharpness: 8,
     brightness: {
-        low: 40,
-        high: 100,
+        low: 35,
+        high: 110,
     },
 };
 
-export const FACE_SIMILARITY_THRESHOLD = 90;
+export const FACE_SIMILARITY_THRESHOLD = 85;
