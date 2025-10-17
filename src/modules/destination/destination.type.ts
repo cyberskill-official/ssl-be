@@ -85,3 +85,15 @@ export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Cr
 
 export interface I_Input_UpdateDestination extends Omit<I_Destination, T_Omit_Update | T_Destination_Populate> {
 }
+
+export interface I_DestinationCountriesSummary {
+    club: number;
+    resort: number;
+    total: number;
+    countries: string[]; // danh sách countryId nơi có destination
+    countriesTotal: number; // countries.length
+}
+
+export interface I_Input_QueryDestinationSummary {
+    filter?: Partial<Omit<I_Destination, T_Destination_Populate>>;
+}

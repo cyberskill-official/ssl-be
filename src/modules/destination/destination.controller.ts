@@ -4,6 +4,7 @@ import type {
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateOne,
+    T_FilterQuery,
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
@@ -20,7 +21,14 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 
-import type { I_Destination, I_Input_CreateDestination, I_Input_QueryDestination, I_Input_UpdateDestination } from './destination.type.js';
+import type {
+    I_Destination,
+    I_DestinationCountriesSummary,
+    I_Input_CreateDestination,
+    I_Input_QueryDestination,
+    I_Input_QueryDestinationSummary,
+    I_Input_UpdateDestination,
+} from './destination.type.js';
 
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
@@ -468,4 +476,90 @@ export const destinationCtr = {
 
         return mongooseCtr.deleteOne(filter);
     },
+
+    getDestinationCountsAndCountries: async (
+        _context: I_Context,
+        { filter = {} }: I_Input_QueryDestinationSummary = {},
+    ): Promise<I_Return<I_DestinationCountriesSummary>> => {
+        try {
+            const mergedFilter = (filter ?? {}) as unknown as T_FilterQuery<I_Destination>;
+            const baseFilter: T_FilterQuery<I_Destination> = { isDel: false, ...mergedFilter };
+
+            const clubCountResult = await mongooseCtr.count({
+                ...baseFilter,
+                type: E_DestinationType.CLUB,
+            } as T_FilterQuery<I_Destination>);
+            if (!clubCountResult.success) {
+                throwError({
+                    message: clubCountResult.message || 'Failed to count club destinations',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+            const clubCount = typeof clubCountResult.result === 'number' ? clubCountResult.result : 0;
+
+            const resortCountResult = await mongooseCtr.count({
+                ...baseFilter,
+                type: E_DestinationType.RESORT,
+            } as T_FilterQuery<I_Destination>);
+            if (!resortCountResult.success) {
+                throwError({
+                    message: resortCountResult.message || 'Failed to count resort destinations',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+            const resortCount = typeof resortCountResult.result === 'number' ? resortCountResult.result : 0;
+
+            const destinationLocationIdsResult = await mongooseCtr.distinct('locationId', baseFilter);
+            if (!destinationLocationIdsResult.success) {
+                throwError({
+                    message: destinationLocationIdsResult.message || 'Failed to retrieve destination location IDs',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            const destinationLocationIds = Array.isArray(destinationLocationIdsResult.result)
+                ? destinationLocationIdsResult.result
+                : [];
+
+            const uniqueLocationIds = (destinationLocationIds as Array<string | null | undefined>)
+                .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+
+            let countries: string[] = [];
+
+            if (uniqueLocationIds.length) {
+                const countryDistinct = await locationCtr.distinct('countryId', {
+                    isDel: false,
+                    entityType: E_LocationEntityType.DESTINATION,
+                    id: { $in: uniqueLocationIds },
+                });
+
+                if (!countryDistinct.success) {
+                    throwError({ message: countryDistinct.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                }
+
+                countries = Array.isArray(countryDistinct.result)
+                    ? (countryDistinct.result as string[]).filter(Boolean)
+                    : [];
+            }
+
+            return {
+                success: true,
+                message: 'Destination counts and countries retrieved',
+                result: {
+                    club: clubCount,
+                    resort: resortCount,
+                    total: clubCount + resortCount,
+                    countries,
+                    countriesTotal: countries.length,
+                },
+            };
+        }
+        catch (err) {
+            throwError({
+                message: (err as Error).message || 'Failed to get destination counts and countries',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+    },
+
 };

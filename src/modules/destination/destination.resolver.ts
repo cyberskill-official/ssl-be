@@ -2,7 +2,12 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_CreateDestination, I_Input_QueryDestination, I_Input_UpdateDestination } from './destination.type.js';
+import type {
+    I_Input_CreateDestination,
+    I_Input_QueryDestination,
+    I_Input_QueryDestinationSummary,
+    I_Input_UpdateDestination,
+} from './destination.type.js';
 
 import { destinationCtr } from './destination.controller.js';
 
@@ -14,6 +19,11 @@ const destinationResolver = {
             destinationCtr.getDestinations(context, args),
         getDestinationAvailableCountries: (_parent: unknown, _args: unknown, context: I_Context) =>
             destinationCtr.getDestinationAvailableCountries(context),
+        getDestinationCountsAndCountries: (
+            _parent: unknown,
+            args: { input?: I_Input_QueryDestinationSummary | null },
+            context: I_Context,
+        ) => destinationCtr.getDestinationCountsAndCountries(context, args.input ?? undefined),
     },
     Mutation: {
         createDestination: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateDestination>, context: I_Context) =>

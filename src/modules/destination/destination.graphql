@@ -196,6 +196,20 @@ type T_Response_Destination {
     result: T_Destination
 }
 
+type T_DestinationCountriesSummary {
+    club: Int
+    resort: Int
+    total: Int
+    countries: [String]
+    countriesTotal: Int
+}
+
+type T_Response_DestinationCountriesSummary {
+    success: Boolean
+    message: String
+    result: T_DestinationCountriesSummary
+}
+
 type T_Destinations {
     docs: [T_Destination]
     totalDocs: Int
@@ -217,6 +231,10 @@ type T_Response_Destinations {
     result: T_Destinations
 }
 
+input Input_QueryDestinationSummary {
+    filter: Input_QueryDestination
+}
+
 type T_Response_AvailableCountries {
     success: Boolean
     message: String
@@ -235,6 +253,9 @@ type Query {
         options: JSON
     ): T_Response_Destinations!
     getDestinationAvailableCountries: T_Response_AvailableCountries!
+    getDestinationCountsAndCountries(
+        input: Input_QueryDestinationSummary
+    ): T_Response_DestinationCountriesSummary!
 }
 
 type Mutation {
