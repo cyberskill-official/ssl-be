@@ -21,6 +21,7 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
+import { E_EventType } from '#modules/event/event.type.js';
 
 import type {
     I_Input_CreateLocation,
@@ -184,6 +185,7 @@ export const locationCtr = {
         }
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
+        const travelEventOverrides = new Map<string, I_Location>();
 
         // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
         const now = new Date();
@@ -197,10 +199,23 @@ export const locationCtr = {
 
             // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
             let isEventExpired = false;
+            let shouldHideTravelEvent = false;
             if (e && (filter.entityType === E_LocationEntityType.EVENT || (e as any)?.startDate || (e as any)?.endDate || (e as any)?.type !== undefined)) {
                 const ev = e as I_Event | undefined;
                 const endCandidate = ev?.endDate ?? null;
                 const startCandidate = ev?.startDate ?? null;
+
+                if (ev?.type === E_EventType.TRAVEL) {
+                    const startDate = startCandidate ? new Date(startCandidate) : undefined;
+                    const endDate = endCandidate ? new Date(endCandidate) : undefined;
+                    const hasStarted = startDate ? !Number.isNaN(startDate.getTime()) && startDate <= now : false;
+                    const beforeDeparture = endDate ? !Number.isNaN(endDate.getTime()) && endDate > now : !endDate;
+
+                    if (hasStarted && beforeDeparture && ev?.createdById) {
+                        travelEventOverrides.set(ev.createdById, d);
+                        shouldHideTravelEvent = true;
+                    }
+                }
 
                 if (endCandidate) {
                     const endDate = new Date(endCandidate);
@@ -214,6 +229,10 @@ export const locationCtr = {
                         isEventExpired = true;
                     }
                 }
+            }
+
+            if (shouldHideTravelEvent) {
+                return false;
             }
 
             let isIncompleteUser = false;
@@ -252,10 +271,32 @@ export const locationCtr = {
             let finalLocation: Partial<I_Location> | undefined;
             let finalLocationId: string | undefined;
             const tempLoc = user?.settings?.temporaryLocation;
+            const travelOverrideLocation = travelEventOverrides.get(user.id);
 
             if (tempLoc?.locationId && tempLoc.endAt && new Date(tempLoc.endAt) > nowInner) {
                 finalLocation = tempLoc.location ?? { id: tempLoc.locationId };
                 finalLocationId = tempLoc.locationId;
+            }
+            else if (travelOverrideLocation) {
+                const userPinStyle = user.partner1?.location?.pinStyle;
+                const sanitizedTravelLocation: Partial<I_Location> = {
+                    id: travelOverrideLocation.id,
+                    map: travelOverrideLocation.map,
+                    country: travelOverrideLocation.country,
+                    countryId: travelOverrideLocation.countryId,
+                    state: travelOverrideLocation.state,
+                    stateId: travelOverrideLocation.stateId,
+                    city: travelOverrideLocation.city,
+                    cityId: travelOverrideLocation.cityId,
+                    region: travelOverrideLocation.region,
+                    regionId: travelOverrideLocation.regionId,
+                    subRegion: travelOverrideLocation.subRegion,
+                    subRegionId: travelOverrideLocation.subRegionId,
+                    address: travelOverrideLocation.address,
+                    pinStyle: userPinStyle ?? travelOverrideLocation.pinStyle,
+                };
+                finalLocation = sanitizedTravelLocation;
+                finalLocationId = travelOverrideLocation.id;
             }
             else {
                 finalLocation = user.partner1?.location;
