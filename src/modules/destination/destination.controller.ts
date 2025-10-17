@@ -8,13 +8,14 @@ import type {
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
+import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import validator from 'validator';
 
-import type { I_Country } from '#modules/location/index.js';
+import type { I_Country, I_Location } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
@@ -24,17 +25,18 @@ import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr }
 import type {
     I_Destination,
     I_DestinationCountriesSummary,
+    I_DestinationCountrySummary,
     I_Input_CreateDestination,
     I_Input_QueryDestination,
     I_Input_QueryDestinationSummary,
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
+import { buildCountryNameFilter, mergeFilters, sanitizeFilter } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
 const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
-
 export const destinationCtr = {
     getDestination: async (
         _context: I_Context,
@@ -82,48 +84,96 @@ export const destinationCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryDestination>,
     ): Promise<I_Return<T_PaginateResult<I_Destination>>> => {
-        const destinations = await mongooseCtr.findPaging(filter, options);
+        // nested mặc định cho location
+        const locationDefaultNested: PopulateOptions[] = [
+            { path: 'country' },
+            { path: 'city' },
+        ];
 
-        if (!destinations.success) {
-            return destinations;
+        // Lấy mảng incoming populate (string | PopulateOptions | Array)
+        const incomingPopulate = (() => {
+            const p = options?.populate as any;
+            if (!p)
+                return [];
+            return Array.isArray(p) ? p.slice() : [p];
+        })();
+
+        // Chuẩn hoá string -> { path: string }
+        const normalized = incomingPopulate.map((it: any) =>
+            typeof it === 'string' ? ({ path: it } as PopulateOptions) : (it as PopulateOptions),
+        );
+
+        // Tìm entry 'location'
+        // tìm entry 'location'
+        const locIdx = normalized.findIndex(n => n.path === 'location');
+
+        if (locIdx === -1) {
+            // client không cung cấp location -> push default nested
+            normalized.push({ path: 'location', populate: locationDefaultNested });
+        }
+        else {
+            // dùng non-null assertion vì locIdx !== -1
+            const loc = normalized[locIdx]! as PopulateOptions;
+
+            if (!loc.populate) {
+                loc.populate = locationDefaultNested;
+            }
+            else {
+                const nested = Array.isArray(loc.populate)
+                    ? (loc.populate as any).map((n: any) => (typeof n === 'string' ? ({ path: n } as PopulateOptions) : n))
+                    : [loc.populate as PopulateOptions];
+
+                const has = (p: string) => nested.some((x: any) => x.path === p);
+                if (!has('country'))
+                    nested.push({ path: 'country' });
+                if (!has('city'))
+                    nested.push({ path: 'city' });
+
+                loc.populate = nested;
+            }
         }
 
-        destinations.result.docs = destinations.result.docs.map((destination) => {
-            // Apply signed URL to image fields
-            if (destination.logo) {
-                destination.logo = bunnyCtr.generateSignedUrl({
-                    fullUrl: destination.logo,
-                    extraQueryParams: {
-                        class: 'normal',
-                    },
-                });
-            }
+        const finalOptions = { ...(options ?? {}), populate: normalized as PopulateOptions[] };
 
-            if (destination.wearImage) {
-                destination.wearImage = bunnyCtr.generateSignedUrl({
-                    fullUrl: destination.wearImage,
-                    extraQueryParams: {
-                        class: 'normal',
-                    },
-                });
-            }
+        const destinations = await mongooseCtr.findPaging(filter, finalOptions);
+        if (!destinations.success)
+            return destinations;
 
-            if (destination.images) {
-                destination.images = destination.images.map(imageUrl =>
-                    bunnyCtr.generateSignedUrl({
-                        fullUrl: imageUrl,
-                        extraQueryParams: {
-                            class: 'normal',
-                        },
-                    }),
-                );
-            }
+        const docs = Array.isArray(destinations.result?.docs) ? destinations.result.docs : [];
 
-            return destination;
-        });
+        // Sign ảnh (logo, wearImage, images) — tương thích sync/async bunnyCtr
+        const signedDocs = await Promise.all(
+            docs.map(async (destination: any) => {
+                const doc: any = typeof destination?.toObject === 'function' ? destination.toObject() : { ...destination };
 
+                if (doc.logo) {
+                    doc.logo = await Promise.resolve(
+                        bunnyCtr.generateSignedUrl({ fullUrl: doc.logo, extraQueryParams: { class: 'normal' } }),
+                    );
+                }
+
+                if (doc.wearImage) {
+                    doc.wearImage = await Promise.resolve(
+                        bunnyCtr.generateSignedUrl({ fullUrl: doc.wearImage, extraQueryParams: { class: 'normal' } }),
+                    );
+                }
+
+                if (Array.isArray(doc.images)) {
+                    doc.images = await Promise.all(
+                        doc.images.map((imageUrl: string) =>
+                            Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: imageUrl, extraQueryParams: { class: 'normal' } })),
+                        ),
+                    );
+                }
+
+                return doc as I_Destination;
+            }),
+        );
+
+        destinations.result.docs = signedDocs;
         return destinations;
     },
+
     getDestinationAvailableCountries: async (
         context: I_Context,
     ): Promise<I_Return<I_Country[]>> => {
@@ -478,17 +528,29 @@ export const destinationCtr = {
     },
 
     getDestinationCountsAndCountries: async (
-        _context: I_Context,
+        context: I_Context,
         { filter = {} }: I_Input_QueryDestinationSummary = {},
     ): Promise<I_Return<I_DestinationCountriesSummary>> => {
         try {
-            const mergedFilter = (filter ?? {}) as unknown as T_FilterQuery<I_Destination>;
-            const baseFilter: T_FilterQuery<I_Destination> = { isDel: false, ...mergedFilter };
+            const sanitizedFilterObject = sanitizeFilter(filter as Record<string, unknown> | undefined);
+            const countryName = typeof sanitizedFilterObject['countryName'] === 'string'
+                ? sanitizedFilterObject['countryName']
+                : undefined;
+            delete sanitizedFilterObject['countryName'];
 
-            const clubCountResult = await mongooseCtr.count({
-                ...baseFilter,
-                type: E_DestinationType.CLUB,
-            } as T_FilterQuery<I_Destination>);
+            const baseFilter: T_FilterQuery<I_Destination> = {
+                isDel: false,
+                ...(sanitizedFilterObject as T_FilterQuery<I_Destination>),
+            };
+
+            const countryFilter = await buildCountryNameFilter(context, countryName);
+            const effectiveFilter = mergeFilters(baseFilter, countryFilter) ?? baseFilter;
+
+            const clubFilter = mergeFilters(
+                effectiveFilter,
+                { type: E_DestinationType.CLUB } as T_FilterQuery<I_Destination>,
+            );
+            const clubCountResult = await mongooseCtr.count(clubFilter ?? {});
             if (!clubCountResult.success) {
                 throwError({
                     message: clubCountResult.message || 'Failed to count club destinations',
@@ -497,10 +559,11 @@ export const destinationCtr = {
             }
             const clubCount = typeof clubCountResult.result === 'number' ? clubCountResult.result : 0;
 
-            const resortCountResult = await mongooseCtr.count({
-                ...baseFilter,
-                type: E_DestinationType.RESORT,
-            } as T_FilterQuery<I_Destination>);
+            const resortFilter = mergeFilters(
+                effectiveFilter,
+                { type: E_DestinationType.RESORT } as T_FilterQuery<I_Destination>,
+            );
+            const resortCountResult = await mongooseCtr.count(resortFilter ?? {});
             if (!resortCountResult.success) {
                 throwError({
                     message: resortCountResult.message || 'Failed to count resort destinations',
@@ -509,38 +572,69 @@ export const destinationCtr = {
             }
             const resortCount = typeof resortCountResult.result === 'number' ? resortCountResult.result : 0;
 
-            const destinationLocationIdsResult = await mongooseCtr.distinct('locationId', baseFilter);
-            if (!destinationLocationIdsResult.success) {
+            let countries: I_DestinationCountrySummary[] = [];
+
+            const destinationsForCountries = await mongooseCtr.findAll(
+                effectiveFilter ?? {},
+                undefined,
+                undefined,
+                [
+                    {
+                        path: 'location',
+                        populate: [{ path: 'country' }],
+                    },
+                ],
+            );
+
+            if (!destinationsForCountries.success) {
                 throwError({
-                    message: destinationLocationIdsResult.message || 'Failed to retrieve destination location IDs',
+                    message: destinationsForCountries.message || 'Failed to fetch destinations for country summary',
                     status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                 });
             }
 
-            const destinationLocationIds = Array.isArray(destinationLocationIdsResult.result)
-                ? destinationLocationIdsResult.result
-                : [];
+            const countriesAccumulator = new Map<string, { id: string; name?: string }>();
 
-            const uniqueLocationIds = (destinationLocationIds as Array<string | null | undefined>)
-                .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+            for (const destination of destinationsForCountries.result ?? []) {
+                const location = destination.location as I_Location | undefined;
+                const country = location?.country as I_Country | undefined;
+                const countryId = country?.id || location?.countryId;
+                const countryNameFromPopulate = typeof country?.name === 'string' ? country.name : undefined;
 
-            let countries: string[] = [];
-
-            if (uniqueLocationIds.length) {
-                const countryDistinct = await locationCtr.distinct('countryId', {
-                    isDel: false,
-                    entityType: E_LocationEntityType.DESTINATION,
-                    id: { $in: uniqueLocationIds },
-                });
-
-                if (!countryDistinct.success) {
-                    throwError({ message: countryDistinct.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                if (!countryId) {
+                    continue;
                 }
 
-                countries = Array.isArray(countryDistinct.result)
-                    ? (countryDistinct.result as string[]).filter(Boolean)
-                    : [];
+                const existingSummary = countriesAccumulator.get(countryId);
+
+                if (existingSummary) {
+                    if (!existingSummary.name && countryNameFromPopulate) {
+                        existingSummary.name = countryNameFromPopulate;
+                    }
+                    continue;
+                }
+
+                countriesAccumulator.set(countryId, { id: countryId, name: countryNameFromPopulate });
             }
+
+            const accumulatorArray = Array.from(countriesAccumulator.values());
+
+            for (const summary of accumulatorArray) {
+                if (summary.name) {
+                    continue;
+                }
+
+                const countryResult = await countryCtr.getCountry(context, { filter: { id: summary.id } });
+
+                if (countryResult.success && countryResult.result?.name) {
+                    summary.name = countryResult.result.name;
+                }
+            }
+
+            countries = accumulatorArray.map(summary => ({
+                id: summary.id,
+                name: summary.name ?? '',
+            }));
 
             return {
                 success: true,

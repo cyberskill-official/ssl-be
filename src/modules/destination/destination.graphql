@@ -196,11 +196,16 @@ type T_Response_Destination {
     result: T_Destination
 }
 
+type T_DestinationCountrySummary {
+    id: String
+    name: String
+}
+
 type T_DestinationCountriesSummary {
     club: Int
     resort: Int
     total: Int
-    countries: [String]
+    countries: [T_DestinationCountrySummary]
     countriesTotal: Int
 }
 

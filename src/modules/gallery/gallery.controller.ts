@@ -219,34 +219,47 @@ export const galleryCtr = {
     },
     getGalleriesByUserIds: async (
         context: I_Context,
-        { filter, options }: {
-            filter: I_Input_QueryGalleryByUserId;
+        args: {
+            filter?: I_Input_QueryGalleryByUserId;
             options?: I_Input_FindPaging<I_Input_QueryGallery>;
-        },
+        } = {},
     ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
-        const { userIds, ...galleryFilter } = filter;
+        const { filter = {}, options } = args;
+        const pagingOptions = options ?? {};
+        const { limit = 0, page = 1, sort: sortOptions } = pagingOptions as { limit?: number; page?: number; sort?: Record<string, unknown> };
+        const { userIds = [], ...galleryFilter } = filter;
 
-        // B1: validate user
-        const userFound = await userCtr.getUsers(context, {
-            filter: { id: { $in: userIds }, isActive: true },
-        });
-
-        if (!userFound.success) {
-            throwError({
-                message: 'User not found!',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return galleryCtr.getGalleries(context, { filter: galleryFilter, options });
         }
 
-        // B2: list uploadedByIds
-        const uploadedByIds = userFound.result.docs.map(u => u.id);
+        const uploadedByIds = userIds.filter(id => typeof id === 'string' && id.trim().length > 0);
 
-        // B3: query gallery
+        if (!uploadedByIds.length) {
+            const emptyResult: T_PaginateResult<I_Gallery> = {
+                docs: [],
+                totalDocs: 0,
+                limit,
+                totalPages: 0,
+                page,
+                pagingCounter: 0,
+                hasPrevPage: false,
+                hasNextPage: false,
+                prevPage: null,
+                nextPage: null,
+                offset: 0,
+            };
+
+            return { success: true, message: 'No galleries found for provided users.', result: emptyResult };
+        }
+
         return galleryCtr.getGalleries(context, {
             filter: { ...galleryFilter, uploadedByIds },
             options: {
-                ...options,
-                sort: { createdAt: -1 },
+                ...pagingOptions,
+                limit,
+                page,
+                sort: { createdAt: -1, ...(sortOptions ?? {}) },
             },
         });
     },
