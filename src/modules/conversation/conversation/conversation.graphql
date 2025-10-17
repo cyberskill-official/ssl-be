@@ -73,22 +73,9 @@ type T_Conversation {
     entity: U_ConversationEntity
     participants: [T_Participant]
     meta: JSON
-    contact: T_ContactAdmin
 }
 
-type T_ContactAdmin {
-    topic: E_ContactTopic!
-    username: String!
-    email: String!
-    requestType: E_ContactAdminType
-    device: E_Device
-    message: String!
-    image: String
-    paymentDate: DateTime
-    transactionId: String
-    profileLink: String
-    companyName: String
-}
+
 
 type T_BroadcastResult {
     messageId: String
@@ -274,6 +261,8 @@ type Mutation {
     ensureDestinationCommentConversation(destinationId: String!): T_Response_Conversation!
     contactAdmin(input: Input_ContactAdmin!): T_Response_ContactAdmin!
     adminReplyGuest(input: Input_AdminReplyGuest!): T_Response_Generic!
+    requestJoinConversation(conversationId: String!, message: String): T_Response_Generic!
+    approveJoinConversation(conversationId: String!, requesterId: String!): T_Response_Generic!
 }
 
 type Subscription {

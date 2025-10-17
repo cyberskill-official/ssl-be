@@ -2,7 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_User } from '#modules/user/user.type.js';
 
-import type { I_Conversation } from '../conversation/index.js';
+import type { I_ContactAdmin, I_Conversation } from '../conversation/index.js';
 import type { I_MessageStatus } from '../message-status/index.js';
 
 export enum E_MessageType {
@@ -14,6 +14,7 @@ export enum E_MessageType {
 export interface I_MessageContent {
     type: E_MessageType;
     value: string;
+    contactAdmin?: I_ContactAdmin;
 }
 
 export interface I_Message extends I_GenericDocument {

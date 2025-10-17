@@ -7,6 +7,21 @@ enum E_MessageType {
 type T_MessageContent {
     type: E_MessageType
     value: String
+    contactAdmin: T_ContactAdmin
+}
+
+type T_ContactAdmin {
+    topic: E_ContactTopic!
+    username: String!
+    email: String!
+    requestType: E_ContactAdminType
+    device: E_Device
+    message: String!
+    image: String
+    paymentDate: DateTime
+    transactionId: String
+    profileLink: String
+    companyName: String
 }
 
 input Input_MessageContent {

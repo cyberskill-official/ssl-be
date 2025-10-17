@@ -49,6 +49,13 @@ const conversationResolver = {
             conversationCtr.contactAdmin(context, args.input),
         adminReplyGuest: (_parent: unknown, args: { input: I_Input_AdminReplyGuest }, context: I_Context) =>
             conversationCtr.adminReplyGuest(context, args.input),
+        requestJoinConversation: (_parent: unknown, args: { conversationId: string; message?: string }, context: I_Context) =>
+            conversationCtr.requestJoinConversation(context, args),
+        approveJoinConversation: (
+            _parent: unknown,
+            args: { conversationId: string; requesterId: string },
+            context: I_Context,
+        ) => conversationCtr.approveJoinConversation(context, args),
     },
     Subscription: {
         messageSent: {

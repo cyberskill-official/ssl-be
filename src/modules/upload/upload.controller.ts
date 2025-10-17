@@ -11,6 +11,7 @@ import { Readable } from 'node:stream';
 import type {
     E_ModerationMediaStatus,
 } from '#modules/moderation/index.js';
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
@@ -36,17 +37,45 @@ const env = getEnv();
 
 export const uploadCtr = {
     upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<{ url: string; moderationMediaId: string; status?: E_ModerationMediaStatus; entityId?: string }>> => {
-        const currentUser = await authnCtr.getUserFromSession(context);
-        const { type, entity, file, entityId, tagId, skipModeration } = args;
+        const { type, entity, file, entityId, tagId, skipModeration, allowGuest } = args;
         const fileData = await getAndValidateFile(type, await file, UPLOAD_CONFIG);
 
         if (!fileData.success) {
             return fileData;
         }
 
-        const isStaff = await authnCtr.isStaff(context);
-        const isAdmin = await authnCtr.isAdmin(context);
-        const isFreeMember = await authnCtr.isFreeMember(context);
+        let currentUser: I_User;
+        let isGuest = false;
+
+        try {
+            currentUser = await authnCtr.getUserFromSession(context);
+        }
+        catch (error) {
+            if (!allowGuest) {
+                throw error;
+            }
+
+            isGuest = true;
+            currentUser = {
+                id: `guest-${Date.now()}`,
+                registerStep: E_RegisterStep.COMPLETE,
+                ageVerify: { status: E_AgeVerifyStatus.APPROVED },
+                roles: [],
+                rolesIds: [],
+            } as unknown as I_User;
+        }
+
+        let isStaff = false;
+        let isAdmin = false;
+        let isFreeMember = false;
+
+        if (!isGuest) {
+            [isStaff, isAdmin, isFreeMember] = await Promise.all([
+                authnCtr.isStaff(context),
+                authnCtr.isAdmin(context),
+                authnCtr.isFreeMember(context),
+            ]);
+        }
 
         if (type === E_UploadType.VIDEO && isFreeMember && !isStaff && !isAdmin) {
             throwError({
@@ -55,12 +84,13 @@ export const uploadCtr = {
             });
         }
 
-        const isInRegistration = currentUser.registerStep !== E_RegisterStep.COMPLETE;
+        const isInRegistration = !isGuest && currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery
             = entity === E_UploadEntity.GALLERY;
 
         const shouldGateUpload
-            = !isStaff
+            = !isGuest
+                && !isStaff
                 && !isAdmin
                 && !skipModeration
                 && !isInRegistration
@@ -95,10 +125,12 @@ export const uploadCtr = {
         const timestamp = new Date().getTime();
         const fullPath = `${nameWithoutExtension}-${timestamp}${extension}`;
 
+        const resolvedEntityId = entityId ?? currentUser.id;
+
         const folderPath = generateUploadPath('', {
             type,
             entity,
-            entityId,
+            entityId: resolvedEntityId,
             userId: currentUser.id,
         });
 
@@ -119,7 +151,7 @@ export const uploadCtr = {
                         url: videoUploaded.result!,
                         moderationMediaId: '',
                         status: undefined,
-                        entityId,
+                        entityId: resolvedEntityId,
                     },
                 };
             }
@@ -141,7 +173,7 @@ export const uploadCtr = {
                     url: directUrl,
                     moderationMediaId: '',
                     status: undefined,
-                    entityId,
+                    entityId: resolvedEntityId,
                 },
             };
         }
@@ -171,7 +203,7 @@ export const uploadCtr = {
                     uploadedById: currentUser.id,
                     url: videoUploaded.result!,
                     entity,
-                    entityId,
+                    entityId: resolvedEntityId,
                     tagId,
                     ipAddress: clientIp,
                 },
@@ -216,7 +248,7 @@ export const uploadCtr = {
                     url: videoUploaded.result!,
                     moderationMediaId: moderationCreated.result!.id!,
                     status: moderationCreated.result!.status,
-                    entityId: moderationCreated.result!.entityId || entityId,
+                    entityId: moderationCreated.result!.entityId || resolvedEntityId,
                 },
             };
         }
@@ -254,7 +286,7 @@ export const uploadCtr = {
                 uploadedById: currentUser.id,
                 url: uploadedUrl,
                 entity,
-                entityId,
+                entityId: resolvedEntityId,
                 tagId,
                 ipAddress: clientIp,
             },
@@ -301,7 +333,7 @@ export const uploadCtr = {
                 url: uploadedUrl,
                 moderationMediaId: moderationCreated.result!.id!,
                 status: moderationCreated.result!.status,
-                entityId: moderationCreated.result!.entityId || entityId,
+                entityId: moderationCreated.result!.entityId || resolvedEntityId,
             },
         };
     },

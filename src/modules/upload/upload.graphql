@@ -33,6 +33,8 @@ type Mutation {
         entity: E_UploadEntity!
         entityId: String
         tagId: String
+        skipModeration: Boolean
+        allowGuest: Boolean
         file: Upload!
     ): T_Response_Upload!
 }

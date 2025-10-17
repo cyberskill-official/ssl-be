@@ -6,4 +6,4 @@ export const IMAGE_QUALITY_THRESHOLDS = {
     },
 };
 
-export const FACE_SIMILARITY_THRESHOLD = 85;
+export const FACE_SIMILARITY_THRESHOLD = 75;

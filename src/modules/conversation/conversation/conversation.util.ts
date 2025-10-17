@@ -102,7 +102,10 @@ export function buildSupportTextBlock(params: {
         lines.push(`${key}: ${value}`);
     }
 
-    lines.push('', message);
+    const trimmedMessage = (message ?? '').trim();
+    if (trimmedMessage) {
+        lines.push('', trimmedMessage);
+    }
 
     return lines.join('\n');
 }

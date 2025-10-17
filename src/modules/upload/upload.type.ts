@@ -27,6 +27,7 @@ export interface I_Input_Upload {
     entityId: string;
     tagId?: string;
     skipModeration?: boolean;
+    allowGuest?: boolean;
     file: T_UploadedFilePromise;
 }
 
