@@ -32,7 +32,7 @@ import type {
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
-import { buildCountryNameFilter, mergeFilters, sanitizeFilter } from './destination.helper.js';
+import { buildCountryIdFilter, buildCountryNameFilter, mergeFilters, sanitizeFilter } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
@@ -42,7 +42,22 @@ export const destinationCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryDestination>,
     ): Promise<I_Return<I_Destination>> => {
-        const destinationFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const workingFilter = filter ? { ...filter } : {};
+        const rawCountryId = typeof (workingFilter as { countryId?: unknown }).countryId === 'string'
+            ? (workingFilter as { countryId?: string }).countryId
+            : undefined;
+        delete (workingFilter as { countryId?: string }).countryId;
+
+        const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
+        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
+            ? sanitizedFilterObject as T_FilterQuery<I_Destination>
+            : undefined;
+
+        const countryFilter = await buildCountryIdFilter(rawCountryId);
+        const combinedFilter = mergeFilters(baseFilter, countryFilter);
+        const effectiveFilter = (combinedFilter ?? baseFilter ?? {}) as T_FilterQuery<I_Destination>;
+
+        const destinationFound = await mongooseCtr.findOne(effectiveFilter, projection, options, populate);
 
         if (!destinationFound.success) {
             return destinationFound;
@@ -135,7 +150,21 @@ export const destinationCtr = {
 
         const finalOptions = { ...(options ?? {}), populate: normalized as PopulateOptions[] };
 
-        const destinations = await mongooseCtr.findPaging(filter, finalOptions);
+        const workingFilter = filter ? { ...filter } : {};
+        const rawCountryId = typeof (workingFilter as { countryId?: unknown }).countryId === 'string'
+            ? (workingFilter as { countryId?: string }).countryId
+            : undefined;
+        delete (workingFilter as { countryId?: string }).countryId;
+
+        const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
+        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
+            ? sanitizedFilterObject as T_FilterQuery<I_Destination>
+            : undefined;
+
+        const countryFilter = await buildCountryIdFilter(rawCountryId);
+        const effectiveFilter = mergeFilters(baseFilter, countryFilter) ?? baseFilter;
+
+        const destinations = await mongooseCtr.findPaging(effectiveFilter ?? undefined, finalOptions);
         if (!destinations.success)
             return destinations;
 
@@ -537,14 +566,20 @@ export const destinationCtr = {
                 ? sanitizedFilterObject['countryName']
                 : undefined;
             delete sanitizedFilterObject['countryName'];
+            const countryId = typeof sanitizedFilterObject['countryId'] === 'string'
+                ? sanitizedFilterObject['countryId']
+                : undefined;
+            delete sanitizedFilterObject['countryId'];
 
             const baseFilter: T_FilterQuery<I_Destination> = {
                 isDel: false,
                 ...(sanitizedFilterObject as T_FilterQuery<I_Destination>),
             };
 
-            const countryFilter = await buildCountryNameFilter(context, countryName);
-            const effectiveFilter = mergeFilters(baseFilter, countryFilter) ?? baseFilter;
+            const countryIdFilter = await buildCountryIdFilter(countryId);
+            const filterWithCountryId = mergeFilters(baseFilter, countryIdFilter) ?? baseFilter;
+            const countryFilterByName = await buildCountryNameFilter(context, countryName);
+            const effectiveFilter = mergeFilters(filterWithCountryId, countryFilterByName) ?? filterWithCountryId;
 
             const clubFilter = mergeFilters(
                 effectiveFilter,

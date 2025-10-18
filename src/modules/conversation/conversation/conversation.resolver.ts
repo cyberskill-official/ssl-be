@@ -49,7 +49,11 @@ const conversationResolver = {
             conversationCtr.contactAdmin(context, args.input),
         adminReplyGuest: (_parent: unknown, args: { input: I_Input_AdminReplyGuest }, context: I_Context) =>
             conversationCtr.adminReplyGuest(context, args.input),
-        requestJoinConversation: (_parent: unknown, args: { conversationId: string; message?: string }, context: I_Context) =>
+        requestJoinConversation: (
+            _parent: unknown,
+            args: { conversationId: string; message?: string; eventId?: string },
+            context: I_Context,
+        ) =>
             conversationCtr.requestJoinConversation(context, args),
         approveJoinConversation: (
             _parent: unknown,

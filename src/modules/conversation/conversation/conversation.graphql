@@ -261,7 +261,7 @@ type Mutation {
     ensureDestinationCommentConversation(destinationId: String!): T_Response_Conversation!
     contactAdmin(input: Input_ContactAdmin!): T_Response_ContactAdmin!
     adminReplyGuest(input: Input_AdminReplyGuest!): T_Response_Generic!
-    requestJoinConversation(conversationId: String!, message: String): T_Response_Generic!
+    requestJoinConversation(conversationId: String!, message: String, eventId: String): T_Response_Generic!
     approveJoinConversation(conversationId: String!, requesterId: String!): T_Response_Generic!
 }
 

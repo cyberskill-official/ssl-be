@@ -69,6 +69,7 @@ export interface I_Destination extends I_GenericDocument {
 export type T_Destination_Populate = 'createdBy';
 
 export interface I_Input_QueryDestination extends Omit<I_Destination, T_Destination_Populate> {
+    countryId?: string;
 }
 
 export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Create | T_Destination_Populate> {

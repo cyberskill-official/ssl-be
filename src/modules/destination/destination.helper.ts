@@ -97,3 +97,40 @@ export async function buildCountryNameFilter(
         },
     } as T_FilterQuery<I_Destination>;
 }
+
+export async function buildCountryIdFilter(
+    countryId?: string | null,
+): Promise<T_FilterQuery<I_Destination> | undefined> {
+    const trimmedId = countryId?.trim();
+
+    if (!trimmedId) {
+        return undefined;
+    }
+
+    const destinationIdsResult = await locationCtr.distinct('entityId', {
+        isDel: false,
+        entityType: E_LocationEntityType.DESTINATION,
+        countryId: trimmedId,
+    });
+
+    if (!destinationIdsResult.success) {
+        throwError({
+            message: destinationIdsResult.message || 'Failed to fetch destination ids by country',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    }
+
+    const destinationIds = Array.from(
+        new Set(
+            ((destinationIdsResult.result as Array<string | null | undefined> | undefined) ?? [])
+                .map(id => (typeof id === 'string' ? id.trim() : ''))
+                .filter((id): id is string => id.length > 0),
+        ),
+    );
+
+    return {
+        id: {
+            $in: destinationIds,
+        },
+    } as T_FilterQuery<I_Destination>;
+}

@@ -107,6 +107,7 @@ input Input_QueryDestination {
     ageGroup: E_DestinationAgeGroup
     logo: String
     locationId: String
+    countryId: String
     nearbyHotels: [Input_Hotel]
     wearImage: String
     womenDressCode: String

@@ -246,7 +246,6 @@ export const conversationCtr = {
         }
     },
 
-    // replace existing getConversations (paging) with this version
     getConversations: async (
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryConversation>,
@@ -404,7 +403,7 @@ export const conversationCtr = {
 
     requestJoinConversation: async (
         context: I_Context,
-        { conversationId, message }: { conversationId: string; message?: string },
+        { conversationId, message, eventId }: { conversationId: string; message?: string; eventId?: string },
     ): Promise<I_Return<boolean>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
@@ -471,6 +470,8 @@ export const conversationCtr = {
             });
         }
 
+        const resolvedEventId = eventId ?? (typeof conversation.entityId === 'string' ? conversation.entityId : undefined);
+
         const headline = conversation.name
             ? `${currentUser.username ?? 'A user'} requested to join ${conversation.name}`
             : `${currentUser.username ?? 'A user'} requested to join your group`;
@@ -479,6 +480,9 @@ export const conversationCtr = {
         const actorAvatar = currentUser.partner1?.gallery?.url
             ?? currentUser.partner2?.gallery?.url
             ?? undefined;
+        const redirect = resolvedEventId
+            ? { kind: E_RedirectType.EVENT, id: resolvedEventId }
+            : undefined;
 
         for (const targetId of notifiedIds) {
             await notificationCtr.createNotificationWithSettings(context, {
@@ -490,6 +494,7 @@ export const conversationCtr = {
                     actorId: currentUser.id,
                     presentation: {
                         headline,
+                        ...(redirect ? { redirect } : {}),
                         context: {
                             conversationType: E_ConversationType.GROUP,
                             groupName: conversation.name ?? undefined,
