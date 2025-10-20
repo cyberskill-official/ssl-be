@@ -51,7 +51,7 @@ const conversationResolver = {
             conversationCtr.adminReplyGuest(context, args.input),
         requestJoinConversation: (
             _parent: unknown,
-            args: { conversationId: string; message?: string; eventId?: string },
+            args: { eventId?: string },
             context: I_Context,
         ) =>
             conversationCtr.requestJoinConversation(context, args),

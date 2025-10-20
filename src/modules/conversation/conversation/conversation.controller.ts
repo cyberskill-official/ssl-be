@@ -20,6 +20,7 @@ import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
+import { eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -403,27 +404,31 @@ export const conversationCtr = {
 
     requestJoinConversation: async (
         context: I_Context,
-        { conversationId, message, eventId }: { conversationId: string; message?: string; eventId?: string },
+        { eventId }: { eventId?: string },
     ): Promise<I_Return<boolean>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        if (!conversationId) {
+        if (!eventId) {
             throwError({
-                message: 'Conversation ID is required.',
+                message: 'Event ID is required.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        const conversationRes = await mongooseCtr.findOne({ id: conversationId });
+        const conversationRes = await mongooseCtr.findOne({
+            entityId: eventId,
+            type: E_ConversationType.GROUP,
+        });
 
-        if (!conversationRes.success || !conversationRes.result) {
+        if (!conversationRes?.success || !conversationRes.result) {
             throwError({
-                message: 'Conversation not found.',
+                message: 'Group conversation for this event was not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
 
         const conversation = conversationRes.result;
+        const targetConversationId = conversation.id;
 
         if (conversation.type !== E_ConversationType.GROUP) {
             throwError({
@@ -433,7 +438,7 @@ export const conversationCtr = {
         }
 
         const participantFound = await participantCtr.getParticipant(context, {
-            filter: { conversationId, userId: currentUser.id },
+            filter: { conversationId: targetConversationId, userId: currentUser.id },
         });
 
         if (participantFound.success) {
@@ -444,7 +449,7 @@ export const conversationCtr = {
         }
 
         const adminParticipantsRes = await participantCtr.getParticipants(context, {
-            filter: { conversationId, role: E_ParticipantRole.ADMIN },
+            filter: { conversationId: targetConversationId, role: E_ParticipantRole.ADMIN },
             options: { pagination: false },
         });
 
@@ -471,12 +476,20 @@ export const conversationCtr = {
         }
 
         const resolvedEventId = eventId ?? (typeof conversation.entityId === 'string' ? conversation.entityId : undefined);
+        let eventTitle: string | undefined;
+        if (resolvedEventId) {
+            const eventFound = await eventCtr.getEvent(context, { filter: { id: resolvedEventId } });
+            if (eventFound.success && eventFound.result?.title) {
+                eventTitle = eventFound.result.title;
+            }
+        }
 
-        const headline = conversation.name
-            ? `${currentUser.username ?? 'A user'} requested to join ${conversation.name}`
-            : `${currentUser.username ?? 'A user'} requested to join your group`;
+        const headline = eventTitle
+            ? `${currentUser.username ?? 'A user'} would like to attend your event "${eventTitle}"`
+            : conversation.name
+                ? `${currentUser.username ?? 'A user'} requested to join ${conversation.name}`
+                : `${currentUser.username ?? 'A user'} requested to join your group`;
 
-        const trimmedMessage = message?.trim();
         const actorAvatar = currentUser.partner1?.gallery?.url
             ?? currentUser.partner2?.gallery?.url
             ?? undefined;
@@ -490,7 +503,7 @@ export const conversationCtr = {
                     targetId,
                     type: [E_NotificationType.GROUP_JOIN_REQUEST],
                     entityType: E_NotificationEntityType.CONVERSATION,
-                    entityId: conversationId,
+                    entityId: targetConversationId,
                     actorId: currentUser.id,
                     presentation: {
                         headline,
@@ -506,7 +519,6 @@ export const conversationCtr = {
                             gender: currentUser.partner1?.gender ?? currentUser.partner2?.gender,
                         },
                     },
-                    body: trimmedMessage || undefined,
                 },
             });
         }

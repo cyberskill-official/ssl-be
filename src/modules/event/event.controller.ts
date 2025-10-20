@@ -334,7 +334,12 @@ export const eventCtr = {
         // If PRIVATE, create conversation using final title (doc.title) and rollback if it fails
         if (type === E_EventType.PRIVATE) {
             const createdConversation = await conversationCtr.createConversation(context, {
-                doc: { name: doc.title ?? title, type: E_ConversationType.GROUP, createdById: currentUser.id },
+                doc: {
+                    name: doc.title ?? title,
+                    type: E_ConversationType.GROUP,
+                    createdById: currentUser.id,
+                    entityId: eventCreated.result.id,
+                },
             });
             if (!createdConversation.success) {
                 // cleanup event to avoid orphaned event
