@@ -420,7 +420,7 @@ export const conversationCtr = {
             type: E_ConversationType.GROUP,
         });
 
-        if (!conversationRes?.success || !conversationRes.result) {
+        if (!conversationRes?.success) {
             throwError({
                 message: 'Group conversation for this event was not found.',
                 status: RESPONSE_STATUS.NOT_FOUND,
@@ -484,11 +484,8 @@ export const conversationCtr = {
             }
         }
 
-        const headline = eventTitle
-            ? `${currentUser.username ?? 'A user'} would like to attend your event "${eventTitle}"`
-            : conversation.name
-                ? `${currentUser.username ?? 'A user'} requested to join ${conversation.name}`
-                : `${currentUser.username ?? 'A user'} requested to join your group`;
+        const headline
+        = `${currentUser.username ?? 'A user'} would like to attend your event "${eventTitle}"`;
 
         const actorAvatar = currentUser.partner1?.gallery?.url
             ?? currentUser.partner2?.gallery?.url
