@@ -233,3 +233,8 @@ export interface I_MessageSubscriptionFilter {
 export interface I_ContactAdminResult {
     conversationId?: string;
 }
+
+export interface I_JoinRequestSummary {
+    headline?: string;
+    username?: string;
+}

@@ -1,7 +1,11 @@
+import type { I_Context } from '#shared/typescript/express.js';
+
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Conversation, I_ConversationMeta } from './index.js';
 
+import { transformMessageMedia } from '../message/index.js';
 import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './index.js';
 
 /**
@@ -184,4 +188,38 @@ export function classifyConversation(c: I_Conversation): {
         : profileOwnerId;
 
     return { isPublic, notifType, memberCount, profileOwnerId: resolvedProfileOwnerId, publicTargetId, redirectKind };
+}
+
+export function toPlainConversation<T>(conversation: T): T {
+    if (hasToObject(conversation)) {
+        try {
+            const plain = conversation.toObject();
+            return (plain ?? conversation) as T;
+        }
+        catch {
+            return conversation;
+        }
+    }
+    return conversation;
+}
+
+export function transformConversationMedia<T extends I_Conversation>(context: I_Context, conversation: T | null | undefined): T | null | undefined {
+    if (!conversation)
+        return conversation ?? null;
+
+    const plainConversation = toPlainConversation(conversation);
+
+    const lastMessage = transformMessageMedia(context, plainConversation.lastMessage) ?? plainConversation.lastMessage;
+
+    return {
+        ...plainConversation,
+        ...(lastMessage ? { lastMessage } : {}),
+    } as T;
+}
+
+export function transformConversationDocs<T extends I_Conversation>(context: I_Context, docs: T[] | undefined): T[] {
+    if (!docs?.length)
+        return docs ?? [];
+
+    return docs.map(doc => transformConversationMedia(context, doc) ?? doc);
 }

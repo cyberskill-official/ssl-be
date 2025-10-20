@@ -243,11 +243,23 @@ type T_Response_Conversations {
     result: T_Conversations
 }
 
+type T_JoinRequestSummary {
+    headline: String
+    username: String
+}
+
+type T_Response_JoinRequests {
+    success: Boolean
+    message: String
+    result: [T_JoinRequestSummary!]
+}
+
 type Query {
     getConversation(filter: Input_QueryConversation!, projection: JSON, options: JSON, populate: JSON): T_Response_Conversation!
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
     getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
     getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
+    getEventJoinRequests(eventId: String!): T_Response_JoinRequests!
 }
 
 type Mutation {

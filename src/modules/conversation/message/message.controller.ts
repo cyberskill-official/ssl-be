@@ -31,21 +31,28 @@ import {
     E_MessageType,
 
 } from './message.type.js';
+import {
+    transformMessageMedia,
+    transformMessageResult,
+    transformMessagesPagingResult,
+} from './message.util.js';
 
 const mongooseCtr = new MongooseController<I_Message>(MessageModel);
 
 export const messageCtr = {
     getMessage: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryMessage>,
     ): Promise<I_Return<I_Message>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const result = await mongooseCtr.findOne(filter, projection, options, populate);
+        return transformMessageResult(context, result);
     },
     getMessages: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryMessage>,
     ): Promise<I_Return<T_PaginateResult<I_Message>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const result = await mongooseCtr.findPaging(filter, options);
+        return transformMessagesPagingResult(context, result);
     },
     createMessage: async (
         context: I_Context,
@@ -111,24 +118,35 @@ export const messageCtr = {
                 return result;
             }
 
+            const lastMessage = transformMessageMedia(context, result.result.lastMessage) ?? result.result.lastMessage;
+            if (!lastMessage) {
+                throwError({
+                    message: 'Failed to load created message',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
             return {
                 success: true,
                 message: result.message,
-                result: result.result.lastMessage!,
+                result: lastMessage,
             };
         }
 
         if (conversationId) {
-            return conversationCtr.sendMessage(
+            const sendResult = await conversationCtr.sendMessage(
                 context,
                 conversationId,
                 senderId,
                 content,
                 parentId,
             );
+
+            return transformMessageResult(context, sendResult);
         }
 
-        return mongooseCtr.createOne({ ...doc, senderId });
+        const created = await mongooseCtr.createOne({ ...doc, senderId });
+        return transformMessageResult(context, created);
     },
     updateMessage: async (
         context: I_Context,
@@ -154,7 +172,8 @@ export const messageCtr = {
             });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const updated = await mongooseCtr.updateOne(filter, update, options);
+        return transformMessageResult(context, updated);
     },
     deleteMessage: async (
         context: I_Context,
@@ -181,12 +200,13 @@ export const messageCtr = {
 
         // Soft delete: set deletedAt, redact content, set expiresAt
         const now = new Date();
-        return mongooseCtr.updateOne(filter, {
+        const deleted = await mongooseCtr.updateOne(filter, {
             'deletedAt': now,
             'redacted': true,
             'content.value': '',
             'expiresAt': now,
         }, options);
+        return transformMessageResult(context, deleted);
     },
 
     createMessageOnly: async (

@@ -97,7 +97,34 @@ export const eventCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
-        const events = await mongooseCtr.findPaging(filter, options);
+        const now = new Date();
+        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+
+        const effectiveFilterAny = effectiveFilter as Record<string, any>;
+
+        if (effectiveFilterAny['isDel'] === undefined) {
+            effectiveFilterAny['isDel'] = { $ne: true };
+        }
+
+        const expiryCondition = {
+            $or: [
+                { endDate: { $gt: now } },
+                { endDate: null },
+                { endDate: { $exists: false } },
+            ],
+        };
+
+        if (Array.isArray(effectiveFilterAny['$and'])) {
+            effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
+        }
+        else if (effectiveFilterAny['$and']) {
+            effectiveFilterAny['$and'] = [effectiveFilterAny['$and'], expiryCondition];
+        }
+        else {
+            effectiveFilterAny['$and'] = [expiryCondition];
+        }
+
+        const events = await mongooseCtr.findPaging(effectiveFilterAny, options);
         if (!events.success)
             return events;
 
@@ -187,6 +214,7 @@ export const eventCtr = {
         // CLUB_VISIT: resolve destination & optional location fallback
         let destLocationCandidate: typeof location | undefined;
         let destinationPinStyle: E_Destination_PinStyle | undefined;
+        let destinationLocationId: string | undefined;
 
         if (type === E_EventType.CLUB_VISIT) {
             if (!destinationId) {
@@ -203,6 +231,7 @@ export const eventCtr = {
             }
 
             const destination = destinationFound.result;
+            destinationLocationId = destination.locationId ?? (destination.location as any)?.id ?? destinationLocationId;
 
             // read destination pin style (if destination model exposes it)
             destinationPinStyle = (destination as any)?.pinStyle as E_Destination_PinStyle | undefined;
@@ -229,10 +258,12 @@ export const eventCtr = {
                     }
                     // fallback location candidate from locationId
                     destLocationCandidate = destination.location ?? (locationFound.result as any);
+                    destinationLocationId = destinationLocationId ?? locationFound.result?.id ?? destination.locationId ?? destinationLocationId;
                 }
             }
             else {
                 destLocationCandidate = destination.location ?? destLocationCandidate;
+                destinationLocationId = destinationLocationId ?? destination.locationId ?? (destination.location as any)?.id;
             }
 
             const autoTitle = `Going clubbing in ${countryName}${countryName && cityName ? ', ' : ''}${cityName}`.trim();
@@ -356,13 +387,29 @@ export const eventCtr = {
         }
 
         // --- NEW: determine temporaryLocation and partner1 location fallback ---
+        const now = new Date();
+        const tempLocationSettings = currentUser.settings?.temporaryLocation;
+
         let tempLocationCandidate: typeof location | undefined;
         try {
-            const tempLocId = currentUser.settings?.temporaryLocation?.locationId;
-            if (tempLocId) {
-                const tempFound = await locationCtr.getLocation(context, { filter: { id: tempLocId } });
-                if (tempFound.success && tempFound.result) {
-                    tempLocationCandidate = tempFound.result as any;
+            const tempEndAt = tempLocationSettings?.endAt ? new Date(tempLocationSettings.endAt) : undefined;
+            const isTempActive = !!tempLocationSettings
+                && (
+                    !tempEndAt
+                    || (!Number.isNaN(tempEndAt.getTime()) && tempEndAt > now)
+                );
+
+            if (isTempActive) {
+                if (tempLocationSettings.location) {
+                    tempLocationCandidate = tempLocationSettings.location as any;
+                }
+
+                const tempLocId = tempLocationSettings.locationId;
+                if (tempLocId) {
+                    const tempFound = await locationCtr.getLocation(context, { filter: { id: tempLocId } });
+                    if (tempFound.success && tempFound.result) {
+                        tempLocationCandidate = tempFound.result as any;
+                    }
                 }
             }
         }
@@ -386,7 +433,6 @@ export const eventCtr = {
 
         // If we found a candidate with map, prefer it; otherwise fallback to original priority
         const sourceLocation = sourceWithMap ?? (tempLocationCandidate ?? location ?? partnerLocationCandidate ?? destLocationCandidate);
-        const reuseDestinationLocation = type === E_EventType.CLUB_VISIT && !!destLocationCandidate && !tempLocationCandidate && !location && !partnerLocationCandidate;
 
         // For non-club events we require coordinates (map) so event shows on map
         if (type !== E_EventType.CLUB_VISIT) {
@@ -405,36 +451,33 @@ export const eventCtr = {
         let locMapForRedirect: { latitude?: number; longitude?: number } | undefined;
 
         try {
-            if (reuseDestinationLocation) {
-            // create a fresh EVENT location copied from destination so it has entityType === EVENT and includes map
-                const newLocDoc = {
-                    ...(destLocationCandidate?.map ? { map: destLocationCandidate.map } : {}),
-                    ...(destLocationCandidate?.address ? { address: destLocationCandidate.address } : {}),
-                    ...(destLocationCandidate?.countryId ? { countryId: destLocationCandidate.countryId } : {}),
-                    ...(destLocationCandidate?.cityId ? { cityId: destLocationCandidate.cityId } : {}),
-                    pinStyle: (destinationPinStyle as any) ?? mapEventTypeToPinStyle(type),
-                    entityType: E_LocationEntityType.EVENT,
-                    entityId: eventCreated.result.id,
-                };
+            if (type === E_EventType.CLUB_VISIT) {
+                finalLocationId = destLocationCandidate?.id ?? destinationLocationId;
 
-                const locationCreated = await locationCtr.createLocation(context, { doc: newLocDoc });
-                if (!locationCreated.success) {
-                    await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort */ });
-                    return locationCreated;
+                if (!finalLocationId) {
+                    await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
+                    throwError({
+                        message: 'Selected club does not have a location configured. Please update the club location before creating an event.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
                 }
-                finalLocationId = locationCreated.result.id;
-                locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+
+                if (destLocationCandidate && hasValidMap(destLocationCandidate)) {
+                    locMapForRedirect = destLocationCandidate.map as { latitude?: number; longitude?: number } | undefined;
+                }
+                else if (finalLocationId) {
+                    try {
+                        const clubLocation = await locationCtr.getLocation(context, { filter: { id: finalLocationId } });
+                        if (clubLocation.success && clubLocation.result?.map) {
+                            locMapForRedirect = clubLocation.result.map as { latitude?: number; longitude?: number } | undefined;
+                        }
+                    }
+                    catch { /* ignore missing club map */ }
+                }
             }
             else {
             // Always create a new location doc for this event (avoid reusing partner/user location)
-            // determine pinStyle: destinationPinStyle for CLUB_VISIT else mapEventTypeToPinStyle
-                let locationPinStyle: E_Event_PinStyle | E_Destination_PinStyle | undefined;
-                if (type === E_EventType.CLUB_VISIT) {
-                    locationPinStyle = destinationPinStyle ?? mapEventTypeToPinStyle(type);
-                }
-                else {
-                    locationPinStyle = mapEventTypeToPinStyle(type);
-                }
+                const locationPinStyle = mapEventTypeToPinStyle(type);
 
                 const locationDoc = sourceLocation
                     ? (() => {
@@ -450,15 +493,15 @@ export const eventCtr = {
                             } = sourceLocation as any;
                             return {
                                 ...rest,
-                                // ensure we pass map if present; pinStyle may be destination-specific
+                                // ensure we pass map if present
                                 ...(hasValidMap(sourceLocation) ? { map: sourceLocation.map } : {}),
-                                pinStyle: (locationPinStyle as any),
+                                pinStyle: locationPinStyle as any,
                                 entityType: E_LocationEntityType.EVENT,
                                 entityId: eventCreated.result.id,
                             };
                         })()
                     : {
-                            pinStyle: (locationPinStyle as any),
+                            pinStyle: locationPinStyle as any,
                             entityType: E_LocationEntityType.EVENT,
                             entityId: eventCreated.result.id,
                         };
@@ -543,7 +586,6 @@ export const eventCtr = {
                             doc: {
                                 targetId,
                                 type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
-                                entityType: E_NotificationEntityType.EVENT,
                                 entityId: eventCreated.result.id,
                                 actorId: currentUser.id,
                                 presentation: commonPresentation,

@@ -44,6 +44,7 @@ import type {
     I_Input_DeleteGroupConversation,
     I_Input_DeletePrivateConversation,
     I_Input_QueryConversation,
+    I_JoinRequestSummary,
     I_MessageReadPayload,
     I_MessageSentPayload,
     I_MessageSubscriptionFilter,
@@ -51,6 +52,7 @@ import type {
 
 import { messageStatusCtr } from '../message-status/index.js';
 import { E_MessageType, messageCtr } from '../message/index.js';
+import { transformMessageMedia } from '../message/message.util.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
 import { ConversationModel } from './conversation.model.js';
 import {
@@ -58,7 +60,7 @@ import {
     E_ConversationAction,
     E_ConversationType,
 } from './conversation.type.js';
-import { classifyConversation, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140 } from './conversation.util.js';
+import { classifyConversation, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
 
@@ -235,15 +237,20 @@ export const conversationCtr = {
             return convRes as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
         }
 
+        const conversation = transformConversationMedia(context, convRes.result) ?? convRes.result;
+
         // resolve contact (safe, non-blocking: still awaited)
         try {
-            const resolved = await resolveConversationContact(context, convRes.result);
-            const out = { ...convRes.result, resolvedContact: resolved };
+            const resolved = await resolveConversationContact(context, conversation);
+            const out = { ...conversation, resolvedContact: resolved };
             return { success: true, message: convRes.message, result: out };
         }
         catch {
-            // if resolving fails, return original result without resolvedContact
-            return convRes as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
+            // if resolving fails, return transformed conversation without resolvedContact
+            return {
+                ...convRes,
+                result: conversation,
+            } as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
         }
     },
 
@@ -255,10 +262,10 @@ export const conversationCtr = {
         if (!res.success || !res.result)
             return res as any;
 
-        const docs = res.result.docs || [];
+        const docsWithMedia = transformConversationDocs(context, res.result.docs);
 
         // resolve contacts in parallel (bounded)
-        const resolvedPromises = docs.map(async (doc) => {
+        const resolvedPromises = docsWithMedia.map(async (doc) => {
             try {
                 const resolved = await resolveConversationContact(context, doc);
                 return { ...doc, resolvedContact: resolved };
@@ -289,7 +296,19 @@ export const conversationCtr = {
             E_ConversationType.PRIVATE,
             search,
         );
-        return mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
+        const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
+        if (!result.success || !result.result)
+            return result;
+
+        const docs = transformConversationDocs(context, result.result.docs);
+
+        return {
+            ...result,
+            result: {
+                ...result.result,
+                docs,
+            },
+        };
     },
 
     getMyGroupConversations: async (
@@ -303,7 +322,90 @@ export const conversationCtr = {
             E_ConversationType.GROUP,
             search,
         );
-        return mongooseCtr.findPaging({ id: { $in: groupConversationIds } }, options);
+        const result = await mongooseCtr.findPaging({ id: { $in: groupConversationIds } }, options);
+        if (!result.success || !result.result)
+            return result;
+
+        const docs = transformConversationDocs(context, result.result.docs);
+
+        return {
+            ...result,
+            result: {
+                ...result.result,
+                docs,
+            },
+        };
+    },
+
+    getEventJoinRequests: async (
+        context: I_Context,
+        eventId: string,
+    ): Promise<I_Return<I_JoinRequestSummary[]>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!eventId) {
+            throwError({
+                message: 'Event ID is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const conversationRes = await mongooseCtr.findOne({
+            entityId: eventId,
+            type: E_ConversationType.GROUP,
+        });
+
+        if (!conversationRes.success || !conversationRes.result) {
+            throwError({
+                message: 'Group conversation for this event was not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const conversation = conversationRes.result;
+
+        const participantRes = await participantCtr.getParticipant(context, {
+            filter: { conversationId: conversation.id, userId: currentUser.id },
+        });
+
+        const isAdminParticipant = participantRes.success && participantRes.result?.role === E_ParticipantRole.ADMIN;
+        const isConversationCreator = conversation.createdById === currentUser.id;
+
+        if (!isAdminParticipant && !isConversationCreator) {
+            throwError({
+                message: 'You must be a group admin to view join requests.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const notificationsRes = await notificationCtr.getNotifications(context, {
+            filter: {
+                entityType: E_NotificationEntityType.CONVERSATION,
+                entityId: conversation.id,
+                targetId: currentUser.id,
+                type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                dismissedAt: null,
+            },
+            options: { pagination: false },
+        });
+
+        if (!notificationsRes.success) {
+            throwError({
+                message: notificationsRes.message ?? 'Failed to load join requests.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const joinRequests: I_JoinRequestSummary[] = notificationsRes.result.docs.map(notification => ({
+            headline: notification.presentation?.headline ?? undefined,
+            username: notification.presentation?.actor?.username ?? undefined,
+        }));
+
+        return {
+            success: true,
+            message: 'Join requests fetched successfully.',
+            result: joinRequests,
+        };
     },
 
     createConversationInternal: async (
@@ -1298,12 +1400,14 @@ export const conversationCtr = {
                 throwError({ message: 'Failed to get final conversation data', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
+            const populatedConversation = transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+
             // Publish WS
-            const messageSentPayload: I_MessageSentPayload = { conversation: finalConversationResult.result };
+            const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
             // Notification (DM)
-            const senderUser = finalConversationResult.result.participants?.find(p => p.userId === senderId)?.user;
+            const senderUser = populatedConversation.participants?.find(p => p.userId === senderId)?.user;
             const avatar = senderUser?.partner1?.gallery?.url
                 ?? senderUser?.partner2?.gallery?.url
                 ?? undefined;
@@ -1358,7 +1462,7 @@ export const conversationCtr = {
             return {
                 success: true,
                 message: 'Message sent successfully',
-                result: finalConversationResult.result,
+                result: populatedConversation,
             };
         }
         catch (error) {
@@ -1454,12 +1558,14 @@ export const conversationCtr = {
                 });
             }
 
+            const populatedConversation = transformConversationMedia(context, populatedConversationResult.result) ?? populatedConversationResult.result;
+
             // 7) Pubsub publish
-            const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversationResult.result };
+            const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
             pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
 
             // 8) Actor (who caused the notification)
-            let actorUser = populatedConversationResult.result.participants?.find(p => p.userId === senderId)?.user;
+            let actorUser = populatedConversation.participants?.find(p => p.userId === senderId)?.user;
             if (!actorUser) {
                 const actorRes = await userCtr.getUser(context, {
                     filter: { id: senderId },
@@ -1486,7 +1592,7 @@ export const conversationCtr = {
 
             // 9) Classify (PUBLIC/BLOG/PROFILE/GROUP) & derive
             const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind }
-      = classifyConversation(conversation);
+      = classifyConversation(populatedConversation);
 
             // 10) Parent sender (only when public)
             let parentSenderId: string | undefined;
@@ -1512,7 +1618,7 @@ export const conversationCtr = {
                 }
             }
             else {
-                for (const p of conversation.participants || []) {
+                for (const p of populatedConversation.participants || []) {
                     if (p.userId && p.userId !== senderId)
                         recipients.add(p.userId);
                 }
@@ -1521,12 +1627,12 @@ export const conversationCtr = {
             // 12) Notifications
             if (recipients.size > 0) {
                 const entityType = E_NotificationEntityType.CONVERSATION;
-                const entityId = conversation.id;
+                const entityId = populatedConversation.id;
 
                 const makeRedirect = (targetId: string) =>
                     isPublic
                         ? { kind: redirectKind, id: publicTargetId ?? targetId } as const
-                        : { kind: E_RedirectType.CONVERSATION, id: conversation.id } as const;
+                        : { kind: E_RedirectType.CONVERSATION, id: populatedConversation.id } as const;
 
                 for (const targetId of recipients) {
                     try {
@@ -1543,7 +1649,7 @@ export const conversationCtr = {
                                     redirect: makeRedirect(targetId),
                                     actor: actorView,
                                     context: {
-                                        conversationType: conversation.type,
+                                        conversationType: populatedConversation.type,
                                         isOpenComment: isPublic,
                                         participantCount: memberCount,
                                         profileOwnerId,
@@ -1556,7 +1662,9 @@ export const conversationCtr = {
                 }
             }
 
-            return { success: true, message: 'Message sent successfully', result: messageResult.result };
+            const transformedMessage = transformMessageMedia(context, messageResult.result) ?? messageResult.result;
+
+            return { success: true, message: 'Message sent successfully', result: transformedMessage };
         }
         catch (error) {
             throwError({

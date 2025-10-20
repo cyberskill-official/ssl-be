@@ -331,27 +331,6 @@ export const locationCtr = {
             return true;
         });
 
-        const seenDestinations = new Set<string>();
-        docs = docs.filter((d) => {
-            if (
-                (filter.entityType === E_LocationEntityType.DESTINATION)
-                || (!filter.entityType && d.entityType === E_LocationEntityType.DESTINATION)
-            ) {
-                const destination = d.entity as I_Destination | undefined;
-                const destinationId = destination?.id || destination?._id as (string | undefined);
-
-                if (destinationId) {
-                    if (seenDestinations.has(destinationId)) {
-                        return false;
-                    }
-
-                    seenDestinations.add(destinationId);
-                }
-            }
-
-            return true;
-        });
-
         // --- điều chỉnh metadata paging sau khi post-process docs ---
         const pageSize = (pagingResult.result?.limit ?? options?.limit ?? docs.length) as number;
         const currentPage = (pagingResult.result?.page ?? options?.page ?? 1) as number;
