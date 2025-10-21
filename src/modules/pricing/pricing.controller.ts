@@ -12,26 +12,22 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_Country } from '#modules/location/index.js';
 import type { I_PricingDefault } from '#modules/setting/setting.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/authn.controller.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { countryCtr } from '#modules/location/country/country.controller.js';
-import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { currencyCtr } from '#modules/location/currency/currency.controller.js';
 import { settingCtr } from '#modules/setting/setting.controller.js';
 import { E_SettingType } from '#modules/setting/setting.type.js';
 import { userCtr } from '#modules/user/user.controller.js';
 
-import type {
-    I_Input_CreatePricing,
-    I_Input_QueryPricing,
-    I_Input_UpdatePricing,
-    I_Pricing,
-    I_Response_SubscriptionPrice,
-} from './pricing.type.js';
+import type { I_Input_CreatePricing, I_Input_QueryPricing, I_Input_UpdatePricing, I_Pricing, I_Response_SubscriptionPrice } from './pricing.type.js';
 
 import { PricingModel } from './pricing.model.js';
+import { E_PricingType } from './pricing.type.js';
 
 const mongooseCtr = new MongooseController<I_Pricing>(PricingModel);
 
@@ -42,31 +38,8 @@ export const pricingCtr = {
     async getPricings(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryPricing>): Promise<I_Return<T_PaginateResult<I_Pricing>>> {
         return mongooseCtr.findPaging(filter, options);
     },
-    async createPricing(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePricing>): Promise<I_Return<I_Pricing>> {
-        const pricingCreated = await mongooseCtr.createOne(doc);
-
-        if (!pricingCreated.success) {
-            return pricingCreated;
-        }
-
-        const locationCreated = await locationCtr.createLocation(context, {
-            doc: doc.location
-                ? {
-                        ...doc.location,
-                        entityType: E_LocationEntityType.PRICING,
-                        entityId: pricingCreated.result.id,
-                    }
-                : {
-                        entityType: E_LocationEntityType.PRICING,
-                        entityId: pricingCreated.result.id,
-                    },
-        });
-
-        if (!locationCreated.success) {
-            return locationCreated;
-        }
-
-        return mongooseCtr.updateOne({ id: pricingCreated.result.id }, { locationId: locationCreated.result.id });
+    async createPricing(_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePricing>): Promise<I_Return<I_Pricing>> {
+        return mongooseCtr.createOne(doc);
     },
     async updatePricing(context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePricing>): Promise<I_Return<I_Pricing>> {
         const pricingFound = await pricingCtr.getPricing(context, { filter });
@@ -78,20 +51,6 @@ export const pricingCtr = {
             });
         }
 
-        if (update.location) {
-            const locationUpdated = await locationCtr.updateLocation(context, {
-                filter: { id: pricingFound.result.locationId },
-                update: update.location,
-            });
-
-            if (!locationUpdated.success) {
-                throwError({
-                    message: locationUpdated.message,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
-            }
-        }
-
         return mongooseCtr.updateOne(filter, update, options);
     },
     async deletePricing(context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryPricing>): Promise<I_Return<I_Pricing>> {
@@ -101,15 +60,6 @@ export const pricingCtr = {
             throwError({
                 message: 'Pricing not found',
                 status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: pricingFound.result.locationId } });
-
-        if (!locationDeleted.success) {
-            throwError({
-                message: locationDeleted.message,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
 
@@ -145,52 +95,67 @@ export const pricingCtr = {
             }
         }
 
-        let countryId;
+        let countryId: string | undefined;
+        let countryRecord: I_Country | undefined;
 
         if (countryCode) {
             const countryFound = await countryCtr.getCountries(context, { filter: { iso2: countryCode } });
-
-            if (countryFound.success)
-                countryId = countryFound.result.docs?.[0]?.id;
+            if (countryFound.success) {
+                countryRecord = countryFound.result.docs?.[0] ?? countryRecord;
+                countryId = countryRecord?.id ?? countryId;
+            }
         }
+
         if (!countryId && countryName) {
             const countryFound = await countryCtr.getCountries(context, { filter: { name: countryName } });
-            if (countryFound.success)
-                countryId = countryFound.result.docs?.[0]?.id;
-        }
-
-        // Resolve currency from country
-        let currency = 'EUR';
-        if (countryName) {
-            const countryForCurrency = await countryCtr.getCountries(context, { filter: { name: countryName } });
-            if (countryForCurrency.success) {
-                currency = countryForCurrency.result.docs?.[0]?.currency || 'EUR';
+            if (countryFound.success) {
+                countryRecord = countryFound.result.docs?.[0] ?? countryRecord;
+                countryId = countryRecord?.id ?? countryId;
             }
         }
 
-        // Helper
-        const findByLocation = async (locFilter: Record<string, unknown>): Promise<I_Pricing | undefined> => {
-            const locationFound = await locationCtr.getLocation(context, {
-                filter: { entityType: E_LocationEntityType.PRICING, ...locFilter },
-            });
-            if (locationFound.success && locationFound.result?.entityId) {
-                const pricingFound = await pricingCtr.getPricing(context, { filter: { id: locationFound.result.entityId } });
-                if (pricingFound.success)
-                    return pricingFound.result;
-            }
-            return undefined;
-        };
+        let currency = countryRecord?.currency ?? 'EUR';
 
         let price = 0;
         let taxRate = 0;
 
+        let pricingForRegion: I_Pricing | undefined;
+
         if (countryId) {
-            const pricingFound = await findByLocation({ countryId });
-            if (pricingFound) {
-                price = pricingFound.price ?? 0;
-                taxRate = pricingFound.taxRate ?? 0;
-                return { success: true, result: { price, currency, taxRate } };
+            const pricingRes = await mongooseCtr.findOne(
+                { type: E_PricingType.MEMBERSHIP, countryId, isActive: true },
+            );
+            if (pricingRes.success && pricingRes.result) {
+                pricingForRegion = pricingRes.result;
             }
+        }
+
+        if (!pricingForRegion) {
+            const pricingRes = await mongooseCtr.findOne({
+                type: E_PricingType.MEMBERSHIP,
+                isActive: true,
+                $or: [{ countryId: null }, { countryId: '' }, { countryId: { $exists: false } }],
+            });
+            if (pricingRes.success && pricingRes.result) {
+                pricingForRegion = pricingRes.result;
+            }
+        }
+
+        if (pricingForRegion) {
+            price = pricingForRegion.price ?? 0;
+            taxRate = pricingForRegion.taxRate ?? 0;
+
+            if (pricingForRegion.currency?.code) {
+                currency = pricingForRegion.currency.code ?? currency;
+            }
+            else if (pricingForRegion.currencyId) {
+                const currencyRes = await currencyCtr.getCurrency(context, { filter: { id: pricingForRegion.currencyId } });
+                if (currencyRes.success) {
+                    currency = currencyRes.result?.code ?? currencyRes.result?.symbol ?? currency;
+                }
+            }
+
+            return { success: true, result: { price, currency, taxRate } };
         }
 
         try {

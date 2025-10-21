@@ -32,7 +32,10 @@ export const PricingModel = mongo.createModel<I_Pricing>({
             type: Boolean,
             default: false,
         },
-        locationId: {
+        countryId: {
+            type: String,
+        },
+        stateId: {
             type: String,
         },
         currencyId: {
@@ -41,10 +44,19 @@ export const PricingModel = mongo.createModel<I_Pricing>({
     },
     virtuals: [
         {
-            name: 'location',
+            name: 'country',
             options: {
-                ref: 'Location',
-                localField: 'locationId',
+                ref: 'Country',
+                localField: 'countryId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'state',
+            options: {
+                ref: 'State',
+                localField: 'stateId',
                 foreignField: 'id',
                 justOne: true,
             },

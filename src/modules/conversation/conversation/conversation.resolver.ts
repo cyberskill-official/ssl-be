@@ -31,8 +31,8 @@ const conversationResolver = {
             conversationCtr.getMyPrivateConversations(context, args, args.search),
         getMyGroupConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>
             conversationCtr.getMyGroupConversations(context, args, args.search),
-        getEventJoinRequests: (_parent: unknown, args: { eventId: string }, context: I_Context) =>
-            conversationCtr.getEventJoinRequests(context, args.eventId),
+        getEventJoinRequests: (_parent: unknown, _args: unknown, context: I_Context) =>
+            conversationCtr.getEventJoinRequests(context),
     },
     Mutation: {
         createConversation: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateConversation>, context: I_Context) =>

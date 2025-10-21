@@ -190,6 +190,27 @@ export const moderationMediaCtr = {
                     break;
                 }
 
+                case E_UploadEntity.USER: {
+                    const galleryCreated = await galleryCtr.createGallery(context, {
+                        doc: {
+                            moderationMediaId: moderationCreatedId,
+                            type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
+                            url: moderationCreated.result.url!,
+                            uploadedById: moderationCreated.result.uploadedById!,
+                            status: moderationCreated.result.status,
+                            isPublished: moderationCreated.result.isPublished,
+                        },
+                    });
+
+                    if (galleryCreated.success && galleryCreated.result?.id) {
+                        await mongooseCtr.updateOne(
+                            { id: moderationCreatedId },
+                            { entityId: galleryCreated.result.id },
+                        );
+                    }
+                    break;
+                }
+
                 case E_UploadEntity.CATALOGUE: {
                     if (!moderationCreated.result.tagId) {
                         throwError({
@@ -221,9 +242,6 @@ export const moderationMediaCtr = {
                     break;
                 case E_UploadEntity.EVENT:
                     // TODO:Handle event module if needed
-                    break;
-                case E_UploadEntity.USER:
-                    // TODO: Handle user module if needed
                     break;
 
                 default:
@@ -314,7 +332,17 @@ export const moderationMediaCtr = {
                     // TODO:Handle event module if needed
                     break;
                 case E_UploadEntity.USER:
-                    // TODO: Handle user module if needed
+                    await galleryCtr.updateGallery(context, {
+                        filter: {
+                            moderationMediaId: moderation.id,
+                        },
+                        update: {
+                            status,
+                            isPublished: status === E_ModerationMediaStatus.APPROVED,
+                            ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                            ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
+                        },
+                    });
                     break;
 
                 default:
@@ -462,6 +490,11 @@ export const moderationMediaCtr = {
         try {
             switch (entity) {
                 case E_UploadEntity.GALLERY:
+                    await galleryCtr.deleteGallery(context, {
+                        filter: { moderationMediaId: id },
+                    });
+                    break;
+                case E_UploadEntity.USER:
                     await galleryCtr.deleteGallery(context, {
                         filter: { moderationMediaId: id },
                     });

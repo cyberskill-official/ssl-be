@@ -236,6 +236,7 @@ export interface I_ContactAdminResult {
 }
 
 export interface I_JoinRequestSummary {
+    requestId: string;
     headline?: string;
     username?: string;
     type: E_NotificationType;

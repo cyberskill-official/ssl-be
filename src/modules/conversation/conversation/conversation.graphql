@@ -244,6 +244,7 @@ type T_Response_Conversations {
 }
 
 type T_JoinRequestSummary {
+    requestId: String!
     headline: String
     username: String
     type: E_NotificationType
@@ -260,7 +261,7 @@ type Query {
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
     getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
     getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
-    getEventJoinRequests(eventId: String!): T_Response_JoinRequests!
+    getEventJoinRequests: T_Response_JoinRequests!
 }
 
 type Mutation {

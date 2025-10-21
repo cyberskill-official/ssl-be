@@ -340,49 +340,12 @@ export const conversationCtr = {
 
     getEventJoinRequests: async (
         context: I_Context,
-        eventId: string,
     ): Promise<I_Return<I_JoinRequestSummary[]>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-
-        if (!eventId) {
-            throwError({
-                message: 'Event ID is required.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const conversationRes = await mongooseCtr.findOne({
-            entityId: eventId,
-            type: E_ConversationType.GROUP,
-        });
-
-        if (!conversationRes.success || !conversationRes.result) {
-            throwError({
-                message: 'Group conversation for this event was not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        const conversation = conversationRes.result;
-
-        const participantRes = await participantCtr.getParticipant(context, {
-            filter: { conversationId: conversation.id, userId: currentUser.id },
-        });
-
-        const isAdminParticipant = participantRes.success && participantRes.result?.role === E_ParticipantRole.ADMIN;
-        const isConversationCreator = conversation.createdById === currentUser.id;
-
-        if (!isAdminParticipant && !isConversationCreator) {
-            throwError({
-                message: 'You must be a group admin to view join requests.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
-        }
 
         const notificationsRes = await notificationCtr.getNotifications(context, {
             filter: {
                 entityType: E_NotificationEntityType.CONVERSATION,
-                entityId: conversation.id,
                 targetId: currentUser.id,
                 type: [E_NotificationType.GROUP_JOIN_REQUEST, E_NotificationType.CONVERSATION_INVITATION],
                 dismissedAt: null,
@@ -397,9 +360,39 @@ export const conversationCtr = {
             });
         }
 
+        const notifications = (notificationsRes.result?.docs ?? []) as I_Notification[];
+        const uniqueConversationIds = new Set<string>();
+
+        for (const notification of notifications) {
+            const conversationId = typeof notification.entityId === 'string' ? notification.entityId : undefined;
+            if (conversationId) {
+                uniqueConversationIds.add(conversationId);
+            }
+        }
+
+        const conversationAccessMap = new Map<string, boolean>();
+        for (const conversationId of uniqueConversationIds) {
+            const conversationRes = await mongooseCtr.findOne({ id: conversationId });
+            if (!conversationRes.success || !conversationRes.result || conversationRes.result.type !== E_ConversationType.GROUP) {
+                conversationAccessMap.set(conversationId, false);
+                continue;
+            }
+
+            const conversationDoc = conversationRes.result;
+            const participantRes = await participantCtr.getParticipant(context, {
+                filter: { conversationId, userId: currentUser.id },
+            });
+
+            const isAdminParticipant
+                = participantRes.success && participantRes.result?.role === E_ParticipantRole.ADMIN;
+            const isConversationCreator = conversationDoc.createdById === currentUser.id;
+
+            conversationAccessMap.set(conversationId, isAdminParticipant || isConversationCreator);
+        }
+
         const joinRequests: I_JoinRequestSummary[] = [];
 
-        for (const notification of notificationsRes.result.docs ?? []) {
+        for (const notification of notifications) {
             const notificationType = Array.isArray(notification.type)
                 ? notification.type[0]
                 : notification.type;
@@ -407,7 +400,15 @@ export const conversationCtr = {
             if (!notificationType)
                 continue;
 
+            const conversationId = typeof notification.entityId === 'string' ? notification.entityId : undefined;
+            if (!conversationId)
+                continue;
+
+            if (conversationAccessMap.get(conversationId) !== true)
+                continue;
+
             joinRequests.push({
+                requestId: notification.id,
                 headline: notification.presentation?.headline ?? '',
                 username: notification.presentation?.actor?.username ?? '',
                 type: notificationType,
