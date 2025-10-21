@@ -643,15 +643,12 @@ export const conversationCtr = {
             throwError({ message: 'Requester ID is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const requester = await userCtr.getUser(context, { filter: { id: requesterId } });
-        if (!requester.success) {
-            throwError({ message: 'Requester not found.', status: RESPONSE_STATUS.NOT_FOUND });
-        }
+        let effectiveRequesterId = requesterId;
 
         const pendingNotificationsRes = await notificationCtr.getNotifications(context, {
             filter: {
                 targetId: currentUser.id,
-                actorId: requesterId,
+                actorId: effectiveRequesterId,
                 type: [E_NotificationType.GROUP_JOIN_REQUEST],
                 dismissedAt: null,
             },
@@ -665,31 +662,70 @@ export const conversationCtr = {
             });
         }
 
-        const pendingNotifications = (pendingNotificationsRes.result.docs ?? []) as I_Notification[];
+        let pendingNotifications = (pendingNotificationsRes.result.docs ?? []) as I_Notification[];
 
         let matchedNotification: I_Notification | undefined;
         let conversation: I_Conversation | undefined;
+        const staleNotificationIds: string[] = [];
+
+        if (pendingNotifications.length === 0) {
+            const fallbackNotificationsRes = await notificationCtr.getNotifications(context, {
+                filter: {
+                    targetId: currentUser.id,
+                    id: requesterId,
+                    type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                    dismissedAt: null,
+                },
+                options: { pagination: false },
+            });
+
+            if (!fallbackNotificationsRes.success) {
+                throwError({
+                    message: fallbackNotificationsRes.message ?? 'Failed to load join request notifications.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            const fallbackNotifications = (fallbackNotificationsRes.result.docs ?? []) as I_Notification[];
+            if (fallbackNotifications.length > 0) {
+                pendingNotifications = fallbackNotifications;
+                const fallbackActorId = fallbackNotifications[0]?.actorId;
+                if (typeof fallbackActorId === 'string' && fallbackActorId)
+                    effectiveRequesterId = fallbackActorId;
+            }
+        }
 
         for (const note of pendingNotifications) {
             if (note.entityType !== E_NotificationEntityType.CONVERSATION)
                 continue;
+
             const candidateId = typeof note.entityId === 'string' ? note.entityId : undefined;
-            if (!candidateId)
+            if (!candidateId) {
+                if (note.id)
+                    staleNotificationIds.push(note.id);
                 continue;
+            }
 
             const conversationRes = await mongooseCtr.findOne({ id: candidateId });
-            if (!conversationRes.success || !conversationRes.result)
+            if (!conversationRes.success || !conversationRes.result) {
+                if (note.id)
+                    staleNotificationIds.push(note.id);
                 continue;
+            }
 
             const conversationCandidate = conversationRes.result;
-            if (conversationCandidate.type !== E_ConversationType.GROUP)
+            if (conversationCandidate.type !== E_ConversationType.GROUP) {
+                if (note.id)
+                    staleNotificationIds.push(note.id);
                 continue;
+            }
 
             const adminParticipant = await participantCtr.getParticipant(context, {
                 filter: { conversationId: conversationCandidate.id, userId: currentUser.id },
             });
             const isAdmin = adminParticipant.success && adminParticipant.result.role === E_ParticipantRole.ADMIN;
             const isCreator = conversationCandidate.createdById === currentUser.id;
+
             if (!isAdmin && !isCreator)
                 continue;
 
@@ -698,17 +734,43 @@ export const conversationCtr = {
             break;
         }
 
+        if (staleNotificationIds.length > 0) {
+            for (const staleId of staleNotificationIds) {
+                await notificationCtr.updateNotification(context, {
+                    filter: { id: staleId },
+                    update: { dismissedAt: new Date() },
+                }).catch(() => { /* ignore cleanup errors */ });
+            }
+        }
+
         if (!conversation) {
-            throwError({
+            return {
+                success: false,
                 message: 'Pending join request not found or you are not authorized to approve it.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
+                code: 404,
+            };
+        }
+
+        const requester = await userCtr.getUser(context, { filter: { id: effectiveRequesterId } });
+        if (!requester.success) {
+            if (matchedNotification?.id) {
+                await notificationCtr.updateNotification(context, {
+                    filter: { id: matchedNotification.id },
+                    update: { dismissedAt: new Date() },
+                });
+            }
+
+            return {
+                success: false,
+                message: 'Requester not found or no longer available.',
+                code: 404,
+            };
         }
 
         const conversationId = conversation.id;
 
         const existingParticipant = await participantCtr.getParticipant(context, {
-            filter: { conversationId, userId: requesterId },
+            filter: { conversationId, userId: effectiveRequesterId },
         });
 
         if (existingParticipant.success) {
@@ -716,7 +778,7 @@ export const conversationCtr = {
         }
 
         const createResult = await participantCtr.createParticipants(context, {
-            docs: [{ conversationId, userId: requesterId, role: E_ParticipantRole.MEMBER }],
+            docs: [{ conversationId, userId: effectiveRequesterId, role: E_ParticipantRole.MEMBER }],
         });
 
         if (!createResult.success) {
@@ -732,7 +794,7 @@ export const conversationCtr = {
 
         await notificationCtr.createNotificationWithSettings(context, {
             doc: {
-                targetId: requesterId,
+                targetId: effectiveRequesterId,
                 type: [E_NotificationType.GROUP_JOIN_APPROVED],
                 entityType: E_NotificationEntityType.CONVERSATION,
                 entityId: conversationId,
