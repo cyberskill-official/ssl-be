@@ -46,7 +46,12 @@ export const locationCtr = {
     },
     getLocation: async (
         _context: I_Context,
-        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryLocation>,
+        {
+            filter,
+            projection,
+            options,
+            populate,
+        }: I_Input_FindOne<I_Input_QueryLocation>,
     ): Promise<I_Return<I_Location>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
@@ -66,9 +71,14 @@ export const locationCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateLocation>,
     ): Promise<I_Return<I_Location>> => {
-        const locationFound = await locationCtr.getLocation(context, { filter });
+        const locationFound = await locationCtr.getLocation(context, {
+            filter,
+        });
         if (!locationFound.success) {
-            throwError({ message: 'Location not found.', status: RESPONSE_STATUS.NOT_FOUND });
+            throwError({
+                message: 'Location not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
         }
         return mongooseCtr.updateOne(filter, update, options);
     },
@@ -76,9 +86,14 @@ export const locationCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryLocation>,
     ): Promise<I_Return<I_Location>> => {
-        const locationFound = await locationCtr.getLocation(context, { filter });
+        const locationFound = await locationCtr.getLocation(context, {
+            filter,
+        });
         if (!locationFound.success) {
-            throwError({ message: 'Location not found.', status: RESPONSE_STATUS.NOT_FOUND });
+            throwError({
+                message: 'Location not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
         }
         return mongooseCtr.deleteOne(filter, options);
     },
@@ -87,13 +102,22 @@ export const locationCtr = {
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
         if (!filter) {
-            throwError({ message: 'Filter is required', status: RESPONSE_STATUS.BAD_REQUEST });
+            throwError({
+                message: 'Filter is required',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         const baseFilter: Record<string, unknown> = {
             map: {
-                longitude: { $gte: filter.southWestLongitude, $lte: filter.northEastLongitude },
-                latitude: { $gte: filter.southWestLatitude, $lte: filter.northEastLatitude },
+                longitude: {
+                    $gte: filter.southWestLongitude,
+                    $lte: filter.northEastLongitude,
+                },
+                latitude: {
+                    $gte: filter.southWestLatitude,
+                    $lte: filter.northEastLatitude,
+                },
             },
         };
 
@@ -129,7 +153,10 @@ export const locationCtr = {
                     'gallery',
                     { path: 'gallery', populate: ['uploadedBy'] },
                     'location',
-                    { path: 'location', populate: [{ path: 'country' }, { path: 'city' }] },
+                    {
+                        path: 'location',
+                        populate: [{ path: 'country' }, { path: 'city' }],
+                    },
                 ],
             },
             {
@@ -138,7 +165,10 @@ export const locationCtr = {
                     'gallery',
                     { path: 'gallery', populate: ['uploadedBy'] },
                     'location',
-                    { path: 'location', populate: [{ path: 'country' }, { path: 'city' }] },
+                    {
+                        path: 'location',
+                        populate: [{ path: 'country' }, { path: 'city' }],
+                    },
                 ],
             },
             { path: 'lookingFor' },
@@ -167,10 +197,22 @@ export const locationCtr = {
             {
                 path: 'entity',
                 populate: [
-                    ...(filter.entityType === E_LocationEntityType.EVENT ? eventPopulate : []),
-                    ...(filter.entityType === E_LocationEntityType.USER ? userPopulate : []),
-                    ...(filter.entityType === E_LocationEntityType.DESTINATION ? destinationPopulate : []),
-                    ...(!filter.entityType ? [...eventPopulate, ...userPopulate, ...destinationPopulate] : []),
+                    ...(filter.entityType === E_LocationEntityType.EVENT
+                        ? eventPopulate
+                        : []),
+                    ...(filter.entityType === E_LocationEntityType.USER
+                        ? userPopulate
+                        : []),
+                    ...(filter.entityType === E_LocationEntityType.DESTINATION
+                        ? destinationPopulate
+                        : []),
+                    ...(!filter.entityType
+                        ? [
+                                ...eventPopulate,
+                                ...userPopulate,
+                                ...destinationPopulate,
+                            ]
+                        : []),
                 ],
             },
         ];
@@ -191,25 +233,41 @@ export const locationCtr = {
         const now = new Date();
 
         docs = docs.filter((d) => {
-            const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
+            const e = d.entity as
+                | (I_User | I_Event | I_Destination)
+                | undefined;
             const hasKey = !!e && !!(e.id || e._id);
             const entityDeleted = Boolean(e?.isDel);
-            const locationDeleted = Boolean((d)?.isDel);
+            const locationDeleted = Boolean(d?.isDel);
             const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
 
             // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
             let isEventExpired = false;
             let shouldHideTravelEvent = false;
-            if (e && (filter.entityType === E_LocationEntityType.EVENT || (e as any)?.startDate || (e as any)?.endDate || (e as any)?.type !== undefined)) {
+            if (
+                e
+                && (filter.entityType === E_LocationEntityType.EVENT
+                    || (e as any)?.startDate
+                    || (e as any)?.endDate
+                    || (e as any)?.type !== undefined)
+            ) {
                 const ev = e as I_Event | undefined;
                 const endCandidate = ev?.endDate ?? null;
                 const startCandidate = ev?.startDate ?? null;
 
                 if (ev?.type === E_EventType.TRAVEL) {
-                    const startDate = startCandidate ? new Date(startCandidate) : undefined;
-                    const endDate = endCandidate ? new Date(endCandidate) : undefined;
-                    const hasStarted = startDate ? !Number.isNaN(startDate.getTime()) && startDate <= now : false;
-                    const beforeDeparture = endDate ? !Number.isNaN(endDate.getTime()) && endDate > now : !endDate;
+                    const startDate = startCandidate
+                        ? new Date(startCandidate)
+                        : undefined;
+                    const endDate = endCandidate
+                        ? new Date(endCandidate)
+                        : undefined;
+                    const hasStarted = startDate
+                        ? !Number.isNaN(startDate.getTime()) && startDate <= now
+                        : false;
+                    const beforeDeparture = endDate
+                        ? !Number.isNaN(endDate.getTime()) && endDate > now
+                        : !endDate;
 
                     if (hasStarted && beforeDeparture && ev?.createdById) {
                         travelEventOverrides.set(ev.createdById, d);
@@ -225,7 +283,10 @@ export const locationCtr = {
                 }
                 else if (startCandidate) {
                     const startDate = new Date(startCandidate);
-                    if (!Number.isNaN(startDate.getTime()) && startDate <= now) {
+                    if (
+                        !Number.isNaN(startDate.getTime())
+                        && startDate <= now
+                    ) {
                         isEventExpired = true;
                     }
                 }
@@ -236,11 +297,14 @@ export const locationCtr = {
             }
 
             let isIncompleteUser = false;
-            if (d.entityType === E_LocationEntityType.USER
-                || (!d.entityType && (e as any)?.rolesIds)) {
+            if (
+                d.entityType === E_LocationEntityType.USER
+                || (!d.entityType && (e as any)?.rolesIds)
+            ) {
                 const userEntity = e as I_User;
-                const step = (userEntity as any)?.registerStep as E_RegisterStep;
-                const isActiveUser = (userEntity)?.isActive as boolean;
+                const step = (userEntity as any)
+                    ?.registerStep as E_RegisterStep;
+                const isActiveUser = userEntity?.isActive as boolean;
                 if (step && step !== E_RegisterStep.COMPLETE) {
                     isIncompleteUser = true;
                 }
@@ -249,11 +313,21 @@ export const locationCtr = {
                 }
             }
 
-            return hasKey && !entityDeleted && !locationDeleted && !isAdminBlocked && !isEventExpired && !isIncompleteUser;
+            return (
+                hasKey
+                && !entityDeleted
+                && !locationDeleted
+                && !isAdminBlocked
+                && !isEventExpired
+                && !isIncompleteUser
+            );
         });
 
         // filter eventType nếu có
-        if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
+        if (
+            filter.entityType === E_LocationEntityType.EVENT
+            && filter.eventType
+        ) {
             docs = docs.filter((d) => {
                 const e = d.entity as I_Event | undefined;
                 return e?.type === filter.eventType;
@@ -273,7 +347,11 @@ export const locationCtr = {
             const tempLoc = user?.settings?.temporaryLocation;
             const travelOverrideLocation = travelEventOverrides.get(user.id);
 
-            if (tempLoc?.locationId && tempLoc.endAt && new Date(tempLoc.endAt) > nowInner) {
+            if (
+                tempLoc?.locationId
+                && tempLoc.endAt
+                && new Date(tempLoc.endAt) > nowInner
+            ) {
                 finalLocation = tempLoc.location ?? { id: tempLoc.locationId };
                 finalLocationId = tempLoc.locationId;
             }
@@ -319,9 +397,14 @@ export const locationCtr = {
         // loại duplicate user
         const seenUsers = new Set<string>();
         docs = docs.filter((d) => {
-            const user = d.entity as I_User;
-            if (!user?.id)
+            if (d.entityType !== E_LocationEntityType.USER) {
                 return true;
+            }
+
+            const user = d.entity as I_User;
+            if (!user?.id) {
+                return true;
+            }
 
             if (seenUsers.has(user.id)) {
                 return false;
@@ -332,17 +415,29 @@ export const locationCtr = {
         });
 
         // --- điều chỉnh metadata paging sau khi post-process docs ---
-        const pageSize = (pagingResult.result?.limit ?? options?.limit ?? docs.length) as number;
-        const currentPage = (pagingResult.result?.page ?? options?.page ?? 1) as number;
+        const pageSize = (pagingResult.result?.limit
+            ?? options?.limit
+            ?? docs.length) as number;
+        const currentPage = (pagingResult.result?.page
+            ?? options?.page
+            ?? 1) as number;
 
-        const originalTotalDocs = typeof pagingResult.result?.totalDocs === 'number' ? pagingResult.result!.totalDocs : undefined;
-        const confirmedUpToThisPage = (currentPage - 1) * pageSize + docs.length;
+        const originalTotalDocs
+            = typeof pagingResult.result?.totalDocs === 'number'
+                ? pagingResult.result!.totalDocs
+                : undefined;
+        const confirmedUpToThisPage
+            = (currentPage - 1) * pageSize + docs.length;
 
-        const totalDocsAdjusted = typeof originalTotalDocs === 'number'
-            ? Math.min(originalTotalDocs, confirmedUpToThisPage)
-            : docs.length;
+        const totalDocsAdjusted
+            = typeof originalTotalDocs === 'number'
+                ? Math.min(originalTotalDocs, confirmedUpToThisPage)
+                : docs.length;
 
-        const totalPagesAdjusted = Math.max(1, Math.ceil(totalDocsAdjusted / pageSize));
+        const totalPagesAdjusted = Math.max(
+            1,
+            Math.ceil(totalDocsAdjusted / pageSize),
+        );
 
         const adjustedPagingResult = {
             ...pagingResult.result,
@@ -359,5 +454,4 @@ export const locationCtr = {
 
         return { success: true, result: adjustedPagingResult };
     },
-
 };
