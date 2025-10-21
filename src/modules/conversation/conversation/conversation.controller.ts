@@ -45,7 +45,6 @@ import type {
     I_Input_DeleteGroupConversation,
     I_Input_DeletePrivateConversation,
     I_Input_QueryConversation,
-    I_JoinRequestSummary,
     I_MessageReadPayload,
     I_MessageSentPayload,
     I_MessageSubscriptionFilter,
@@ -340,7 +339,7 @@ export const conversationCtr = {
 
     getEventJoinRequests: async (
         context: I_Context,
-    ): Promise<I_Return<I_JoinRequestSummary[]>> => {
+    ): Promise<I_Return<I_Notification[]>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
         const notificationsRes = await notificationCtr.getNotifications(context, {
@@ -390,7 +389,7 @@ export const conversationCtr = {
             conversationAccessMap.set(conversationId, isAdminParticipant || isConversationCreator);
         }
 
-        const joinRequests: I_JoinRequestSummary[] = [];
+        const joinRequests: I_Notification[] = [];
 
         for (const notification of notifications) {
             const notificationType = Array.isArray(notification.type)
@@ -407,12 +406,7 @@ export const conversationCtr = {
             if (conversationAccessMap.get(conversationId) !== true)
                 continue;
 
-            joinRequests.push({
-                requestId: notification.id,
-                headline: notification.presentation?.headline ?? '',
-                username: notification.presentation?.actor?.username ?? '',
-                type: notificationType,
-            });
+            joinRequests.push(notification);
         }
 
         return {

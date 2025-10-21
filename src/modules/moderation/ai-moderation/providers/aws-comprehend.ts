@@ -39,9 +39,9 @@ export class AWSComprehendProvider {
     }
 
     async analyzeText(input: I_Input_TextModeration, setting: I_AIModerationConfig): Promise<I_TextModerationResult> {
-        // Use more conservative (less strict) defaults
-        const autoRejectThreshold = setting?.autoRejectThreshold ?? 0.95;
-        const humanReviewThreshold = setting?.humanReviewThreshold ?? 0.7;
+        // Use defaults aligned with platform config
+        const autoRejectThreshold = setting?.autoRejectThreshold ?? 0.85;
+        const humanReviewThreshold = setting?.humanReviewThreshold ?? 0.65;
 
         if (!input?.text?.trim()) {
             throwError({

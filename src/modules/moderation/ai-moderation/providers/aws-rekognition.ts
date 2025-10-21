@@ -1,3 +1,5 @@
+import type { ModerationLabel } from '@aws-sdk/client-rekognition';
+
 import {
     DetectModerationLabelsCommand,
     DetectTextCommand,
@@ -8,17 +10,86 @@ import {
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 
-import type { I_AIModerationConfig } from '#modules/setting/setting.type.js';
+import type { I_AIModerationConfig, I_ImageThresholdsConfig } from '#modules/setting/setting.type.js';
 
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_ImageModeration, I_Input_VideoModeration, I_MediaModerationResult } from '../ai-moderation.type.js';
 
+import { AI_MODERATION_DEFAULT_CONFIG } from '../ai-moderation.constant.js';
 import { E_RiskLevel } from '../ai-moderation.type.js';
 import { AWSMediaUtils } from './aws-utils.js';
 
 const env = getEnv();
+
+const normaliseLabelName = (name?: string): string => (name || '').toLowerCase();
+
+const LABEL_THRESHOLD_KEYS: Record<string, keyof I_ImageThresholdsConfig> = {
+    'explicit nudity': 'explicitNudity',
+    'illustrated explicit nudity': 'explicitNudity',
+    'graphic female nudity': 'explicitNudity',
+    'graphic male nudity': 'explicitNudity',
+    'nudity or sexual content': 'explicitNudity',
+    'adult explicit content': 'explicitNudity',
+    'sexual activity': 'fullNudity',
+    'sex toys': 'explicitNudity',
+    'nudity': 'nonExplicitNudity',
+    'partial nudity': 'nonExplicitNudity',
+    'implied nudity': 'nonExplicitNudity',
+    'suggestive': 'nonExplicitNudity',
+    'revealing clothes': 'swimwearOrUnderwear',
+    'female swimwear or underwear': 'swimwearOrUnderwear',
+    'male swimwear or underwear': 'swimwearOrUnderwear',
+    'swimwear or underwear': 'swimwearOrUnderwear',
+    'violence': 'violence',
+    'graphic violence': 'violence',
+    'physical injury': 'violence',
+    'weapons': 'violence',
+    'hate symbols': 'hateSymbols',
+    'drugs': 'drugs',
+    'drug use paraphernalia': 'drugs',
+    'alcohol': 'drugs',
+    'tobacco': 'drugs',
+};
+
+function resolveThresholdKey(label: ModerationLabel): keyof I_ImageThresholdsConfig | undefined {
+    const name = normaliseLabelName(label.Name);
+    const parent = normaliseLabelName(label.ParentName);
+    return LABEL_THRESHOLD_KEYS[name] ?? LABEL_THRESHOLD_KEYS[parent];
+}
+
+interface IEvaluatedLabel {
+    name: string;
+    confidence: number;
+    thresholdRatio: number;
+    key?: keyof I_ImageThresholdsConfig;
+}
+
+function evaluateLabel(
+    label: ModerationLabel,
+    thresholds: I_ImageThresholdsConfig,
+    fallbackRatio: number,
+): IEvaluatedLabel | null {
+    const confidence = label.Confidence ?? 0;
+    const thresholdKey = resolveThresholdKey(label);
+    const thresholdRatio = thresholdKey !== undefined
+        ? thresholds[thresholdKey] ?? fallbackRatio
+        : fallbackRatio;
+
+    const thresholdPercent = thresholdRatio * 100;
+
+    if (confidence < thresholdPercent) {
+        return null;
+    }
+
+    return {
+        name: label.Name ?? '',
+        confidence,
+        thresholdRatio,
+        key: thresholdKey,
+    };
+}
 
 export class AWSRekognitionProvider {
     private client?: RekognitionClient;
@@ -38,8 +109,6 @@ export class AWSRekognitionProvider {
     }
 
     async analyzeImage(input: I_Input_ImageModeration, setting: I_AIModerationConfig): Promise<I_MediaModerationResult> {
-        const threshold = setting?.autoRejectThreshold ?? 0.8;
-
         if (!input.imageUrl) {
             throwError({
                 message: 'AWS Rekognition moderation is disabled or image URL/buffer is empty',
@@ -63,15 +132,28 @@ export class AWSRekognitionProvider {
             });
         }
 
+        const fallbackThresholdRatio = setting?.autoRejectThreshold ?? AI_MODERATION_DEFAULT_CONFIG.autoRejectThreshold;
+        const thresholds: I_ImageThresholdsConfig = {
+            ...AI_MODERATION_DEFAULT_CONFIG.imageThresholds,
+            ...(setting?.imageThresholds ?? {}),
+        };
+
+        const thresholdValues = Object.values(thresholds).filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+        const minConfidenceRatio = thresholdValues.length > 0
+            ? Math.min(...thresholdValues, fallbackThresholdRatio)
+            : fallbackThresholdRatio;
+        const minConfidencePercent = Math.max(50, Math.round(minConfidenceRatio * 100));
+
         const reasons: string[] = [];
 
         // Detect moderation labels
         let moderationResult = null;
+        const processedLabels: IEvaluatedLabel[] = [];
 
         try {
             const moderationCommand = new DetectModerationLabelsCommand({
                 Image: { Bytes: imageBytes },
-                MinConfidence: threshold * 100,
+                MinConfidence: minConfidencePercent,
                 ...(this.customAdapterId && { ProjectVersionArn: this.customAdapterId }),
             });
 
@@ -80,9 +162,18 @@ export class AWSRekognitionProvider {
             // Process moderation labels and determine content suitability
             if (moderationResult?.ModerationLabels && moderationResult.ModerationLabels.length > 0) {
                 for (const label of moderationResult.ModerationLabels) {
-                    if (label.Name && label.Confidence && label.Confidence >= 80) {
-                        reasons.push(`${label.Name}: ${label.Confidence.toFixed(1)}% confidence`);
-                    }
+                    if (!label.Name || label.Confidence === undefined)
+                        continue;
+
+                    const evaluation = evaluateLabel(label, thresholds, fallbackThresholdRatio);
+
+                    if (!evaluation)
+                        continue;
+
+                    processedLabels.push(evaluation);
+
+                    const thresholdDisplay = (evaluation.thresholdRatio * 100).toFixed(1);
+                    reasons.push(`${label.Name}: ${label.Confidence.toFixed(1)}% (threshold ${thresholdDisplay}%)`);
                 }
             }
         }
@@ -111,28 +202,30 @@ export class AWSRekognitionProvider {
 
         // Calculate confidence (only labels >= 80%)
         let confidence = 0;
-        if (moderationResult?.ModerationLabels && moderationResult.ModerationLabels.length > 0) {
-            const high = moderationResult.ModerationLabels
-                .map(l => (l.Confidence || 0))
-                .filter(c => c >= 80);
-            if (high.length > 0) {
-                confidence = Math.max(...high) / 100;
+        let topLabel: IEvaluatedLabel | undefined;
+
+        if (processedLabels.length > 0) {
+            topLabel = processedLabels.reduce((currentTop, candidate) => {
+                if (!currentTop || candidate.confidence > currentTop.confidence)
+                    return candidate;
+                return currentTop;
+            }, undefined as IEvaluatedLabel | undefined);
+
+            if (topLabel) {
+                confidence = topLabel.confidence / 100;
             }
         }
 
         // Determine decision and risk level based on confidence (aligned with media status)
         const decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
         let riskLevel = E_RiskLevel.LOW;
-        // Auto-reject disabled for now; keep for manual review
-        // if (confidence >= threshold) {
-        //     decision = E_ModerationMediaStatus.REJECTED;
-        //     riskLevel = E_RiskLevel.CRITICAL;
-        // }
-        if (confidence >= 0.5) {
-            riskLevel = E_RiskLevel.HIGH;
-        }
-        else if (confidence >= 0.3) {
-            riskLevel = E_RiskLevel.MEDIUM;
+
+        if (topLabel) {
+            const ratio = topLabel.confidence / 100;
+            const thresholdRatio = topLabel.thresholdRatio;
+            const highRiskThreshold = Math.min(0.99, thresholdRatio + 0.05);
+
+            riskLevel = ratio >= highRiskThreshold ? E_RiskLevel.HIGH : E_RiskLevel.MEDIUM;
         }
         // else PENDING_REVIEW + LOW (default)
 
@@ -159,7 +252,7 @@ export class AWSRekognitionProvider {
     }
 
     async analyzeVideo(input: I_Input_VideoModeration, settings: I_AIModerationConfig): Promise<I_MediaModerationResult> {
-        const threshold = settings?.autoRejectThreshold ?? 0.8;
+        const threshold = settings?.autoRejectThreshold ?? 0.85;
 
         if (!input.videoUrl) {
             throwError({

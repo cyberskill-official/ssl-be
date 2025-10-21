@@ -243,17 +243,10 @@ type T_Response_Conversations {
     result: T_Conversations
 }
 
-type T_JoinRequestSummary {
-    requestId: String!
-    headline: String
-    username: String
-    type: E_NotificationType
-}
-
 type T_Response_JoinRequests {
     success: Boolean
     message: String
-    result: [T_JoinRequestSummary!]
+    result: [T_Notification!]
 }
 
 type Query {

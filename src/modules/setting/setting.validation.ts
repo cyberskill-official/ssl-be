@@ -83,7 +83,15 @@ export function validateAIModerationConfig(value: I_AIModerationConfig): boolean
 
     // Validate image thresholds
     if (value.imageThresholds) {
-        const imageThresholdsKeys = ['explicitNudity', 'violence', 'hateSymbols', 'drugs', 'nonExplicitNudity', 'swimwearOrUnderwear'];
+        const imageThresholdsKeys = [
+            'explicitNudity',
+            'violence',
+            'hateSymbols',
+            'drugs',
+            'nonExplicitNudity',
+            'swimwearOrUnderwear',
+            'fullNudity',
+        ];
 
         for (const threshold of imageThresholdsKeys) {
             const thresholdValue = (value.imageThresholds as unknown as Record<string, number>)[threshold];
