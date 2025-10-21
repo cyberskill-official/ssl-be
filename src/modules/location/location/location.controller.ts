@@ -22,6 +22,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { E_EventType } from '#modules/event/event.type.js';
+import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
 import type {
     I_Input_CreateLocation,
@@ -32,9 +33,59 @@ import type {
 } from './location.type.js';
 
 import { LocationModel } from './location.model.js';
-import { E_LocationEntityType } from './location.type.js';
+import { E_LocationEntityType, E_User_PinStyle } from './location.type.js';
 
 const mongooseCtr = new MongooseController<I_Location>(LocationModel);
+
+const USER_PIN_STYLE_VALUES = new Set<E_User_PinStyle>(
+    Object.values(E_User_PinStyle) as E_User_PinStyle[],
+);
+
+function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
+    if (!user) {
+        return E_User_PinStyle.COUPLE;
+    }
+
+    const directPin = [
+        user.partner1?.location?.pinStyle,
+        user.partner2?.location?.pinStyle,
+    ].find(
+        (pin): pin is E_User_PinStyle =>
+            typeof pin === 'string'
+            && USER_PIN_STYLE_VALUES.has(pin as E_User_PinStyle),
+    );
+    if (directPin) {
+        return directPin;
+    }
+
+    switch (user.accountType) {
+        case E_AccountType.SINGLE_FEMALE:
+            return E_User_PinStyle.FEMALE;
+        case E_AccountType.SINGLE_MALE:
+            return E_User_PinStyle.MALE;
+        case E_AccountType.COUPLE:
+            return E_User_PinStyle.COUPLE;
+        case E_AccountType.SINGLE:
+        default:
+            break;
+    }
+
+    if (user.partner1?.gender === E_Gender.FEMALE) {
+        return E_User_PinStyle.FEMALE;
+    }
+    if (user.partner1?.gender === E_Gender.MALE) {
+        return E_User_PinStyle.MALE;
+    }
+
+    if (user.partner2?.gender === E_Gender.FEMALE) {
+        return E_User_PinStyle.FEMALE;
+    }
+    if (user.partner2?.gender === E_Gender.MALE) {
+        return E_User_PinStyle.MALE;
+    }
+
+    return E_User_PinStyle.COUPLE;
+}
 
 export const locationCtr = {
     distinct: async (
@@ -227,7 +278,10 @@ export const locationCtr = {
         }
 
         let docs: I_Location[] = pagingResult.result.docs ?? [];
-        const travelEventOverrides = new Map<string, I_Location>();
+        const travelEventOverrides = new Map<
+            string,
+            { location: I_Location; event?: I_Event }
+        >();
 
         // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
         const now = new Date();
@@ -270,7 +324,10 @@ export const locationCtr = {
                         : !endDate;
 
                     if (hasStarted && beforeDeparture && ev?.createdById) {
-                        travelEventOverrides.set(ev.createdById, d);
+                        travelEventOverrides.set(ev.createdById, {
+                            location: d,
+                            event: ev,
+                        });
                         shouldHideTravelEvent = true;
                     }
                 }
@@ -345,7 +402,10 @@ export const locationCtr = {
             let finalLocation: Partial<I_Location> | undefined;
             let finalLocationId: string | undefined;
             const tempLoc = user?.settings?.temporaryLocation;
-            const travelOverrideLocation = travelEventOverrides.get(user.id);
+            const travelOverride = travelEventOverrides.get(user.id);
+            const travelOverrideLocation = travelOverride?.location;
+            const travelOverrideEvent = travelOverride?.event;
+            let finalSettings = user.settings;
 
             if (
                 tempLoc?.locationId
@@ -356,9 +416,14 @@ export const locationCtr = {
                 finalLocationId = tempLoc.locationId;
             }
             else if (travelOverrideLocation) {
-                const userPinStyle = user.partner1?.location?.pinStyle;
-                const sanitizedTravelLocation: Partial<I_Location> = {
-                    id: travelOverrideLocation.id,
+                const userPinStyle = resolveUserPinStyle(user);
+                const locationId
+                    = travelOverrideLocation.id
+                        ?? user.settings?.temporaryLocation?.locationId
+                        ?? user.partner1?.locationId
+                        ?? '';
+                const sanitizedTravelLocation = {
+                    id: locationId,
                     map: travelOverrideLocation.map,
                     country: travelOverrideLocation.country,
                     countryId: travelOverrideLocation.countryId,
@@ -371,10 +436,23 @@ export const locationCtr = {
                     subRegion: travelOverrideLocation.subRegion,
                     subRegionId: travelOverrideLocation.subRegionId,
                     address: travelOverrideLocation.address,
-                    pinStyle: userPinStyle ?? travelOverrideLocation.pinStyle,
-                };
+                    pinStyle: userPinStyle,
+                    entityType: E_LocationEntityType.USER,
+                    entityId: user.id,
+                } as I_Location;
                 finalLocation = sanitizedTravelLocation;
-                finalLocationId = travelOverrideLocation.id;
+                finalLocationId = locationId;
+                finalSettings = {
+                    ...(user.settings ?? {}),
+                    temporaryLocation: {
+                        ...(user.settings?.temporaryLocation ?? {}),
+                        location: sanitizedTravelLocation,
+                        locationId: finalLocationId,
+                        endAt:
+                            travelOverrideEvent?.endDate
+                            ?? user.settings?.temporaryLocation?.endAt,
+                    },
+                };
             }
             else {
                 finalLocation = user.partner1?.location;
@@ -390,6 +468,7 @@ export const locationCtr = {
                         location: finalLocation,
                         locationId: finalLocationId,
                     },
+                    settings: finalSettings,
                 },
             };
         });

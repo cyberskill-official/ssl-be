@@ -69,3 +69,23 @@ type T_Response_ModerationLogs {
     message: String
     result: T_ModerationLogs
 }
+
+type Query {
+    getModerationLog(
+        filter: Input_QueryModerationLog!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_ModerationLog!
+    getModerationLogs(filter: Input_QueryModerationLog, options: JSON): T_Response_ModerationLogs!
+}
+
+type Mutation {
+    createModerationLog(doc: Input_CreateModerationLog!): T_Response_ModerationLog!
+    updateModerationLog(
+        filter: Input_QueryModerationLog!
+        update: Input_UpdateModerationLog!
+        options: JSON
+    ): T_Response_ModerationLog!
+    deleteModerationLog(filter: Input_QueryModerationLog!, options: JSON): T_Response_ModerationLog!
+}
