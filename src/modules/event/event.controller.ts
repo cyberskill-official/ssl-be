@@ -13,7 +13,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
-import { isAfter } from 'date-fns';
+import { isAfter, startOfDay } from 'date-fns';
 
 import type {
     E_Destination_PinStyle,
@@ -158,6 +158,9 @@ export const eventCtr = {
         } = doc;
 
         doc.createdById = currentUser.id;
+        // tránh persist nhầm trường location thô trên Event (luôn dùng locationId)
+        if ('location' in doc)
+            delete (doc as Partial<I_Input_CreateEvent>).location;
 
         // membership check
         const membershipExpiresAt = currentUser.membershipExpiresAt;
@@ -330,7 +333,7 @@ export const eventCtr = {
         }
 
         // Date logic
-        if (isAfter(startDate, endDate)) {
+        if (startDate && endDate && isAfter(startOfDay(startDate), startOfDay(endDate))) {
             throwError({ message: 'Start date cannot be after end date.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -451,7 +454,7 @@ export const eventCtr = {
         let locMapForRedirect: { latitude?: number; longitude?: number } | undefined;
 
         try {
-            if (type === E_EventType.CLUB_VISIT) {
+            if (isClubVisit) {
                 finalLocationId = destLocationCandidate?.id ?? destinationLocationId;
 
                 if (!finalLocationId) {
@@ -677,16 +680,21 @@ export const eventCtr = {
                 }
             }
             else {
-                // CLUB_VISIT: if caller provided pinStyle accept it; otherwise leave as-is so existing location pinStyle (likely from destination) remains.
-                // Optionally you could set a default here, but we preserve existing location pinStyle to avoid overwriting destination semantics.
+                // CLUB_VISIT: không tạo hay cập nhật location riêng; sử dụng location của destination
+                // Bỏ qua yêu cầu cập nhật location để tránh ghi đè dữ liệu của club
+                pinStyle = undefined;
+                update.location = undefined;
+                // tiếp tục xử lý các trường khác
             }
 
-            const locationUpdated = await locationCtr.updateLocation(context, {
-                filter: { id: eventFound.result.locationId },
-                update: { ...update.location, ...(pinStyle !== undefined ? { pinStyle } : {}) },
-            });
-            if (!locationUpdated.success)
-                return locationUpdated;
+            if (update.location) {
+                const locationUpdated = await locationCtr.updateLocation(context, {
+                    filter: { id: eventFound.result.locationId },
+                    update: { ...update.location, ...(pinStyle !== undefined ? { pinStyle } : {}) },
+                });
+                if (!locationUpdated.success)
+                    return locationUpdated;
+            }
         }
 
         if (eventFound.success && eventFound.result.createdById) {
