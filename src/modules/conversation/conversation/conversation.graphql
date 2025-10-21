@@ -246,6 +246,7 @@ type T_Response_Conversations {
 type T_JoinRequestSummary {
     headline: String
     username: String
+    type: E_NotificationType
 }
 
 type T_Response_JoinRequests {
@@ -274,7 +275,7 @@ type Mutation {
     contactAdmin(input: Input_ContactAdmin!): T_Response_ContactAdmin!
     adminReplyGuest(input: Input_AdminReplyGuest!): T_Response_Generic!
     requestJoinConversation(eventId: String!): T_Response_Generic!
-    approveJoinConversation(conversationId: String!, requesterId: String!): T_Response_Generic!
+    approveJoinConversation(requesterId: String!): T_Response_Generic!
 }
 
 type Subscription {

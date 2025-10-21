@@ -13,6 +13,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 
+import type { I_Notification } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
@@ -383,7 +384,7 @@ export const conversationCtr = {
                 entityType: E_NotificationEntityType.CONVERSATION,
                 entityId: conversation.id,
                 targetId: currentUser.id,
-                type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                type: [E_NotificationType.GROUP_JOIN_REQUEST, E_NotificationType.CONVERSATION_INVITATION],
                 dismissedAt: null,
             },
             options: { pagination: false },
@@ -396,10 +397,22 @@ export const conversationCtr = {
             });
         }
 
-        const joinRequests: I_JoinRequestSummary[] = notificationsRes.result.docs.map(notification => ({
-            headline: notification.presentation?.headline ?? undefined,
-            username: notification.presentation?.actor?.username ?? undefined,
-        }));
+        const joinRequests: I_JoinRequestSummary[] = [];
+
+        for (const notification of notificationsRes.result.docs ?? []) {
+            const notificationType = Array.isArray(notification.type)
+                ? notification.type[0]
+                : notification.type;
+
+            if (!notificationType)
+                continue;
+
+            joinRequests.push({
+                headline: notification.presentation?.headline ?? '',
+                username: notification.presentation?.actor?.username ?? '',
+                type: notificationType,
+            });
+        }
 
         return {
             success: true,
@@ -627,39 +640,77 @@ export const conversationCtr = {
 
     approveJoinConversation: async (
         context: I_Context,
-        { conversationId, requesterId }: { conversationId: string; requesterId: string },
+        { requesterId }: { requesterId: string },
     ): Promise<I_Return<boolean>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        if (!conversationId || !requesterId) {
-            throwError({ message: 'Conversation ID and requester ID are required.', status: RESPONSE_STATUS.BAD_REQUEST });
-        }
-
-        const conversationRes = await mongooseCtr.findOne({ id: conversationId });
-
-        if (!conversationRes.success || !conversationRes.result) {
-            throwError({ message: 'Conversation not found.', status: RESPONSE_STATUS.NOT_FOUND });
-        }
-
-        const conversation = conversationRes.result;
-
-        if (conversation.type !== E_ConversationType.GROUP) {
-            throwError({ message: 'Only group conversations support join approvals.', status: RESPONSE_STATUS.BAD_REQUEST });
-        }
-
-        const adminParticipant = await participantCtr.getParticipant(context, {
-            filter: { conversationId, userId: currentUser.id },
-        });
-
-        if (!adminParticipant.success || adminParticipant.result.role !== E_ParticipantRole.ADMIN) {
-            throwError({ message: 'Only group admins can approve join requests.', status: RESPONSE_STATUS.FORBIDDEN });
+        if (!requesterId) {
+            throwError({ message: 'Requester ID is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         const requester = await userCtr.getUser(context, { filter: { id: requesterId } });
-
         if (!requester.success) {
             throwError({ message: 'Requester not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
+
+        const pendingNotificationsRes = await notificationCtr.getNotifications(context, {
+            filter: {
+                targetId: currentUser.id,
+                actorId: requesterId,
+                type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                dismissedAt: null,
+            },
+            options: { pagination: false },
+        });
+
+        if (!pendingNotificationsRes.success) {
+            throwError({
+                message: pendingNotificationsRes.message ?? 'Failed to load join request notifications.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const pendingNotifications = (pendingNotificationsRes.result.docs ?? []) as I_Notification[];
+
+        let matchedNotification: I_Notification | undefined;
+        let conversation: I_Conversation | undefined;
+
+        for (const note of pendingNotifications) {
+            if (note.entityType !== E_NotificationEntityType.CONVERSATION)
+                continue;
+            const candidateId = typeof note.entityId === 'string' ? note.entityId : undefined;
+            if (!candidateId)
+                continue;
+
+            const conversationRes = await mongooseCtr.findOne({ id: candidateId });
+            if (!conversationRes.success || !conversationRes.result)
+                continue;
+
+            const conversationCandidate = conversationRes.result;
+            if (conversationCandidate.type !== E_ConversationType.GROUP)
+                continue;
+
+            const adminParticipant = await participantCtr.getParticipant(context, {
+                filter: { conversationId: conversationCandidate.id, userId: currentUser.id },
+            });
+            const isAdmin = adminParticipant.success && adminParticipant.result.role === E_ParticipantRole.ADMIN;
+            const isCreator = conversationCandidate.createdById === currentUser.id;
+            if (!isAdmin && !isCreator)
+                continue;
+
+            matchedNotification = note;
+            conversation = conversationCandidate;
+            break;
+        }
+
+        if (!conversation) {
+            throwError({
+                message: 'Pending join request not found or you are not authorized to approve it.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const conversationId = conversation.id;
 
         const existingParticipant = await participantCtr.getParticipant(context, {
             filter: { conversationId, userId: requesterId },
@@ -675,6 +726,13 @@ export const conversationCtr = {
 
         if (!createResult.success) {
             throwError({ message: createResult.message ?? 'Failed to add participant.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        if (matchedNotification?.id) {
+            await notificationCtr.updateNotification(context, {
+                filter: { id: matchedNotification.id },
+                update: { dismissedAt: new Date() },
+            });
         }
 
         await notificationCtr.createNotificationWithSettings(context, {

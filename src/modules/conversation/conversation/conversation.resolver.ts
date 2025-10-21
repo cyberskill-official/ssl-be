@@ -59,7 +59,7 @@ const conversationResolver = {
             conversationCtr.requestJoinConversation(context, args),
         approveJoinConversation: (
             _parent: unknown,
-            args: { conversationId: string; requesterId: string },
+            args: { requesterId: string },
             context: I_Context,
         ) => conversationCtr.approveJoinConversation(context, args),
     },

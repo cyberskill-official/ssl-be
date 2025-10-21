@@ -3,6 +3,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 import type { E_Role_User } from '#modules/authz/role/index.js';
 import type { I_Blog } from '#modules/blog/index.js';
 import type { I_Destination } from '#modules/destination/index.js';
+import type { E_NotificationType } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/message.type.js';
@@ -237,4 +238,5 @@ export interface I_ContactAdminResult {
 export interface I_JoinRequestSummary {
     headline?: string;
     username?: string;
+    type: E_NotificationType;
 }
