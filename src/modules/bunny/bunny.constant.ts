@@ -11,3 +11,9 @@ export const storageZone = zone.connect_with_accesskey(
 );
 
 export const BUNNY_IFRAME_URL = `https://iframe.mediadelivery.net/embed`;
+
+export const BUNNY_OPTIMIZER_DEFAULTS = {
+    blurClass: env.BUNNY_OPTIMIZER_BLUR_CLASS?.trim() || undefined,
+} as const satisfies {
+    blurClass?: string;
+};

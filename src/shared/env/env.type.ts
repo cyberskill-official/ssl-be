@@ -43,5 +43,6 @@ export interface I_Environment {
     BUNNY_STREAM_LIBRARY_ID: string;
     BUNNY_STREAM_API_KEY: string;
     BUNNY_STREAM_SECURITY_KEY: string;
+    BUNNY_OPTIMIZER_BLUR_CLASS: string;
     POSTMARK_SERVER_API_TOKEN: string;
 }

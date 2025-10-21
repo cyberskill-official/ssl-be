@@ -11,6 +11,7 @@ import {
     AWS_BUCKET_REGION,
     AWS_MODERATION_REGION,
     BODY_PARSER_LIMIT,
+    BUNNY_OPTIMIZER_BLUR_CLASS,
     EMAIL_NAME,
     ENDPOINT_GRAPHQL,
     ENDPOINT_RESTAPI,
@@ -74,6 +75,7 @@ export function getEnv(): I_Environment {
         BUNNY_STREAM_LIBRARY_ID: str(),
         BUNNY_STREAM_API_KEY: str(),
         BUNNY_STREAM_SECURITY_KEY: str(),
+        BUNNY_OPTIMIZER_BLUR_CLASS: str({ default: BUNNY_OPTIMIZER_BLUR_CLASS }),
         POSTMARK_SERVER_API_TOKEN: str(),
     });
 

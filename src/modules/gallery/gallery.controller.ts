@@ -14,6 +14,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
@@ -56,6 +57,17 @@ export const galleryCtr = {
             }
         }
 
+        let viewerAgeVerified = false;
+        if (isLoggedIn) {
+            try {
+                const viewer = await authnCtr.getUserFromSession(context);
+                viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+            catch {
+                viewerAgeVerified = false;
+            }
+        }
+
         const galleryFound = await mongooseCtr.findOne(filter, projection, options, populate);
 
         if (!galleryFound.success) {
@@ -90,13 +102,21 @@ export const galleryCtr = {
             });
         }
 
+        const shouldBlur = !isOwner && !isStaff && !isAdmin && !viewerAgeVerified;
+        const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
+
         if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
-            galleryFound.result.url = bunnyCtr.generateSignedUrl({
-                fullUrl: galleryFound.result.url,
-                extraQueryParams: {
-                    class: isFreeMember ? 'free' : 'premium',
-                },
-            });
+            if (shouldBlur) {
+                galleryFound.result.url = bunnyCtr.generateBlurredUrl({
+                    fullUrl: galleryFound.result.url,
+                });
+            }
+            else {
+                galleryFound.result.url = bunnyCtr.generateSignedUrl({
+                    fullUrl: galleryFound.result.url,
+                    extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
+                });
+            }
         }
 
         return galleryFound;
@@ -107,7 +127,11 @@ export const galleryCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
         const isLoggedIn = !!context?.req?.session?.user;
         const userId = context.req?.session?.user?.id;
-        const isOwner = context.req?.session?.user?.id === filter?.uploadedById;
+        const sessionUserId = context.req?.session?.user?.id;
+        const ownerFromSingle = sessionUserId === filter?.uploadedById;
+        const ownerFromMultiple = Array.isArray(filter?.uploadedByIds)
+            && filter.uploadedByIds.some(id => id && typeof id === 'string' && id.trim() === sessionUserId);
+        const isOwner = ownerFromSingle || ownerFromMultiple;
 
         let isFreeMember = false;
         let isStaff = false;
@@ -156,6 +180,17 @@ export const galleryCtr = {
             }
         }
 
+        let viewerAgeVerified = false;
+        if (isLoggedIn) {
+            try {
+                const viewer = await authnCtr.getUserFromSession(context);
+                viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+            catch {
+                viewerAgeVerified = false;
+            }
+        }
+
         const galleries = await mongooseCtr.findPaging(mongoFilter, {
             ...options,
             populate: [
@@ -198,13 +233,22 @@ export const galleryCtr = {
 
             const galleryResult = { ...gallery, isLike, likeCount, viewCount };
 
+            const isGalleryOwner = sessionUserId && gallery.uploadedById === sessionUserId;
+            const membershipClass = isGalleryOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
+            const shouldBlur = !isGalleryOwner && !isStaff && !isAdmin && !viewerAgeVerified;
+
             if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
-                galleryResult.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: galleryResult.url,
-                    extraQueryParams: {
-                        class: isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium'),
-                    },
-                });
+                if (shouldBlur) {
+                    galleryResult.url = bunnyCtr.generateBlurredUrl({
+                        fullUrl: galleryResult.url,
+                    });
+                }
+                else {
+                    galleryResult.url = bunnyCtr.generateSignedUrl({
+                        fullUrl: galleryResult.url,
+                        extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
+                    });
+                }
             }
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
                 galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({

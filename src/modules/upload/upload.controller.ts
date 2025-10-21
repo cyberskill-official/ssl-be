@@ -259,7 +259,9 @@ export const uploadCtr = {
             return fileWebStream;
         }
 
-        const uploadedUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+        const uploadedUrl = env.BUNNY_OPTIMIZER_BLUR_CLASS
+            ? `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}?class=${env.BUNNY_OPTIMIZER_BLUR_CLASS}`
+            : `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
 
         let clientIp: string | undefined;
         try {

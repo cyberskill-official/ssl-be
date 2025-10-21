@@ -9,9 +9,9 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { getEnv } from '#shared/env/index.js';
 
-import type { I_Input_GenerateSignedUrl } from './bunny.type.js';
+import type { I_Input_GenerateBlurredUrl, I_Input_GenerateSignedUrl } from './bunny.type.js';
 
-import { BUNNY_IFRAME_URL } from './bunny.constant.js';
+import { BUNNY_IFRAME_URL, BUNNY_OPTIMIZER_DEFAULTS } from './bunny.constant.js';
 import { isValidReadableStream } from './bunny.util.js';
 
 const env = getEnv();
@@ -216,12 +216,14 @@ export const bunnyCtr = {
 
             const scopedPath = tokenPath || path;
 
-            const filteredParams = Object.entries(extraQueryParams)
+            const normalizedParams = extraQueryParams ?? {};
+
+            const filteredParams = Object.entries(normalizedParams)
                 .filter(([key]) => key !== 'token' && key !== 'expires')
                 .sort(([a], [b]) => a.localeCompare(b));
 
             const formEncodedQuery = filteredParams
-                .map(([key, value]) => `${key}=${value}`)
+                .map(([key, value]) => `${key}=${String(value)}`)
                 .join('&');
 
             let hashInput = env.BUNNY_CDN_SECURITY_KEY + scopedPath + expires;
@@ -253,7 +255,7 @@ export const bunnyCtr = {
             }
 
             for (const [key, value] of filteredParams) {
-                query.append(key, value as string);
+                query.append(key, String(value));
             }
 
             return `${domain}${path}?${query.toString()}`;
@@ -261,6 +263,31 @@ export const bunnyCtr = {
         catch {
             return '';
         }
+    },
+    generateBlurredUrl: (input: I_Input_GenerateBlurredUrl): string => {
+        const {
+            blur,
+            extraQueryParams,
+            ...rest
+        } = input;
+
+        const mergedParams: Record<string, string | number> = {
+            ...(extraQueryParams ?? {}),
+        };
+
+        const hasCustomClass = Object.prototype.hasOwnProperty.call(mergedParams, 'class');
+
+        if (!hasCustomClass && BUNNY_OPTIMIZER_DEFAULTS.blurClass) {
+            mergedParams['class'] = BUNNY_OPTIMIZER_DEFAULTS.blurClass;
+        }
+        if (blur !== undefined) {
+            mergedParams['blur'] = blur;
+        }
+
+        return bunnyCtr.generateSignedUrl({
+            ...rest,
+            extraQueryParams: mergedParams,
+        });
     },
     generateEmbedIframeUrlFromUrl: (input: I_Input_GenerateSignedUrl): string => {
         const {
