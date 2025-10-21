@@ -102,7 +102,7 @@ export const galleryCtr = {
             });
         }
 
-        const shouldBlur = !isOwner && !isStaff && !isAdmin && !viewerAgeVerified;
+        const shouldBlur = !viewerAgeVerified && !isStaff && !isAdmin;
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
         if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
@@ -233,9 +233,10 @@ export const galleryCtr = {
 
             const galleryResult = { ...gallery, isLike, likeCount, viewCount };
 
-            const isGalleryOwner = sessionUserId && gallery.uploadedById === sessionUserId;
-            const membershipClass = isGalleryOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
-            const shouldBlur = !isGalleryOwner && !isStaff && !isAdmin && !viewerAgeVerified;
+            const membershipClass = (sessionUserId && gallery.uploadedById === sessionUserId)
+                ? 'normal'
+                : (isFreeMember ? 'free' : 'premium');
+            const shouldBlur = !viewerAgeVerified && !isStaff && !isAdmin;
 
             if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
                 if (shouldBlur) {
