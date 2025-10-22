@@ -96,6 +96,19 @@ export const uploadCtr = {
                 && !isInRegistration
                 && isGallery;
 
+        const requiresAgeVerification
+            = !isGuest && !isStaff && !isAdmin && !skipModeration;
+
+        if (requiresAgeVerification) {
+            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            if (!isAgeApproved) {
+                throwError({
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                    message: 'Uploads require completed age verification.',
+                });
+            }
+        }
+
         if (shouldGateUpload) {
             const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
             const isPaidMember = await authnCtr.isPaidMember(context);

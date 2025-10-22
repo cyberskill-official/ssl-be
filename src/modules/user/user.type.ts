@@ -5,7 +5,9 @@ import type { I_Role } from '#modules/authz/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Location } from '#modules/location/index.js';
+import type { I_Input_Note, I_Note } from '#modules/note/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
+import type { T_UploadedFilePromise } from '#modules/upload/upload.type.js';
 
 export enum E_AccountType {
     SINGLE = 'SINGLE',
@@ -52,6 +54,7 @@ export interface I_UserPartner {
     locationId?: string;
     location?: I_Location;
     bio?: string;
+    avatarUrl?: string;
 }
 
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'ethnicity';
@@ -129,14 +132,16 @@ export interface I_User extends I_GenericDocument {
     isAdminBlocked?: boolean;
     isGuardianView?: boolean;
     guardianOwnerId?: string | null;
+    notes?: I_Note[];
 }
 
-export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';
+export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles' | 'notes';
 
 export interface I_Input_QueryUser extends Omit<I_User, 'password' | T_User_Populate> {
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
     settings?: I_Input_UserSettings;
+    notes?: I_Input_Note[];
 }
 
 export interface I_Input_CreateUser extends Omit<I_User, T_Omit_Create | T_User_Populate> {
@@ -146,12 +151,18 @@ export interface I_Input_CreateUser extends Omit<I_User, T_Omit_Create | T_User_
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
     settings?: I_Input_UserSettings;
+    notes?: I_Input_Note[];
 }
 
 export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_Populate> {
     partner1?: I_Input_UserPartner;
     partner2?: I_Input_UserPartner;
     settings?: I_Input_UserSettings;
+    notes?: I_Input_Note[];
+}
+
+export interface I_Input_UploadUserAvatar {
+    file: T_UploadedFilePromise;
 }
 
 export interface I_Input_AdminBlockUser {

@@ -3,6 +3,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { followCtr } from '#modules/follow/follow.controller.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/index.js';
@@ -106,4 +107,44 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
     catch {
         /* ignore notification errors */
     }
+}
+
+export async function isUploaderAgeVerified(
+    context: I_Context,
+    gallery: I_Gallery,
+    cache?: Map<string, boolean>,
+): Promise<boolean> {
+    const candidateId = gallery.uploadedBy?.id ?? gallery.uploadedById ?? undefined;
+
+    if (!candidateId) {
+        return false;
+    }
+
+    if (cache?.has(candidateId)) {
+        return cache.get(candidateId)!;
+    }
+
+    let isVerified
+        = gallery.uploadedBy?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+    if (!isVerified) {
+        try {
+            const uploader = await userCtr.getUser(context, {
+                filter: { id: candidateId },
+                projection: { ageVerify: 1 } as any,
+            });
+            if (uploader.success && uploader.result?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
+                isVerified = true;
+            }
+        }
+        catch {
+            isVerified = false;
+        }
+    }
+
+    if (cache) {
+        cache.set(candidateId, isVerified);
+    }
+
+    return isVerified;
 }

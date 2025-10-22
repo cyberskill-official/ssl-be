@@ -23,7 +23,7 @@ import { emailCtr } from '#modules/email/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
-import { userCtr } from '#modules/user/index.js';
+import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
 import {
     E_VerificationContext,
     E_VerificationMethod,
@@ -670,6 +670,24 @@ export const authnCtr = {
                 message: 'Please select your account type (Couple or Single) before continuing.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        const partner1Dob = update.partner1?.dateOfBirth;
+        if (!partner1Dob || !isAdultDateOfBirth(partner1Dob)) {
+            throwError({
+                message: 'You must be at least 18 years old to join.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (update.partner2) {
+            const partner2Dob = update.partner2.dateOfBirth;
+            if (!partner2Dob || !isAdultDateOfBirth(partner2Dob)) {
+                throwError({
+                    message: 'All partners must be at least 18 years old to join.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
         }
 
         const stepsAfter = [

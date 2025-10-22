@@ -20,7 +20,7 @@ import type {
 } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
@@ -73,9 +73,24 @@ function mapEventTypeToPinStyle(eventType?: E_EventType) {
     return undefined;
 }
 
+function shouldBlurForContext(context?: I_Context): boolean {
+    const viewer = context?.req?.session?.user;
+    return !viewer || viewer.ageVerify?.status !== E_AgeVerifyStatus.APPROVED;
+}
+
+function signEventImage(fullUrl: string, context?: I_Context): string {
+    if (shouldBlurForContext(context)) {
+        return bunnyCtr.generateBlurredUrl({ fullUrl });
+    }
+    return bunnyCtr.generateSignedUrl({
+        fullUrl,
+        extraQueryParams: { class: 'normal' },
+    });
+}
+
 export const eventCtr = {
     getEvent: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
         const eventFound = await mongooseCtr.findOne(filter, projection, options, populate);
@@ -85,16 +100,13 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            eventFound.result.image = bunnyCtr.generateSignedUrl({
-                fullUrl: eventFound.result.image,
-                extraQueryParams: { class: 'normal' },
-            });
+            eventFound.result.image = signEventImage(eventFound.result.image, context);
         }
 
         return eventFound;
     },
     getEvents: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
         const now = new Date();
@@ -130,10 +142,7 @@ export const eventCtr = {
 
         events.result.docs = events.result.docs.map((event) => {
             if (event.image) {
-                event.image = bunnyCtr.generateSignedUrl({
-                    fullUrl: event.image,
-                    extraQueryParams: { class: 'normal' },
-                });
+                event.image = signEventImage(event.image, context);
             }
             return event;
         });
@@ -522,9 +531,8 @@ export const eventCtr = {
             let thumbnailUrl: string | undefined;
             try {
                 if (eventCreated.result.image) {
-                    thumbnailUrl = bunnyCtr.generateSignedUrl({
+                    thumbnailUrl = bunnyCtr.generateBlurredUrl({
                         fullUrl: eventCreated.result.image,
-                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }
@@ -538,9 +546,8 @@ export const eventCtr = {
                 ?? currentUser.partner2?.gallery?.url
                 ?? undefined;
                 if (rawAvatar) {
-                    actorAvatarUrl = bunnyCtr.generateSignedUrl({
+                    actorAvatarUrl = bunnyCtr.generateBlurredUrl({
                         fullUrl: rawAvatar,
-                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }

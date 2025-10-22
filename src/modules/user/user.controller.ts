@@ -9,28 +9,35 @@ import type {
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
+import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
+import { getEnv } from '#shared/env/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
+import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
 
 import { UserModel } from './user.model.js';
+import { hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
+const env = getEnv();
 
 export const userCtr = {
     getUser: async (
@@ -73,30 +80,7 @@ export const userCtr = {
         if (!userFound.success)
             return userFound;
 
-        if (userFound.result.partner1?.gallery?.url) {
-            userFound.result.partner1.gallery.url = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.partner1.gallery.url,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.partner2?.gallery?.url) {
-            userFound.result.partner2.gallery.url = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.partner2.gallery.url,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.ageVerify?.preApproval?.documentPic) {
-            userFound.result.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.ageVerify.preApproval.documentPic,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.ageVerify?.preApproval?.selfiePic) {
-            userFound.result.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.ageVerify.preApproval.selfiePic,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
+        hydrateUserMedia(userFound.result);
 
         return userFound;
     },
@@ -138,34 +122,132 @@ export const userCtr = {
             return users;
 
         users.result.docs = users.result.docs.map((user) => {
-            if (user.partner1?.gallery?.url) {
-                user.partner1.gallery.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.partner1.gallery.url,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.partner2?.gallery?.url) {
-                user.partner2.gallery.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.partner2.gallery.url,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.ageVerify?.preApproval?.documentPic) {
-                user.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.ageVerify.preApproval.documentPic,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.ageVerify?.preApproval?.selfiePic) {
-                user.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.ageVerify.preApproval.selfiePic,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
+            hydrateUserMedia(user);
             return user;
         });
 
         return users;
+    },
+    uploadUserAvatar: async (
+        context: I_Context,
+        { file }: I_Input_UploadUserAvatar,
+    ): Promise<I_Return<{ url: string | null }>> => {
+        const uploaded = await file;
+        const validated = await getAndValidateFile(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
+
+        if (!validated.success || !validated.result) {
+            return {
+                success: false,
+                message: validated.message ?? 'Failed to read upload file.',
+                code: validated.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const currentUser = await authnCtr.getUserFromSession(context);
+        if (!currentUser?.id) {
+            throwError({
+                message: 'User not authenticated.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
+            throwError({
+                message: 'Age verification is required before uploading an avatar.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const previousAvatarUrl = currentUser.partner1?.avatarUrl
+            ?? currentUser.partner1?.gallery?.url;
+
+        const { filename } = validated.result;
+        const extension = path.extname(filename);
+        if (!extension) {
+            throwError({
+                message: 'Invalid file: missing extension.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const baseName = path.basename(filename, extension);
+        const safeBaseName = baseName.replace(/[^\w-]/g, '_');
+        const timestamp = Date.now();
+        const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
+        const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
+
+        const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded);
+        if (!fileStream.success || !fileStream.result) {
+            return {
+                success: false,
+                message: fileStream.message ?? 'Failed to process upload stream.',
+                code: fileStream.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        try {
+            await BunnyFile.upload(storageZone, uploadPath, fileStream.result);
+        }
+        catch (error) {
+            return {
+                success: false,
+                message: `Failed to upload avatar: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        const fullUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+
+        const updatedUser = await mongooseCtr.updateOne(
+            { id: currentUser.id },
+            { $set: { 'partner1.avatarUrl': fullUrl } } as any,
+            { new: true },
+        );
+
+        if (!updatedUser.success || !updatedUser.result) {
+            return {
+                success: false,
+                message: updatedUser.message ?? 'Failed to update avatar.',
+                code: updatedUser.code ?? RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        hydrateUserMedia(updatedUser.result);
+
+        if (context?.req?.session?.user?.id === currentUser.id) {
+            context.req.session.user = {
+                ...context.req.session.user,
+                partner1: {
+                    ...(context.req.session.user.partner1 ?? {}),
+                    avatarUrl: updatedUser.result.partner1?.avatarUrl,
+                    gallery: updatedUser.result.partner1?.gallery,
+                },
+            };
+        }
+
+        try {
+            const previousRelative = previousAvatarUrl
+                ?.split('?')[0]
+                ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
+
+            if (
+                previousRelative
+                && previousRelative !== uploadPath
+                && previousRelative.includes(`/avatar/`)
+            ) {
+                await bunnyCtr.deleteFile(context, previousRelative);
+            }
+        }
+        catch {
+            // ignore avatar cleanup errors
+        }
+
+        return {
+            success: true,
+            result: {
+                url: updatedUser.result.partner1?.avatarUrl ?? null,
+            },
+        };
     },
     createUser: async (
         context: I_Context,
@@ -190,6 +272,19 @@ export const userCtr = {
         );
         if (existed.success) {
             throwError({ message: 'User already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (doc.partner1?.dateOfBirth && !isAdultDateOfBirth(doc.partner1.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (doc.partner2?.dateOfBirth && !isAdultDateOfBirth(doc.partner2.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         // 3) Tạo user mới
@@ -332,6 +427,19 @@ export const userCtr = {
         const userFound = await userCtr.getUser(context, { filter });
         if (!userFound.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        if (update.partner1?.dateOfBirth && !isAdultDateOfBirth(update.partner1.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (update.partner2?.dateOfBirth && !isAdultDateOfBirth(update.partner2.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         // cập nhật location nếu có

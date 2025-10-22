@@ -109,6 +109,7 @@ type T_UserPartner {
     locationId: String
     location: T_Location
     bio: String
+    avatarUrl: String
 }
 
 input Input_UserPartner {
@@ -128,6 +129,7 @@ input Input_UserPartner {
     locationId: String
     location: Input_Location
     bio: String
+    avatarUrl: String
 }
 
 type T_UserSettings_TemporaryLocation {
@@ -217,6 +219,7 @@ type T_User {
     isAdminBlocked: Boolean
     isGuardianView: Boolean
     guardianOwnerId: String
+    notes: [T_Note]
 }
 
 input Input_QueryUser {
@@ -249,6 +252,7 @@ input Input_QueryUser {
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
+    notes: [Input_Note]
 }
 
 input Input_CreateUser {
@@ -275,6 +279,7 @@ input Input_CreateUser {
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
+    notes: [Input_Note]
 }
 
 input Input_UpdateUser {
@@ -302,6 +307,7 @@ input Input_UpdateUser {
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
+    notes: [Input_Note]
 }
 
 input Input_AdminBlockUser {
@@ -338,6 +344,16 @@ type T_Response_Users {
     result: T_Users
 }
 
+type T_UserAvatar {
+    url: String
+}
+
+type T_Response_UserAvatar {
+    success: Boolean
+    message: String
+    result: T_UserAvatar
+}
+
 type Query {
     getUser(filter: Input_QueryUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
     getUsers(filter: Input_QueryUser, options: JSON): T_Response_Users!
@@ -351,4 +367,5 @@ type Mutation {
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
     adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
     adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!
+    uploadUserAvatar(file: Upload!): T_Response_UserAvatar!
 }
