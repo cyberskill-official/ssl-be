@@ -20,7 +20,7 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
@@ -172,12 +172,12 @@ export const userCtr = {
             });
         }
 
-        // if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
-        //     throwError({
-        //         message: 'Age verification is required before uploading an avatar.',
-        //         status: RESPONSE_STATUS.FORBIDDEN,
-        //     });
-        // }
+        if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
+            throwError({
+                message: 'Age verification is required before uploading an avatar.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
 
         const previousGallery = currentUser.partner1?.gallery;
         const previousGalleryId = currentUser.partner1?.galleryId ?? previousGallery?.id;
