@@ -54,7 +54,6 @@ export interface I_UserPartner {
     locationId?: string;
     location?: I_Location;
     bio?: string;
-    avatarUrl?: string;
 }
 
 export type T_UserPartner_Populate = 'relationshipStatus' | 'sexualOrientation' | 'sexualPreferences' | 'smokingHabits' | 'preferredDrinks' | 'bodyType' | 'height' | 'hairColor' | 'eyeColor' | 'ethnicity';

@@ -27,33 +27,14 @@ export function hydrateUserMedia(user?: I_User | null): void {
             return;
         }
 
-        const rawAvatarUrl = partner.avatarUrl;
         const rawGalleryUrl = partner.gallery?.url;
 
-        const signedAvatar = rawAvatarUrl
-            ? signProfileImage(rawAvatarUrl, user)
-            : undefined;
         const signedGallery = rawGalleryUrl
             ? signProfileImage(rawGalleryUrl, user)
             : undefined;
 
         if (signedGallery && partner.gallery) {
             partner.gallery.url = signedGallery;
-        }
-
-        if (signedAvatar) {
-            partner.avatarUrl = signedAvatar;
-        }
-
-        if (!signedAvatar && signedGallery) {
-            partner.avatarUrl = signedGallery;
-        }
-
-        if (!signedGallery && signedAvatar) {
-            partner.gallery = {
-                ...(partner.gallery ?? {}),
-                url: signedAvatar,
-            } as any;
         }
     };
 

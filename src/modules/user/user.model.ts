@@ -279,9 +279,6 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
         bio: {
             type: String,
         },
-        avatarUrl: {
-            type: String,
-        },
     },
     virtuals: [
         {

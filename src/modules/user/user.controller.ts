@@ -134,7 +134,7 @@ export const userCtr = {
     uploadUserAvatar: async (
         context: I_Context,
         { file }: I_Input_UploadUserAvatar,
-    ): Promise<I_Return<{ url: string | null }>> => {
+    ): Promise<I_Return<{ url: string; galleryId: string | null }>> => {
         const files = Array.isArray(file) ? file : [file];
         if (!files.length) {
             return {
@@ -179,9 +179,10 @@ export const userCtr = {
         //     });
         // }
 
-        const previousAvatarUrl = currentUser.partner1?.avatarUrl
-            ?? currentUser.partner1?.gallery?.url;
-        const previousRelativePath = previousAvatarUrl
+        const previousGallery = currentUser.partner1?.gallery;
+        const previousGalleryId = currentUser.partner1?.galleryId ?? previousGallery?.id;
+        const previousGalleryUrl = previousGallery?.url;
+        const previousRelativePath = previousGalleryUrl
             ?.split('?')[0]
             ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
             ?.replace(/^\/+/, '');
@@ -223,34 +224,8 @@ export const userCtr = {
 
         const fullUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
 
-        const updatedUser = await mongooseCtr.updateOne(
-            { id: currentUser.id },
-            { $set: { 'partner1.avatarUrl': fullUrl } } as any,
-            { new: true },
-        );
-
-        if (!updatedUser.success || !updatedUser.result) {
-            return {
-                success: false,
-                message: updatedUser.message ?? 'Failed to update avatar.',
-                code: updatedUser.code ?? RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
-            };
-        }
-
-        hydrateUserMedia(updatedUser.result);
-
-        if (context?.req?.session?.user?.id === currentUser.id) {
-            context.req.session.user = {
-                ...context.req.session.user,
-                partner1: {
-                    ...(context.req.session.user.partner1 ?? {}),
-                    avatarUrl: updatedUser.result.partner1?.avatarUrl,
-                    gallery: updatedUser.result.partner1?.gallery,
-                },
-            };
-        }
-
         let avatarGalleryCreatedId: string | undefined;
+        let avatarGalleryUrl: string | undefined = fullUrl;
         try {
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                 doc: {
@@ -284,6 +259,7 @@ export const userCtr = {
                             isPublished: true,
                         },
                     });
+                    avatarGalleryUrl = fullUrl;
                 }
             }
         }
@@ -291,7 +267,68 @@ export const userCtr = {
             console.warn('Failed to sync avatar gallery:', error);
         }
 
-        if (
+        const updatePayload: Record<string, unknown> = {
+            ...(avatarGalleryCreatedId ? { 'partner1.galleryId': avatarGalleryCreatedId } : {}),
+        };
+        const unsetPayload: Record<string, unknown> = {
+            'partner1.avatarUrl': '',
+        };
+
+        const updatedUser = await mongooseCtr.updateOne(
+            { id: currentUser.id },
+            {
+                ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
+                ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
+            } as any,
+            { new: true },
+        );
+
+        if (!updatedUser.success || !updatedUser.result) {
+            return {
+                success: false,
+                message: updatedUser.message ?? 'Failed to update avatar.',
+                code: updatedUser.code ?? RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        if (avatarGalleryCreatedId) {
+            updatedUser.result.partner1 = {
+                ...(updatedUser.result.partner1 ?? {}),
+                galleryId: avatarGalleryCreatedId,
+                gallery: {
+                    ...(updatedUser.result.partner1?.gallery ?? {}),
+                    id: avatarGalleryCreatedId,
+                    url: avatarGalleryUrl,
+                } as any,
+            };
+        }
+        else if (updatedUser.result.partner1) {
+            delete (updatedUser.result.partner1 as any).avatarUrl;
+        }
+
+        hydrateUserMedia(updatedUser.result);
+
+        if (context?.req?.session?.user?.id === currentUser.id) {
+            const sessionPartner = context.req.session.user.partner1 ?? {};
+            context.req.session.user = {
+                ...context.req.session.user,
+                partner1: {
+                    ...sessionPartner,
+                    galleryId: updatedUser.result.partner1?.galleryId,
+                    gallery: updatedUser.result.partner1?.gallery,
+                },
+            };
+        }
+
+        if (previousGalleryId && previousGalleryId !== avatarGalleryCreatedId) {
+            try {
+                await galleryCtr.deleteGallery(context, { filter: { id: previousGalleryId } });
+            }
+            catch (error) {
+                console.warn('Failed to remove previous avatar gallery by ID:', error);
+            }
+        }
+        else if (
             previousRelativePath
             && previousRelativePath !== uploadPath
             && previousRelativePath.includes('/avatar/')
@@ -314,7 +351,7 @@ export const userCtr = {
                 }
             }
             catch (error) {
-                console.warn('Failed to remove previous avatar gallery:', error);
+                console.warn('Failed to remove previous avatar gallery by URL:', error);
             }
 
             if (!galleryRemoved) {
@@ -330,7 +367,8 @@ export const userCtr = {
         return {
             success: true,
             result: {
-                url: updatedUser.result.partner1?.avatarUrl ?? null,
+                url: updatedUser.result.partner1?.gallery?.url ?? '',
+                galleryId: updatedUser.result.partner1?.galleryId ?? null,
             },
         };
     },

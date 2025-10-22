@@ -109,7 +109,6 @@ type T_UserPartner {
     locationId: String
     location: T_Location
     bio: String
-    avatarUrl: String
 }
 
 input Input_UserPartner {
@@ -129,7 +128,6 @@ input Input_UserPartner {
     locationId: String
     location: Input_Location
     bio: String
-    avatarUrl: String
 }
 
 type T_UserSettings_TemporaryLocation {
@@ -346,6 +344,7 @@ type T_Response_Users {
 
 type T_UserAvatar {
     url: String
+    galleryId: String
 }
 
 type T_Response_UserAvatar {
