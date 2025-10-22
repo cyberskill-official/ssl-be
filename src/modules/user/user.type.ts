@@ -162,7 +162,7 @@ export interface I_Input_UpdateUser extends Omit<I_User, T_Omit_Update | T_User_
 }
 
 export interface I_Input_UploadUserAvatar {
-    file: T_UploadedFilePromise;
+    file: T_UploadedFilePromise | T_UploadedFilePromise[];
 }
 
 export interface I_Input_AdminBlockUser {

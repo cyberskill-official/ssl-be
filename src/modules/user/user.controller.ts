@@ -20,15 +20,18 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
+import { galleryCtr } from '#modules/gallery/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getEnv } from '#shared/env/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 
 import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
@@ -132,7 +135,25 @@ export const userCtr = {
         context: I_Context,
         { file }: I_Input_UploadUserAvatar,
     ): Promise<I_Return<{ url: string | null }>> => {
-        const uploaded = await file;
+        const files = Array.isArray(file) ? file : [file];
+        if (!files.length) {
+            return {
+                success: false,
+                message: 'No file provided.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const firstFilePromise = files[0];
+        if (!firstFilePromise) {
+            return {
+                success: false,
+                message: 'No file provided.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const uploaded = await firstFilePromise;
         const validated = await getAndValidateFile(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
 
         if (!validated.success || !validated.result) {
@@ -151,15 +172,19 @@ export const userCtr = {
             });
         }
 
-        if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
-            throwError({
-                message: 'Age verification is required before uploading an avatar.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
-        }
+        // if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
+        //     throwError({
+        //         message: 'Age verification is required before uploading an avatar.',
+        //         status: RESPONSE_STATUS.FORBIDDEN,
+        //     });
+        // }
 
         const previousAvatarUrl = currentUser.partner1?.avatarUrl
             ?? currentUser.partner1?.gallery?.url;
+        const previousRelativePath = previousAvatarUrl
+            ?.split('?')[0]
+            ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+            ?.replace(/^\/+/, '');
 
         const { filename } = validated.result;
         const extension = path.extname(filename);
@@ -225,21 +250,81 @@ export const userCtr = {
             };
         }
 
+        let avatarGalleryCreatedId: string | undefined;
         try {
-            const previousRelative = previousAvatarUrl
-                ?.split('?')[0]
-                ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
+            const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
+                doc: {
+                    type: E_ModerationMediaType.IMAGE,
+                    uploadedById: currentUser.id,
+                    url: fullUrl,
+                    entity: E_UploadEntity.USER,
+                    entityId: currentUser.id,
+                    isPublished: true,
+                },
+            });
 
-            if (
-                previousRelative
-                && previousRelative !== uploadPath
-                && previousRelative.includes(`/avatar/`)
-            ) {
-                await bunnyCtr.deleteFile(context, previousRelative);
+            if (moderationCreated.success && moderationCreated.result) {
+                const moderationId = moderationCreated.result.id;
+                avatarGalleryCreatedId = moderationCreated.result.entityId ?? undefined;
+
+                await moderationMediaCtr.updateModerationMedia(context, {
+                    filter: { id: moderationId },
+                    update: {
+                        status: E_ModerationMediaStatus.APPROVED,
+                        isPublished: true,
+                    },
+                    options: { new: true },
+                });
+
+                if (avatarGalleryCreatedId) {
+                    await galleryCtr.updateGallery(context, {
+                        filter: { id: avatarGalleryCreatedId },
+                        update: {
+                            status: E_ModerationMediaStatus.APPROVED,
+                            isPublished: true,
+                        },
+                    });
+                }
             }
         }
-        catch {
-            // ignore avatar cleanup errors
+        catch (error) {
+            console.warn('Failed to sync avatar gallery:', error);
+        }
+
+        if (
+            previousRelativePath
+            && previousRelativePath !== uploadPath
+            && previousRelativePath.includes('/avatar/')
+        ) {
+            const previousAbsoluteUrl = `${env.BUNNY_CDN_HOSTNAME}/${previousRelativePath}`;
+            let galleryRemoved = false;
+            try {
+                const previousGallery = await galleryCtr.getGallery(context, {
+                    filter: {
+                        uploadedById: currentUser.id,
+                        url: previousAbsoluteUrl,
+                    },
+                });
+
+                if (previousGallery.success && previousGallery.result?.id) {
+                    await galleryCtr.deleteGallery(context, {
+                        filter: { id: previousGallery.result.id },
+                    });
+                    galleryRemoved = true;
+                }
+            }
+            catch (error) {
+                console.warn('Failed to remove previous avatar gallery:', error);
+            }
+
+            if (!galleryRemoved) {
+                try {
+                    await bunnyCtr.deleteFile(context, previousRelativePath);
+                }
+                catch {
+                    // ignore cleanup errors
+                }
+            }
         }
 
         return {
