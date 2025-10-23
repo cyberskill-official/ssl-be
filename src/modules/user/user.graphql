@@ -217,6 +217,7 @@ type T_User {
     isAdminBlocked: Boolean
     isGuardianView: Boolean
     guardianOwnerId: String
+    note: String
 }
 
 input Input_QueryUser {
@@ -249,6 +250,7 @@ input Input_QueryUser {
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
+    note: String
 }
 
 input Input_CreateUser {
@@ -275,6 +277,7 @@ input Input_CreateUser {
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
+    note: String
 }
 
 input Input_UpdateUser {
@@ -302,6 +305,7 @@ input Input_UpdateUser {
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
+    note: String
 }
 
 input Input_AdminBlockUser {

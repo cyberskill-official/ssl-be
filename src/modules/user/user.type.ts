@@ -129,6 +129,7 @@ export interface I_User extends I_GenericDocument {
     isAdminBlocked?: boolean;
     isGuardianView?: boolean;
     guardianOwnerId?: string | null;
+    note?: string;
 }
 
 export type T_User_Populate = 'nativeLanguage' | 'otherLanguages' | 'lookingFor' | 'profilePurpose' | 'willingnessToGo' | 'rulesOfEngagement' | 'roles';
