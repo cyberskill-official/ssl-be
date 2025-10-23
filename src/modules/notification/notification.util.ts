@@ -24,9 +24,9 @@ export function buildNotifThumbnail(g: I_Gallery): string | undefined {
         return undefined;
 
     if (g.type === E_GalleryType.IMAGE) {
-        return bunnyCtr.generateSignedUrl({
+        return bunnyCtr.generateBlurredUrl({
             fullUrl: g.url,
-            extraQueryParams: { class: 'normal' },
+            extraQueryParams: { class: 'blur' },
         });
     }
 

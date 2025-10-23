@@ -11,18 +11,73 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
-import { userCtr } from '#modules/user/index.js';
+import { getViewerMediaContext, hydrateUserMedia, userCtr } from '#modules/user/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
 import { FollowModel } from './follow.model.js';
 
 const mongooseCtr = new MongooseController<I_Follow>(FollowModel);
+
+function mergePopulate(
+    existingPopulate: unknown,
+    requiredPopulate: Array<string | Record<string, unknown>>,
+): unknown {
+    const existingEntries = Array.isArray(existingPopulate)
+        ? existingPopulate
+        : existingPopulate
+            ? [existingPopulate]
+            : [];
+
+    const combined = [...existingEntries, ...requiredPopulate];
+    // keep track of seen path -> index so we can replace a simple string entry
+    // with an object entry that includes nested populate
+    const seenPaths = new Map<string, number>();
+    const result: unknown[] = [];
+
+    for (const entry of combined) {
+        if (typeof entry === 'string') {
+            const path = entry;
+            if (seenPaths.has(path)) {
+                continue;
+            }
+            seenPaths.set(path, result.length);
+            result.push(entry);
+            continue;
+        }
+
+        if (entry && typeof entry === 'object') {
+            const path = typeof (entry as { path?: unknown }).path === 'string'
+                ? (entry as { path: string }).path
+                : undefined;
+
+            if (path) {
+                if (seenPaths.has(path)) {
+                    const idx = seenPaths.get(path)!;
+                    const existing = result[idx];
+                    // replace simple string entry with object to preserve nested populate
+                    if (typeof existing === 'string') {
+                        result[idx] = { ...(entry as Record<string, unknown>) };
+                    }
+                    continue;
+                }
+                seenPaths.set(path, result.length);
+                result.push({ ...(entry as Record<string, unknown>) });
+                continue;
+            }
+        }
+
+        result.push(entry);
+    }
+
+    return result.length ? result : undefined;
+}
 
 // Helpers to recompute denormalized counts from the Follow collection
 async function recomputeFollowerCount(_context: I_Context, userId: string): Promise<number | null> {
@@ -91,7 +146,7 @@ export const followCtr = {
         return mongooseCtr.findPaging({ id: { $in: ids } }, options);
     },
     getFollowings: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetFollowings>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
         const idsAgg = await mongooseCtr.aggregate([
@@ -116,7 +171,38 @@ export const followCtr = {
 
         const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
 
-        return mongooseCtr.findPaging({ id: { $in: ids } }, options);
+        const populateOptions = mergePopulate(options?.populate, [
+            // populate the followed user and their location so clients receive current location
+            { path: 'follow', populate: { path: 'location' } },
+        ]);
+
+        const pagingOptions = options
+            ? {
+                    ...options,
+                    ...(populateOptions ? { populate: populateOptions } : {}),
+                }
+            : (populateOptions ? { populate: populateOptions } : undefined);
+
+        const followings = await mongooseCtr.findPaging(
+            { id: { $in: ids } },
+            pagingOptions as typeof options,
+        );
+
+        if (!followings.success) {
+            return followings;
+        }
+
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+        followings.result.docs = followings.result.docs.map((followDoc) => {
+            if (followDoc.follow) {
+                hydrateUserMedia(followDoc.follow, viewerMediaOptions);
+            }
+            return followDoc;
+        });
+
+        return followings;
     },
     createFollow: async (
         context: I_Context,

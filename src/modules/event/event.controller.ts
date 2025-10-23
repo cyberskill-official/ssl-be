@@ -29,7 +29,6 @@ import { followCtr } from '#modules/follow/index.js';
 import {
     cityCtr,
     countryCtr,
-    E_Event_PinStyle,
     E_LocationEntityType,
     locationCtr,
 } from '#modules/location/index.js';
@@ -51,31 +50,13 @@ import type {
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
-import { validateTimeBasedEvent } from './event.validation.js';
+import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
-function mapEventTypeToPinStyle(eventType?: E_EventType) {
-    if (!eventType)
-        return undefined;
-    if (eventType === E_EventType.CLUB_VISIT) {
-        return E_Event_PinStyle.EVENT_CLUB;
-    }
-    if (eventType === E_EventType.PRIVATE) {
-        return E_Event_PinStyle.EVENT_PRIVATE;
-    }
-    if (eventType === E_EventType.TRAVEL) {
-        return E_Event_PinStyle.EVENT_TRAVEL;
-    }
-    if (eventType === E_EventType.BOOTY_CALL) {
-        return E_Event_PinStyle.EVENT_BOOTY_CALL;
-    }
-    return undefined;
-}
-
 export const eventCtr = {
     getEvent: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
         const eventFound = await mongooseCtr.findOne(filter, projection, options, populate);
@@ -85,16 +66,13 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            eventFound.result.image = bunnyCtr.generateSignedUrl({
-                fullUrl: eventFound.result.image,
-                extraQueryParams: { class: 'normal' },
-            });
+            eventFound.result.image = signEventImage(eventFound.result.image, context);
         }
 
         return eventFound;
     },
     getEvents: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
         const now = new Date();
@@ -130,10 +108,7 @@ export const eventCtr = {
 
         events.result.docs = events.result.docs.map((event) => {
             if (event.image) {
-                event.image = bunnyCtr.generateSignedUrl({
-                    fullUrl: event.image,
-                    extraQueryParams: { class: 'normal' },
-                });
+                event.image = signEventImage(event.image, context);
             }
             return event;
         });
@@ -522,9 +497,8 @@ export const eventCtr = {
             let thumbnailUrl: string | undefined;
             try {
                 if (eventCreated.result.image) {
-                    thumbnailUrl = bunnyCtr.generateSignedUrl({
+                    thumbnailUrl = bunnyCtr.generateBlurredUrl({
                         fullUrl: eventCreated.result.image,
-                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }
@@ -538,9 +512,8 @@ export const eventCtr = {
                 ?? currentUser.partner2?.gallery?.url
                 ?? undefined;
                 if (rawAvatar) {
-                    actorAvatarUrl = bunnyCtr.generateSignedUrl({
+                    actorAvatarUrl = bunnyCtr.generateBlurredUrl({
                         fullUrl: rawAvatar,
-                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }

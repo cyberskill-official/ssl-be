@@ -9,48 +9,46 @@ import type {
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
+import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
+import { galleryCtr } from '#modules/gallery/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
+import { getEnv } from '#shared/env/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_User } from './user.type.js';
+import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
 
 import { UserModel } from './user.model.js';
+import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
+const env = getEnv();
 
 export const userCtr = {
     getUser: async (
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        // Admin được phép xem; người thường bị lọc
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        let isAdmin = false;
-        try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
         let effectiveFilter;
         if (isAdmin) {
@@ -73,30 +71,7 @@ export const userCtr = {
         if (!userFound.success)
             return userFound;
 
-        if (userFound.result.partner1?.gallery?.url) {
-            userFound.result.partner1.gallery.url = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.partner1.gallery.url,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.partner2?.gallery?.url) {
-            userFound.result.partner2.gallery.url = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.partner2.gallery.url,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.ageVerify?.preApproval?.documentPic) {
-            userFound.result.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.ageVerify.preApproval.documentPic,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
-        if (userFound.result.ageVerify?.preApproval?.selfiePic) {
-            userFound.result.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
-                fullUrl: userFound.result.ageVerify.preApproval.selfiePic,
-                extraQueryParams: { class: 'normal' },
-            });
-        }
+        hydrateUserMedia(userFound.result, viewerMediaOptions);
 
         return userFound;
     },
@@ -110,27 +85,16 @@ export const userCtr = {
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
 
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        let isAdmin = false;
-        try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
-        let effectiveFilter;
+        let effectiveFilter: Record<string, unknown> | undefined;
         if (isAdmin) {
-            effectiveFilter = computedFilter as any;
+            effectiveFilter = computedFilter as Record<string, unknown>;
         }
         else {
             const userBaseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-            effectiveFilter = { $and: [...userBaseConds, computedFilter as any] };
+            effectiveFilter = { $and: [...userBaseConds, computedFilter as Record<string, unknown>] };
         }
 
         const users = await mongooseCtr.findPaging(effectiveFilter as unknown as never, options);
@@ -138,34 +102,266 @@ export const userCtr = {
             return users;
 
         users.result.docs = users.result.docs.map((user) => {
-            if (user.partner1?.gallery?.url) {
-                user.partner1.gallery.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.partner1.gallery.url,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.partner2?.gallery?.url) {
-                user.partner2.gallery.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.partner2.gallery.url,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.ageVerify?.preApproval?.documentPic) {
-                user.ageVerify.preApproval.documentPic = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.ageVerify.preApproval.documentPic,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
-            if (user.ageVerify?.preApproval?.selfiePic) {
-                user.ageVerify.preApproval.selfiePic = bunnyCtr.generateSignedUrl({
-                    fullUrl: user.ageVerify.preApproval.selfiePic,
-                    extraQueryParams: { class: 'normal' },
-                });
-            }
+            hydrateUserMedia(user, viewerMediaOptions);
             return user;
         });
 
         return users;
+    },
+    uploadUserAvatar: async (
+        context: I_Context,
+        { file }: I_Input_UploadUserAvatar,
+    ): Promise<I_Return<{ url: string; galleryId: string | null }>> => {
+        const files = Array.isArray(file) ? file : [file];
+        if (!files.length) {
+            return {
+                success: false,
+                message: 'No file provided.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        // support uploading for partner1 and partner2: if two files provided, first -> partner1, second -> partner2
+        const currentUser = await authnCtr.getUserFromSession(context);
+        if (!currentUser?.id) {
+            throwError({
+                message: 'User not authenticated.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
+        if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
+            throwError({
+                message: 'Age verification is required before uploading an avatar.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const { mediaOptions: currentUserMediaOptions } = getViewerMediaContext(currentUser);
+
+        const uploadedResults: Array<{
+            partner: 'partner1' | 'partner2';
+            galleryCreatedId?: string;
+            galleryUrl?: string;
+            previousGalleryId?: string;
+            previousRelativePath?: string;
+        }> = [];
+
+        // process up to two files: index 0 -> partner1, index 1 -> partner2
+        for (let i = 0; i < Math.min(files.length, 2); i++) {
+            const fp = files[i];
+            if (!fp)
+                continue;
+
+            const uploaded = await fp;
+            const validated = await getAndValidateFile(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
+            if (!validated.success || !validated.result) {
+                return {
+                    success: false,
+                    message: validated.message ?? 'Failed to read upload file.',
+                    code: validated.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+                };
+            }
+
+            const partnerKey: 'partner1' | 'partner2' = i === 0 ? 'partner1' : 'partner2';
+            interface PartnerShim { gallery?: { id?: string; url?: string }; galleryId?: string }
+            const cu = currentUser as unknown as { partner1?: PartnerShim; partner2?: PartnerShim } | undefined;
+            const previousGallery = cu?.[partnerKey]?.gallery;
+            const previousGalleryId = cu?.[partnerKey]?.galleryId ?? previousGallery?.id;
+            const previousGalleryUrl = previousGallery?.url;
+            const previousRelativePath = previousGalleryUrl
+                ?.split('?')[0]
+                ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                ?.replace(/^\/+/, '');
+
+            const { filename } = validated.result;
+            const extension = path.extname(filename);
+            if (!extension) {
+                throwError({
+                    message: 'Invalid file: missing extension.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            const baseName = path.basename(filename, extension);
+            const safeBaseName = baseName.replace(/[^\w-]/g, '_');
+            const timestamp = Date.now();
+            const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
+            const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
+
+            const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded);
+            if (!fileStream.success || !fileStream.result) {
+                return {
+                    success: false,
+                    message: fileStream.message ?? 'Failed to process upload stream.',
+                    code: fileStream.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+                };
+            }
+
+            try {
+                await BunnyFile.upload(storageZone, uploadPath, fileStream.result);
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    message: `Failed to upload avatar: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+                };
+            }
+
+            const fullUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+
+            let galleryCreatedId: string | undefined;
+            let galleryUrl: string | undefined = fullUrl;
+            try {
+                const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
+                    doc: {
+                        type: E_ModerationMediaType.IMAGE,
+                        uploadedById: currentUser.id,
+                        url: fullUrl,
+                        entity: E_UploadEntity.USER,
+                        entityId: currentUser.id,
+                        isPublished: true,
+                    },
+                });
+
+                if (moderationCreated.success && moderationCreated.result) {
+                    const moderationId = moderationCreated.result.id;
+                    galleryCreatedId = moderationCreated.result.entityId ?? undefined;
+
+                    await moderationMediaCtr.updateModerationMedia(context, {
+                        filter: { id: moderationId },
+                        update: {
+                            status: E_ModerationMediaStatus.APPROVED,
+                            isPublished: true,
+                        },
+                        options: { new: true },
+                    });
+
+                    if (galleryCreatedId) {
+                        await galleryCtr.updateGallery(context, {
+                            filter: { id: galleryCreatedId },
+                            update: {
+                                status: E_ModerationMediaStatus.APPROVED,
+                                isPublished: true,
+                            },
+                        });
+                        galleryUrl = fullUrl;
+                    }
+                }
+            }
+            catch (error) {
+                console.warn('Failed to sync avatar gallery:', error);
+            }
+
+            uploadedResults.push({
+                partner: partnerKey,
+                galleryCreatedId,
+                galleryUrl,
+                previousGalleryId,
+                previousRelativePath,
+            });
+        }
+
+        // build update payloads for DB
+        const updatePayload: Record<string, unknown> = {};
+        for (const r of uploadedResults) {
+            if (r.galleryCreatedId) {
+                updatePayload[`${r.partner}.galleryId`] = r.galleryCreatedId;
+            }
+        }
+
+        const updateObj: Record<string, unknown> = {
+            ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
+        };
+
+        const updatedUser = await mongooseCtr.updateOne(
+            { id: currentUser.id },
+            updateObj as unknown as never,
+            { new: true },
+        );
+
+        if (!updatedUser.success || !updatedUser.result) {
+            return {
+                success: false,
+                message: updatedUser.message ?? 'Failed to update avatar.',
+                code: updatedUser.code ?? RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        // inject gallery urls into result object for response and session
+        for (const r of uploadedResults) {
+            if (r.galleryCreatedId) {
+                const p = r.partner;
+                // construct gallery object and cast to the expected partner gallery type
+                const newGallery = {
+                    ...(updatedUser.result[p]?.gallery ?? {}),
+                    id: r.galleryCreatedId,
+                    url: r.galleryUrl,
+                } as unknown as NonNullable<I_User['partner1']>['gallery'];
+
+                updatedUser.result[p] = {
+                    ...(updatedUser.result[p] ?? {}),
+                    galleryId: r.galleryCreatedId,
+                    gallery: newGallery,
+                };
+            }
+            else if (updatedUser.result[r.partner]) {
+                // nothing to remove; avatarUrl field is not used
+            }
+        }
+
+        hydrateUserMedia(updatedUser.result, currentUserMediaOptions);
+
+        // update session partner data if current session user
+        if (context?.req?.session?.user?.id === currentUser.id) {
+            const sessionPartner1 = context.req.session.user.partner1 ?? {};
+            const sessionPartner2 = context.req.session.user.partner2 ?? {};
+            context.req.session.user = {
+                ...context.req.session.user,
+                partner1: {
+                    ...sessionPartner1,
+                    galleryId: updatedUser.result.partner1?.galleryId,
+                    gallery: updatedUser.result.partner1?.gallery,
+                },
+                partner2: {
+                    ...sessionPartner2,
+                    galleryId: updatedUser.result.partner2?.galleryId,
+                    gallery: updatedUser.result.partner2?.gallery,
+                },
+            };
+        }
+
+        // cleanup previous galleries/files per partner
+        for (const r of uploadedResults) {
+            try {
+                if (r.previousGalleryId && r.previousGalleryId !== r.galleryCreatedId) {
+                    await galleryCtr.deleteGallery(context, { filter: { id: r.previousGalleryId } });
+                }
+                else if (r.previousRelativePath && r.previousRelativePath !== undefined && r.previousRelativePath !== '') {
+                    const uploadPathCandidate = r.previousRelativePath;
+                    if (uploadPathCandidate.includes('/avatar/')) {
+                        try {
+                            await bunnyCtr.deleteFile(context, uploadPathCandidate);
+                        }
+                        catch {
+                            // ignore cleanup errors
+                        }
+                    }
+                }
+            }
+            catch (error) {
+                console.warn('Failed to remove previous avatar gallery or file:', error);
+            }
+        }
+
+        return {
+            success: true,
+            result: {
+                url: updatedUser.result.partner1?.gallery?.url ?? '',
+                galleryId: updatedUser.result.partner1?.galleryId ?? null,
+            },
+        };
     },
     createUser: async (
         context: I_Context,
@@ -190,6 +386,19 @@ export const userCtr = {
         );
         if (existed.success) {
             throwError({ message: 'User already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (doc.partner1?.dateOfBirth && !isAdultDateOfBirth(doc.partner1.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (doc.partner2?.dateOfBirth && !isAdultDateOfBirth(doc.partner2.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         // 3) Tạo user mới
@@ -334,6 +543,19 @@ export const userCtr = {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
+        if (update.partner1?.dateOfBirth && !isAdultDateOfBirth(update.partner1.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+        if (update.partner2?.dateOfBirth && !isAdultDateOfBirth(update.partner2.dateOfBirth)) {
+            throwError({
+                message: 'Users must be at least 18 years old.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         // cập nhật location nếu có
         if (update?.partner1?.location) {
             const locationUpdated = await locationCtr.updateLocation(context, {
@@ -372,7 +594,7 @@ export const userCtr = {
                     }
                     update.settings.temporaryLocation.locationId = locationCreated.result.id;
                 }
-                delete (update.settings.temporaryLocation as any)['location'];
+                delete (update.settings.temporaryLocation as unknown as { location?: unknown }).location;
             }
         }
 

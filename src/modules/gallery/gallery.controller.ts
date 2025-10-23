@@ -34,7 +34,7 @@ import type {
 
 import { GalleryModel } from './gallery.model.js';
 import { E_GalleryType } from './gallery.type.js';
-import { assertCanUploadVideo, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
+import { assertCanUploadVideo, isUploaderAgeVerified, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
 
 const env = getEnv();
 
@@ -102,13 +102,28 @@ export const galleryCtr = {
             });
         }
 
-        const shouldBlur = !viewerAgeVerified && !isStaff && !isAdmin;
+        const galleryStatus = galleryFound.result.status;
+        const isHiddenStatus
+            = galleryStatus !== undefined
+                && galleryStatus !== null
+                && galleryStatus !== E_ModerationMediaStatus.APPROVED;
+
+        if (!isStaff && !isAdmin && isHiddenStatus) {
+            throwError({
+                message: 'Gallery not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const ownerAgeVerified = await isUploaderAgeVerified(context, galleryFound.result);
+        const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerAgeVerified;
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
         if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
             if (shouldBlur) {
                 galleryFound.result.url = bunnyCtr.generateBlurredUrl({
                     fullUrl: galleryFound.result.url,
+                    extraQueryParams: { class: 'blur' },
                 });
             }
             else {
@@ -204,8 +219,21 @@ export const galleryCtr = {
             return galleries;
         }
 
-        const galleryDocs = galleries.result.docs;
+        const galleryDocs = galleries.result.docs.filter((gallery) => {
+            if (isStaff || isAdmin) {
+                return true;
+            }
+
+            const galleryStatus = gallery.status;
+            const isApproved
+                = galleryStatus === undefined
+                    || galleryStatus === null
+                    || galleryStatus === E_ModerationMediaStatus.APPROVED;
+
+            return isApproved;
+        });
         const galleryIds = galleryDocs.map(g => g.id);
+        const uploaderVerifiedCache = new Map<string, boolean>();
 
         // batch like/view
         const likeCountsMap = await likeCtr.getLikeCountsBatch(context, {
@@ -226,7 +254,7 @@ export const galleryCtr = {
             });
         }
 
-        galleries.result.docs = galleryDocs.map((gallery) => {
+        galleries.result.docs = await Promise.all(galleryDocs.map(async (gallery) => {
             const isLike = isLoggedIn && userLikesSet.has(gallery.id);
             const likeCount = likeCountsMap[gallery.id] || 0;
             const viewCount = viewCountsMap[gallery.id] || 0;
@@ -236,12 +264,14 @@ export const galleryCtr = {
             const membershipClass = (sessionUserId && gallery.uploadedById === sessionUserId)
                 ? 'normal'
                 : (isFreeMember ? 'free' : 'premium');
-            const shouldBlur = !viewerAgeVerified && !isStaff && !isAdmin;
+            const ownerVerified = await isUploaderAgeVerified(context, gallery, uploaderVerifiedCache);
+            const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerVerified;
 
             if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
                 if (shouldBlur) {
                     galleryResult.url = bunnyCtr.generateBlurredUrl({
                         fullUrl: galleryResult.url,
+                        extraQueryParams: { class: 'blur' },
                     });
                 }
                 else {
@@ -258,7 +288,7 @@ export const galleryCtr = {
             }
 
             return galleryResult;
-        });
+        }));
 
         return galleries;
     },

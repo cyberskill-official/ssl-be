@@ -25,8 +25,11 @@ const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
-        if (!blogFound.success)
+
+        if (!blogFound.success) {
             return blogFound;
+        }
+
         const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
         for (const field of imageFields) {
             if (blogFound.result[field]) {
@@ -37,6 +40,7 @@ export const blogCtr = {
     },
     getBlogs: async (_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
         const blogs = await mongooseCtr.findPaging(filter, options);
+
         if (!blogs.success)
             return blogs;
 

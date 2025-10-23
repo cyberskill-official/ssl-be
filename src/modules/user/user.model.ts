@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import type { I_AgeVerify, I_AIVerifyResult, I_PreApproval } from '#modules/authn/index.js';
 
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
+import { NoteSchema } from '#modules/note/index.js';
 import { validate } from '#shared/util/index.js';
 
 import type { I_User, I_UserPartner, I_UserSettings, I_UserSettings_Notification, I_UserSettings_TemporaryLocation } from './user.type.js';
@@ -602,6 +603,9 @@ export const UserModel = mongo.createModel<I_User>({
         followingCount: {
             type: Number,
             default: 0,
+        },
+        notes: {
+            type: [NoteSchema],
         },
         isAdminBlocked: { type: Boolean, default: false },
         isGuardianView: { type: Boolean, default: false },
