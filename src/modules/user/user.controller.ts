@@ -37,7 +37,7 @@ import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/i
 import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
 
 import { UserModel } from './user.model.js';
-import { hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
+import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
@@ -47,20 +47,8 @@ export const userCtr = {
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        // Admin được phép xem; người thường bị lọc
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        let isAdmin = false;
-        try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
         let effectiveFilter;
         if (isAdmin) {
@@ -83,7 +71,7 @@ export const userCtr = {
         if (!userFound.success)
             return userFound;
 
-        hydrateUserMedia(userFound.result);
+        hydrateUserMedia(userFound.result, viewerMediaOptions);
 
         return userFound;
     },
@@ -97,19 +85,8 @@ export const userCtr = {
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
 
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        let isAdmin = false;
-        try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
         let effectiveFilter;
         if (isAdmin) {
@@ -125,7 +102,7 @@ export const userCtr = {
             return users;
 
         users.result.docs = users.result.docs.map((user) => {
-            hydrateUserMedia(user);
+            hydrateUserMedia(user, viewerMediaOptions);
             return user;
         });
 
@@ -178,6 +155,8 @@ export const userCtr = {
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
         }
+
+        const { mediaOptions: currentUserMediaOptions } = getViewerMediaContext(currentUser);
 
         const previousGallery = currentUser.partner1?.gallery;
         const previousGalleryId = currentUser.partner1?.galleryId ?? previousGallery?.id;
@@ -306,7 +285,7 @@ export const userCtr = {
             delete (updatedUser.result.partner1 as any).avatarUrl;
         }
 
-        hydrateUserMedia(updatedUser.result);
+        hydrateUserMedia(updatedUser.result, currentUserMediaOptions);
 
         if (context?.req?.session?.user?.id === currentUser.id) {
             const sessionPartner = context.req.session.user.partner1 ?? {};

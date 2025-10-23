@@ -9,7 +9,8 @@ import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
@@ -22,6 +23,7 @@ import type {
     I_NotificationAddedPayload,
     I_NotificationDeletedPayload,
     I_NotificationDismissedPayload,
+    I_NotificationPresentation,
     I_NotificationReadPayload,
     I_NotificationUpdatedPayload,
 } from './notification.type.js';
@@ -129,7 +131,47 @@ export const notificationCtr = {
             ...options,
         };
 
-        return mongooseCtr.findPaging(f, opts);
+        const res = await mongooseCtr.findPaging(f, opts);
+
+        // Enrich presentation media (avatar, thumbnails) according to viewer age verification
+        try {
+            let isViewerVerified = false;
+            try {
+                const viewer = await authnCtr.getUserFromSession(_context);
+                isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+            catch {
+                isViewerVerified = false;
+            }
+
+            if (res.success && res.result && Array.isArray(res.result.docs)) {
+                for (const n of res.result.docs) {
+                    const pres = n.presentation as I_NotificationPresentation;
+                    if (!pres)
+                        continue;
+
+                    // actor avatar
+                    const actor = pres.actor;
+                    if (actor?.avatarUrl) {
+                        actor.avatarUrl = isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } });
+                    }
+
+                    // thumbnail / gallery (note: presentation.thumbnailUrl is a string)
+                    if (typeof pres.thumbnailUrl === 'string' && pres.thumbnailUrl) {
+                        pres.thumbnailUrl = isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
+                    }
+                }
+            }
+        }
+        catch {
+            // non-fatal: if anything fails while enriching presentation, return original result
+        }
+
+        return res;
     },
 
     createNotification: async (_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateNotification>) => {

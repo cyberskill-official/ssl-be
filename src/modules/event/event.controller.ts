@@ -20,7 +20,7 @@ import type {
 } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
@@ -29,7 +29,6 @@ import { followCtr } from '#modules/follow/index.js';
 import {
     cityCtr,
     countryCtr,
-    E_Event_PinStyle,
     E_LocationEntityType,
     locationCtr,
 } from '#modules/location/index.js';
@@ -51,42 +50,9 @@ import type {
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
-import { validateTimeBasedEvent } from './event.validation.js';
+import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
-
-function mapEventTypeToPinStyle(eventType?: E_EventType) {
-    if (!eventType)
-        return undefined;
-    if (eventType === E_EventType.CLUB_VISIT) {
-        return E_Event_PinStyle.EVENT_CLUB;
-    }
-    if (eventType === E_EventType.PRIVATE) {
-        return E_Event_PinStyle.EVENT_PRIVATE;
-    }
-    if (eventType === E_EventType.TRAVEL) {
-        return E_Event_PinStyle.EVENT_TRAVEL;
-    }
-    if (eventType === E_EventType.BOOTY_CALL) {
-        return E_Event_PinStyle.EVENT_BOOTY_CALL;
-    }
-    return undefined;
-}
-
-function shouldBlurForContext(context?: I_Context): boolean {
-    const viewer = context?.req?.session?.user;
-    return !viewer || viewer.ageVerify?.status !== E_AgeVerifyStatus.APPROVED;
-}
-
-function signEventImage(fullUrl: string, context?: I_Context): string {
-    if (shouldBlurForContext(context)) {
-        return bunnyCtr.generateBlurredUrl({ fullUrl });
-    }
-    return bunnyCtr.generateSignedUrl({
-        fullUrl,
-        extraQueryParams: { class: 'normal' },
-    });
-}
 
 export const eventCtr = {
     getEvent: async (

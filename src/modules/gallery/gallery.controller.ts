@@ -123,6 +123,7 @@ export const galleryCtr = {
             if (shouldBlur) {
                 galleryFound.result.url = bunnyCtr.generateBlurredUrl({
                     fullUrl: galleryFound.result.url,
+                    extraQueryParams: { class: 'blur' },
                 });
             }
             else {
@@ -270,6 +271,7 @@ export const galleryCtr = {
                 if (shouldBlur) {
                     galleryResult.url = bunnyCtr.generateBlurredUrl({
                         fullUrl: galleryResult.url,
+                        extraQueryParams: { class: 'blur' },
                     });
                 }
                 else {

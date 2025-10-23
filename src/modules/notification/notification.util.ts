@@ -26,6 +26,7 @@ export function buildNotifThumbnail(g: I_Gallery): string | undefined {
     if (g.type === E_GalleryType.IMAGE) {
         return bunnyCtr.generateBlurredUrl({
             fullUrl: g.url,
+            extraQueryParams: { class: 'blur' },
         });
     }
 

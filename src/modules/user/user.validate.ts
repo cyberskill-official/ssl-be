@@ -1,15 +1,45 @@
 import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 
 import type { I_User } from './user.type.js';
 
-function shouldBlurProfile(user?: I_User | null): boolean {
-    return user?.ageVerify?.status !== E_AgeVerifyStatus.APPROVED;
+export interface I_HydrateUserMediaOptions {
+    viewerAgeVerified?: boolean;
+    viewerIsStaff?: boolean;
+    viewerIsAdmin?: boolean;
+    viewerId?: string | null;
 }
 
-function signProfileImage(url: string, user: I_User): string {
-    if (shouldBlurProfile(user)) {
-        return bunnyCtr.generateBlurredUrl({ fullUrl: url });
+function shouldBlurProfile(
+    user?: I_User | null,
+    options: I_HydrateUserMediaOptions = {},
+): boolean {
+    if (!user) {
+        return false;
+    }
+
+    const ownerAgeVerified = user.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+    if (!ownerAgeVerified) {
+        return true;
+    }
+
+    const viewerAgeVerified = options.viewerAgeVerified ?? false;
+    const viewerIsStaff = options.viewerIsStaff ?? false;
+    const viewerIsAdmin = options.viewerIsAdmin ?? false;
+
+    const viewerExempt = viewerIsStaff || viewerIsAdmin;
+
+    return !viewerAgeVerified && !viewerExempt;
+}
+
+function signProfileImage(
+    url: string,
+    user: I_User,
+    options?: I_HydrateUserMediaOptions,
+): string {
+    if (shouldBlurProfile(user, options)) {
+        return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
@@ -17,7 +47,10 @@ function signProfileImage(url: string, user: I_User): string {
     });
 }
 
-export function hydrateUserMedia(user?: I_User | null): void {
+export function hydrateUserMedia(
+    user?: I_User | null,
+    options?: I_HydrateUserMediaOptions,
+): void {
     if (!user) {
         return;
     }
@@ -30,7 +63,7 @@ export function hydrateUserMedia(user?: I_User | null): void {
         const rawGalleryUrl = partner.gallery?.url;
 
         const signedGallery = rawGalleryUrl
-            ? signProfileImage(rawGalleryUrl, user)
+            ? signProfileImage(rawGalleryUrl, user, options)
             : undefined;
 
         if (signedGallery && partner.gallery) {
@@ -84,4 +117,32 @@ export function isAdultDateOfBirth(dob?: unknown): boolean {
     }
 
     return age >= ADULT_AGE;
+}
+
+export function getViewerMediaContext(user?: I_User | null): {
+    mediaOptions: I_HydrateUserMediaOptions;
+    isAdmin: boolean;
+    isStaff: boolean;
+} {
+    const roles = Array.isArray(user?.roles) ? user?.roles : [];
+
+    const isAdmin = roles.some(role =>
+        role.name === E_Role_Staff.ADMIN
+        || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role_Staff.ADMIN)),
+    );
+    const isStaff = roles.some(role =>
+        role.name === E_Role.STAFF
+        || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
+    );
+
+    return {
+        mediaOptions: {
+            viewerAgeVerified: user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED,
+            viewerIsAdmin: isAdmin,
+            viewerIsStaff: isStaff,
+            viewerId: user?.id ?? null,
+        },
+        isAdmin,
+        isStaff,
+    };
 }

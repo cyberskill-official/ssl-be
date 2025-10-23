@@ -2,9 +2,33 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
+import type { I_Context } from '#shared/typescript/express.js';
+
+import { E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
+import { E_Event_PinStyle } from '#modules/location/index.js';
+
 import type { I_Input_TimeBasedEventData, I_TimeBasedEventValidation } from './event.type.js';
 
 import { E_EventType } from './event.type.js';
+
+export function mapEventTypeToPinStyle(eventType?: E_EventType) {
+    if (!eventType)
+        return undefined;
+    if (eventType === E_EventType.CLUB_VISIT) {
+        return E_Event_PinStyle.EVENT_CLUB;
+    }
+    if (eventType === E_EventType.PRIVATE) {
+        return E_Event_PinStyle.EVENT_PRIVATE;
+    }
+    if (eventType === E_EventType.TRAVEL) {
+        return E_Event_PinStyle.EVENT_TRAVEL;
+    }
+    if (eventType === E_EventType.BOOTY_CALL) {
+        return E_Event_PinStyle.EVENT_BOOTY_CALL;
+    }
+    return undefined;
+}
 
 /**
  * Validates time-based event for creation
@@ -111,4 +135,19 @@ export function validateTimeBasedEvent(
         isOvernight: endDate ? false : (endTimeHours < startTimeHours || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes())),
         durationInHours,
     };
+}
+
+export function shouldBlurForContext(context?: I_Context): boolean {
+    const viewer = context?.req?.session?.user;
+    return !viewer || viewer.ageVerify?.status !== E_AgeVerifyStatus.APPROVED;
+}
+
+export function signEventImage(fullUrl: string, context?: I_Context): string {
+    if (shouldBlurForContext(context)) {
+        return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
+    }
+    return bunnyCtr.generateSignedUrl({
+        fullUrl,
+        extraQueryParams: { class: 'normal' },
+    });
 }
