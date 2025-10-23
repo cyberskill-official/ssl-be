@@ -21,6 +21,8 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
@@ -491,6 +493,91 @@ export const locationCtr = {
 
             seenUsers.add(user.id);
             return true;
+        });
+
+        // --- Post-process: blur or sign media URLs according to viewer age verification ---
+        let viewerAgeVerified = false;
+        try {
+            const viewer = await authnCtr.getUserFromSession(_context);
+            viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        }
+        catch {
+            viewerAgeVerified = false;
+        }
+
+        docs = docs.map((d) => {
+            try {
+                const e = d.entity as I_User | I_Event | I_Destination;
+                if (!e)
+                    return d;
+
+                // USER entity: blur partner galleries
+                if (d.entityType === E_LocationEntityType.USER) {
+                    const user = e as I_User;
+                    const p1 = user.partner1;
+                    const p2 = user.partner2;
+                    if (p1?.gallery?.url) {
+                        p1.gallery.url = viewerAgeVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                    if (p2?.gallery?.url) {
+                        p2.gallery.url = viewerAgeVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                }
+
+                // EVENT entity: blur event image
+                if (d.entityType === E_LocationEntityType.EVENT) {
+                    const ev = e as I_Event;
+                    if (ev?.image) {
+                        ev.image = viewerAgeVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: ev.image, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: ev.image, extraQueryParams: { class: 'blur' } });
+                    }
+                    // Also ensure event creator's avatar/gallery is processed the same way
+                    try {
+                        const creator = (ev as any).createdBy as I_User;
+                        if (creator) {
+                            const c1 = creator.partner1;
+                            const c2 = creator.partner2;
+                            if (c1?.gallery?.url) {
+                                c1.gallery.url = viewerAgeVerified
+                                    ? bunnyCtr.generateSignedUrl({ fullUrl: c1.gallery.url, extraQueryParams: { class: 'normal' } })
+                                    : bunnyCtr.generateBlurredUrl({ fullUrl: c1.gallery.url, extraQueryParams: { class: 'blur' } });
+                            }
+                            if (c2?.gallery?.url) {
+                                c2.gallery.url = viewerAgeVerified
+                                    ? bunnyCtr.generateSignedUrl({ fullUrl: c2.gallery.url, extraQueryParams: { class: 'normal' } })
+                                    : bunnyCtr.generateBlurredUrl({ fullUrl: c2.gallery.url, extraQueryParams: { class: 'blur' } });
+                            }
+                        }
+                    }
+                    catch {
+                        // ignore per-event creator processing errors
+                    }
+                }
+
+                // DESTINATION entity: blur images/logo if present
+                if (d.entityType === E_LocationEntityType.DESTINATION) {
+                    const dest = e as I_Destination;
+                    if (Array.isArray(dest.images)) {
+                        dest.images = dest.images.map(u => viewerAgeVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: u, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: u, extraQueryParams: { class: 'blur' } }));
+                    }
+                    if (dest.logo) {
+                        dest.logo = viewerAgeVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'blur' } });
+                    }
+                }
+            }
+            catch {
+                // swallow per-doc errors and return original doc
+            }
+            return d;
         });
 
         // --- điều chỉnh metadata paging sau khi post-process docs ---

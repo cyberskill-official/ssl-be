@@ -366,5 +366,6 @@ type Mutation {
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
     adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
     adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!
-    uploadUserAvatar(file: Upload!): T_Response_UserAvatar!
+    # Accept one or more files. If two files are provided, first -> partner1, second -> partner2
+    uploadUserAvatar(file: [Upload!]!): T_Response_UserAvatar!
 }
