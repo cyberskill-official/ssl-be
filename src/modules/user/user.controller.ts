@@ -88,13 +88,13 @@ export const userCtr = {
         const sessionUser = context?.req?.session?.user as I_User | undefined;
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
-        let effectiveFilter;
+        let effectiveFilter: Record<string, unknown> | undefined;
         if (isAdmin) {
-            effectiveFilter = computedFilter as any;
+            effectiveFilter = computedFilter as Record<string, unknown>;
         }
         else {
             const userBaseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-            effectiveFilter = { $and: [...userBaseConds, computedFilter as any] };
+            effectiveFilter = { $and: [...userBaseConds, computedFilter as Record<string, unknown>] };
         }
 
         const users = await mongooseCtr.findPaging(effectiveFilter as unknown as never, options);
@@ -121,26 +121,7 @@ export const userCtr = {
             };
         }
 
-        const firstFilePromise = files[0];
-        if (!firstFilePromise) {
-            return {
-                success: false,
-                message: 'No file provided.',
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
-        }
-
-        const uploaded = await firstFilePromise;
-        const validated = await getAndValidateFile(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
-
-        if (!validated.success || !validated.result) {
-            return {
-                success: false,
-                message: validated.message ?? 'Failed to read upload file.',
-                code: validated.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
-        }
-
+        // support uploading for partner1 and partner2: if two files provided, first -> partner1, second -> partner2
         const currentUser = await authnCtr.getUserFromSession(context);
         if (!currentUser?.id) {
             throwError({
@@ -158,107 +139,145 @@ export const userCtr = {
 
         const { mediaOptions: currentUserMediaOptions } = getViewerMediaContext(currentUser);
 
-        const previousGallery = currentUser.partner1?.gallery;
-        const previousGalleryId = currentUser.partner1?.galleryId ?? previousGallery?.id;
-        const previousGalleryUrl = previousGallery?.url;
-        const previousRelativePath = previousGalleryUrl
-            ?.split('?')[0]
-            ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
-            ?.replace(/^\/+/, '');
+        const uploadedResults: Array<{
+            partner: 'partner1' | 'partner2';
+            galleryCreatedId?: string;
+            galleryUrl?: string;
+            previousGalleryId?: string;
+            previousRelativePath?: string;
+        }> = [];
 
-        const { filename } = validated.result;
-        const extension = path.extname(filename);
-        if (!extension) {
-            throwError({
-                message: 'Invalid file: missing extension.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
+        // process up to two files: index 0 -> partner1, index 1 -> partner2
+        for (let i = 0; i < Math.min(files.length, 2); i++) {
+            const fp = files[i];
+            if (!fp)
+                continue;
 
-        const baseName = path.basename(filename, extension);
-        const safeBaseName = baseName.replace(/[^\w-]/g, '_');
-        const timestamp = Date.now();
-        const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
-        const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
+            const uploaded = await fp;
+            const validated = await getAndValidateFile(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
+            if (!validated.success || !validated.result) {
+                return {
+                    success: false,
+                    message: validated.message ?? 'Failed to read upload file.',
+                    code: validated.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+                };
+            }
 
-        const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded);
-        if (!fileStream.success || !fileStream.result) {
-            return {
-                success: false,
-                message: fileStream.message ?? 'Failed to process upload stream.',
-                code: fileStream.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
-        }
+            const partnerKey: 'partner1' | 'partner2' = i === 0 ? 'partner1' : 'partner2';
+            interface PartnerShim { gallery?: { id?: string; url?: string }; galleryId?: string }
+            const cu = currentUser as unknown as { partner1?: PartnerShim; partner2?: PartnerShim } | undefined;
+            const previousGallery = cu?.[partnerKey]?.gallery;
+            const previousGalleryId = cu?.[partnerKey]?.galleryId ?? previousGallery?.id;
+            const previousGalleryUrl = previousGallery?.url;
+            const previousRelativePath = previousGalleryUrl
+                ?.split('?')[0]
+                ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                ?.replace(/^\/+/, '');
 
-        try {
-            await BunnyFile.upload(storageZone, uploadPath, fileStream.result);
-        }
-        catch (error) {
-            return {
-                success: false,
-                message: `Failed to upload avatar: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
-            };
-        }
+            const { filename } = validated.result;
+            const extension = path.extname(filename);
+            if (!extension) {
+                throwError({
+                    message: 'Invalid file: missing extension.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
 
-        const fullUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+            const baseName = path.basename(filename, extension);
+            const safeBaseName = baseName.replace(/[^\w-]/g, '_');
+            const timestamp = Date.now();
+            const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
+            const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
 
-        let avatarGalleryCreatedId: string | undefined;
-        let avatarGalleryUrl: string | undefined = fullUrl;
-        try {
-            const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
-                doc: {
-                    type: E_ModerationMediaType.IMAGE,
-                    uploadedById: currentUser.id,
-                    url: fullUrl,
-                    entity: E_UploadEntity.USER,
-                    entityId: currentUser.id,
-                    isPublished: true,
-                },
-            });
+            const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded);
+            if (!fileStream.success || !fileStream.result) {
+                return {
+                    success: false,
+                    message: fileStream.message ?? 'Failed to process upload stream.',
+                    code: fileStream.code ?? RESPONSE_STATUS.BAD_REQUEST.CODE,
+                };
+            }
 
-            if (moderationCreated.success && moderationCreated.result) {
-                const moderationId = moderationCreated.result.id;
-                avatarGalleryCreatedId = moderationCreated.result.entityId ?? undefined;
+            try {
+                await BunnyFile.upload(storageZone, uploadPath, fileStream.result);
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    message: `Failed to upload avatar: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+                };
+            }
 
-                await moderationMediaCtr.updateModerationMedia(context, {
-                    filter: { id: moderationId },
-                    update: {
-                        status: E_ModerationMediaStatus.APPROVED,
+            const fullUrl = `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+
+            let galleryCreatedId: string | undefined;
+            let galleryUrl: string | undefined = fullUrl;
+            try {
+                const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
+                    doc: {
+                        type: E_ModerationMediaType.IMAGE,
+                        uploadedById: currentUser.id,
+                        url: fullUrl,
+                        entity: E_UploadEntity.USER,
+                        entityId: currentUser.id,
                         isPublished: true,
                     },
-                    options: { new: true },
                 });
 
-                if (avatarGalleryCreatedId) {
-                    await galleryCtr.updateGallery(context, {
-                        filter: { id: avatarGalleryCreatedId },
+                if (moderationCreated.success && moderationCreated.result) {
+                    const moderationId = moderationCreated.result.id;
+                    galleryCreatedId = moderationCreated.result.entityId ?? undefined;
+
+                    await moderationMediaCtr.updateModerationMedia(context, {
+                        filter: { id: moderationId },
                         update: {
                             status: E_ModerationMediaStatus.APPROVED,
                             isPublished: true,
                         },
+                        options: { new: true },
                     });
-                    avatarGalleryUrl = fullUrl;
+
+                    if (galleryCreatedId) {
+                        await galleryCtr.updateGallery(context, {
+                            filter: { id: galleryCreatedId },
+                            update: {
+                                status: E_ModerationMediaStatus.APPROVED,
+                                isPublished: true,
+                            },
+                        });
+                        galleryUrl = fullUrl;
+                    }
                 }
             }
-        }
-        catch (error) {
-            console.warn('Failed to sync avatar gallery:', error);
+            catch (error) {
+                console.warn('Failed to sync avatar gallery:', error);
+            }
+
+            uploadedResults.push({
+                partner: partnerKey,
+                galleryCreatedId,
+                galleryUrl,
+                previousGalleryId,
+                previousRelativePath,
+            });
         }
 
-        const updatePayload: Record<string, unknown> = {
-            ...(avatarGalleryCreatedId ? { 'partner1.galleryId': avatarGalleryCreatedId } : {}),
-        };
-        const unsetPayload: Record<string, unknown> = {
-            'partner1.avatarUrl': '',
+        // build update payloads for DB
+        const updatePayload: Record<string, unknown> = {};
+        for (const r of uploadedResults) {
+            if (r.galleryCreatedId) {
+                updatePayload[`${r.partner}.galleryId`] = r.galleryCreatedId;
+            }
+        }
+
+        const updateObj: Record<string, unknown> = {
+            ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
         };
 
         const updatedUser = await mongooseCtr.updateOne(
             { id: currentUser.id },
-            {
-                ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
-                ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
-            } as any,
+            updateObj as unknown as never,
             { new: true },
         );
 
@@ -270,76 +289,69 @@ export const userCtr = {
             };
         }
 
-        if (avatarGalleryCreatedId) {
-            updatedUser.result.partner1 = {
-                ...(updatedUser.result.partner1 ?? {}),
-                galleryId: avatarGalleryCreatedId,
-                gallery: {
-                    ...(updatedUser.result.partner1?.gallery ?? {}),
-                    id: avatarGalleryCreatedId,
-                    url: avatarGalleryUrl,
-                } as any,
-            };
-        }
-        else if (updatedUser.result.partner1) {
-            delete (updatedUser.result.partner1 as any).avatarUrl;
+        // inject gallery urls into result object for response and session
+        for (const r of uploadedResults) {
+            if (r.galleryCreatedId) {
+                const p = r.partner;
+                // construct gallery object and cast to the expected partner gallery type
+                const newGallery = {
+                    ...(updatedUser.result[p]?.gallery ?? {}),
+                    id: r.galleryCreatedId,
+                    url: r.galleryUrl,
+                } as unknown as NonNullable<I_User['partner1']>['gallery'];
+
+                updatedUser.result[p] = {
+                    ...(updatedUser.result[p] ?? {}),
+                    galleryId: r.galleryCreatedId,
+                    gallery: newGallery,
+                };
+            }
+            else if (updatedUser.result[r.partner]) {
+                // nothing to remove; avatarUrl field is not used
+            }
         }
 
         hydrateUserMedia(updatedUser.result, currentUserMediaOptions);
 
+        // update session partner data if current session user
         if (context?.req?.session?.user?.id === currentUser.id) {
-            const sessionPartner = context.req.session.user.partner1 ?? {};
+            const sessionPartner1 = context.req.session.user.partner1 ?? {};
+            const sessionPartner2 = context.req.session.user.partner2 ?? {};
             context.req.session.user = {
                 ...context.req.session.user,
                 partner1: {
-                    ...sessionPartner,
+                    ...sessionPartner1,
                     galleryId: updatedUser.result.partner1?.galleryId,
                     gallery: updatedUser.result.partner1?.gallery,
+                },
+                partner2: {
+                    ...sessionPartner2,
+                    galleryId: updatedUser.result.partner2?.galleryId,
+                    gallery: updatedUser.result.partner2?.gallery,
                 },
             };
         }
 
-        if (previousGalleryId && previousGalleryId !== avatarGalleryCreatedId) {
+        // cleanup previous galleries/files per partner
+        for (const r of uploadedResults) {
             try {
-                await galleryCtr.deleteGallery(context, { filter: { id: previousGalleryId } });
-            }
-            catch (error) {
-                console.warn('Failed to remove previous avatar gallery by ID:', error);
-            }
-        }
-        else if (
-            previousRelativePath
-            && previousRelativePath !== uploadPath
-            && previousRelativePath.includes('/avatar/')
-        ) {
-            const previousAbsoluteUrl = `${env.BUNNY_CDN_HOSTNAME}/${previousRelativePath}`;
-            let galleryRemoved = false;
-            try {
-                const previousGallery = await galleryCtr.getGallery(context, {
-                    filter: {
-                        uploadedById: currentUser.id,
-                        url: previousAbsoluteUrl,
-                    },
-                });
-
-                if (previousGallery.success && previousGallery.result?.id) {
-                    await galleryCtr.deleteGallery(context, {
-                        filter: { id: previousGallery.result.id },
-                    });
-                    galleryRemoved = true;
+                if (r.previousGalleryId && r.previousGalleryId !== r.galleryCreatedId) {
+                    await galleryCtr.deleteGallery(context, { filter: { id: r.previousGalleryId } });
+                }
+                else if (r.previousRelativePath && r.previousRelativePath !== undefined && r.previousRelativePath !== '') {
+                    const uploadPathCandidate = r.previousRelativePath;
+                    if (uploadPathCandidate.includes('/avatar/')) {
+                        try {
+                            await bunnyCtr.deleteFile(context, uploadPathCandidate);
+                        }
+                        catch {
+                            // ignore cleanup errors
+                        }
+                    }
                 }
             }
             catch (error) {
-                console.warn('Failed to remove previous avatar gallery by URL:', error);
-            }
-
-            if (!galleryRemoved) {
-                try {
-                    await bunnyCtr.deleteFile(context, previousRelativePath);
-                }
-                catch {
-                    // ignore cleanup errors
-                }
+                console.warn('Failed to remove previous avatar gallery or file:', error);
             }
         }
 
@@ -582,7 +594,7 @@ export const userCtr = {
                     }
                     update.settings.temporaryLocation.locationId = locationCreated.result.id;
                 }
-                delete (update.settings.temporaryLocation as any)['location'];
+                delete (update.settings.temporaryLocation as unknown as { location?: unknown }).location;
             }
         }
 
