@@ -231,7 +231,12 @@ export const locationCtr = {
                 populate: [
                     {
                         path: 'temporaryLocation',
-                        populate: [{ path: 'country' }, { path: 'city' }],
+                        populate: [
+                            {
+                                path: 'location',
+                                populate: [{ path: 'country' }, { path: 'city' }],
+                            },
+                        ],
                     },
                 ],
             },
@@ -279,221 +284,261 @@ export const locationCtr = {
             return pagingResult;
         }
 
-        let docs: I_Location[] = pagingResult.result.docs ?? [];
-        const travelEventOverrides = new Map<
-            string,
-            { location: I_Location; event?: I_Event }
-        >();
-
-        // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
+        const travelEventOverrides = new Map<string, { location: I_Location; event?: I_Event }>();
+        const seenUsers = new Set<string>();
         const now = new Date();
 
-        docs = docs.filter((d) => {
-            const e = d.entity as
-                | (I_User | I_Event | I_Destination)
-                | undefined;
-            const hasKey = !!e && !!(e.id || e._id);
-            const entityDeleted = Boolean(e?.isDel);
-            const locationDeleted = Boolean(d?.isDel);
-            const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
+        // Type guards to avoid any
+        const hasId = (o: unknown): o is { id?: string } => typeof o === 'object' && o !== null && 'id' in o;
+        const hasIsDel = (o: unknown): o is { isDel?: boolean } => typeof o === 'object' && o !== null && 'isDel' in o;
+        const isEventEntity = (o: unknown): o is I_Event => typeof o === 'object' && o !== null && ('startDate' in o || 'endDate' in o);
+        const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
 
-            // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
-            let isEventExpired = false;
-            let shouldHideTravelEvent = false;
-            if (
-                e
-                && (filter.entityType === E_LocationEntityType.EVENT
-                    || (e as any)?.startDate
-                    || (e as any)?.endDate
-                    || (e as any)?.type !== undefined)
-            ) {
-                const ev = e as I_Event | undefined;
-                const endCandidate = ev?.endDate ?? null;
-                const startCandidate = ev?.startDate ?? null;
+        const preprocessBatch = (batch: I_Location[]): I_Location[] => {
+            // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
+            let filtered = (batch ?? []).filter((d) => {
+                const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
+                const hasKey = hasId(e);
+                const entityDeleted = hasIsDel(e) ? Boolean(e.isDel) : false;
+                const locationDeleted = Boolean(d?.isDel);
+                const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
 
-                if (ev?.type === E_EventType.TRAVEL) {
-                    const startDate = startCandidate
-                        ? new Date(startCandidate)
-                        : undefined;
-                    const endDate = endCandidate
-                        ? new Date(endCandidate)
-                        : undefined;
-                    const hasStarted = startDate
-                        ? !Number.isNaN(startDate.getTime()) && startDate <= now
-                        : false;
-                    const beforeDeparture = endDate
-                        ? !Number.isNaN(endDate.getTime()) && endDate > now
-                        : !endDate;
+                // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
+                let isEventExpired = false;
+                let shouldHideTravelEvent = false;
+                if (e && (filter.entityType === E_LocationEntityType.EVENT || isEventEntity(e))) {
+                    const ev = e as I_Event | undefined;
+                    const endCandidate = ev?.endDate ?? null;
+                    const startCandidate = ev?.startDate ?? null;
 
-                    if (hasStarted && beforeDeparture && ev?.createdById) {
-                        travelEventOverrides.set(ev.createdById, {
-                            location: d,
-                            event: ev,
-                        });
-                        shouldHideTravelEvent = true;
+                    if (ev?.type === E_EventType.TRAVEL) {
+                        const startDate = startCandidate ? new Date(startCandidate) : undefined;
+                        const endDate = endCandidate ? new Date(endCandidate) : undefined;
+                        const hasStarted = startDate ? !Number.isNaN(startDate.getTime()) && startDate <= now : false;
+                        const beforeDeparture = endDate ? !Number.isNaN(endDate.getTime()) && endDate > now : !endDate;
+
+                        if (hasStarted && beforeDeparture && ev?.createdById) {
+                            travelEventOverrides.set(ev.createdById, { location: d, event: ev });
+                            shouldHideTravelEvent = true;
+                        }
+                    }
+
+                    if (endCandidate) {
+                        const endDate = new Date(endCandidate);
+                        if (!Number.isNaN(endDate.getTime()) && endDate <= now) {
+                            isEventExpired = true;
+                        }
+                    }
+                    else if (startCandidate) {
+                        const startDate = new Date(startCandidate);
+                        if (!Number.isNaN(startDate.getTime()) && startDate <= now) {
+                            isEventExpired = true;
+                        }
                     }
                 }
 
-                if (endCandidate) {
-                    const endDate = new Date(endCandidate);
-                    if (!Number.isNaN(endDate.getTime()) && endDate <= now) {
-                        isEventExpired = true;
-                    }
-                }
-                else if (startCandidate) {
-                    const startDate = new Date(startCandidate);
-                    if (
-                        !Number.isNaN(startDate.getTime())
-                        && startDate <= now
-                    ) {
-                        isEventExpired = true;
-                    }
-                }
-            }
+                if (shouldHideTravelEvent)
+                    return false;
 
-            if (shouldHideTravelEvent) {
-                return false;
-            }
-
-            let isIncompleteUser = false;
-            if (
-                d.entityType === E_LocationEntityType.USER
-                || (!d.entityType && (e as any)?.rolesIds)
-            ) {
-                const userEntity = e as I_User;
-                const step = (userEntity as any)
-                    ?.registerStep as E_RegisterStep;
-                const isActiveUser = userEntity?.isActive as boolean;
-                if (step && step !== E_RegisterStep.COMPLETE) {
-                    isIncompleteUser = true;
+                let isIncompleteUser = false;
+                if (d.entityType === E_LocationEntityType.USER || (!d.entityType && isUserEntity(e))) {
+                    const userEntity = e as I_User;
+                    const step = userEntity?.registerStep as E_RegisterStep | undefined;
+                    const isActiveUser = userEntity?.isActive as boolean | undefined;
+                    if (step && step !== E_RegisterStep.COMPLETE)
+                        isIncompleteUser = true;
+                    if (isActiveUser === false)
+                        isIncompleteUser = true;
                 }
-                if (isActiveUser === false) {
-                    isIncompleteUser = true;
-                }
-            }
 
-            return (
-                hasKey
-                && !entityDeleted
-                && !locationDeleted
-                && !isAdminBlocked
-                && !isEventExpired
-                && !isIncompleteUser
-            );
-        });
-
-        // filter eventType nếu có
-        if (
-            filter.entityType === E_LocationEntityType.EVENT
-            && filter.eventType
-        ) {
-            docs = docs.filter((d) => {
-                const e = d.entity as I_Event | undefined;
-                return e?.type === filter.eventType;
+                return (
+                    hasKey
+                    && !entityDeleted
+                    && !locationDeleted
+                    && !isAdminBlocked
+                    && !isEventExpired
+                    && !isIncompleteUser
+                );
             });
-        }
 
-        // chọn location duy nhất cho user (TEMP > DEFAULT)
-        docs = docs.map((d) => {
-            const user = d.entity as I_User;
-            if (!user?.id) {
-                return d;
+            // filter eventType nếu có
+            if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
+                filtered = filtered.filter((d) => {
+                    const e = d.entity as I_Event | undefined;
+                    return e?.type === filter.eventType;
+                });
             }
 
-            const nowInner = new Date();
-            let finalLocation: Partial<I_Location> | undefined;
-            let finalLocationId: string | undefined;
-            const tempLoc = user?.settings?.temporaryLocation;
-            const travelOverride = travelEventOverrides.get(user.id);
-            const travelOverrideLocation = travelOverride?.location;
-            const travelOverrideEvent = travelOverride?.event;
-            let finalSettings = user.settings;
+            // chọn location duy nhất cho user (TEMP > DEFAULT)
+            filtered = filtered.map((d) => {
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return d;
 
-            if (
-                tempLoc?.locationId
-                && tempLoc.endAt
-                && new Date(tempLoc.endAt) > nowInner
-            ) {
-                finalLocation = tempLoc.location ?? { id: tempLoc.locationId };
-                finalLocationId = tempLoc.locationId;
-            }
-            else if (travelOverrideLocation) {
-                const userPinStyle = resolveUserPinStyle(user);
-                const locationId
-                    = travelOverrideLocation.id
+                const nowInner = new Date();
+                let finalLocation: Partial<I_Location> | undefined;
+                let finalLocationId: string | undefined;
+                const tempLoc = user?.settings?.temporaryLocation;
+                const travelOverride = travelEventOverrides.get(user.id);
+                const travelOverrideLocation = travelOverride?.location;
+                const travelOverrideEvent = travelOverride?.event;
+                let finalSettings = user.settings;
+                let docOverride: Partial<I_Location> | undefined;
+
+                // Prefer Temporary Location if present and active
+                // Active when: endAt is in the future OR endAt is not provided (lenient),
+                // and there is either a populated location with map or a locationId.
+                const tempEndAtValid = !tempLoc?.endAt || new Date(tempLoc.endAt) > nowInner;
+                const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
+                if (tempLoc && tempEndAtValid && hasTempLocationData) {
+                    const chosenTemp = tempLoc.location ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);
+                    finalLocation = chosenTemp as Partial<I_Location> | undefined;
+                    finalLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                    // reflect temporary location on the top-level doc for map pin
+                    docOverride = {
+                        map: tempLoc.location?.map ?? d.map,
+                        country: tempLoc.location?.country ?? d.country,
+                        countryId: tempLoc.location?.countryId ?? d.countryId,
+                        state: tempLoc.location?.state ?? d.state,
+                        stateId: tempLoc.location?.stateId ?? d.stateId,
+                        city: tempLoc.location?.city ?? d.city,
+                        cityId: tempLoc.location?.cityId ?? d.cityId,
+                        region: tempLoc.location?.region ?? d.region,
+                        regionId: tempLoc.location?.regionId ?? d.regionId,
+                        subRegion: tempLoc.location?.subRegion ?? d.subRegion,
+                        subRegionId: tempLoc.location?.subRegionId ?? d.subRegionId,
+                    } as Partial<I_Location>;
+                }
+                else if (travelOverrideLocation) {
+                    const userPinStyle = resolveUserPinStyle(user);
+                    const locationId = travelOverrideLocation.id
                         ?? user.settings?.temporaryLocation?.locationId
                         ?? user.partner1?.locationId
                         ?? '';
-                const sanitizedTravelLocation = {
-                    id: locationId,
-                    map: travelOverrideLocation.map,
-                    country: travelOverrideLocation.country,
-                    countryId: travelOverrideLocation.countryId,
-                    state: travelOverrideLocation.state,
-                    stateId: travelOverrideLocation.stateId,
-                    city: travelOverrideLocation.city,
-                    cityId: travelOverrideLocation.cityId,
-                    region: travelOverrideLocation.region,
-                    regionId: travelOverrideLocation.regionId,
-                    subRegion: travelOverrideLocation.subRegion,
-                    subRegionId: travelOverrideLocation.subRegionId,
-                    address: travelOverrideLocation.address,
-                    pinStyle: userPinStyle,
-                    entityType: E_LocationEntityType.USER,
-                    entityId: user.id,
-                } as I_Location;
-                finalLocation = sanitizedTravelLocation;
-                finalLocationId = locationId;
-                finalSettings = {
-                    ...(user.settings ?? {}),
-                    temporaryLocation: {
-                        ...(user.settings?.temporaryLocation ?? {}),
-                        location: sanitizedTravelLocation,
-                        locationId: finalLocationId,
-                        endAt:
-                            travelOverrideEvent?.endDate
-                            ?? user.settings?.temporaryLocation?.endAt,
+                    const sanitizedTravelLocation = {
+                        id: locationId,
+                        map: travelOverrideLocation.map,
+                        country: travelOverrideLocation.country,
+                        countryId: travelOverrideLocation.countryId,
+                        state: travelOverrideLocation.state,
+                        stateId: travelOverrideLocation.stateId,
+                        city: travelOverrideLocation.city,
+                        cityId: travelOverrideLocation.cityId,
+                        region: travelOverrideLocation.region,
+                        regionId: travelOverrideLocation.regionId,
+                        subRegion: travelOverrideLocation.subRegion,
+                        subRegionId: travelOverrideLocation.subRegionId,
+                        address: travelOverrideLocation.address,
+                        pinStyle: userPinStyle,
+                        entityType: E_LocationEntityType.USER,
+                        entityId: user.id,
+                    } as I_Location;
+                    finalLocation = sanitizedTravelLocation;
+                    finalLocationId = locationId;
+                    finalSettings = {
+                        ...(user.settings ?? {}),
+                        temporaryLocation: {
+                            ...(user.settings?.temporaryLocation ?? {}),
+                            location: sanitizedTravelLocation,
+                            locationId: finalLocationId,
+                            endAt: travelOverrideEvent?.endDate ?? user.settings?.temporaryLocation?.endAt,
+                        },
+                    };
+                    // reflect travel override on top-level doc
+                    docOverride = {
+                        map: travelOverrideLocation.map ?? d.map,
+                        country: travelOverrideLocation.country ?? d.country,
+                        countryId: travelOverrideLocation.countryId ?? d.countryId,
+                        state: travelOverrideLocation.state ?? d.state,
+                        stateId: travelOverrideLocation.stateId ?? d.stateId,
+                        city: travelOverrideLocation.city ?? d.city,
+                        cityId: travelOverrideLocation.cityId ?? d.cityId,
+                        region: travelOverrideLocation.region ?? d.region,
+                        regionId: travelOverrideLocation.regionId ?? d.regionId,
+                        subRegion: travelOverrideLocation.subRegion ?? d.subRegion,
+                        subRegionId: travelOverrideLocation.subRegionId ?? d.subRegionId,
+                    } as Partial<I_Location>;
+                }
+                else {
+                    finalLocation = user.partner1?.location;
+                    finalLocationId = user.partner1?.locationId;
+                }
+
+                const updatedDoc: I_Location = {
+                    ...d,
+                    ...(docOverride ?? {}),
+                    entity: {
+                        ...user,
+                        partner1: {
+                            ...user.partner1,
+                            location: finalLocation as I_Location | undefined,
+                            locationId: finalLocationId,
+                        },
+                        settings: finalSettings,
                     },
                 };
-            }
-            else {
-                finalLocation = user.partner1?.location;
-                finalLocationId = user.partner1?.locationId;
-            }
+                return updatedDoc;
+            });
 
-            return {
-                ...d,
-                entity: {
-                    ...user,
-                    partner1: {
-                        ...user.partner1,
-                        location: finalLocation,
-                        locationId: finalLocationId,
-                    },
-                    settings: finalSettings,
-                },
-            };
-        });
-
-        // loại duplicate user
-        const seenUsers = new Set<string>();
-        docs = docs.filter((d) => {
-            if (d.entityType !== E_LocationEntityType.USER) {
+            // loại duplicate user (toàn phiên)
+            filtered = filtered.filter((d) => {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    return true;
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return true;
+                if (seenUsers.has(user.id))
+                    return false;
+                seenUsers.add(user.id);
                 return true;
-            }
+            });
 
-            const user = d.entity as I_User;
-            if (!user?.id) {
-                return true;
-            }
+            return filtered;
+        };
 
-            if (seenUsers.has(user.id)) {
-                return false;
-            }
+        // Process first page
+        let docs: I_Location[] = preprocessBatch(pagingResult.result.docs ?? []);
 
-            seenUsers.add(user.id);
-            return true;
-        });
+        // If pagination is enabled and the page after filtering has fewer than limit items, backfill from next pages
+        const requestedLimit = (typeof pagingResult.result?.limit === 'number'
+            ? pagingResult.result!.limit
+            : (options?.limit as number | undefined)) ?? docs.length;
+        const pageNumber = (pagingResult.result?.page ?? options?.page ?? 1) as number;
+
+        let nextPageToFetch = (pagingResult.result?.nextPage ?? (pageNumber + 1)) as number | null;
+        let morePagesAvailable = Boolean(pagingResult.result?.hasNextPage);
+        let hasMoreAfterFill = false;
+
+        const usePagination = options?.pagination !== false;
+        if (usePagination && docs.length < requestedLimit) {
+            while (morePagesAvailable && docs.length < requestedLimit && nextPageToFetch) {
+                const nextPageResult = await mongooseCtr.findPaging(baseFilter, {
+                    ...options,
+                    page: nextPageToFetch,
+                    populate: populates,
+                });
+                if (!nextPageResult.success || !nextPageResult.result)
+                    break;
+
+                const processed = preprocessBatch(nextPageResult.result.docs ?? []);
+                const remaining = requestedLimit - docs.length;
+                if (processed.length > 0) {
+                    docs.push(...processed.slice(0, remaining));
+                    if (processed.length > remaining) {
+                        hasMoreAfterFill = true; // still have survivors beyond the requested limit
+                    }
+                    else {
+                        hasMoreAfterFill = Boolean(nextPageResult.result.hasNextPage);
+                    }
+                }
+                else {
+                    hasMoreAfterFill = Boolean(nextPageResult.result.hasNextPage);
+                }
+
+                morePagesAvailable = Boolean(nextPageResult.result.hasNextPage);
+                nextPageToFetch = nextPageResult.result.nextPage as number | null;
+            }
+        }
 
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
         let viewerAgeVerified = false;
@@ -538,7 +583,7 @@ export const locationCtr = {
                     }
                     // Also ensure event creator's avatar/gallery is processed the same way
                     try {
-                        const creator = (ev as any).createdBy as I_User;
+                        const creator = ev.createdBy as I_User | undefined;
                         if (creator) {
                             const c1 = creator.partner1;
                             const c2 = creator.partner2;
@@ -581,29 +626,24 @@ export const locationCtr = {
         });
 
         // --- điều chỉnh metadata paging sau khi post-process docs ---
-        const pageSize = (pagingResult.result?.limit
-            ?? options?.limit
-            ?? docs.length) as number;
-        const currentPage = (pagingResult.result?.page
-            ?? options?.page
-            ?? 1) as number;
+        const pageSize = requestedLimit as number;
+        const currentPage = pageNumber as number;
 
         const originalTotalDocs
             = typeof pagingResult.result?.totalDocs === 'number'
                 ? pagingResult.result!.totalDocs
                 : undefined;
-        const confirmedUpToThisPage
-            = (currentPage - 1) * pageSize + docs.length;
+        const computedHasNextPage = (options?.pagination !== false)
+            ? (docs.length >= pageSize && (morePagesAvailable || hasMoreAfterFill))
+            : false;
 
-        const totalDocsAdjusted
-            = typeof originalTotalDocs === 'number'
-                ? Math.min(originalTotalDocs, confirmedUpToThisPage)
-                : docs.length;
+        const totalDocsAdjusted = typeof originalTotalDocs === 'number'
+            ? originalTotalDocs
+            : ((currentPage - 1) * pageSize + docs.length + (computedHasNextPage ? 1 : 0));
 
-        const totalPagesAdjusted = Math.max(
-            1,
-            Math.ceil(totalDocsAdjusted / pageSize),
-        );
+        const totalPagesAdjusted = typeof originalTotalDocs === 'number'
+            ? Math.max(1, Math.ceil(originalTotalDocs / pageSize))
+            : Math.max(1, computedHasNextPage ? currentPage + 1 : currentPage);
 
         const adjustedPagingResult = {
             ...pagingResult.result,
@@ -612,9 +652,9 @@ export const locationCtr = {
             totalPages: totalPagesAdjusted,
             limit: pageSize,
             page: currentPage,
-            hasNextPage: currentPage < totalPagesAdjusted,
+            hasNextPage: computedHasNextPage,
             hasPrevPage: currentPage > 1,
-            nextPage: currentPage < totalPagesAdjusted ? currentPage + 1 : null,
+            nextPage: computedHasNextPage ? currentPage + 1 : null,
             prevPage: currentPage > 1 ? currentPage - 1 : null,
         };
 
