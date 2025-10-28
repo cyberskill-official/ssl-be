@@ -20,7 +20,7 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
@@ -130,7 +130,11 @@ export const userCtr = {
             });
         }
 
-        if (currentUser.ageVerify?.status !== E_AgeVerifyStatus.APPROVED) {
+        // Skip age verification check nếu user đang trong quá trình đăng ký (chưa COMPLETE)
+        const isRegistering = currentUser.registerStep !== E_RegisterStep.COMPLETE;
+        const isAgeVerified = currentUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+        if (!isRegistering && !isAgeVerified) {
             throwError({
                 message: 'Age verification is required before uploading an avatar.',
                 status: RESPONSE_STATUS.FORBIDDEN,
