@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 
@@ -17,6 +17,7 @@ import type { I_Notification } from '#modules/notification/notification.type.js'
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
+import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
@@ -31,7 +32,7 @@ import {
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
-import { validate } from '#shared/util/index.js';
+import { getBlockedUserIds, validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
 import type {
@@ -60,7 +61,7 @@ import {
     E_ConversationAction,
     E_ConversationType,
 } from './conversation.type.js';
-import { classifyConversation, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
+import { classifyConversation, getOtherParticipantId, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
 
@@ -237,7 +238,7 @@ export const conversationCtr = {
             return convRes as I_Return<I_Conversation & { resolvedContact?: I_ResolvedContact }>;
         }
 
-        const conversation = transformConversationMedia(context, convRes.result) ?? convRes.result;
+        const conversation = await transformConversationMedia(context, convRes.result) ?? convRes.result;
 
         // resolve contact (safe, non-blocking: still awaited)
         try {
@@ -262,7 +263,7 @@ export const conversationCtr = {
         if (!res.success || !res.result)
             return res as any;
 
-        const docsWithMedia = transformConversationDocs(context, res.result.docs);
+        const docsWithMedia = await transformConversationDocs(context, res.result.docs);
 
         // resolve contacts in parallel (bounded)
         const resolvedPromises = docsWithMedia.map(async (doc) => {
@@ -288,25 +289,37 @@ export const conversationCtr = {
     getMyPrivateConversations: async (
         context: I_Context,
         { options }: I_Input_FindPaging<I_Input_QueryConversation>,
-        search?: string,
     ): Promise<I_Return<T_PaginateResult<I_Conversation>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const userConversationIds = await participantCtr.getConversationIdsByUserId(
             currentUser.id,
             E_ConversationType.PRIVATE,
-            search,
+
         );
         const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
         if (!result.success || !result.result)
             return result;
 
-        const docs = transformConversationDocs(context, result.result.docs);
+        // Block check - filter out conversations with blocked users (bidirectional)
+        const blockedUserIds = await getBlockedUserIds(context);
+        let filteredDocs = result.result.docs;
+        if (blockedUserIds.size > 0) {
+            filteredDocs = result.result.docs.filter((conv) => {
+                if (!conv.participants || conv.participants.length !== 2)
+                    return true;
+                const otherParticipantId = getOtherParticipantId(conv.participants, currentUser.id);
+                return !otherParticipantId || !blockedUserIds.has(otherParticipantId);
+            });
+        }
+
+        const docs = await transformConversationDocs(context, filteredDocs);
 
         return {
             ...result,
             result: {
                 ...result.result,
                 docs,
+                totalDocs: docs.length,
             },
         };
     },
@@ -326,13 +339,30 @@ export const conversationCtr = {
         if (!result.success || !result.result)
             return result;
 
-        const docs = transformConversationDocs(context, result.result.docs);
+        // Block check - filter out group conversations with blocked users (bidirectional)
+        // For groups, we hide the entire conversation if ANY participant is blocked
+        const blockedUserIds = await getBlockedUserIds(context);
+        let filteredDocs = result.result.docs;
+        if (blockedUserIds.size > 0) {
+            filteredDocs = result.result.docs.filter((conv) => {
+                if (!conv.participants || conv.participants.length === 0)
+                    return true;
+                // Check if any participant is blocked
+                const hasBlockedParticipant = conv.participants.some(
+                    p => p.userId && p.userId !== currentUser.id && blockedUserIds.has(p.userId),
+                );
+                return !hasBlockedParticipant;
+            });
+        }
+
+        const docs = await transformConversationDocs(context, filteredDocs);
 
         return {
             ...result,
             result: {
                 ...result.result,
                 docs,
+                totalDocs: docs.length,
             },
         };
     },
@@ -413,6 +443,38 @@ export const conversationCtr = {
             success: true,
             message: 'Join requests fetched successfully.',
             result: joinRequests,
+        };
+    },
+
+    hasPendingJoinRequests: async (
+        context: I_Context,
+    ): Promise<I_Return<boolean>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const notificationsRes = await notificationCtr.getNotifications(context, {
+            filter: {
+                entityType: E_NotificationEntityType.CONVERSATION,
+                targetId: currentUser.id,
+                type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                dismissedAt: null,
+            },
+            options: { limit: 1, pagination: false },
+        });
+
+        if (!notificationsRes.success) {
+            return {
+                success: true,
+                message: 'No pending requests',
+                result: false,
+            };
+        }
+
+        const hasPending = (notificationsRes.result?.docs ?? []).length > 0;
+
+        return {
+            success: true,
+            message: hasPending ? 'Has pending requests' : 'No pending requests',
+            result: hasPending,
         };
     },
 
@@ -751,7 +813,14 @@ export const conversationCtr = {
             };
         }
 
-        const requester = await userCtr.getUser(context, { filter: { id: effectiveRequesterId } });
+        const requester = await userCtr.getUser(context, {
+            filter: { id: effectiveRequesterId },
+            projection: 'id username accountType registerStep isEmailVerified ageVerify partner1 partner2',
+            populate: [
+                { path: 'partner1', select: 'id gender galleryId', populate: [{ path: 'gallery', select: 'id url' }] },
+                { path: 'partner2', select: 'id gender galleryId', populate: [{ path: 'gallery', select: 'id url' }] },
+            ],
+        });
         if (!requester.success) {
             if (matchedNotification?.id) {
                 await notificationCtr.updateNotification(context, {
@@ -792,6 +861,7 @@ export const conversationCtr = {
             });
         }
 
+        // Notify the requester that they were approved
         await notificationCtr.createNotificationWithSettings(context, {
             doc: {
                 targetId: effectiveRequesterId,
@@ -817,6 +887,71 @@ export const conversationCtr = {
                 },
             },
         });
+
+        // Notify the group creator/admin that someone joined
+        const requesterUser = requester.result;
+        const requesterAvatar = requesterUser.partner1?.gallery?.url
+            ?? requesterUser.partner2?.gallery?.url
+            ?? undefined;
+
+        // Chỉ gửi thông báo nếu profile đã hoàn chỉnh
+        const isProfileComplete
+            = requesterUser.registerStep === E_RegisterStep.COMPLETE
+                && requesterUser.isEmailVerified === true
+                && requesterUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+        if (isProfileComplete) {
+            await notificationCtr.createNotificationWithSettings(context, {
+                doc: {
+                    targetId: currentUser.id,
+                    type: [E_NotificationType.GROUP_MEMBER_JOINED],
+                    entityType: E_NotificationEntityType.CONVERSATION,
+                    entityId: conversationId,
+                    actorId: effectiveRequesterId,
+                    presentation: {
+                        headline: conversation.name
+                            ? `${requesterUser.username ?? 'A user'} joined ${conversation.name}`
+                            : `${requesterUser.username ?? 'A user'} joined your group`,
+                        context: {
+                            conversationType: E_ConversationType.GROUP,
+                            groupName: conversation.name ?? undefined,
+                        },
+                        actor: {
+                            username: requesterUser.username,
+                            accountType: requesterUser.accountType,
+                            avatarUrl: requesterAvatar,
+                            gender: requesterUser.partner1?.gender ?? requesterUser.partner2?.gender,
+                        },
+                    },
+                },
+            });
+        }
+
+        // Send event's push message as a normal message if event exists
+        if (conversation.entityType === E_NotificationEntityType.EVENT && conversation.entityId) {
+            try {
+                const { eventCtr } = await import('#modules/event/index.js');
+                const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
+
+                if (eventRes.success && eventRes.result?.pushMessage) {
+                    const { messageCtr } = await import('#modules/conversation/message/index.js');
+                    await messageCtr.createMessage(context, {
+                        doc: {
+                            conversationId,
+                            senderId: currentUser.id,
+                            content: {
+                                type: E_MessageType.TEXT,
+                                value: eventRes.result.pushMessage,
+                            },
+                        },
+                    });
+                }
+            }
+            catch (error) {
+                // Non-fatal: log and continue if push message fails
+                log.error('Failed to send event push message:', error);
+            }
+        }
 
         return { success: true, message: 'Join request approved.', result: true };
     },
@@ -1515,7 +1650,7 @@ export const conversationCtr = {
                 throwError({ message: 'Failed to get final conversation data', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            const populatedConversation = transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+            const populatedConversation = await transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
 
             // Publish WS
             const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
@@ -1632,6 +1767,24 @@ export const conversationCtr = {
                 }
             }
 
+            // 2.5) Block check - prevent messaging blocked users (bidirectional)
+            const blockedUserIds = await getBlockedUserIds(context);
+            if (blockedUserIds.size > 0) {
+                // For PRIVATE conversations, check if the other participant is blocked
+                if (conversation.type === E_ConversationType.PRIVATE) {
+                    const participants = conversation.participants || [];
+                    const otherParticipantId = getOtherParticipantId(participants, senderId);
+                    if (otherParticipantId && blockedUserIds.has(otherParticipantId)) {
+                        throwError({
+                            message: 'Cannot send message to blocked user',
+                            status: RESPONSE_STATUS.FORBIDDEN,
+                        });
+                    }
+                }
+                // For GROUP/PUBLIC conversations, we allow sending but messages will be filtered
+                // in getMessages for blocked users (they won't see each other's messages)
+            }
+
             // 3) Create message
             const messageResult = await messageCtr.createMessageOnly(context, {
                 doc: {
@@ -1673,7 +1826,7 @@ export const conversationCtr = {
                 });
             }
 
-            const populatedConversation = transformConversationMedia(context, populatedConversationResult.result) ?? populatedConversationResult.result;
+            const populatedConversation = await transformConversationMedia(context, populatedConversationResult.result) ?? populatedConversationResult.result;
 
             // 7) Pubsub publish
             const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
@@ -1777,7 +1930,7 @@ export const conversationCtr = {
                 }
             }
 
-            const transformedMessage = transformMessageMedia(context, messageResult.result) ?? messageResult.result;
+            const transformedMessage = await transformMessageMedia(context, messageResult.result) ?? messageResult.result;
 
             return { success: true, message: 'Message sent successfully', result: transformedMessage };
         }

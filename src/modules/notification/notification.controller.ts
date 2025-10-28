@@ -9,7 +9,7 @@ import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -254,7 +254,8 @@ export const notificationCtr = {
             throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        if (userFound.result?.isDel === true) {
+        // Không gửi thông báo nếu user bị xóa hoặc chưa hoàn chỉnh profile
+        if (userFound.result?.isDel === true || userFound.result?.registerStep !== E_RegisterStep.COMPLETE) {
             return { success: true, message: null };
         }
 

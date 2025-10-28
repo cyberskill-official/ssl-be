@@ -1,5 +1,7 @@
 import type { I_Context } from '#shared/typescript/express.js';
 
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
@@ -203,23 +205,80 @@ export function toPlainConversation<T>(conversation: T): T {
     return conversation;
 }
 
-export function transformConversationMedia<T extends I_Conversation>(context: I_Context, conversation: T | null | undefined): T | null | undefined {
+export async function transformConversationMedia<T extends I_Conversation>(context: I_Context, conversation: T | null | undefined): Promise<T | null | undefined> {
     if (!conversation)
         return conversation ?? null;
 
     const plainConversation = toPlainConversation(conversation);
 
-    const lastMessage = transformMessageMedia(context, plainConversation.lastMessage) ?? plainConversation.lastMessage;
+    // Transform lastMessage (includes sender avatar blur)
+    const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage) ?? plainConversation.lastMessage;
+
+    // Check viewer's age verification status for participant avatars
+    let isViewerVerified = false;
+    try {
+        const viewer = await authnCtr.getUserFromSession(context);
+        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+    }
+    catch {
+        isViewerVerified = false;
+    }
+
+    // Transform participant avatars based on age verification
+    let transformedParticipants = plainConversation.participants;
+    if (transformedParticipants && Array.isArray(transformedParticipants)) {
+        transformedParticipants = transformedParticipants.map((participant: any) => {
+            if (!participant?.user)
+                return participant;
+
+            const user = { ...participant.user };
+
+            // Blur partner1 avatar
+            if (user.partner1?.gallery?.url) {
+                user.partner1 = {
+                    ...user.partner1,
+                    gallery: {
+                        ...user.partner1.gallery,
+                        url: isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: user.partner1.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: user.partner1.gallery.url, extraQueryParams: { class: 'blur' } }),
+                    },
+                };
+            }
+
+            // Blur partner2 avatar
+            if (user.partner2?.gallery?.url) {
+                user.partner2 = {
+                    ...user.partner2,
+                    gallery: {
+                        ...user.partner2.gallery,
+                        url: isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: user.partner2.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: user.partner2.gallery.url, extraQueryParams: { class: 'blur' } }),
+                    },
+                };
+            }
+
+            return {
+                ...participant,
+                user,
+            };
+        });
+    }
 
     return {
         ...plainConversation,
         ...(lastMessage ? { lastMessage } : {}),
+        ...(transformedParticipants ? { participants: transformedParticipants } : {}),
     } as T;
 }
 
-export function transformConversationDocs<T extends I_Conversation>(context: I_Context, docs: T[] | undefined): T[] {
+export async function transformConversationDocs<T extends I_Conversation>(context: I_Context, docs: T[] | undefined): Promise<T[]> {
     if (!docs?.length)
         return docs ?? [];
 
-    return docs.map(doc => transformConversationMedia(context, doc) ?? doc);
+    const transformed = await Promise.all(
+        docs.map(async doc => await transformConversationMedia(context, doc) ?? doc),
+    );
+    return transformed;
 }

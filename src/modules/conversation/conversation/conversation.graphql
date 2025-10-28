@@ -249,12 +249,19 @@ type T_Response_JoinRequests {
     result: [T_Notification!]
 }
 
+type T_Response_Boolean {
+    success: Boolean
+    message: String
+    result: Boolean
+}
+
 type Query {
     getConversation(filter: Input_QueryConversation!, projection: JSON, options: JSON, populate: JSON): T_Response_Conversation!
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
     getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
     getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
     getEventJoinRequests: T_Response_JoinRequests!
+    hasPendingJoinRequests: T_Response_Boolean!
 }
 
 type Mutation {

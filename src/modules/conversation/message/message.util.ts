@@ -3,6 +3,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
@@ -38,7 +39,7 @@ function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined
     }
 }
 
-export function transformMessageMedia(context: I_Context, message: I_Message | null | undefined): I_Message | null | undefined {
+export async function transformMessageMedia(context: I_Context, message: I_Message | null | undefined): Promise<I_Message | null | undefined> {
     if (!message)
         return message;
 
@@ -48,37 +49,97 @@ export function transformMessageMedia(context: I_Context, message: I_Message | n
 
     const content = plainMessage.content ? { ...plainMessage.content } : undefined;
 
+    // Check viewer's age verification status once per message
+    let isViewerVerified = false;
+    try {
+        const viewer = await authnCtr.getUserFromSession(context);
+        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+    }
+    catch {
+        isViewerVerified = false;
+    }
+
     if (content?.type === E_MessageType.VIDEO) {
         const signed = maybeSignVideoUrl(context, content.value);
         if (signed)
             content.value = signed;
     }
+    else if (content?.type === E_MessageType.IMAGE) {
+        if (typeof content.value === 'string' && content.value) {
+            content.value = isViewerVerified
+                ? bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } })
+                : bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+        }
+    }
+
+    // Transform sender avatar based on viewer's age verification status
+    // Handle both Mongoose Document and plain object
+    let sender = plainMessage.sender;
+    if (sender) {
+        try {
+            // Transform sender avatars (partner1 and partner2)
+            const plainSender = (sender as any).toObject ? (sender as any).toObject() : sender;
+            const transformedSender = { ...plainSender };
+
+            if (transformedSender.partner1?.gallery?.url) {
+                transformedSender.partner1 = {
+                    ...transformedSender.partner1,
+                    gallery: {
+                        ...transformedSender.partner1.gallery,
+                        url: isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: transformedSender.partner1.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: transformedSender.partner1.gallery.url, extraQueryParams: { class: 'blur' } }),
+                    },
+                };
+            }
+
+            if (transformedSender.partner2?.gallery?.url) {
+                transformedSender.partner2 = {
+                    ...transformedSender.partner2,
+                    gallery: {
+                        ...transformedSender.partner2.gallery,
+                        url: isViewerVerified
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: transformedSender.partner2.gallery.url, extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: transformedSender.partner2.gallery.url, extraQueryParams: { class: 'blur' } }),
+                    },
+                };
+            }
+
+            sender = transformedSender as typeof sender;
+        }
+        catch {
+            // Non-fatal: if transformation fails, keep original sender
+        }
+    }
 
     const transformed = {
         ...plainMessage,
         ...(content ? { content } : {}),
+        ...(sender ? { sender } : {}),
     } as unknown as I_Message;
 
     return transformed;
 }
 
-export function transformMessageResult(context: I_Context, result: I_Return<I_Message>): I_Return<I_Message> {
+export async function transformMessageResult(context: I_Context, result: I_Return<I_Message>): Promise<I_Return<I_Message>> {
     if (!result.success || !result.result)
         return result;
 
-    const transformed = transformMessageMedia(context, result.result);
+    const transformed = await transformMessageMedia(context, result.result);
     return {
         ...result,
         result: transformed ?? result.result,
     };
 }
 
-export function transformMessagesPagingResult(context: I_Context, result: I_Return<T_PaginateResult<I_Message>>): I_Return<T_PaginateResult<I_Message>> {
+export async function transformMessagesPagingResult(context: I_Context, result: I_Return<T_PaginateResult<I_Message>>): Promise<I_Return<T_PaginateResult<I_Message>>> {
     if (!result.success || !result.result)
         return result;
 
-    const docs = (result.result.docs || []).map(message =>
-        transformMessageMedia(context, message) ?? message,
+    const docs = await Promise.all(
+        (result.result.docs || []).map(async message =>
+            await transformMessageMedia(context, message) ?? message,
+        ),
     );
 
     return {

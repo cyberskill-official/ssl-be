@@ -18,6 +18,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { getViewerMediaContext, hydrateUserMedia, userCtr } from '#modules/user/index.js';
+import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type { I_Follow, I_Input_CreateFollow, I_Input_Follow, I_Input_GetFollowers, I_Input_GetFollowings, I_Input_QueryFollow, I_Input_UnFollow } from './follow.type.js';
 
@@ -116,9 +117,12 @@ export const followCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
     getFollowers: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetFollowers>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
+        // Get blocked user IDs for bidirectional blocking
+        const blockedUserIds = await getBlockedUserIds(context);
+
         // lấy danh sách id của Follow hợp lệ bằng aggregate
         const idsAgg = await mongooseCtr.aggregate([
             { $match: { followId: filter?.followId } },
@@ -135,6 +139,10 @@ export const followCtr = {
                 $match: {
                     'u.isDel': { $ne: true },
                     'u.isAdminblock': { $ne: true },
+                    // Filter out blocked users (bidirectional)
+                    ...(blockedUserIds.size > 0 && {
+                        'u.id': { $nin: Array.from(blockedUserIds) },
+                    }),
                 },
             },
             { $project: { _id: 0, id: '$id' } }, // giữ lại id của Follow doc
@@ -149,6 +157,9 @@ export const followCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetFollowings>,
     ): Promise<I_Return<T_PaginateResult<I_Follow>>> => {
+        // Get blocked user IDs for bidirectional blocking
+        const blockedUserIds = await getBlockedUserIds(context);
+
         const idsAgg = await mongooseCtr.aggregate([
             { $match: { userId: filter?.userId } },
             {
@@ -164,6 +175,10 @@ export const followCtr = {
                 $match: {
                     'u.isDel': { $ne: true },
                     'u.isAdminblock': { $ne: true },
+                    // Filter out blocked users (bidirectional)
+                    ...(blockedUserIds.size > 0 && {
+                        'u.id': { $nin: Array.from(blockedUserIds) },
+                    }),
                 },
             },
             { $project: { _id: 0, id: '$id' } },

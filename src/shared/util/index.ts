@@ -1,3 +1,4 @@
+export * from './block-helper.js';
 export * from './date.js';
 export * from './dedup-arrays-iterative.js';
 export * from './filter-name.js';

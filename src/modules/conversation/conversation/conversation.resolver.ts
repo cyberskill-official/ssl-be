@@ -28,11 +28,13 @@ const conversationResolver = {
         getConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation>, context: I_Context) =>
             conversationCtr.getConversations(context, args),
         getMyPrivateConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>
-            conversationCtr.getMyPrivateConversations(context, args, args.search),
+            conversationCtr.getMyPrivateConversations(context, args),
         getMyGroupConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>
             conversationCtr.getMyGroupConversations(context, args, args.search),
         getEventJoinRequests: (_parent: unknown, _args: unknown, context: I_Context) =>
             conversationCtr.getEventJoinRequests(context),
+        hasPendingJoinRequests: (_parent: unknown, _args: unknown, context: I_Context) =>
+            conversationCtr.hasPendingJoinRequests(context),
     },
     Mutation: {
         createConversation: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateConversation>, context: I_Context) =>

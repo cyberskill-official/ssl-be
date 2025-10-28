@@ -23,6 +23,7 @@ import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
+import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
     I_Gallery,
@@ -308,7 +309,14 @@ export const galleryCtr = {
             return galleryCtr.getGalleries(context, { filter: galleryFilter, options });
         }
 
-        const uploadedByIds = userIds.filter(id => typeof id === 'string' && id.trim().length > 0);
+        // Get blocked user IDs for bidirectional blocking
+        const blockedUserIds = await getBlockedUserIds(context);
+
+        // Filter out blocked users from the requested userIds
+        let uploadedByIds = userIds.filter(id => typeof id === 'string' && id.trim().length > 0);
+        if (blockedUserIds.size > 0) {
+            uploadedByIds = uploadedByIds.filter(userId => !blockedUserIds.has(userId));
+        }
 
         if (!uploadedByIds.length) {
             const emptyResult: T_PaginateResult<I_Gallery> = {

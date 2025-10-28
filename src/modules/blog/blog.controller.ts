@@ -15,6 +15,7 @@ import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
@@ -38,13 +39,25 @@ export const blogCtr = {
         }
         return blogFound;
     },
-    getBlogs: async (_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
+    getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
         const blogs = await mongooseCtr.findPaging(filter, options);
 
         if (!blogs.success)
             return blogs;
 
-        blogs.result.docs = blogs.result.docs.map((blog) => {
+        // Get blocked user IDs for bidirectional blocking
+        const blockedUserIds = await getBlockedUserIds(context);
+
+        // Filter out blogs from blocked users
+        let filteredDocs = blogs.result.docs;
+        if (blockedUserIds.size > 0) {
+            filteredDocs = blogs.result.docs.filter((blog) => {
+                const authorId = blog.authorId || (blog.author as any)?.id;
+                return !authorId || !blockedUserIds.has(authorId);
+            });
+        }
+
+        filteredDocs = filteredDocs.map((blog) => {
             const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
             for (const field of imageFields) {
@@ -55,6 +68,10 @@ export const blogCtr = {
 
             return blog;
         });
+
+        // Update result with filtered docs
+        blogs.result.docs = filteredDocs;
+        blogs.result.totalDocs = filteredDocs.length;
 
         return blogs;
     },

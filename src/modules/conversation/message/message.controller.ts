@@ -118,7 +118,7 @@ export const messageCtr = {
                 return result;
             }
 
-            const lastMessage = transformMessageMedia(context, result.result.lastMessage) ?? result.result.lastMessage;
+            const lastMessage = await transformMessageMedia(context, result.result.lastMessage) ?? result.result.lastMessage;
             if (!lastMessage) {
                 throwError({
                     message: 'Failed to load created message',

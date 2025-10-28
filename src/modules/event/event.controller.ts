@@ -20,7 +20,7 @@ import type {
 } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
@@ -40,6 +40,7 @@ import {
 } from '#modules/notification/notification.type.js';
 import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
+import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
     I_Event,
@@ -67,6 +68,46 @@ export const eventCtr = {
 
         if (eventFound.result.image) {
             eventFound.result.image = signEventImage(eventFound.result.image, context);
+        }
+
+        // Blur creator avatar/gallery based on viewer and creator age verification
+        try {
+            let isViewerVerified = false;
+            try {
+                const viewer = await authnCtr.getUserFromSession(context);
+                isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+            catch {
+                isViewerVerified = false;
+            }
+
+            const creator: any = (eventFound.result as any).createdBy;
+            let isCreatorVerified = false;
+            try {
+                isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+            catch {
+                isCreatorVerified = false;
+            }
+
+            const shouldBlur = !isViewerVerified || !isCreatorVerified;
+            if (creator) {
+                const p1 = creator.partner1;
+                const p2 = creator.partner2;
+                if (p1?.gallery?.url) {
+                    p1.gallery.url = shouldBlur
+                        ? bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } })
+                        : bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+                }
+                if (p2?.gallery?.url) {
+                    p2.gallery.url = shouldBlur
+                        ? bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } })
+                        : bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                }
+            }
+        }
+        catch {
+            // non-fatal
         }
 
         return eventFound;
@@ -106,12 +147,67 @@ export const eventCtr = {
         if (!events.success)
             return events;
 
-        events.result.docs = events.result.docs.map((event) => {
+        // Get blocked user IDs for bidirectional blocking
+        const blockedUserIds = await getBlockedUserIds(context);
+
+        // Filter out events from blocked users
+        let filteredDocs = events.result.docs;
+        if (blockedUserIds.size > 0) {
+            filteredDocs = events.result.docs.filter((event) => {
+                const creatorId = event.createdById || (event.createdBy as any)?.id;
+                return !creatorId || !blockedUserIds.has(creatorId);
+            });
+        }
+
+        // Blur/signed media according to viewer + creator verification
+        let isViewerVerified = false;
+        try {
+            const viewer = await authnCtr.getUserFromSession(context);
+            isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        }
+        catch {
+            isViewerVerified = false;
+        }
+
+        filteredDocs = filteredDocs.map((event) => {
             if (event.image) {
                 event.image = signEventImage(event.image, context);
             }
+            try {
+                const creator: any = (event as any).createdBy;
+                let isCreatorVerified = false;
+                try {
+                    isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                }
+                catch {
+                    isCreatorVerified = false;
+                }
+                const shouldBlur = !isViewerVerified || !isCreatorVerified;
+                if (creator) {
+                    const p1 = creator.partner1;
+                    const p2 = creator.partner2;
+                    if (p1?.gallery?.url) {
+                        p1.gallery.url = shouldBlur
+                            ? bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } })
+                            : bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+                    }
+                    if (p2?.gallery?.url) {
+                        p2.gallery.url = shouldBlur
+                            ? bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } })
+                            : bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                    }
+                }
+            }
+            catch {
+                // ignore per-event creator processing errors
+            }
             return event;
         });
+
+        // Update result with filtered docs
+        events.result.docs = filteredDocs;
+        events.result.totalDocs = filteredDocs.length;
+
         return events;
     },
     createEvent: async (
