@@ -1366,12 +1366,19 @@ export const authnCtr = {
             ageVerifyPayload.approvedAt = new Date();
         }
 
-        return userCtr.updateUser(context, {
+        const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
             update: {
                 ageVerify: ageVerifyPayload,
             },
         });
+
+        // Sync session với ageVerify mới để tránh user phải login lại
+        if (userUpdated.success && context.req?.session?.user) {
+            context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        return userUpdated;
     },
     approveAgeVerify: async (
         context: I_Context,
@@ -1417,7 +1424,7 @@ export const authnCtr = {
             await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
-        return userCtr.updateUser(
+        const userUpdated = await userCtr.updateUser(
             context,
             {
                 filter: { id: userId },
@@ -1432,6 +1439,13 @@ export const authnCtr = {
                 },
             },
         );
+
+        // Sync session nếu user đang được approve là chính user đang login
+        if (userUpdated.success && context.req?.session?.user?.id === userId) {
+            context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        return userUpdated;
     },
     rejectAgeVerify: async (
         context: I_Context,
@@ -1484,7 +1498,7 @@ export const authnCtr = {
             await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
-        return userCtr.updateUser(
+        const userUpdated = await userCtr.updateUser(
             context,
             {
                 filter: { id: userId },
@@ -1497,6 +1511,13 @@ export const authnCtr = {
                 },
             },
         );
+
+        // Sync session nếu user bị reject là chính user đang login
+        if (userUpdated.success && context.req?.session?.user?.id === userId) {
+            context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        return userUpdated;
     },
     isMembershipActive: (user: I_User): boolean => {
         // If user has no membership expiration date, they have a lifetime membership

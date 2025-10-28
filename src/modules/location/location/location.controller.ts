@@ -284,6 +284,32 @@ export const locationCtr = {
             return pagingResult;
         }
 
+        // Fetch blocked users list để filter bidirectional blocking
+        let blockedUserIds = new Set<string>();
+        try {
+            const viewer = await authnCtr.getUserFromSession(_context);
+            if (viewer?.id) {
+                // Import blockCtr để fetch blocks
+                const { blockCtr } = await import('#modules/block/index.js');
+                const blocks = await blockCtr.getBlocks(_context, { options: { pagination: false } });
+                if (blocks.success && blocks.result?.docs) {
+                    blocks.result.docs.forEach((block) => {
+                        // Add both userId and blockId để hide bidirectional
+                        if (block.userId && block.userId !== viewer.id) {
+                            blockedUserIds.add(block.userId);
+                        }
+                        if (block.blockId && block.blockId !== viewer.id) {
+                            blockedUserIds.add(block.blockId);
+                        }
+                    });
+                }
+            }
+        }
+        catch {
+            // Nếu user chưa login hoặc fetch blocks fail, skip blocking logic
+            blockedUserIds = new Set<string>();
+        }
+
         const travelEventOverrides = new Map<string, { location: I_Location; event?: I_Event }>();
         const seenUsers = new Set<string>();
         const now = new Date();
@@ -296,12 +322,22 @@ export const locationCtr = {
 
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
             // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
+            // + ẩn blocked users (bidirectional: A blocks B thì cả 2 không thấy nhau)
             let filtered = (batch ?? []).filter((d) => {
                 const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
                 const hasKey = hasId(e);
                 const entityDeleted = hasIsDel(e) ? Boolean(e.isDel) : false;
                 const locationDeleted = Boolean(d?.isDel);
                 const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
+
+                // Check if user is blocked (bidirectional)
+                let isBlockedUser = false;
+                if (d.entityType === E_LocationEntityType.USER) {
+                    const user = e as I_User;
+                    if (user?.id && blockedUserIds.has(user.id)) {
+                        isBlockedUser = true;
+                    }
+                }
 
                 // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
                 let isEventExpired = false;
@@ -356,6 +392,7 @@ export const locationCtr = {
                     && !entityDeleted
                     && !locationDeleted
                     && !isAdminBlocked
+                    && !isBlockedUser
                     && !isEventExpired
                     && !isIncompleteUser
                 );
@@ -369,7 +406,165 @@ export const locationCtr = {
                 });
             }
 
-            // chọn location duy nhất cho user (TEMP > DEFAULT)
+            // DEDUPE by location document ID first (để tránh process cùng 1 location document nhiều lần)
+            const seenLocationIds = new Set<string>();
+            filtered = filtered.filter((d) => {
+                if (!d.id)
+                    return true;
+                if (seenLocationIds.has(d.id))
+                    return false;
+                seenLocationIds.add(d.id);
+                return true;
+            });
+
+            // FILTER OUT default location khi user có temporary location active
+            // Nếu user có active temporary location → filter out default location document hoàn toàn
+            // (Temporary location document có thể không được fetch do thiếu map data,
+            //  nhưng ta vẫn cần ẩn default để tránh duplicate pin)
+            filtered = filtered.filter((d) => {
+                if (d.entityType !== E_LocationEntityType.USER || !d.id)
+                    return true;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return true;
+
+                const nowInner = new Date();
+                const tempLoc = user?.settings?.temporaryLocation;
+                const tempEndAtValid = !tempLoc?.endAt || new Date(tempLoc.endAt) > nowInner;
+                const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
+                const hasActiveTempLocation = tempLoc && tempEndAtValid && hasTempLocationData;
+
+                if (!hasActiveTempLocation) {
+                    // Không có temporary location, giữ document này
+                    return true;
+                }
+
+                // User có temporary location active
+                const tempLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                const defaultLocationId = user.partner1?.locationId;
+
+                // Nếu document này là temporary location document → giữ lại
+                if (d.id === tempLocationId) {
+                    return true;
+                }
+
+                // Nếu document này là default location → FILTER OUT (ẩn hoàn toàn)
+                // Vì user có temporary location, chỉ show temporary location (sẽ được tạo trong map() bên dưới)
+                if (d.id === defaultLocationId && d.id !== tempLocationId) {
+                    return false;
+                }
+
+                // Trường hợp khác (không phải default, không phải temporary) → giữ lại
+                return true;
+            });
+
+            // Collect users cần synthetic location TRƯỚC KHI filter out default location
+            const usersNeedingSynthetic = new Map<string, { user: I_User; tempLoc: NonNullable<I_User['settings']>['temporaryLocation'] }>();
+            for (const d of filtered) {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    continue;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    continue;
+
+                const tempLoc = user?.settings?.temporaryLocation;
+                if (!tempLoc)
+                    continue;
+
+                const tempEndAtValid = !tempLoc.endAt || new Date(tempLoc.endAt) > now;
+                const hasTempLocationData = Boolean(tempLoc.location?.map || tempLoc.locationId);
+                const hasActiveTempLocation = tempEndAtValid && hasTempLocationData;
+
+                if (!hasActiveTempLocation)
+                    continue;
+
+                const tempLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                const defaultLocationId = user.partner1?.locationId;
+
+                // Chỉ tạo synthetic nếu:
+                // 1. Có tempLocationId khác defaultLocationId
+                // 2. Có map data trong tempLoc.location
+                if (tempLocationId && tempLocationId !== defaultLocationId && tempLoc.location?.map) {
+                    usersNeedingSynthetic.set(user.id, { user, tempLoc });
+                }
+            }
+
+            // FILTER OUT default location documents
+            filtered = filtered.filter((d) => {
+                if (d.entityType !== E_LocationEntityType.USER || !d.id)
+                    return true;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return true;
+
+                const tempLoc = user?.settings?.temporaryLocation;
+                if (!tempLoc)
+                    return true;
+
+                const tempEndAtValid = !tempLoc.endAt || new Date(tempLoc.endAt) > now;
+                const hasTempLocationData = Boolean(tempLoc.location?.map || tempLoc.locationId);
+                const hasActiveTempLocation = tempEndAtValid && hasTempLocationData;
+
+                if (!hasActiveTempLocation) {
+                    return true;
+                }
+
+                const tempLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                const defaultLocationId = user.partner1?.locationId;
+
+                // Giữ temporary location document nếu có
+                if (d.id === tempLocationId) {
+                    return true;
+                }
+
+                // Filter out default location document
+                if (d.id === defaultLocationId && d.id !== tempLocationId) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            // Tạo synthetic location documents cho users cần thiết
+            const syntheticLocations: I_Location[] = [];
+            for (const [_userId, { user, tempLoc }] of usersNeedingSynthetic) {
+                if (!tempLoc)
+                    continue;
+
+                const tempLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+
+                // Chỉ tạo synthetic nếu temporary document không có trong filtered
+                const hasTempDocument = filtered.some(doc => doc.id === tempLocationId);
+                if (!hasTempDocument && tempLoc.location?.map) {
+                    const userPinStyle = resolveUserPinStyle(user);
+                    const syntheticDoc: I_Location = {
+                        id: tempLocationId!,
+                        map: tempLoc.location.map,
+                        country: tempLoc.location.country,
+                        countryId: tempLoc.location.countryId,
+                        state: tempLoc.location.state,
+                        stateId: tempLoc.location.stateId,
+                        city: tempLoc.location.city,
+                        cityId: tempLoc.location.cityId,
+                        region: tempLoc.location.region,
+                        regionId: tempLoc.location.regionId,
+                        subRegion: tempLoc.location.subRegion,
+                        subRegionId: tempLoc.location.subRegionId,
+                        address: tempLoc.location.address,
+                        pinStyle: userPinStyle,
+                        entityType: E_LocationEntityType.USER,
+                        entityId: user.id,
+                        entity: user,
+                    } as I_Location;
+                    syntheticLocations.push(syntheticDoc);
+                }
+            }
+
+            // Add synthetic locations to filtered array
+            filtered = [...filtered, ...syntheticLocations]; // chọn location duy nhất cho user (TEMP > DEFAULT) - override entity data
             filtered = filtered.map((d) => {
                 const user = d.entity as I_User;
                 if (!user?.id)
