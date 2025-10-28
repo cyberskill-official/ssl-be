@@ -331,10 +331,25 @@ export const locationCtr = {
                 const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
 
                 // Check if user is blocked (bidirectional)
+                // Ẩn user + tất cả content của user (events, destinations)
                 let isBlockedUser = false;
                 if (d.entityType === E_LocationEntityType.USER) {
                     const user = e as I_User;
                     if (user?.id && blockedUserIds.has(user.id)) {
+                        isBlockedUser = true;
+                    }
+                }
+                else if (d.entityType === E_LocationEntityType.EVENT) {
+                    const event = e as I_Event;
+                    // Ẩn event nếu người tạo bị block
+                    if (event?.createdById && blockedUserIds.has(event.createdById)) {
+                        isBlockedUser = true;
+                    }
+                }
+                else if (d.entityType === E_LocationEntityType.DESTINATION) {
+                    const destination = e as I_Destination;
+                    // Ẩn destination nếu người tạo bị block
+                    if (destination?.createdById && blockedUserIds.has(destination.createdById)) {
                         isBlockedUser = true;
                     }
                 }
