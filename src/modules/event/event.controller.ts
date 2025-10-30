@@ -431,6 +431,11 @@ export const eventCtr = {
             doc.fee = totalFee;
         }
 
+        // Ensure CLUB_VISIT events are marked as active
+        if (type === E_EventType.CLUB_VISIT) {
+            doc.isActive = true;
+        }
+
         // Create event
         const eventCreated = await mongooseCtr.createOne(doc);
         if (!eventCreated.success)
@@ -443,6 +448,7 @@ export const eventCtr = {
                     name: doc.title ?? title,
                     type: E_ConversationType.GROUP,
                     createdById: currentUser.id,
+                    entityType: E_NotificationEntityType.EVENT,
                     entityId: eventCreated.result.id,
                 },
             });
@@ -526,9 +532,17 @@ export const eventCtr = {
 
         try {
             if (isClubVisit) {
-                finalLocationId = destLocationCandidate?.id ?? destinationLocationId;
+                // Get destination location to use as template
+                const destLocation = destLocationCandidate ?? (async () => {
+                    if (!destinationLocationId)
+                        return undefined;
+                    const res = await locationCtr.getLocation(context, { filter: { id: destinationLocationId } });
+                    return res.success ? res.result : undefined;
+                })();
 
-                if (!finalLocationId) {
+                const resolvedDestLocation = destLocation instanceof Promise ? await destLocation : destLocation;
+
+                if (!resolvedDestLocation) {
                     await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
                     throwError({
                         message: 'Selected club does not have a location configured. Please update the club location before creating an event.',
@@ -536,18 +550,39 @@ export const eventCtr = {
                     });
                 }
 
-                if (destLocationCandidate && hasValidMap(destLocationCandidate)) {
-                    locMapForRedirect = destLocationCandidate.map as { latitude?: number; longitude?: number } | undefined;
+                // Extract map data for redirect
+                if (hasValidMap(resolvedDestLocation)) {
+                    locMapForRedirect = resolvedDestLocation.map as { latitude?: number; longitude?: number } | undefined;
                 }
-                else if (finalLocationId) {
-                    try {
-                        const clubLocation = await locationCtr.getLocation(context, { filter: { id: finalLocationId } });
-                        if (clubLocation.success && clubLocation.result?.map) {
-                            locMapForRedirect = clubLocation.result.map as { latitude?: number; longitude?: number } | undefined;
-                        }
-                    }
-                    catch { /* ignore missing club map */ }
+
+                // Create new location document for CLUB_VISIT event using destination location as template
+                const locationPinStyle = mapEventTypeToPinStyle(type);
+                const {
+                    _id: _omitMongoId,
+                    id: _omitId,
+                    isDel: _omitIsDel,
+                    createdAt: _omitCA,
+                    updatedAt: _omitUA,
+                    entityType: _omitET,
+                    entityId: _omitEID,
+                    ...rest
+                } = resolvedDestLocation as any;
+
+                const locationDoc = {
+                    ...rest,
+                    ...(hasValidMap(resolvedDestLocation) ? { map: resolvedDestLocation.map } : {}),
+                    pinStyle: locationPinStyle as any,
+                    entityType: E_LocationEntityType.EVENT,
+                    entityId: eventCreated.result.id,
+                };
+
+                const locationCreated = await locationCtr.createLocation(context, { doc: locationDoc });
+                if (!locationCreated.success) {
+                    await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort */ });
+                    return locationCreated;
                 }
+                finalLocationId = locationCreated.result.id;
+                locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
             }
             else {
             // Always create a new location doc for this event (avoid reusing partner/user location)

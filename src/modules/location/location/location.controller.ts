@@ -449,7 +449,10 @@ export const locationCtr = {
                     continue;
 
                 const tempLoc = user?.settings?.temporaryLocation;
-                const tempEndAtValid = !tempLoc?.endAt || new Date(tempLoc.endAt) > now;
+                // FIX: Chỉ coi temporary location là active nếu:
+                // 1. Có endAt VÀ endAt > now (không còn coi null/undefined là "vĩnh viễn")
+                // 2. HOẶC không có tempLoc (để tránh lỗi khi tempLoc tồn tại nhưng không có endAt)
+                const tempEndAtValid = tempLoc?.endAt ? (new Date(tempLoc.endAt) > now) : false;
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
 
@@ -490,6 +493,12 @@ export const locationCtr = {
                 // - Document này chính là temp location
                 const isDefaultLocation = d.id === tempInfo.defaultLocationId;
                 const isTempLocation = d.id === tempInfo.tempLocationId;
+
+                // FIX: Nếu tempLocationId và defaultLocationId trùng nhau (duplicate)
+                // → Luôn giữ lại để tránh mất location trên map
+                if (tempInfo.tempLocationId && tempInfo.tempLocationId === tempInfo.defaultLocationId) {
+                    return true;
+                }
 
                 // Nếu đây là default location và KHÔNG phải temp location → loại bỏ
                 if (isDefaultLocation && !isTempLocation) {
@@ -590,7 +599,7 @@ export const locationCtr = {
                 // Prefer Temporary Location if present and active
                 // Active when: endAt is in the future OR endAt is not provided (lenient),
                 // and there is either a populated location with map or a locationId.
-                const tempEndAtValid = !tempLoc?.endAt || new Date(tempLoc.endAt) > nowInner;
+                const tempEndAtValid = tempLoc?.endAt ? (new Date(tempLoc.endAt) > nowInner) : false;
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 if (tempLoc && tempEndAtValid && hasTempLocationData) {
                     const chosenTemp = tempLoc.location ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);

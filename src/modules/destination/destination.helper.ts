@@ -9,6 +9,17 @@ import { countryCtr, E_LocationEntityType, locationCtr } from '#modules/location
 
 import type { I_Destination } from './destination.type.js';
 
+export function sortDestinationsByRating<T extends { rating?: string }>(destinations: T[]): T[] {
+    const ratingOrder: Record<string, number> = { GOLD: 0, SILVER: 1, BRONZE: 2 };
+    return destinations.slice().sort((a, b) => {
+        const aRating = typeof a.rating === 'string' ? a.rating : '';
+        const bRating = typeof b.rating === 'string' ? b.rating : '';
+        const aOrder = ratingOrder[aRating] ?? 99;
+        const bOrder = ratingOrder[bRating] ?? 99;
+        return aOrder - bOrder;
+    });
+}
+
 export function sanitizeFilter(rawFilter?: Record<string, unknown>) {
     return Object.entries(rawFilter ?? {}).reduce<Record<string, unknown>>((acc, [key, value]) => {
         if (value !== undefined) {

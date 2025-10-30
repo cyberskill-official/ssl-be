@@ -54,7 +54,6 @@ export const uploadCtr = {
             if (!allowGuest) {
                 throw error;
             }
-
             isGuest = true;
             currentUser = {
                 id: `guest-${Date.now()}`,
@@ -85,8 +84,7 @@ export const uploadCtr = {
         }
 
         const isInRegistration = !isGuest && currentUser.registerStep !== E_RegisterStep.COMPLETE;
-        const isGallery
-            = entity === E_UploadEntity.GALLERY;
+        const isGallery = entity === E_UploadEntity.GALLERY;
 
         const shouldGateUpload
             = !isGuest
@@ -229,6 +227,8 @@ export const uploadCtr = {
                 });
             }
 
+            let finalVideoStatus = moderationCreated.result!.status;
+
             // Run AI after upload and record initial result to moderation_log
             try {
                 // Pass the same bytes to AI moderation to ensure consistency
@@ -246,6 +246,14 @@ export const uploadCtr = {
                             aiResult: moderationResult.result,
                         },
                     });
+
+                    // Fetch updated status after AI moderation decision
+                    const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
+                        filter: { id: moderationId },
+                    });
+                    if (updatedModeration.success && updatedModeration.result) {
+                        finalVideoStatus = updatedModeration.result.status;
+                    }
                 }
             }
             catch (error) {
@@ -260,7 +268,7 @@ export const uploadCtr = {
                 result: {
                     url: videoUploaded.result!,
                     moderationMediaId: moderationCreated.result!.id!,
-                    status: moderationCreated.result!.status,
+                    status: finalVideoStatus,
                     entityId: moderationCreated.result!.entityId || resolvedEntityId,
                 },
             };
@@ -316,6 +324,8 @@ export const uploadCtr = {
 
         await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
 
+        let finalStatus = moderationCreated.result!.status;
+
         try {
             const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: uploadedUrl });
 
@@ -331,6 +341,14 @@ export const uploadCtr = {
                         aiResult: moderateImage.result,
                     },
                 });
+
+                // Fetch updated status after AI moderation decision
+                const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
+                    filter: { id: moderationId },
+                });
+                if (updatedModeration.success && updatedModeration.result) {
+                    finalStatus = updatedModeration.result.status;
+                }
             }
         }
         catch (error) {
@@ -347,7 +365,7 @@ export const uploadCtr = {
             result: {
                 url: uploadedUrl,
                 moderationMediaId: moderationCreated.result!.id!,
-                status: moderationCreated.result!.status,
+                status: finalStatus,
                 entityId: moderationCreated.result!.entityId || resolvedEntityId,
             },
         };

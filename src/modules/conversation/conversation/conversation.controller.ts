@@ -928,6 +928,7 @@ export const conversationCtr = {
         }
 
         // Send event's push message as a normal message if event exists
+        let messageSent = false;
         if (conversation.entityType === E_NotificationEntityType.EVENT && conversation.entityId) {
             try {
                 const { eventCtr } = await import('#modules/event/index.js');
@@ -935,7 +936,7 @@ export const conversationCtr = {
 
                 if (eventRes.success && eventRes.result?.pushMessage) {
                     const { messageCtr } = await import('#modules/conversation/message/index.js');
-                    await messageCtr.createMessage(context, {
+                    const messageResult = await messageCtr.createMessage(context, {
                         doc: {
                             conversationId,
                             senderId: currentUser.id,
@@ -945,11 +946,40 @@ export const conversationCtr = {
                             },
                         },
                     });
+
+                    if (messageResult.success) {
+                        messageSent = true;
+                    }
                 }
             }
             catch (error) {
                 // Non-fatal: log and continue if push message fails
                 log.error('Failed to send event push message:', error);
+            }
+        }
+
+        // If no push message was sent and conversation has no messages, send a welcome message
+        // This ensures the new member sees the green dot (unread indicator)
+        if (!messageSent && !conversation.lastMessageId) {
+            try {
+                const { messageCtr } = await import('#modules/conversation/message/index.js');
+                const welcomeMessage = conversation.name
+                    ? `Welcome to ${conversation.name}!`
+                    : 'Welcome to the group!';
+
+                await messageCtr.createMessage(context, {
+                    doc: {
+                        conversationId,
+                        senderId: currentUser.id,
+                        content: {
+                            type: E_MessageType.TEXT,
+                            value: welcomeMessage,
+                        },
+                    },
+                });
+            }
+            catch (error) {
+                log.error('Failed to send welcome message:', error);
             }
         }
 

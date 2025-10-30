@@ -42,6 +42,7 @@ export interface I_Destination extends I_GenericDocument {
     introductionHeadline?: string;
     introductionContent?: string;
     ageGroup?: E_DestinationAgeGroup;
+    ratingStar?: string;
     logo?: string;
     locationId?: string;
     location?: I_Location;

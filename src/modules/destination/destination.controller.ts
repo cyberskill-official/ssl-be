@@ -32,7 +32,7 @@ import type {
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
-import { buildCountryIdFilter, buildCountryNameFilter, mergeFilters, sanitizeFilter } from './destination.helper.js';
+import { buildCountryIdFilter, buildCountryNameFilter, mergeFilters, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
@@ -64,6 +64,15 @@ export const destinationCtr = {
         }
 
         // Apply signed URL to image fields
+        if (destinationFound.result.ratingStar) {
+            destinationFound.result.ratingStar = bunnyCtr.generateSignedUrl({
+                fullUrl: destinationFound.result.ratingStar,
+                extraQueryParams: {
+                    class: 'normal',
+                },
+            });
+        }
+
         if (destinationFound.result.logo) {
             destinationFound.result.logo = bunnyCtr.generateSignedUrl({
                 fullUrl: destinationFound.result.logo,
@@ -170,10 +179,16 @@ export const destinationCtr = {
 
         const docs = Array.isArray(destinations.result?.docs) ? destinations.result.docs : [];
 
-        // Sign ảnh (logo, wearImage, images) — tương thích sync/async bunnyCtr
+        // Sign ảnh (ratingStar, logo, wearImage, images) — tương thích sync/async bunnyCtr
         const signedDocs = await Promise.all(
             docs.map(async (destination: any) => {
                 const doc: any = typeof destination?.toObject === 'function' ? destination.toObject() : { ...destination };
+
+                if (doc.ratingStar) {
+                    doc.ratingStar = await Promise.resolve(
+                        bunnyCtr.generateSignedUrl({ fullUrl: doc.ratingStar, extraQueryParams: { class: 'normal' } }),
+                    );
+                }
 
                 if (doc.logo) {
                     doc.logo = await Promise.resolve(
@@ -199,7 +214,7 @@ export const destinationCtr = {
             }),
         );
 
-        destinations.result.docs = signedDocs;
+        destinations.result.docs = sortDestinationsByRating<I_Destination>(signedDocs);
         return destinations;
     },
 
@@ -422,6 +437,10 @@ export const destinationCtr = {
             }
         }
 
+        if (update.ratingStar && destinationFound.result.ratingStar && destinationFound.result.ratingStar !== update.ratingStar) {
+            await bunnyCtr.deleteFile(context, destinationFound.result.ratingStar);
+        }
+
         if (update.logo && destinationFound.result.logo && destinationFound.result.logo !== update.logo) {
             await bunnyCtr.deleteFile(context, destinationFound.result.logo);
         }
@@ -519,7 +538,7 @@ export const destinationCtr = {
             });
         }
 
-        const mediaFields: Array<keyof Pick<I_Destination, 'logo' | 'wearImage'>> = ['logo', 'wearImage'];
+        const mediaFields: Array<keyof Pick<I_Destination, 'ratingStar' | 'logo' | 'wearImage'>> = ['ratingStar', 'logo', 'wearImage'];
 
         for (const field of mediaFields) {
             if (destinationFound.result[field]) {

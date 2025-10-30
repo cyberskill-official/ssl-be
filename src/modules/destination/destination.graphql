@@ -67,6 +67,7 @@ type T_Destination {
     introductionHeadline: String
     introductionContent: String
     ageGroup: E_DestinationAgeGroup
+    ratingStar: String
     logo: String
     locationId: String
     location: T_Location
@@ -105,6 +106,7 @@ input Input_QueryDestination {
     introductionHeadline: String
     introductionContent: String
     ageGroup: E_DestinationAgeGroup
+    ratingStar: String
     logo: String
     locationId: String
     countryId: String
@@ -137,6 +139,7 @@ input Input_CreateDestination {
     introductionHeadline: String!
     introductionContent: String!
     ageGroup: E_DestinationAgeGroup!
+    ratingStar: String
     logo: String
     location: Input_Location
     nearbyHotels: [Input_Hotel]
@@ -169,6 +172,7 @@ input Input_UpdateDestination {
     introductionHeadline: String
     introductionContent: String
     ageGroup: E_DestinationAgeGroup
+    ratingStar: String
     logo: String
     location: Input_Location
     nearbyHotels: [Input_Hotel]

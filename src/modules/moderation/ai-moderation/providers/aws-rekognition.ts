@@ -229,13 +229,21 @@ export class AWSRekognitionProvider {
         }
         // else PENDING_REVIEW + LOW (default)
 
-        // If text is detected, set risk level to HIGH
+        // If text is detected, only set risk level to HIGH if there's already problematic content
+        // Don't automatically flag all images with text as high risk (reduces false positives)
         const textDetections = textResult?.TextDetections?.filter((detection: any) =>
             detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
         );
         if (textDetections && textDetections.length > 0) {
-            riskLevel = E_RiskLevel.HIGH;
-            reasons.push('Text detected in image - requires manual review');
+            // Only elevate risk if there's already concerning content detected
+            if (riskLevel === E_RiskLevel.MEDIUM || riskLevel === E_RiskLevel.HIGH) {
+                riskLevel = E_RiskLevel.HIGH;
+                reasons.push('Text detected in flagged image - requires manual review');
+            }
+            else {
+                // Just note text presence for low-risk images without escalating
+                reasons.push('Text detected in image');
+            }
         }
 
         return {
@@ -377,10 +385,15 @@ export class AWSRekognitionProvider {
             if (labelDetectionResult && labelDetectionResult.Labels) {
                 const labels = labelDetectionResult.Labels;
 
+                // Get video-specific thresholds or fall back to defaults
+                const videoThresholds = (settings as any).videoThresholds || AI_MODERATION_DEFAULT_CONFIG.videoThresholds;
+                const significantConfidence = videoThresholds?.significantLabelConfidence || 70;
+
                 // Calculate confidence based on all detected labels with high confidence
+                // Increased from 60 to reduce false positives
                 const significantLabels = labels.filter((label: any) => {
                     const confidence = label.Label?.Confidence || 0;
-                    return confidence > 60; // Only consider labels with >60% confidence
+                    return confidence > significantConfidence;
                 });
 
                 if (significantLabels.length > 0) {
@@ -419,19 +432,41 @@ export class AWSRekognitionProvider {
             });
         }
 
+        // Determine decision and risk level based on confidence
         let riskLevel = E_RiskLevel.LOW;
-        // Auto-reject disabled; always manual review for video
-        const decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
 
-        // if (confidence >= threshold) {
-        //     decision = E_ModerationMediaStatus.REJECTED;
-        //     riskLevel = E_RiskLevel.CRITICAL;
-        // }
-        if (confidence >= 0.5) {
+        // Get video thresholds from settings
+        const videoThresholds = (settings as any).videoThresholds || AI_MODERATION_DEFAULT_CONFIG.videoThresholds;
+        const autoApproveThreshold = videoThresholds?.autoApproveMaxConfidence || 0.40;
+        const highRiskThreshold = 0.70;
+        const criticalRiskThreshold = 0.85;
+
+        // Auto-approve videos with very low confidence (likely safe content)
+        if (confidence < autoApproveThreshold) {
+            decision = E_ModerationMediaStatus.APPROVED;
+            riskLevel = E_RiskLevel.LOW;
+            reasons.push(`Auto-approved: Low risk detected (${(confidence * 100).toFixed(1)}%)`);
+        }
+        // High confidence - requires human review
+        else if (confidence >= criticalRiskThreshold) {
+            decision = E_ModerationMediaStatus.PENDING;
+            riskLevel = E_RiskLevel.CRITICAL;
+        }
+        else if (confidence >= highRiskThreshold) {
+            decision = E_ModerationMediaStatus.PENDING;
             riskLevel = E_RiskLevel.HIGH;
         }
-        else if (confidence >= 0.3) {
+        // Medium confidence - still requires review but lower priority
+        else if (confidence >= 0.50) {
+            decision = E_ModerationMediaStatus.PENDING;
             riskLevel = E_RiskLevel.MEDIUM;
+        }
+        // Low-medium confidence - auto-approve with monitoring
+        else {
+            decision = E_ModerationMediaStatus.APPROVED;
+            riskLevel = E_RiskLevel.LOW;
+            reasons.push(`Auto-approved: Acceptable risk level (${(confidence * 100).toFixed(1)}%)`);
         }
 
         return {

@@ -144,6 +144,9 @@ export const DestinationModel = mongo.createModel<I_Destination>({
                 },
             ],
         },
+        ratingStar: {
+            type: String,
+        },
         logo: {
             type: String,
         },

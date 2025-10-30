@@ -84,6 +84,10 @@ export async function applyAiModerationDecision(
     const aiDecision = aiResult.decision as E_ModerationMediaStatus | undefined;
     const aiRiskLevel = aiResult.riskLevel as E_RiskLevel | undefined;
     const aiReason = composeAiReason(aiResult);
+
+    // Auto-approve images with LOW risk level
+    const shouldAutoApprove = aiRiskLevel === E_RiskLevel.LOW;
+
     const shouldAutoReject
         = aiDecision === E_ModerationMediaStatus.REJECTED
             || aiRiskLevel === E_RiskLevel.HIGH
@@ -93,6 +97,34 @@ export async function applyAiModerationDecision(
         ? aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content'
         : undefined;
     const warnReason = !shouldAutoReject && aiReason ? `AI flagged for review: ${aiReason}` : undefined;
+
+    // Auto-approve safe content (LOW risk)
+    if (shouldAutoApprove) {
+        await moderationMediaCtr.updateModerationMedia(context, {
+            filter: { id: moderationId },
+            update: {
+                status: E_ModerationMediaStatus.APPROVED,
+                reason: aiReason ? `AI approved: ${aiReason}` : 'AI approved: safe content',
+                isPublished: true,
+            },
+        });
+
+        try {
+            await galleryCtr.updateGallery(context, {
+                filter: { moderationMediaId: moderationId },
+                update: {
+                    status: E_ModerationMediaStatus.APPROVED,
+                    isPublished: true,
+                    isDel: false,
+                },
+            });
+        }
+        catch {
+            /* ignore gallery sync errors */
+        }
+
+        return false; // Not rejected
+    }
 
     if (shouldAutoReject) {
         const moderationUpdated = await moderationMediaCtr.updateModerationMedia(context, {
