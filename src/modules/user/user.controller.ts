@@ -130,11 +130,15 @@ export const userCtr = {
             });
         }
 
-        // Skip age verification check nếu user đang trong quá trình đăng ký (chưa COMPLETE)
+        // Skip age verification nếu: (1) đang trong quá trình đăng ký, hoặc (2) Admin/Staff
         const isRegistering = currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isAgeVerified = currentUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        const [isAdmin, isStaff] = await Promise.all([
+            authnCtr.isAdmin(context),
+            authnCtr.isStaff(context),
+        ]);
 
-        if (!isRegistering && !isAgeVerified) {
+        if (!isRegistering && !isAgeVerified && !isAdmin && !isStaff) {
             throwError({
                 message: 'Age verification is required before uploading an avatar.',
                 status: RESPONSE_STATUS.FORBIDDEN,
