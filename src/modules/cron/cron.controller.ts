@@ -3,6 +3,8 @@ import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
 
+import { roleCtr } from '#modules/authz/index.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_LocationEntityType, LocationModel } from '#modules/location/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -22,6 +24,7 @@ export const cron = {
         cron.cleanupVerification().start();
         cron.disableExpiredAds().start();
         cron.checkUserOnlineStatus().start();
+        cron.cleanupInactiveFreeUsers().start();
     },
     backupDB: () => {
         return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
@@ -256,6 +259,78 @@ export const cron = {
             }
             catch (error) {
                 log.error('[CRON] Error checking user online status:', error);
+            }
+        });
+    },
+
+    // Legal: Remove free profiles inactive for > 12 months. Paying members are exempt.
+    cleanupInactiveFreeUsers: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
+            try {
+                const now = new Date();
+                const cutoff = new Date(now);
+                cutoff.setMonth(cutoff.getMonth() - 12); // ~12 months inactivity
+
+                // Resolve Paid Member role id once
+                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+
+                const baseFilter: Record<string, any> = {
+                    isDel: { $ne: true },
+                    isAdminBlocked: { $ne: true },
+                    $and: [
+                        // Must be inactive beyond cutoff
+                        {
+                            $or: [
+                                { lastOnline: { $lt: cutoff } },
+                                { $and: [
+                                    { lastOnline: { $exists: false } },
+                                    { createdAt: { $lt: cutoff } },
+                                ] },
+                            ],
+                        },
+                        // Exclude active paid members (never delete paying members)
+                        paidRoleId
+                            ? { rolesIds: { $nin: [paidRoleId] } }
+                            : {},
+                        // Also exclude users with currently active membership by date
+                        {
+                            $or: [
+                                { membershipExpiresAt: { $exists: false } },
+                                { membershipExpiresAt: null },
+                                { membershipExpiresAt: { $lte: now } },
+                            ],
+                        },
+                    ].filter(Boolean),
+                };
+
+                const candidates = await userCtr.getUsers({}, { filter: baseFilter, options: { pagination: false } });
+
+                if (!candidates.success || !candidates.result?.docs?.length) {
+                    log.info('[CRON] No inactive free users found for cleanup');
+                    return;
+                }
+
+                const userIds = candidates.result.docs.map(u => u.id).filter(Boolean);
+                if (!userIds.length) {
+                    log.info('[CRON] No inactive free users with valid ids');
+                    return;
+                }
+
+                const res = await userCtr.updateUsers({}, {
+                    filter: { id: { $in: userIds } },
+                    update: { isDel: true },
+                });
+
+                if (res.success) {
+                    log.success(`[CRON] Soft-deleted ${res.result.modifiedCount} inactive free user(s) (>12 months)`);
+                }
+                else {
+                    log.error('[CRON] Failed to soft-delete inactive free users:', res.message);
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Error cleaning up inactive free users:', error);
             }
         });
     },

@@ -433,6 +433,22 @@ export const locationCtr = {
             });
 
             // Build user temp location map để filter partner locations sớm
+            // Helper: determine if a temporary location is still active at the moment "now"
+            const isTempActive = (tempLoc?: NonNullable<I_User['settings']>['temporaryLocation']): boolean => {
+                if (!tempLoc?.endAt)
+                    return false;
+                const end = new Date(tempLoc.endAt);
+                // If endAt is provided as a date-only (midnight), treat it as inclusive end-of-day
+                const isMidnight
+                    = end.getHours() === 0
+                        && end.getMinutes() === 0
+                        && end.getSeconds() === 0
+                        && end.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight
+                    ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1)
+                    : end;
+                return normalizedEnd > now;
+            };
             const userTempLocationMap = new Map<string, {
                 tempLocationId?: string;
                 defaultLocationId?: string;
@@ -449,10 +465,9 @@ export const locationCtr = {
                     continue;
 
                 const tempLoc = user?.settings?.temporaryLocation;
-                // FIX: Chỉ coi temporary location là active nếu:
-                // 1. Có endAt VÀ endAt > now (không còn coi null/undefined là "vĩnh viễn")
-                // 2. HOẶC không có tempLoc (để tránh lỗi khi tempLoc tồn tại nhưng không có endAt)
-                const tempEndAtValid = tempLoc?.endAt ? (new Date(tempLoc.endAt) > now) : false;
+                // FIX: Active when endAt exists and is strictly in the future.
+                // If endAt is a date-only at midnight, we extend it to end-of-day to avoid early expiry on the same day.
+                const tempEndAtValid = isTempActive(tempLoc);
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
 
@@ -586,7 +601,7 @@ export const locationCtr = {
                 if (!user?.id)
                     return d;
 
-                const nowInner = new Date();
+                // Use the same reference time throughout to avoid edge-case inconsistencies in a single request
                 let finalLocation: Partial<I_Location> | undefined;
                 let finalLocationId: string | undefined;
                 const tempLoc = user?.settings?.temporaryLocation;
@@ -596,10 +611,8 @@ export const locationCtr = {
                 let finalSettings = user.settings;
                 let docOverride: Partial<I_Location> | undefined;
 
-                // Prefer Temporary Location if present and active
-                // Active when: endAt is in the future OR endAt is not provided (lenient),
-                // and there is either a populated location with map or a locationId.
-                const tempEndAtValid = tempLoc?.endAt ? (new Date(tempLoc.endAt) > nowInner) : false;
+                // Prefer Temporary Location if present and active (using the same isTempActive logic)
+                const tempEndAtValid = isTempActive(tempLoc);
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 if (tempLoc && tempEndAtValid && hasTempLocationData) {
                     const chosenTemp = tempLoc.location ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);

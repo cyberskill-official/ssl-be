@@ -40,7 +40,17 @@ export const blogCtr = {
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        const blogs = await mongooseCtr.findPaging(filter, options);
+        // Apply safe defaults: exclude soft-deleted and prefer active posts unless explicitly overridden
+        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+        const efAny = effectiveFilter as Record<string, any>;
+        if (efAny['isDel'] === undefined) {
+            efAny['isDel'] = { $ne: true };
+        }
+        if (efAny['isActive'] === undefined) {
+            efAny['isActive'] = true;
+        }
+
+        const blogs = await mongooseCtr.findPaging(effectiveFilter, options);
 
         if (!blogs.success)
             return blogs;
@@ -69,9 +79,8 @@ export const blogCtr = {
             return blog;
         });
 
-        // Update result with filtered docs
+        // Update result with filtered docs (keep original pagination meta if present)
         blogs.result.docs = filteredDocs;
-        blogs.result.totalDocs = filteredDocs.length;
 
         return blogs;
     },
@@ -81,6 +90,11 @@ export const blogCtr = {
         const authorId = currentUser.id;
 
         doc.authorId = authorId;
+        // Default to published/active if not explicitly provided
+        // New posts created from the Admin panel should appear on the dashboard by default
+        if (doc.isActive === undefined) {
+            doc.isActive = true;
+        }
 
         if (doc.languageId) {
             const language = await languageCtr.getLanguage(context, { filter: { id: doc.languageId } });
