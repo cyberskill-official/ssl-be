@@ -146,7 +146,10 @@ export const uploadCtr = {
         });
 
         const uploadPath = path.posix.join(folderPath, fullPath);
-        const shouldBypassModeration = isStaff || !!skipModeration || isAdmin;
+        // Bypass moderation if:
+        // - Admin/Staff
+        // - Client explicitly requests skipModeration on this request
+        const shouldBypassModeration = isStaff || isAdmin || !!skipModeration;
 
         if (shouldBypassModeration) {
             if (type === E_UploadType.VIDEO) {
