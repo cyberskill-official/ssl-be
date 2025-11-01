@@ -555,34 +555,12 @@ export const eventCtr = {
                     locMapForRedirect = resolvedDestLocation.map as { latitude?: number; longitude?: number } | undefined;
                 }
 
-                // Create new location document for CLUB_VISIT event using destination location as template
-                const locationPinStyle = mapEventTypeToPinStyle(type);
-                const {
-                    _id: _omitMongoId,
-                    id: _omitId,
-                    isDel: _omitIsDel,
-                    createdAt: _omitCA,
-                    updatedAt: _omitUA,
-                    entityType: _omitET,
-                    entityId: _omitEID,
-                    ...rest
-                } = resolvedDestLocation as any;
-
-                const locationDoc = {
-                    ...rest,
-                    ...(hasValidMap(resolvedDestLocation) ? { map: resolvedDestLocation.map } : {}),
-                    pinStyle: locationPinStyle as any,
-                    entityType: E_LocationEntityType.EVENT,
-                    entityId: eventCreated.result.id,
-                };
-
-                const locationCreated = await locationCtr.createLocation(context, { doc: locationDoc });
-                if (!locationCreated.success) {
-                    await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort */ });
-                    return locationCreated;
-                }
-                finalLocationId = locationCreated.result.id;
-                locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+                // For CLUB_VISIT: reuse the destination's location document instead of creating a new event-specific
+                // location. This avoids duplicate pins for the same physical club/resort.
+                finalLocationId = resolvedDestLocation.id;
+                locMapForRedirect = hasValidMap(resolvedDestLocation)
+                    ? (resolvedDestLocation as any).map as { latitude?: number; longitude?: number } | undefined
+                    : undefined;
             }
             else {
             // Always create a new location doc for this event (avoid reusing partner/user location)
@@ -841,9 +819,14 @@ export const eventCtr = {
         }
 
         if (eventFound.result.locationId) {
-            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: eventFound.result.locationId } });
-            if (!locationDeleted.success) {
-                return locationDeleted;
+            // Only delete the location document if it's owned by the event (entityType === EVENT).
+            // Some events (e.g. CLUB_VISIT) reuse a destination location; we must not delete that.
+            const loc = await locationCtr.getLocation(context, { filter: { id: eventFound.result.locationId } });
+            if (loc.success && loc.result && (loc.result.entityType === E_LocationEntityType.EVENT || loc.result.entityId === eventFound.result.id)) {
+                const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: eventFound.result.locationId } });
+                if (!locationDeleted.success) {
+                    return locationDeleted;
+                }
             }
         }
 
