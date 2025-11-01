@@ -1927,10 +1927,33 @@ export const conversationCtr = {
                 const entityType = E_NotificationEntityType.CONVERSATION;
                 const entityId = populatedConversation.id;
 
-                const makeRedirect = (targetId: string) =>
-                    isPublic
-                        ? { kind: redirectKind, id: publicTargetId ?? targetId } as const
-                        : { kind: E_RedirectType.CONVERSATION, id: populatedConversation.id } as const;
+                // Prepare profile owner username for guestbook redirects (if available)
+                let profileOwnerUsername: string | undefined;
+                if (profileOwnerId) {
+                    try {
+                        const ownerRes = await userCtr.getUser(context, { filter: { id: profileOwnerId }, projection: 'username' });
+                        if (ownerRes.success && ownerRes.result?.username) {
+                            profileOwnerUsername = ownerRes.result.username;
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+
+                const makeRedirect = (targetId: string) => {
+                    // For guestbook comments, redirect to the profile page (not conversation)
+                    // Include commentId for direct navigation to the specific comment
+                    if (notifType === E_NotificationType.GUESTBOOK_POST) {
+                        // Prefer username of the profile owner when available (frontend routes by username)
+                        return {
+                            kind: E_RedirectType.PROFILE,
+                            id: profileOwnerUsername ?? profileOwnerId ?? publicTargetId ?? targetId,
+                            commentId: messageResult.result?.id, // Direct link to the specific comment
+                        } as const;
+                    }
+                    return isPublic
+                        ? ({ kind: redirectKind, id: publicTargetId ?? targetId } as const)
+                        : ({ kind: E_RedirectType.CONVERSATION, id: populatedConversation.id } as const);
+                };
 
                 for (const targetId of recipients) {
                     try {
@@ -1949,6 +1972,8 @@ export const conversationCtr = {
                                     context: {
                                         conversationType: populatedConversation.type,
                                         isOpenComment: isPublic,
+                                        // Provide the specific message id to enable direct navigation to the comment in UI
+                                        parentMessageId: messageResult.result?.id,
                                         participantCount: memberCount,
                                         profileOwnerId,
                                     },

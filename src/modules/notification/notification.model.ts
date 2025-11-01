@@ -23,6 +23,7 @@ export const RedirectSchema = mongo.createSchema<I_NotificationRedirect>({
             type: MapSchema,
         },
         eventType: { type: String, enum: Object.values(E_EventType) },
+        commentId: { type: String },
     },
 });
 

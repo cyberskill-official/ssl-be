@@ -112,6 +112,7 @@ export interface I_NotificationRedirect {
     id?: string;
     map?: I_Map;
     eventType?: E_EventType;
+    commentId?: string;
 }
 
 export interface I_NotificationContext {

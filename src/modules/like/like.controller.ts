@@ -15,6 +15,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { blogCtr } from '#modules/blog/index.js';
+import { E_GalleryType } from '#modules/gallery/gallery.type.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
@@ -129,6 +130,9 @@ export const likeCtr = {
 
                 if (ownerId && ownerId !== currentUser.id) {
                     const thumbnailUrl = buildNotifThumbnail(galleryFound.result);
+                    // Determine media type label for clearer UX
+                    const mediaKind = galleryFound.result.type === E_GalleryType.VIDEO ? 'video' : 'picture';
+                    const headline = `liked your ${mediaKind}`;
 
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
@@ -138,7 +142,8 @@ export const likeCtr = {
                             entityId: doc.entityId,
                             actorId: currentUser.id,
                             presentation: {
-                                redirect: { kind: E_RedirectType.PROFILE, id: currentUser.id },
+                                // Redirect directly to the media (UI can still link actor profile via actorId)
+                                redirect: { kind: E_RedirectType.MEDIA, id: doc.entityId },
                                 ...(thumbnailUrl ? { thumbnailUrl } : {}),
                                 actor: {
                                     username: currentUser.username,
@@ -146,6 +151,7 @@ export const likeCtr = {
                                     avatarUrl: currentUser.partner1?.gallery?.url,
                                     gender: currentUser.partner1?.gender,
                                 },
+                                headline,
                             },
                         },
                     });

@@ -99,6 +99,7 @@ type T_NotificationRedirect {
     id: String
     map: T_Map
     eventType: E_EventType
+    commentId: String
 }
 
 type T_NotificationContext {
@@ -172,6 +173,7 @@ input Input_NotificationRedirect {
     id: String
     map: Input_Map
     eventType: E_EventType
+    commentId: String
 }
 
 input Input_NotificationPresentationActor {
