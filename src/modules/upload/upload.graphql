@@ -19,12 +19,25 @@ type T_UploadResult {
     moderationMediaId: String!
     status: E_ModerationMediaStatus
     entityId: String
+    stubId: String
+}
+
+type T_ContactAdminUploadResult {
+    url: String!
+    stubId: String!
+    entityId: String
 }
 
 type T_Response_Upload {
     success: Boolean!
     message: String
     result: T_UploadResult
+}
+
+type T_Response_ContactAdminUpload {
+    success: Boolean!
+    message: String
+    result: T_ContactAdminUploadResult
 }
 
 type Mutation {
@@ -37,4 +50,9 @@ type Mutation {
         allowGuest: Boolean
         file: Upload!
     ): T_Response_Upload!
+    uploadContactAdminAttachment(
+        stubId: String
+        skipModeration: Boolean
+        file: Upload!
+    ): T_Response_ContactAdminUpload!
 }

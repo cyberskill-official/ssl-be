@@ -31,6 +31,18 @@ export interface I_Input_Upload {
     file: T_UploadedFilePromise;
 }
 
+export interface I_Input_UploadContactAdmin {
+    stubId?: string;
+    skipModeration?: boolean;
+    file: T_UploadedFilePromise;
+}
+
+export interface I_Result_ContactAdminUpload {
+    url: string;
+    stubId: string;
+    entityId?: string;
+}
+
 export interface I_UploadPathConfig {
     type: E_UploadType;
     entity: E_UploadEntity;

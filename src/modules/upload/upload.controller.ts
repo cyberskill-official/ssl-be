@@ -28,7 +28,11 @@ import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
-import type { I_Input_Upload } from './upload.type.js';
+import type {
+    I_Input_Upload,
+    I_Input_UploadContactAdmin,
+    I_Result_ContactAdminUpload,
+} from './upload.type.js';
 
 import { UPLOAD_CONFIG } from './upload.constant.js';
 import { applyAiModerationDecision, generateUploadPath } from './upload.util.js';
@@ -36,7 +40,10 @@ import { applyAiModerationDecision, generateUploadPath } from './upload.util.js'
 const env = getEnv();
 
 export const uploadCtr = {
-    upload: async (context: I_Context, args: I_Input_Upload): Promise<I_Return<{ url: string; moderationMediaId: string; status?: E_ModerationMediaStatus; entityId?: string }>> => {
+    upload: async (
+        context: I_Context,
+        args: I_Input_Upload,
+    ): Promise<I_Return<{ url: string; moderationMediaId: string; status?: E_ModerationMediaStatus; entityId?: string; stubId?: string }>> => {
         const { type, entity, file, entityId, tagId, skipModeration, allowGuest } = args;
         const fileData = await getAndValidateFile(type, await file, UPLOAD_CONFIG);
 
@@ -55,8 +62,9 @@ export const uploadCtr = {
                 throw error;
             }
             isGuest = true;
+            const fallbackGuestId = entityId || `guest-${Date.now()}`;
             currentUser = {
-                id: `guest-${Date.now()}`,
+                id: fallbackGuestId,
                 registerStep: E_RegisterStep.COMPLETE,
                 ageVerify: { status: E_AgeVerifyStatus.APPROVED },
                 roles: [],
@@ -193,7 +201,7 @@ export const uploadCtr = {
         }
 
         if (type === E_UploadType.VIDEO) {
-            // Read stream once → buffer
+        // Read stream once → buffer
             const src = createReadStream();
             const bufChunks: Buffer[] = [];
             await new Promise<void>((resolve, reject) => {
@@ -234,7 +242,7 @@ export const uploadCtr = {
 
             // Run AI after upload and record initial result to moderation_log
             try {
-                // Pass the same bytes to AI moderation to ensure consistency
+            // Pass the same bytes to AI moderation to ensure consistency
                 const videoBytes = new Uint8Array(videoBuffer);
                 const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
                 if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
@@ -355,7 +363,7 @@ export const uploadCtr = {
             }
         }
         catch (error) {
-            // Do not block upload on AI/log failure
+        // Do not block upload on AI/log failure
             throwError({
                 message: `Failed to create AI moderation log on upload: ${(error as Error)?.message || String(error)}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -370,6 +378,37 @@ export const uploadCtr = {
                 moderationMediaId: moderationCreated.result!.id!,
                 status: finalStatus,
                 entityId: moderationCreated.result!.entityId || resolvedEntityId,
+            },
+        };
+    },
+    uploadContactAdmin: async (
+        context: I_Context,
+        args: I_Input_UploadContactAdmin,
+    ): Promise<I_Return<I_Result_ContactAdminUpload>> => {
+        const trimmedStub = args.stubId?.trim() ?? '';
+        const stubId = trimmedStub || `guest-${Date.now()}`;
+        const skipModeration = args.skipModeration ?? true;
+        const uploadResponse = await uploadCtr.upload(context, {
+            type: E_UploadType.IMAGE,
+            entity: E_UploadEntity.CONVERSATION,
+            entityId: stubId,
+            tagId: 'contact-admin',
+            skipModeration,
+            allowGuest: true,
+            file: args.file,
+        });
+
+        if (!uploadResponse.success || !uploadResponse.result) {
+            return uploadResponse as I_Return<I_Result_ContactAdminUpload>;
+        }
+
+        return {
+            success: true,
+            message: uploadResponse.message,
+            result: {
+                url: uploadResponse.result.url,
+                stubId,
+                entityId: uploadResponse.result.entityId ?? stubId,
             },
         };
     },

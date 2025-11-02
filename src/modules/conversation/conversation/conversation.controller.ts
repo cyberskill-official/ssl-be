@@ -857,6 +857,20 @@ export const conversationCtr = {
             throwError({ message: createResult.message ?? 'Failed to add participant.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
+        if (conversation.lastMessageId) {
+            try {
+                await messageStatusCtr.createMessageStatusOnly(conversation.lastMessageId, effectiveRequesterId);
+            }
+            catch (error) {
+                log.warn('Failed to mark last message unread for new participant', {
+                    conversationId,
+                    lastMessageId: conversation.lastMessageId,
+                    userId: effectiveRequesterId,
+                    error,
+                });
+            }
+        }
+
         if (matchedNotification?.id) {
             await notificationCtr.updateNotification(context, {
                 filter: { id: matchedNotification.id },
@@ -937,21 +951,25 @@ export const conversationCtr = {
                 const { eventCtr } = await import('#modules/event/index.js');
                 const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
 
-                if (eventRes.success && eventRes.result?.pushMessage) {
-                    const { messageCtr } = await import('#modules/conversation/message/index.js');
-                    const messageResult = await messageCtr.createMessage(context, {
-                        doc: {
-                            conversationId,
-                            senderId: currentUser.id,
-                            content: {
-                                type: E_MessageType.TEXT,
-                                value: eventRes.result.pushMessage,
-                            },
-                        },
-                    });
+                if (eventRes.success) {
+                    const pushMessage = eventRes.result?.pushMessage?.trim();
 
-                    if (messageResult.success) {
-                        messageSent = true;
+                    if (pushMessage) {
+                        const { messageCtr } = await import('#modules/conversation/message/index.js');
+                        const messageResult = await messageCtr.createMessage(context, {
+                            doc: {
+                                conversationId,
+                                senderId: currentUser.id,
+                                content: {
+                                    type: E_MessageType.TEXT,
+                                    value: pushMessage,
+                                },
+                            },
+                        });
+
+                        if (messageResult.success) {
+                            messageSent = true;
+                        }
                     }
                 }
             }
@@ -961,8 +979,34 @@ export const conversationCtr = {
             }
         }
 
-        // If no push message was sent and conversation has no messages, send a welcome message
-        // This ensures the new member sees the green dot (unread indicator)
+        if (!messageSent && conversation.entityType === E_NotificationEntityType.EVENT) {
+            try {
+                const fallbackMessage = conversation.name
+                    ? `You've been added to ${conversation.name}. Welcome!`
+                    : 'You have been added to the event group. Welcome!';
+
+                const fallbackResult = await messageCtr.createMessage(context, {
+                    doc: {
+                        conversationId,
+                        senderId: currentUser.id,
+                        content: {
+                            type: E_MessageType.TEXT,
+                            value: fallbackMessage,
+                        },
+                    },
+                });
+
+                if (fallbackResult.success) {
+                    messageSent = true;
+                }
+            }
+            catch (error) {
+                log.error('Failed to send fallback event welcome message:', error);
+            }
+        }
+
+        // If no message was sent and the conversation has never had one, send a basic welcome
+        // so brand new groups still surface an unread indicator for the new member.
         if (!messageSent && !conversation.lastMessageId) {
             try {
                 const { messageCtr } = await import('#modules/conversation/message/index.js');

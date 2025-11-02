@@ -40,6 +40,11 @@ import { hasInApp } from './notification.util.js';
 
 const mongooseCtr = new MongooseController<I_Notification>(NotificationModel);
 
+const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
+    E_NotificationType.GROUP_JOIN_REQUEST,
+    E_NotificationType.GROUP_JOIN_APPROVED,
+]);
+
 export const notificationCtr = {
     getNotification: async (
         _context: I_Context,
@@ -256,6 +261,12 @@ export const notificationCtr = {
 
         // Không gửi thông báo nếu user bị xóa hoặc chưa hoàn chỉnh profile
         if (userFound.result?.isDel === true || userFound.result?.registerStep !== E_RegisterStep.COMPLETE) {
+            return { success: true, message: null };
+        }
+
+        const allowIncompleteProfile = types.some(type => ALLOW_INCOMPLETE_PROFILE_TYPES.has(type));
+
+        if (!allowIncompleteProfile && userFound.result?.registerStep !== E_RegisterStep.COMPLETE) {
             return { success: true, message: null };
         }
 
