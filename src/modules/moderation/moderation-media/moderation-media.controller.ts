@@ -148,30 +148,53 @@ export const moderationMediaCtr = {
 
         let moderationCreatedId: string = undefined!;
         try {
+            // If uploader is staff/admin, bypass AI moderation and auto-approve.
             let aiModerationResult = null;
+            let isStaff = false;
+            let isAdmin = false;
             try {
-                if (doc.type === E_ModerationMediaType.IMAGE) {
-                    const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
-
-                    if (imageModerationResult.success) {
-                        aiModerationResult = imageModerationResult.result;
-                    }
-                }
-                else if (doc.type === E_ModerationMediaType.VIDEO) {
-                    const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
-
-                    if (videoModerationResult.success) {
-                        aiModerationResult = videoModerationResult.result;
-                    }
-                }
+                isStaff = await authnCtr.isStaff(context);
             }
-            catch (error) {
-                // Do not block uploads on AI moderation failure; log and continue
-                console.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+            catch {
+                isStaff = false;
+            }
+            try {
+                isAdmin = await authnCtr.isAdmin(context);
+            }
+            catch {
+                isAdmin = false;
+            }
+
+            const bypassAiModeration = isStaff || isAdmin;
+
+            if (!bypassAiModeration) {
+                try {
+                    if (doc.type === E_ModerationMediaType.IMAGE) {
+                        const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
+                        if (imageModerationResult.success) {
+                            aiModerationResult = imageModerationResult.result;
+                        }
+                    }
+                    else if (doc.type === E_ModerationMediaType.VIDEO) {
+                        const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
+                        if (videoModerationResult.success) {
+                            aiModerationResult = videoModerationResult.result;
+                        }
+                    }
+                }
+                catch (error) {
+                    // Do not block uploads on AI moderation failure; log and continue
+                    console.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+                }
             }
 
             let initialStatus = E_ModerationMediaStatus.PENDING;
             let reason: string | undefined;
+            // If uploader bypasses AI moderation, auto-approve and publish immediately.
+            if (typeof bypassAiModeration !== 'undefined' && bypassAiModeration) {
+                initialStatus = E_ModerationMediaStatus.APPROVED;
+                reason = 'Bypassed AI moderation: uploaded by staff/admin';
+            }
 
             const composeReason = (res: any): string | undefined => {
                 if (res?.reasons && Array.isArray(res.reasons) && res.reasons.length > 0) {
@@ -208,7 +231,7 @@ export const moderationMediaCtr = {
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: false,
+                isPublished: initialStatus === E_ModerationMediaStatus.APPROVED,
             });
 
             if (!moderationCreated.success) {

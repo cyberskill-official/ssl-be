@@ -5,6 +5,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { E_Role_User } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { followCtr } from '#modules/follow/follow.controller.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
@@ -134,12 +135,24 @@ export async function isUploaderAgeVerified(
 
     if (!isVerified) {
         try {
+            // Fetch roles as well to consider staff/admin users as implicitly verified.
             const uploader = await userCtr.getUser(context, {
                 filter: { id: candidateId },
-                projection: { ageVerify: 1 } as any,
+                projection: { ageVerify: 1, roles: 1 } as any,
+                populate: [{ path: 'roles' }],
             });
-            if (uploader.success && uploader.result?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
-                isVerified = true;
+            if (uploader.success) {
+                if (uploader.result?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
+                    isVerified = true;
+                }
+                else if (Array.isArray(uploader.result?.roles) && uploader.result.roles.length > 0) {
+                    const roleNames = uploader.result.roles.map((r: any) => r?.name).filter(Boolean) as string[];
+                    const staffRoleNames = [...Object.values(E_Role_Staff), E_Role.STAFF] as string[];
+                    if (roleNames.some(rn => staffRoleNames.includes(rn))) {
+                        // Treat staff/admin as verified for uploader age checks
+                        isVerified = true;
+                    }
+                }
             }
         }
         catch {
