@@ -58,6 +58,18 @@ export const moderationMediaCtr = {
                     class: 'normal',
                 },
             });
+            // If the URL is an embed iframe (e.g. mediadelivery embed), also expose it
+            // as `embedUrl` so front-end admin UI can render an iframe player instead
+            // of attempting to use the url as a video src.
+            try {
+                if (typeof moderationMediaFound.result.url === 'string' && moderationMediaFound.result.url.includes('/embed/')) {
+                    // preserve signed embed url for client consumption
+                    (moderationMediaFound.result as any).embedUrl = moderationMediaFound.result.url;
+                }
+            }
+            catch {
+                /* non-fatal */
+            }
         }
 
         return moderationMediaFound;
@@ -80,6 +92,14 @@ export const moderationMediaCtr = {
                         class: 'normal',
                     },
                 });
+                try {
+                    if (typeof moderationMedia.url === 'string' && moderationMedia.url.includes('/embed/')) {
+                        (moderationMedia as any).embedUrl = moderationMedia.url;
+                    }
+                }
+                catch {
+                    /* ignore */
+                }
             }
 
             return moderationMedia;

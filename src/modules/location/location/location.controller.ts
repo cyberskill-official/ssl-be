@@ -848,36 +848,65 @@ export const locationCtr = {
                 return a.latitude === b.latitude && a.longitude === b.longitude;
             };
 
-            for (const d of allDocs) {
-                if (d.entityType !== E_LocationEntityType.USER) {
-                    nonUser.push(d);
-                    continue;
+            // Extract owner user id from a location doc if possible.
+            const extractOwnerId = (doc: I_Location): string | null => {
+                try {
+                    // Direct user entity
+                    if (doc.entityType === E_LocationEntityType.USER) {
+                        const u = doc.entity as I_User | undefined;
+                        return u?.id ?? doc.entityId ?? null;
+                    }
+
+                    // Event entity -> createdBy
+                    if (doc.entityType === E_LocationEntityType.EVENT) {
+                        const ev = doc.entity as I_Event | undefined;
+                        return (ev?.createdById ?? (ev?.createdBy as any)?.id ?? null) as string | null;
+                    }
+
+                    // Gallery/moderation style -> uploadedById
+                    const maybe = doc.entity as any;
+                    if (maybe?.uploadedById)
+                        return maybe.uploadedById as string;
+
+                    // Fallback to entityId (may be user id in some synthetic cases)
+                    if (doc.entityId && typeof doc.entityId === 'string') {
+                        return doc.entityId;
+                    }
+
+                    return null;
                 }
-                const user = d.entity as I_User | undefined;
-                if (!user?.id) {
+                catch {
+                    return null;
+                }
+            };
+
+            for (const d of allDocs) {
+                const ownerId = extractOwnerId(d);
+                if (!ownerId) {
+                    // keep docs that we can't associate with a user
                     nonUser.push(d);
                     continue;
                 }
 
-                let score = 0;
-                const tempLoc = user.settings?.temporaryLocation;
+                // compute score with same rules but using ownerId
+                let score = 10;
+                const user = (d.entityType === E_LocationEntityType.USER) ? (d.entity as I_User | undefined) : undefined;
+                const tempLoc = user?.settings?.temporaryLocation;
                 const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
-                const tempActive = isTempStillActive(user);
+                const tempActive = user ? isTempStillActive(user) : false;
                 if (tempActive && tempLocationId && d.id === tempLocationId)
                     score += 100;
 
-                const travelOverride = travelEventOverrides.get(user.id);
+                const travelOverride = travelEventOverrides.get(ownerId);
                 if (travelOverride && travelOverride.location && mapEqual(d.map as any, travelOverride.location.map as any))
                     score += 80;
 
-                if (!tempActive && user.partner1?.locationId && d.id === user.partner1.locationId)
+                if (!tempActive && user?.partner1?.locationId && d.id === user.partner1.locationId)
                     score += 60;
 
-                score += 10;
-
-                const existing = perUserBest.get(user.id);
+                const existing = perUserBest.get(ownerId);
                 if (!existing || score > existing.score) {
-                    perUserBest.set(user.id, { doc: d, score });
+                    perUserBest.set(ownerId, { doc: d, score });
                 }
             }
 

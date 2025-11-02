@@ -82,6 +82,9 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
                 if (!targetId || targetId === uploaderId)
                     continue;
 
+                // Defensive: always include presentation.id and a proper redirect so clients
+                // will reliably navigate to the media page. Some clients may fall back to
+                // other notification fields if presentation.id is missing.
                 await notificationCtr.createNotificationWithSettings(context, {
                     doc: {
                         targetId,
@@ -89,8 +92,10 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
                         entityType: E_NotificationEntityType.MEDIA,
                         entityId: gallery.id,
                         actorId: uploaderId,
-                        presentation: {
-                            redirect: { kind: E_RedirectType.MEDIA, id: gallery.id },
+                        presentation: ({
+                            id: gallery.id,
+                            redirect: { kind: E_RedirectType.PROFILE, id: uploaderName, mediaId: gallery.id },
+                            context: { profileOwnerId: uploaderId, profileOwnerUsername: uploaderName, mediaId: gallery.id },
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             actor: {
                                 username: uploaderName,
@@ -98,7 +103,7 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
                                 avatarUrl: uploaderFound.result.partner1?.gallery?.url,
                                 gender: uploaderFound.result.partner1?.gender,
                             },
-                        },
+                        } as any),
                     },
                 });
             }
