@@ -23,6 +23,7 @@ import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
+import { E_UploadEntity } from '#shared/typescript/index.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
@@ -193,6 +194,12 @@ export const galleryCtr = {
             }
             if (mongoFilter['isPublished'] === undefined) {
                 mongoFilter['isPublished'] = { $ne: false };
+            }
+            // Default public feed (e.g. "New Photos") to only show user-uploaded galleries.
+            // This prevents galleries created for other entities (catalogue, blog, etc.)
+            // from appearing in the global photos feed unless explicitly requested.
+            if (mongoFilter['entity'] === undefined) {
+                mongoFilter['entity'] = E_UploadEntity.USER;
             }
         }
 

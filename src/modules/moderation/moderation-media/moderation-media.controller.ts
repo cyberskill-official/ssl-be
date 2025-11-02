@@ -52,19 +52,36 @@ export const moderationMediaCtr = {
         }
 
         if (moderationMediaFound.result.url) {
-            moderationMediaFound.result.url = bunnyCtr.generateSignedUrl({
-                fullUrl: moderationMediaFound.result.url,
-                extraQueryParams: {
-                    class: 'normal',
-                },
-            });
-            // If the URL is an embed iframe (e.g. mediadelivery embed), also expose it
-            // as `embedUrl` so front-end admin UI can render an iframe player instead
-            // of attempting to use the url as a video src.
+            const rawUrl = moderationMediaFound.result.url as string;
             try {
-                if (typeof moderationMediaFound.result.url === 'string' && moderationMediaFound.result.url.includes('/embed/')) {
-                    // preserve signed embed url for client consumption
-                    (moderationMediaFound.result as any).embedUrl = moderationMediaFound.result.url;
+                if (typeof rawUrl === 'string' && rawUrl.includes('/embed/')) {
+                    // Use embed-specific signer for Bunny Stream iframe URLs so the
+                    // returned token is valid for the embed endpoint. Also expose it
+                    // as `embedUrl` so the admin UI can render an iframe player.
+                    try {
+                        moderationMediaFound.result.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                            fullUrl: rawUrl,
+                            extraQueryParams: {
+                                class: 'normal',
+                            },
+                        });
+                        (moderationMediaFound.result as any).embedUrl = moderationMediaFound.result.url;
+                    }
+                    catch {
+                        // Fall back to generic signed URL if embed signing fails for any reason.
+                        moderationMediaFound.result.url = bunnyCtr.generateSignedUrl({
+                            fullUrl: rawUrl,
+                            extraQueryParams: { class: 'normal' },
+                        });
+                    }
+                }
+                else {
+                    moderationMediaFound.result.url = bunnyCtr.generateSignedUrl({
+                        fullUrl: rawUrl,
+                        extraQueryParams: {
+                            class: 'normal',
+                        },
+                    });
                 }
             }
             catch {
@@ -86,15 +103,29 @@ export const moderationMediaCtr = {
 
         moderationMedias.result.docs = moderationMedias.result.docs.map((moderationMedia) => {
             if (moderationMedia.url) {
-                moderationMedia.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: moderationMedia.url,
-                    extraQueryParams: {
-                        class: 'normal',
-                    },
-                });
+                const rawUrl = moderationMedia.url as string;
                 try {
-                    if (typeof moderationMedia.url === 'string' && moderationMedia.url.includes('/embed/')) {
-                        (moderationMedia as any).embedUrl = moderationMedia.url;
+                    if (typeof rawUrl === 'string' && rawUrl.includes('/embed/')) {
+                        try {
+                            moderationMedia.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                                fullUrl: rawUrl,
+                                extraQueryParams: {
+                                    class: 'normal',
+                                },
+                            });
+                            (moderationMedia as any).embedUrl = moderationMedia.url;
+                        }
+                        catch {
+                            moderationMedia.url = bunnyCtr.generateSignedUrl({ fullUrl: rawUrl, extraQueryParams: { class: 'normal' } });
+                        }
+                    }
+                    else {
+                        moderationMedia.url = bunnyCtr.generateSignedUrl({
+                            fullUrl: rawUrl,
+                            extraQueryParams: {
+                                class: 'normal',
+                            },
+                        });
                     }
                 }
                 catch {
