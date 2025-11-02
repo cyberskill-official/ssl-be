@@ -11,6 +11,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import ejs from 'ejs';
 import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Notification } from '#modules/notification/notification.type.js';
@@ -21,7 +22,9 @@ import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js'
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
+import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
+import { emailService } from '#modules/email/email.service.js';
 import { eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
@@ -1081,7 +1084,6 @@ export const conversationCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
-        const primaryAdmin = adminUsers[0];
 
         // --- logged-in user flow ---
         if (currentUser?.id) {
@@ -1175,10 +1177,12 @@ export const conversationCtr = {
         // Create initial guest message authored by primaryAdmin so admins see it in the thread
         const guestMessageValue = userMessage || 'No message provided.';
 
+        // Create the initial guest message. Use a null senderId so the client can render
+        // this as a guest message (the contactAdmin payload carries guest metadata).
         const guestMessageResult = await messageCtr.createMessageOnly(context, {
             doc: {
                 conversationId: guestConversationId,
-                senderId: primaryAdmin?.id,
+                senderId: null as any,
                 content: {
                     type: E_MessageType.TEXT,
                     value: guestMessageValue,
@@ -1203,6 +1207,92 @@ export const conversationCtr = {
         }
 
         await conversationCtr._updateLastMessageId(guestConversationId, guestMessageResult.result.id);
+
+        // Publish MESSAGE_SENT so admin UI (and any subscribers) get the new conversation immediately
+        try {
+            const finalConversationResult = await conversationCtr._populateConversationWithParticipants(guestConversationId);
+            if (finalConversationResult.success && finalConversationResult.result) {
+                const populatedConversation = await transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+                const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
+                pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
+            }
+        }
+        catch (error) {
+            // Non-fatal: swallow but log for diagnostics
+            log.warn('Failed to publish MESSAGE_SENT for guest support conversation', { conversationId: guestConversationId, error });
+        }
+
+        // Create an in-app notification for each admin so clicking it opens the conversation
+        try {
+            const preview = safeSlice140(guestMessageValue);
+
+            // Try to resolve the actor from the guest email if this guest actually has a registered account
+            const actorPresentation: any = {
+                username: contactTyped.username ?? undefined,
+                accountType: undefined,
+                avatarUrl: undefined,
+                gender: undefined,
+            };
+
+            try {
+                if (contactTyped.email) {
+                    const resolved = await userCtr.getUser(context, { filter: { email: contactTyped.email } });
+                    if (resolved.success && resolved.result) {
+                        actorPresentation.username = resolved.result.username ?? actorPresentation.username;
+                        actorPresentation.accountType = resolved.result.accountType ?? undefined;
+                        actorPresentation.avatarUrl = resolved.result.partner1?.gallery?.url ?? resolved.result.partner2?.gallery?.url ?? undefined;
+                        actorPresentation.gender = resolved.result.partner1?.gender ?? resolved.result.partner2?.gender ?? undefined;
+                    }
+                }
+            }
+            catch (resolveErr) {
+                // ignore resolution errors and use guest-provided presentation
+                log.warn('Failed to resolve guest email to user for notification actor', { email: contactTyped.email, error: resolveErr });
+            }
+
+            for (const admin of adminUsers) {
+                try {
+                    // Force the notification actor to be the admin so the UI always displays
+                    // the admin as the sender (avoid blank/guest actor presentations).
+                    const adminActor = admin;
+                    const adminAvatar = adminActor.partner1?.gallery?.url ?? adminActor.partner2?.gallery?.url ?? undefined;
+
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: admin.id,
+                            actorId: admin.id,
+                            type: [E_NotificationType.NEW_MESSAGE],
+                            entityType: E_NotificationEntityType.CONVERSATION,
+                            entityId: guestConversationId,
+                            body: preview,
+                            channels: [E_NotificationChannel.IN_APP],
+                            presentation: {
+                                redirect: { kind: E_RedirectType.CONVERSATION, id: guestConversationId },
+                                headline: `${adminActor.username ?? 'Admin'} sent you a message.`,
+                                actor: {
+                                    username: adminActor.username,
+                                    accountType: adminActor.accountType,
+                                    avatarUrl: adminAvatar,
+                                    gender: adminActor.partner1?.gender ?? adminActor.partner2?.gender,
+                                },
+                                context: {
+                                    conversationType: E_ConversationType.PRIVATE,
+                                    isOpenComment: false,
+                                    participantCount: (adminParticipantDocs || []).length || adminUsers.length,
+                                    profileOwnerId: undefined,
+                                },
+                            },
+                        },
+                    });
+                }
+                catch (notifyErr) {
+                    log.warn('Failed to create notification for admin', { adminId: admin.id, conversationId: guestConversationId, error: notifyErr });
+                }
+            }
+        }
+        catch (err) {
+            log.warn('Failed to create admin notifications for guest support', { conversationId: guestConversationId, error: err });
+        }
 
         return { success: true, message: 'Support request recorded for admins.', result: { conversationId: guestConversationId } };
     },
@@ -1258,7 +1348,153 @@ export const conversationCtr = {
             if (userRes.success && userRes.result) {
             // Registered user -> create/find DM and append admin message (no external email)
                 const recipientId = userRes.result.id;
+                // If the resolved recipient is the same as the current admin account, avoid creating a DM
+                // that would post a message to the admin's own account. Prefer posting into the provided
+                // conversation (guest thread) if available, otherwise fall back to sending an external email.
+                if (recipientId === currentUser.id) {
+                    // If admin provided a conversationId (guest thread), validate it first and post the reply there
+                    // so admins respond in the guest support thread instead of messaging themselves.
+                    if (providedConvId) {
+                        const convRes = await mongooseCtr.findOne({ id: providedConvId });
+                        if (convRes.success && convRes.result) {
+                            // ensure current admin is a participant; create participant if missing
+                            const participantRes = await participantCtr.getParticipant(context, { filter: { conversationId: providedConvId, userId: currentUser.id } });
+                            if (!participantRes.success || !participantRes.result) {
+                                // try to add admin as participant (non-blocking on failure)
+                                await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => {});
+                            }
+
+                            const createMsg = await messageCtr.createMessageOnly(context, {
+                                doc: {
+                                    conversationId: providedConvId,
+                                    senderId: currentUser.id,
+                                    content: { type: E_MessageType.TEXT, value: trimmedMessage },
+                                },
+                            });
+
+                            if (!createMsg.success || !createMsg.result) {
+                                throwError({ message: 'Failed to post reply to provided conversation.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            }
+
+                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => {});
+
+                            // Publish WS event so admin UI updates
+                            try {
+                                const finalConversationResult = await conversationCtr._populateConversationWithParticipants(providedConvId);
+                                if (finalConversationResult.success && finalConversationResult.result) {
+                                    const populatedConversation = await transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+                                    const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
+                                    pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
+                                }
+                            }
+                            catch { /* swallow WS errors */ }
+
+                            // Also send an email copy to the provided guest email and require it to succeed.
+                            try {
+                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
+                                let subjectText = subject;
+                                let html: string;
+                                if (tpl.success && tpl.result) {
+                                    const { content, subject: tplSubject } = tpl.result;
+                                    if (tplSubject) {
+                                        subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
+                                    }
+                                    if (content) {
+                                        html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
+                                    }
+                                    else {
+                                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                                    }
+                                }
+                                else {
+                                    html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                                }
+
+                                const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
+                                if (!immediate.success) {
+                                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                                    if (!sendResult.success) {
+                                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                                    }
+                                }
+                            }
+                            catch {
+                                throwError({ message: 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            }
+
+                            return { success: true, message: 'Reply posted to conversation.', result: true };
+                        }
+
+                        // Provided conversation id not found; fall through to send external email below
+                    }
+
+                    // No valid conversationId provided and the email resolves to the admin account -> send external email
+                    // so the admin's reply goes to the email address rather than creating a self-message.
+                    const subject = '[Secret Swinger Lust] Reply from admin';
+                    try {
+                        const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
+                        let subjectText = subject;
+                        let html: string;
+                        if (tpl.success && tpl.result) {
+                            const { content, subject: tplSubject } = tpl.result;
+                            if (tplSubject) {
+                                subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
+                            }
+                            if (content) {
+                                html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
+                            }
+                            else {
+                                html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                            }
+                        }
+                        else {
+                            html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                        }
+
+                        const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
+                        if (!immediate.success) {
+                            const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                            if (!sendResult.success) {
+                                throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            }
+                        }
+                    }
+                    catch {
+                        const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                        if (!sendResult.success) {
+                            throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                        }
+                    }
+
+                    return { success: true, message: 'Reply sent to guest via email.', result: true };
+                }
+
                 let targetConversationId: string | undefined = providedConvId ?? undefined;
+
+                // If admin posted into an existing conversation (providedConvId), ensure the
+                // resolved recipient is a participant of that conversation so they will see
+                // the conversation in their inbox. If adding participant fails, surface an error.
+                if (providedConvId) {
+                    try {
+                        const participantCheck = await participantCtr.getParticipant(context, {
+                            filter: { conversationId: providedConvId, userId: recipientId },
+                        });
+
+                        if (!participantCheck.success || !participantCheck.result) {
+                            const createP = await participantCtr.createParticipants(context, {
+                                docs: [{ conversationId: providedConvId, userId: recipientId, role: E_ParticipantRole.MEMBER }],
+                            });
+
+                            if (!createP.success) {
+                                throwError({ message: createP.message ?? 'Failed to add recipient to conversation.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            }
+                        }
+                    }
+                    catch (err) {
+                        throwError({ message: (err as Error).message ?? 'Failed to ensure recipient is participant', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                    }
+                }
 
                 // If providedConvId is not set or not appropriate, find direct-message conv
                 if (!targetConversationId) {
@@ -1302,14 +1538,179 @@ export const conversationCtr = {
 
                 await conversationCtr._updateLastMessageId(targetConversationId, createMsg.result.id);
 
+                // Publish WS event and create notification so the recipient (and admin UI) sees the new message
+                try {
+                    // mark message status for recipient
+                    await messageStatusCtr.createMessageStatusOnly(createMsg.result.id, recipientId);
+
+                    // update sender lastRead
+                    await participantCtr.updateLastReadMessage(targetConversationId, currentUser.id, createMsg.result.id).catch(() => {});
+
+                    const finalConversationResult = await conversationCtr._populateConversationWithParticipants(targetConversationId);
+                    if (finalConversationResult.success && finalConversationResult.result) {
+                        const populatedConversation = await transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+
+                        // Publish WS event
+                        const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
+                        pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
+
+                        // create a notification for the recipient (same as sendMessage flow)
+                        try {
+                            // Force actor presentation to the current admin account so notifications
+                            // always show the admin as the sender (avoid blank actor in UI).
+                            const actorUser = currentUser;
+                            const avatar = actorUser.partner1?.gallery?.url ?? actorUser.partner2?.gallery?.url ?? undefined;
+                            const preview = safeSlice140(trimmedMessage);
+
+                            await notificationCtr.createNotificationWithSettings(context, {
+                                doc: {
+                                    targetId: recipientId,
+                                    actorId: currentUser.id,
+                                    type: [E_NotificationType.NEW_MESSAGE],
+                                    entityType: E_NotificationEntityType.CONVERSATION,
+                                    entityId: populatedConversation.id,
+                                    body: preview,
+                                    // Registered users should receive in-app notifications only for admin replies
+                                    channels: [E_NotificationChannel.IN_APP],
+                                    presentation: {
+                                        redirect: { kind: E_RedirectType.CONVERSATION, id: populatedConversation.id },
+                                        // Provide a ready-to-render headline so clients can display a sentence
+                                        headline: `${actorUser.username ?? 'Admin'} sent you a message.`,
+                                        actor: {
+                                            username: actorUser.username,
+                                            accountType: actorUser.accountType,
+                                            avatarUrl: avatar,
+                                            gender: actorUser.partner1?.gender ?? actorUser.partner2?.gender,
+                                        },
+                                        context: {
+                                            conversationType: populatedConversation.type,
+                                            isOpenComment: false,
+                                            participantCount: (populatedConversation.participants || []).length,
+                                            profileOwnerId: populatedConversation.profileOwnerId,
+                                        },
+                                    },
+                                },
+                            });
+                        }
+                        catch { /* swallow notification errors */ }
+                    }
+                }
+                catch { /* swallow WS/notification errors to avoid failing admin action */ }
+
                 return { success: true, message: 'Reply posted to user conversation.', result: true };
             }
             else {
-            // Guest (not a registered user) -> send external email
+            // Guest (not a registered user)
+                // If the admin provided a conversationId (guest support thread), prefer posting the reply
+                // into that conversation so it appears in the admin UI. If posting fails, fall back to
+                // sending an external email to the guest address.
+                if (providedConvId) {
+                    try {
+                        const createMsg = await messageCtr.createMessageOnly(context, {
+                            doc: {
+                                conversationId: providedConvId,
+                                senderId: currentUser.id,
+                                content: { type: E_MessageType.TEXT, value: trimmedMessage },
+                            },
+                        });
+
+                        if (createMsg.success && createMsg.result) {
+                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => {});
+
+                            // Publish WS event and create message status so UI updates for other admin participants
+                            try {
+                                // mark message status for all other participants could be added; at minimum mark for the admin
+                                await messageStatusCtr.createMessageStatusOnly(createMsg.result.id, currentUser.id).catch(() => {});
+                                await participantCtr.updateLastReadMessage(providedConvId, currentUser.id, createMsg.result.id).catch(() => {});
+
+                                const finalConversationResult = await conversationCtr._populateConversationWithParticipants(providedConvId);
+                                if (finalConversationResult.success && finalConversationResult.result) {
+                                    const populatedConversation = await transformConversationMedia(context, finalConversationResult.result) ?? finalConversationResult.result;
+                                    const messageSentPayload: I_MessageSentPayload = { conversation: populatedConversation };
+                                    pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_SENT, messageSentPayload);
+                                }
+                            }
+                            catch { /* swallow WS/notification errors */ }
+
+                            // Send an email copy to the guest and require it to succeed; if it fails, bubble error.
+                            try {
+                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
+                                let subjectText = subject;
+                                let html: string;
+                                if (tpl.success && tpl.result) {
+                                    const { content, subject: tplSubject } = tpl.result;
+                                    if (tplSubject) {
+                                        subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
+                                    }
+                                    if (content) {
+                                        html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
+                                    }
+                                    else {
+                                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                                    }
+                                }
+                                else {
+                                    html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                                }
+
+                                const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
+                                if (!immediate.success) {
+                                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                                    if (!sendResult.success) {
+                                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                                    }
+                                }
+                            }
+                            catch {
+                                throwError({ message: 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            }
+
+                            return { success: true, message: 'Reply posted to conversation and guest notified.', result: true };
+                        }
+                    }
+                    catch {
+                        // fall through to external email send below
+                    }
+                }
+
+                // Fallback: send external email to guest
                 const subject = '[Secret Swinger Lust] Reply from admin';
-                const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                if (!sendResult.success)
-                    throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                try {
+                    // Try immediate send (bypass queue) for reliability and lower latency
+                    const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
+                    let subjectText = subject;
+                    let html: string;
+                    if (tpl.success && tpl.result) {
+                        const { content, subject: tplSubject } = tpl.result;
+                        if (tplSubject) {
+                            subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
+                        }
+                        if (content) {
+                            html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
+                        }
+                        else {
+                            html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                        }
+                    }
+                    else {
+                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
+                    }
+
+                    const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
+                    if (!immediate.success) {
+                        const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                        if (!sendResult.success) {
+                            throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                        }
+                    }
+                }
+                catch {
+                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
+                    if (!sendResult.success) {
+                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                    }
+                }
 
                 return { success: true, message: 'Reply sent to guest via email.', result: true };
             }
