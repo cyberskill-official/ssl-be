@@ -9,6 +9,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
+import ejs from 'ejs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
@@ -19,6 +20,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { E_Role, E_Role_Staff, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
+import { emailTemplateCtr } from '#modules/email-template/index.js';
+import { emailService } from '#modules/email/email.service.js';
 import { emailCtr } from '#modules/email/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
@@ -1278,11 +1281,48 @@ export const authnCtr = {
             });
         }
 
-        await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
-            otp,
-            expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
-            email,
-        });
+        // Try to send immediately (bypass queue) to ensure OTP delivery even if queue/redis/workers
+        try {
+            const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
+            let subjectText = '[No Subject]';
+            let html: string;
+
+            if (tpl.success && tpl.result) {
+                const { content, subject: tplSubject } = tpl.result;
+                if (tplSubject) {
+                    subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                }
+                if (content) {
+                    html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                }
+                else {
+                    html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                }
+            }
+            else {
+                subjectText = '[Reset password]';
+                html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+            }
+
+            const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
+            if (!sendResult.success) {
+                console.error('[AUTHN] Immediate forgot-password email send failed, falling back to queue:', sendResult.error || 'unknown');
+                // fallback to queue-based send
+                await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
+                    otp,
+                    expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
+                    email,
+                });
+            }
+        }
+        catch (err) {
+            console.error('[AUTHN] Error sending forgot-password email immediate path, falling back to queue', err);
+            await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
+                otp,
+                expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
+                email,
+            });
+        }
     },
     verifyAge: async (context: I_Context, args: I_Input_UploadMany): Promise<I_Return<I_User>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
