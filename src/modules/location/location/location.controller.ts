@@ -311,7 +311,6 @@ export const locationCtr = {
         }
 
         const travelEventOverrides = new Map<string, { location: I_Location; event?: I_Event }>();
-        const seenUsers = new Set<string>();
         const now = new Date();
 
         // Type guards to avoid any
@@ -704,18 +703,74 @@ export const locationCtr = {
                 return updatedDoc;
             });
 
-            // Deduplicate users (partner locations đã được filter sớm, chỉ cần check travel events)
-            filtered = filtered.filter((d) => {
-                if (d.entityType !== E_LocationEntityType.USER)
-                    return true;
-                const user = d.entity as I_User;
-                if (!user?.id)
-                    return true;
-                if (seenUsers.has(user.id))
+            // Deduplicate users: ensure we only keep one pin per user.
+            // Priority: active temporary location > travel override (sanitized) > partner/default location > first seen.
+            const userBestMap = new Map<string, I_Location>();
+            const isSameMap = (a?: { latitude?: number; longitude?: number }, b?: { latitude?: number; longitude?: number }) => {
+                if (!a || !b)
                     return false;
-                seenUsers.add(user.id);
-                return true;
+                return a.latitude === b.latitude && a.longitude === b.longitude;
+            };
+
+            for (const d of filtered) {
+                if (d.entityType !== E_LocationEntityType.USER) {
+                    continue;
+                }
+                const user = d.entity as I_User | undefined;
+                if (!user?.id) {
+                    continue;
+                }
+
+                // compute score
+                let score = 0;
+
+                // temporary location info from user.settings
+                const tempLoc = user.settings?.temporaryLocation;
+                const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+                const tempActive = isTempActive(tempLoc);
+
+                if (tempActive && tempLocationId && d.id === tempLocationId) {
+                    score += 100;
+                }
+
+                // travel override already reflected into docOverride earlier; prefer it
+                const travelOverride = travelEventOverrides.get(user.id);
+                if (travelOverride && travelOverride.location && isSameMap(d.map as any, travelOverride.location.map as any)) {
+                    score += 80;
+                }
+
+                // prefer partner1/default location if no active temp
+                if (!tempActive && user.partner1?.locationId && d.id === user.partner1.locationId) {
+                    score += 60;
+                }
+
+                // base score for any user doc
+                score += 10;
+
+                const existing = userBestMap.get(user.id);
+                if (!existing) {
+                    userBestMap.set(user.id, { ...d, __score: score } as unknown as I_Location);
+                }
+                else {
+                    // compare score (we stored __score temporarily)
+                    const existingScore = (existing as any).__score as number | undefined ?? 0;
+                    if (score > existingScore) {
+                        userBestMap.set(user.id, { ...d, __score: score } as unknown as I_Location);
+                    }
+                }
+            }
+
+            // rebuild filtered: keep non-user docs and the best user doc for each user
+            const nonUserDocs = filtered.filter(d => d.entityType !== E_LocationEntityType.USER);
+            const bestUserDocs = Array.from(userBestMap.values()).map((d) => {
+                // remove temporary __score field
+                const copy = { ...d } as any;
+                if (copy.__score !== undefined)
+                    delete copy.__score;
+                return copy as I_Location;
             });
+
+            filtered = [...nonUserDocs, ...bestUserDocs];
 
             return filtered;
         };
@@ -763,6 +818,74 @@ export const locationCtr = {
                 nextPageToFetch = nextPageResult.result.nextPage as number | null;
             }
         }
+
+        // --- Final dedupe across aggregated pages: ensure a single pin per user ---
+        const isTempStillActive = (user?: I_User | undefined): boolean => {
+            try {
+                const tempLoc = user?.settings?.temporaryLocation;
+                if (!tempLoc?.endAt)
+                    return false;
+                const end = new Date(tempLoc.endAt);
+                const isMidnight = end.getHours() === 0
+                    && end.getMinutes() === 0
+                    && end.getSeconds() === 0
+                    && end.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1) : end;
+                return normalizedEnd > now;
+            }
+            catch {
+                return false;
+            }
+        };
+
+        const dedupeFinalDocs = (allDocs: I_Location[]): I_Location[] => {
+            const perUserBest = new Map<string, { doc: I_Location; score: number }>();
+            const nonUser: I_Location[] = [];
+
+            const mapEqual = (a?: { latitude?: number; longitude?: number }, b?: { latitude?: number; longitude?: number }) => {
+                if (!a || !b)
+                    return false;
+                return a.latitude === b.latitude && a.longitude === b.longitude;
+            };
+
+            for (const d of allDocs) {
+                if (d.entityType !== E_LocationEntityType.USER) {
+                    nonUser.push(d);
+                    continue;
+                }
+                const user = d.entity as I_User | undefined;
+                if (!user?.id) {
+                    nonUser.push(d);
+                    continue;
+                }
+
+                let score = 0;
+                const tempLoc = user.settings?.temporaryLocation;
+                const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+                const tempActive = isTempStillActive(user);
+                if (tempActive && tempLocationId && d.id === tempLocationId)
+                    score += 100;
+
+                const travelOverride = travelEventOverrides.get(user.id);
+                if (travelOverride && travelOverride.location && mapEqual(d.map as any, travelOverride.location.map as any))
+                    score += 80;
+
+                if (!tempActive && user.partner1?.locationId && d.id === user.partner1.locationId)
+                    score += 60;
+
+                score += 10;
+
+                const existing = perUserBest.get(user.id);
+                if (!existing || score > existing.score) {
+                    perUserBest.set(user.id, { doc: d, score });
+                }
+            }
+
+            const bestUserDocs = Array.from(perUserBest.values()).map(v => v.doc as I_Location);
+            return [...nonUser, ...bestUserDocs];
+        };
+
+        docs = dedupeFinalDocs(docs);
 
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
         let viewerAgeVerified = false;
