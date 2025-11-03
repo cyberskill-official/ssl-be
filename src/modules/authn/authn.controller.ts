@@ -217,6 +217,25 @@ export const authnCtr = {
             };
         }
 
+        // Enforce inactivity timeout (sliding window based on SESSION_INACTIVITY_MINUTES)
+        try {
+            const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
+            const lastActivity = (context.req.session as any)?.lastActivity;
+            if (lastActivity && (Date.now() - Number(lastActivity) > inactivityMs)) {
+                // Destroy session and reject
+                context.req.session.destroy(() => { /* best-effort */ });
+                return {
+                    success: false,
+                    message: 'Session expired due to inactivity.',
+                    code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
+                };
+            }
+        }
+        catch (err) {
+            // If anything goes wrong checking activity, continue with existing flow (best-effort)
+            console.warn('Failed to validate session inactivity:', err);
+        }
+
         const userFound = await userCtr.getUser(context, {
             filter: {
                 id: context.req.session.user.id,
@@ -328,6 +347,16 @@ export const authnCtr = {
 
         context.req.session.user = sanitizedUser;
 
+        // Update session lastActivity timestamp (sliding inactivity window)
+        try {
+            (context.req.session as any).lastActivity = Date.now();
+            if (typeof (context.req.session as any).save === 'function') {
+                (context.req.session as any).save(() => { /* best-effort */ });
+            }
+        }
+        catch (err) {
+            console.warn('Failed to update session lastActivity in checkAuth:', err);
+        }
         try {
             // Prefer client IP from request headers (proxied environments)
             const clientIp = extractClientIp(context?.req, true);

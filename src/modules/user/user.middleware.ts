@@ -18,6 +18,19 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
                     lastOnline: new Date(),
                 },
             });
+
+            // Update session lastActivity timestamp so server can enforce inactivity
+            try {
+                // store as number (ms since epoch)
+                (req.session as any).lastActivity = Date.now();
+                if (typeof (req.session as any).save === 'function') {
+                    (req.session as any).save(() => { /* best-effort */ });
+                }
+            }
+            catch (err) {
+                // don't block if session save fails
+                console.warn('Failed to update session lastActivity:', err);
+            }
         }
 
         next();

@@ -23,6 +23,7 @@ import {
     PORT,
     REDIS_HOST,
     REDIS_PORT,
+    SESSION_INACTIVITY_MINUTES,
     STATIC_FOLDER,
     UPLOAD_FOLDER,
 } from './env.constant.js';
@@ -77,6 +78,7 @@ export function getEnv(): I_Environment {
         BUNNY_STREAM_SECURITY_KEY: str(),
         BUNNY_OPTIMIZER_BLUR_CLASS: str({ default: BUNNY_OPTIMIZER_BLUR_CLASS }),
         POSTMARK_SERVER_API_TOKEN: str(),
+        SESSION_INACTIVITY_MINUTES: port({ default: SESSION_INACTIVITY_MINUTES }),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;

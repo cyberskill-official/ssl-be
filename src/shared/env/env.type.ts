@@ -45,4 +45,5 @@ export interface I_Environment {
     BUNNY_STREAM_SECURITY_KEY: string;
     BUNNY_OPTIMIZER_BLUR_CLASS: string;
     POSTMARK_SERVER_API_TOKEN: string;
+    SESSION_INACTIVITY_MINUTES: number;
 }

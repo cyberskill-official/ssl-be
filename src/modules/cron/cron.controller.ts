@@ -2,6 +2,7 @@ import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
 import { isAfter, parse, set } from 'date-fns';
+import mongoose from 'mongoose';
 
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
@@ -24,7 +25,7 @@ export const cron = {
         cron.cleanupVerification().start();
         cron.cleanupExpiredTemporaryLocations().start();
         cron.disableExpiredAds().start();
-        cron.checkUserOnlineStatus().start();
+        cron.enforceSessionInactivity().start();
         cron.cleanupInactiveFreeUsers().start();
     },
     backupDB: () => {
@@ -275,45 +276,47 @@ export const cron = {
             }
         });
     },
-    checkUserOnlineStatus: () => {
-    // chạy mỗi 5 phút
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
+    // Enforce session inactivity by removing sessions that haven't had activity
+    // within SESSION_INACTIVITY_MINUTES. Runs every minute.
+    enforceSessionInactivity: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_MINUTE, async () => {
             try {
-                // Find users who haven't had API activity in the last 5 minutes
-                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000); // 5 phút
+                const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
+                const cutoff = Date.now() - inactivityMs;
 
-                const offlineUsers = await userCtr.getUsers({}, {
-                    filter: {
-                        isOnline: true,
-                        lastOnline: { $lt: fiveMinutesAgo },
-                    },
-                    options: { pagination: false },
-                });
+                const db = mongoose.connection.db;
+                if (!db) {
+                    log.warn('[CRON] mongoose not connected; skipping enforceSessionInactivity');
+                    return;
+                }
 
-                if (offlineUsers.success && offlineUsers.result?.docs && offlineUsers.result.docs.length > 0) {
-                    const offlineUserIds = offlineUsers.result.docs.map(user => user.id);
+                const sessionsColl = db.collection('sessions');
 
-                    // Update isOnline to false for inactive users
-                    const updateResult = await userCtr.updateUsers({}, {
-                        filter: { id: { $in: offlineUserIds } },
-                        update: {
-                            isOnline: false,
-                        },
+                // Find sessions where session.lastActivity (stored as number) is older than cutoff
+                const expired = await sessionsColl.find({ 'session.lastActivity': { $lt: cutoff } }).toArray();
+                if (!expired || expired.length === 0) {
+                    log.info('[CRON] No inactive sessions found');
+                    return;
+                }
+
+                const userIds = expired.map(s => ((s as any)['session'] as any)?.user?.id).filter(Boolean as any);
+                const sessionIds = expired.map(s => (s as any)._id).filter(Boolean as any);
+
+                // Delete sessions
+                const deleteRes = await sessionsColl.deleteMany({ _id: { $in: sessionIds } });
+
+                // Mark users offline (best-effort)
+                if ((userIds as string[]).length) {
+                    await userCtr.updateUsers({}, {
+                        filter: { id: { $in: userIds as string[] } },
+                        update: { isOnline: false },
                     });
+                }
 
-                    if (updateResult.success) {
-                        log.success(`[CRON] Marked ${offlineUserIds.length} users as offline due to inactivity (lastOnline > 5 minutes ago)`);
-                    }
-                    else {
-                        log.error('[CRON] Failed to update offline users:', updateResult.message);
-                    }
-                }
-                else {
-                    log.info('[CRON] No users found to mark as offline');
-                }
+                log.success(`[CRON] Removed ${deleteRes.deletedCount ?? 0} inactive session(s); users marked offline: ${(userIds as string[]).length}`);
             }
-            catch (error) {
-                log.error('[CRON] Error checking user online status:', error);
+            catch (err) {
+                log.error('[CRON] enforceSessionInactivity failed:', err);
             }
         });
     },

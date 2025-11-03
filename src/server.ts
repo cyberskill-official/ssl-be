@@ -38,7 +38,9 @@ const env = getEnv();
             mongoUrl: env.MONGO_URI,
             stringify: false,
         }),
+        rolling: true,
         cookie: {
+            maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
     });
