@@ -273,6 +273,118 @@ export const notificationCtr = {
         const s = userFound.result.settings?.notification ?? {};
         const has = (t: E_NotificationType) => types.includes(t);
 
+        // --- Helper: area-of-interest filtering for location-based notifications ---
+        const LEVEL_TO_RADIUS_MAP: Record<number, number> = {
+            13: 5,
+            12: 10,
+            11: 25,
+            10: 50,
+            9: 75,
+            8: 100,
+            7: 150,
+            6: 250,
+            5: 500,
+            4: 1000,
+        };
+        const DEFAULT_RADIUS_KM = 50;
+
+        const convertLevelToRadius = (level?: number): number => {
+            if (!level || Number.isNaN(level))
+                return DEFAULT_RADIUS_KM;
+            const closest = Object.keys(LEVEL_TO_RADIUS_MAP)
+                .map(Number)
+                .reduce((prev, curr) => Math.abs(curr - level) < Math.abs(prev - level) ? curr : prev);
+            return LEVEL_TO_RADIUS_MAP[closest] || DEFAULT_RADIUS_KM;
+        };
+
+        const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+            const toRad = (v: number) => (v * Math.PI) / 180;
+            const R = 6371; // Earth radius km
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+
+        const isTempActive = (tempLoc?: NonNullable<any>) => {
+            try {
+                if (!tempLoc?.endAt)
+                    return false;
+                const end = new Date(tempLoc.endAt);
+                const isMidnight = end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1) : end;
+                return normalizedEnd > new Date();
+            }
+            catch {
+                return false;
+            }
+        };
+
+        const getEffectiveMap = (u?: any) => {
+            if (!u)
+                return null;
+            const temp = u.settings?.temporaryLocation;
+            if (temp && isTempActive(temp) && temp.location?.map) {
+                return temp.location.map;
+            }
+            if (u.partner1?.location?.map)
+                return u.partner1.location.map;
+            if (u.partner2?.location?.map)
+                return u.partner2.location.map;
+            return null;
+        };
+
+        // If notification type is a 'new member in your area' then perform geofence check
+        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST)) {
+            try {
+                // Actor / new member id is in doc.entityId or doc.actorId
+                const actorId = String(doc.actorId ?? doc.entityId ?? '').trim();
+                if (!actorId) {
+                    // Can't determine actor location → skip sending
+                    return { success: true, message: null };
+                }
+
+                // Fetch actor (new user) with needed location data
+                const actorFound = await userCtr.getUser(context, { filter: { id: actorId }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] }).catch(() => null);
+                if (!actorFound?.success || !actorFound.result) {
+                    return { success: true, message: null };
+                }
+                const actorMap = getEffectiveMap(actorFound.result as any);
+                if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
+                    return { success: true, message: null };
+                }
+
+                // Fetch recipient (target) with location & zoom data so we can test area-of-interest
+                const recipient = await userCtr.getUser(context, { filter: { $or: orFilters }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] });
+                if (!recipient?.success || !recipient.result) {
+                    return { success: true, message: null };
+                }
+
+                const recipientMap = getEffectiveMap(recipient.result as any);
+                if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
+                    // recipient has no center for area-of-interest → skip
+                    return { success: true, message: null };
+                }
+
+                // Determine radius from recipient zoomLevel setting (fallback to default)
+                const zoomLevel = (recipient.result.settings?.zoomLevel as number | undefined) ?? undefined;
+                const radiusKm = convertLevelToRadius(zoomLevel);
+
+                const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
+                if (distanceKm > radiusKm) {
+                    // Actor is outside recipient's area of interest → do not notify
+                    return { success: true, message: null };
+                }
+            }
+            catch {
+                // On any error during geofence check, be conservative and skip notifying
+                return { success: true, message: null };
+            }
+        }
+
         // channels
         const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
 

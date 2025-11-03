@@ -22,6 +22,7 @@ export const cron = {
         cron.backupDB().start();
         cron.checkExpiredEvents().start();
         cron.cleanupVerification().start();
+        cron.cleanupExpiredTemporaryLocations().start();
         cron.disableExpiredAds().start();
         cron.checkUserOnlineStatus().start();
         cron.cleanupInactiveFreeUsers().start();
@@ -197,6 +198,60 @@ export const cron = {
                     expiresAt: { $lt: new Date() },
                 },
             });
+        });
+    },
+    // Clear expired temporary locations from user settings and mark their location docs as deleted
+    cleanupExpiredTemporaryLocations: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
+            try {
+                log.info('[CRON] Clearing expired temporary locations...');
+                const now = new Date();
+
+                const expired = await userCtr.getUsers({}, {
+                    filter: { 'settings.temporaryLocation.endAt': { $exists: true, $lt: now } },
+                    options: { pagination: false },
+                });
+
+                if (!expired.success || !expired.result?.docs || expired.result.docs.length === 0) {
+                    log.info('[CRON] No expired temporary locations found');
+                    return;
+                }
+
+                const users = expired.result.docs;
+                const userIds = users.map(u => u.id).filter(Boolean);
+                const tempLocationIds = users
+                    .map(u => u.settings?.temporaryLocation?.locationId)
+                    .filter((id): id is string => Boolean(id));
+
+                if (tempLocationIds.length > 0) {
+                    try {
+                        const locRes = await LocationModel.updateMany(
+                            { id: { $in: tempLocationIds } },
+                            { $set: { isDel: true } },
+                        );
+                        log.success(`[CRON] Marked ${locRes?.modifiedCount ?? 0} temporary location docs as deleted.`);
+                    }
+                    catch (err) {
+                        log.error('[CRON] Failed to mark temporary location docs as deleted:', err);
+                    }
+                }
+
+                // Remove temporaryLocation from user settings
+                const updateRes = await userCtr.updateUsers({}, {
+                    filter: { id: { $in: userIds } },
+                    update: { $unset: { 'settings.temporaryLocation': '' } },
+                });
+
+                if (updateRes.success) {
+                    log.success(`[CRON] Cleared temporaryLocation for ${updateRes.result.modifiedCount} user(s).`);
+                }
+                else {
+                    log.error('[CRON] Failed to clear temporaryLocation for users:', updateRes.message);
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Error clearing expired temporary locations:', error);
+            }
         });
     },
     disableExpiredAds: () => {

@@ -485,6 +485,8 @@ export const locationCtr = {
             // Logic ưu tiên:
             // - Nếu temporary location còn hiệu lực (chưa hết hạn) → CHỈ hiển thị temporary, KHÔNG hiển thị partner location
             // - Nếu temporary location đã hết hạn (outdated) → hiển thị location mặc định trong partner
+            // - Nếu temporary location đã hết hạn và có document location riêng (locationId) → LOẠI BỎ document temporary đó
+            //   để tránh hiển thị 2 pin (temp expired + partner)
             filtered = filtered.filter((d) => {
                 if (d.entityType !== E_LocationEntityType.USER)
                     return true;
@@ -497,16 +499,26 @@ export const locationCtr = {
                 if (!tempInfo)
                     return true;
 
-                // Temporary location đã hết hạn hoặc không tồn tại → giữ partner location
-                if (!tempInfo.hasActiveTemp)
-                    return true;
+                // If temporary exists but is NOT active, and there's a tempLocationId that is different
+                // from the default partner location, remove the temp location document to avoid duplicate pins.
+                if (!tempInfo.hasActiveTemp && tempInfo.tempLocationId) {
+                    const isTempLocationDoc = d.id === tempInfo.tempLocationId && d.entityType === E_LocationEntityType.USER;
+                    const isDefaultLocation = d.id === tempInfo.defaultLocationId;
+                    // keep when tempLocationId === defaultLocationId to avoid dropping the only location
+                    if (isTempLocationDoc && !isDefaultLocation) {
+                        return false;
+                    }
+                }
 
                 // Temporary location còn hiệu lực → loại bỏ partner/default location
                 // Chỉ giữ document này nếu:
                 // - Document này KHÔNG phải là default/partner location, HOẶC
                 // - Document này chính là temp location
-                const isDefaultLocation = d.id === tempInfo.defaultLocationId;
-                const isTempLocation = d.id === tempInfo.tempLocationId;
+                if (!tempInfo.hasActiveTemp)
+                    return true;
+
+                const isDefaultLocationActive = d.id === tempInfo.defaultLocationId;
+                const isTempLocationActive = d.id === tempInfo.tempLocationId;
 
                 // FIX: Nếu tempLocationId và defaultLocationId trùng nhau (duplicate)
                 // → Luôn giữ lại để tránh mất location trên map
@@ -515,7 +527,7 @@ export const locationCtr = {
                 }
 
                 // Nếu đây là default location và KHÔNG phải temp location → loại bỏ
-                if (isDefaultLocation && !isTempLocation) {
+                if (isDefaultLocationActive && !isTempLocationActive) {
                     return false;
                 }
 
