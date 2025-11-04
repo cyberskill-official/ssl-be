@@ -841,6 +841,109 @@ export const conversationCtr = {
 
         const conversationId = conversation.id;
 
+        const sendConversationTextMessage = async (raw?: string): Promise<boolean> => {
+            const normalized = typeof raw === 'string' ? raw.trim() : '';
+            if (!normalized)
+                return false;
+
+            try {
+                const directSend = await messageCtr.createMessage(context, {
+                    doc: {
+                        conversationId,
+                        content: {
+                            type: E_MessageType.TEXT,
+                            value: normalized,
+                        },
+                    },
+                });
+
+                if (directSend.success)
+                    return true;
+            }
+            catch (error) {
+                log.warn('Falling back to manual event message insert', {
+                    conversationId,
+                    error,
+                });
+            }
+
+            try {
+                const senderCandidate = conversation.createdById ?? currentUser.id;
+                let senderId = senderCandidate ?? currentUser.id;
+
+                if (senderId && senderId !== currentUser.id) {
+                    const senderParticipant = await participantCtr.getParticipant(context, {
+                        filter: { conversationId, userId: senderId },
+                    });
+
+                    if (!senderParticipant.success || !senderParticipant.result) {
+                        senderId = currentUser.id;
+                    }
+                }
+
+                const manualResult = await messageCtr.createMessageOnly(context, {
+                    doc: {
+                        conversationId,
+                        senderId,
+                        content: {
+                            type: E_MessageType.TEXT,
+                            value: normalized,
+                        },
+                    },
+                });
+
+                if (!manualResult.success || !manualResult.result)
+                    return false;
+
+                await conversationCtr._updateLastMessageId(conversationId, manualResult.result.id).catch(() => {});
+
+                try {
+                    const participantsRes = await participantCtr.getParticipants(context, {
+                        filter: { conversationId },
+                        options: { pagination: false, projection: 'userId' },
+                    });
+
+                    if (participantsRes.success) {
+                        const seen = new Set<string>();
+                        const statusDocs: Array<{ messageId: string; userId: string }> = [];
+
+                        for (const participant of participantsRes.result.docs ?? []) {
+                            const participantId = participant?.userId;
+                            if (!participantId || participantId === senderId)
+                                continue;
+
+                            if (seen.has(participantId))
+                                continue;
+
+                            seen.add(participantId);
+                            statusDocs.push({ messageId: manualResult.result.id, userId: participantId });
+                        }
+
+                        if (statusDocs.length > 0) {
+                            await messageStatusCtr.createMultipleMessageStatuses(statusDocs);
+                        }
+                    }
+                }
+                catch (statusError) {
+                    log.warn('Failed to prime message statuses for event message', {
+                        conversationId,
+                        error: statusError,
+                    });
+                }
+
+                await participantCtr.updateLastReadMessage(conversationId, senderId, manualResult.result.id).catch(() => {});
+
+                return true;
+            }
+            catch (fallbackError) {
+                log.error('Failed to send conversation message via fallback path', {
+                    conversationId,
+                    error: fallbackError,
+                });
+                return false;
+            }
+        };
+
         const existingParticipant = await participantCtr.getParticipant(context, {
             filter: { conversationId, userId: effectiveRequesterId },
         });
@@ -948,29 +1051,10 @@ export const conversationCtr = {
         let messageSent = false;
         if (conversation.entityType === E_NotificationEntityType.EVENT && conversation.entityId) {
             try {
-                const { eventCtr } = await import('#modules/event/index.js');
                 const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
 
                 if (eventRes.success) {
-                    const pushMessage = eventRes.result?.pushMessage?.trim();
-
-                    if (pushMessage) {
-                        const { messageCtr } = await import('#modules/conversation/message/index.js');
-                        const messageResult = await messageCtr.createMessage(context, {
-                            doc: {
-                                conversationId,
-                                senderId: currentUser.id,
-                                content: {
-                                    type: E_MessageType.TEXT,
-                                    value: pushMessage,
-                                },
-                            },
-                        });
-
-                        if (messageResult.success) {
-                            messageSent = true;
-                        }
-                    }
+                    messageSent = await sendConversationTextMessage(eventRes.result?.pushMessage);
                 }
             }
             catch (error) {
@@ -980,54 +1064,21 @@ export const conversationCtr = {
         }
 
         if (!messageSent && conversation.entityType === E_NotificationEntityType.EVENT) {
-            try {
-                const fallbackMessage = conversation.name
-                    ? `You've been added to ${conversation.name}. Welcome!`
-                    : 'You have been added to the event group. Welcome!';
+            const fallbackMessage = conversation.name
+                ? `You've been added to ${conversation.name}. Welcome!`
+                : 'You have been added to the event group. Welcome!';
 
-                const fallbackResult = await messageCtr.createMessage(context, {
-                    doc: {
-                        conversationId,
-                        senderId: currentUser.id,
-                        content: {
-                            type: E_MessageType.TEXT,
-                            value: fallbackMessage,
-                        },
-                    },
-                });
-
-                if (fallbackResult.success) {
-                    messageSent = true;
-                }
-            }
-            catch (error) {
-                log.error('Failed to send fallback event welcome message:', error);
-            }
+            messageSent = await sendConversationTextMessage(fallbackMessage);
         }
 
         // If no message was sent and the conversation has never had one, send a basic welcome
         // so brand new groups still surface an unread indicator for the new member.
         if (!messageSent && !conversation.lastMessageId) {
-            try {
-                const { messageCtr } = await import('#modules/conversation/message/index.js');
-                const welcomeMessage = conversation.name
-                    ? `Welcome to ${conversation.name}!`
-                    : 'Welcome to the group!';
+            const welcomeMessage = conversation.name
+                ? `Welcome to ${conversation.name}!`
+                : 'Welcome to the group!';
 
-                await messageCtr.createMessage(context, {
-                    doc: {
-                        conversationId,
-                        senderId: currentUser.id,
-                        content: {
-                            type: E_MessageType.TEXT,
-                            value: welcomeMessage,
-                        },
-                    },
-                });
-            }
-            catch (error) {
-                log.error('Failed to send welcome message:', error);
-            }
+            await sendConversationTextMessage(welcomeMessage);
         }
 
         return { success: true, message: 'Join request approved.', result: true };

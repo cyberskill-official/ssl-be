@@ -320,6 +320,12 @@ export const locationCtr = {
         const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
 
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
+            const originalDocsById = new Map<string, I_Location>();
+            for (const doc of batch ?? []) {
+                if (doc?.id) {
+                    originalDocsById.set(doc.id, doc);
+                }
+            }
             // Ẩn (isDel, isAdminBlocked, deletedAt, status = DELETED) + ẩn event đã hết hạn (dùng startDate/endDate)
             // + ẩn blocked users (bidirectional: A blocks B thì cả 2 không thấy nhau)
             let filtered = (batch ?? []).filter((d) => {
@@ -454,6 +460,7 @@ export const locationCtr = {
                 hasActiveTemp: boolean;
                 userId: string;
             }>();
+            const tempLocationSourceByUser = new Map<string, I_Location>();
 
             for (const d of filtered) {
                 if (d.entityType !== E_LocationEntityType.USER)
@@ -470,7 +477,9 @@ export const locationCtr = {
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
 
-                const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+                const tempLocationId = tempLoc?.locationId
+                    ?? tempLoc?.location?.id
+                    ?? (tempLoc?.location?.map ? `temp:${user.id}` : undefined);
                 const defaultLocationId = user.partner1?.locationId ?? user.partner2?.locationId;
 
                 userTempLocationMap.set(user.id, {
@@ -499,6 +508,14 @@ export const locationCtr = {
                 if (!tempInfo)
                     return true;
 
+                const tempLoc = user?.settings?.temporaryLocation;
+                const tempLocationSource = (tempLoc?.location as I_Location | undefined)
+                    ?? (tempInfo.tempLocationId ? originalDocsById.get(tempInfo.tempLocationId) : undefined);
+                if (tempLocationSource?.map) {
+                    tempLocationSourceByUser.set(user.id, tempLocationSource);
+                }
+                const canProvideTemporaryPin = Boolean(tempLocationSource?.map);
+
                 // If temporary exists but is NOT active, and there's a tempLocationId that is different
                 // from the default partner location, remove the temp location document to avoid duplicate pins.
                 if (!tempInfo.hasActiveTemp && tempInfo.tempLocationId) {
@@ -518,7 +535,7 @@ export const locationCtr = {
                     return true;
 
                 const isDefaultLocationActive = d.id === tempInfo.defaultLocationId;
-                const isTempLocationActive = d.id === tempInfo.tempLocationId;
+                const isTempLocationActive = tempInfo.tempLocationId ? d.id === tempInfo.tempLocationId : false;
 
                 // FIX: Nếu tempLocationId và defaultLocationId trùng nhau (duplicate)
                 // → Luôn giữ lại để tránh mất location trên map
@@ -528,6 +545,8 @@ export const locationCtr = {
 
                 // Nếu đây là default location và KHÔNG phải temp location → loại bỏ
                 if (isDefaultLocationActive && !isTempLocationActive) {
+                    if (!canProvideTemporaryPin || !tempInfo.tempLocationId)
+                        return true;
                     return false;
                 }
 
@@ -536,7 +555,12 @@ export const locationCtr = {
             });
 
             // Collect users cần synthetic location
-            const usersNeedingSynthetic = new Map<string, { user: I_User; tempLoc: NonNullable<I_User['settings']>['temporaryLocation'] }>();
+            const usersNeedingSynthetic = new Map<string, {
+                user: I_User;
+                tempLoc: NonNullable<I_User['settings']>['temporaryLocation'];
+                source: I_Location;
+                locationId: string;
+            }>();
             for (const d of filtered) {
                 if (d.entityType !== E_LocationEntityType.USER)
                     continue;
@@ -557,18 +581,29 @@ export const locationCtr = {
                 // 1. Có map data trong tempLoc.location
                 // 2. tempLocationId tồn tại
                 // 3. Chưa có location document nào với tempLocationId trong filtered
-                if (tempLoc.location?.map && tempInfo.tempLocationId) {
-                    usersNeedingSynthetic.set(user.id, { user, tempLoc });
+                const tempLocationSource = tempLocationSourceByUser.get(user.id)
+                    ?? (tempLoc.location as I_Location | undefined)
+                    ?? (tempInfo.tempLocationId ? originalDocsById.get(tempInfo.tempLocationId) : undefined);
+
+                const tempLocationId = tempInfo.tempLocationId;
+
+                if (tempLocationSource && tempLocationSource.map && tempLocationId) {
+                    usersNeedingSynthetic.set(user.id, {
+                        user,
+                        tempLoc,
+                        source: tempLocationSource,
+                        locationId: tempLocationId,
+                    });
                 }
             }
 
             // Tạo synthetic location documents cho users cần thiết
             const syntheticLocations: I_Location[] = [];
-            for (const [userId, { user, tempLoc }] of usersNeedingSynthetic) {
-                if (!tempLoc || !tempLoc.location?.map)
+            for (const [userId, { user, tempLoc, source, locationId }] of usersNeedingSynthetic) {
+                if (!tempLoc || !source?.map)
                     continue;
 
-                const tempLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                const tempLocationId = locationId;
                 if (!tempLocationId)
                     continue;
 
@@ -584,18 +619,18 @@ export const locationCtr = {
                     const userPinStyle = resolveUserPinStyle(user);
                     const syntheticDoc: I_Location = {
                         id: tempLocationId,
-                        map: tempLoc.location.map,
-                        country: tempLoc.location.country,
-                        countryId: tempLoc.location.countryId,
-                        state: tempLoc.location.state,
-                        stateId: tempLoc.location.stateId,
-                        city: tempLoc.location.city,
-                        cityId: tempLoc.location.cityId,
-                        region: tempLoc.location.region,
-                        regionId: tempLoc.location.regionId,
-                        subRegion: tempLoc.location.subRegion,
-                        subRegionId: tempLoc.location.subRegionId,
-                        address: tempLoc.location.address,
+                        map: source.map,
+                        country: source.country ?? tempLoc.location?.country,
+                        countryId: source.countryId ?? tempLoc.location?.countryId,
+                        state: source.state ?? tempLoc.location?.state,
+                        stateId: source.stateId ?? tempLoc.location?.stateId,
+                        city: source.city ?? tempLoc.location?.city,
+                        cityId: source.cityId ?? tempLoc.location?.cityId,
+                        region: source.region ?? tempLoc.location?.region,
+                        regionId: source.regionId ?? tempLoc.location?.regionId,
+                        subRegion: source.subRegion ?? tempLoc.location?.subRegion,
+                        subRegionId: source.subRegionId ?? tempLoc.location?.subRegionId,
+                        address: source.address ?? tempLoc.location?.address,
                         pinStyle: userPinStyle,
                         entityType: E_LocationEntityType.USER,
                         entityId: user.id,
@@ -616,6 +651,9 @@ export const locationCtr = {
                 let finalLocation: Partial<I_Location> | undefined;
                 let finalLocationId: string | undefined;
                 const tempLoc = user?.settings?.temporaryLocation;
+                const tempLocationSource = tempLocationSourceByUser.get(user.id)
+                    ?? (tempLoc?.location as I_Location | undefined)
+                    ?? (tempLoc?.locationId ? originalDocsById.get(tempLoc.locationId) : undefined);
                 const travelOverride = travelEventOverrides.get(user.id);
                 const travelOverrideLocation = travelOverride?.location;
                 const travelOverrideEvent = travelOverride?.event;
@@ -624,25 +662,38 @@ export const locationCtr = {
 
                 // Prefer Temporary Location if present and active (using the same isTempActive logic)
                 const tempEndAtValid = isTempActive(tempLoc);
-                const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
+                const hasTempLocationData = Boolean(tempLocationSource?.map || tempLoc?.locationId);
                 if (tempLoc && tempEndAtValid && hasTempLocationData) {
-                    const chosenTemp = tempLoc.location ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);
+                    const chosenTemp = tempLoc.location
+                        ?? tempLocationSource
+                        ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);
                     finalLocation = chosenTemp as Partial<I_Location> | undefined;
-                    finalLocationId = tempLoc.locationId ?? tempLoc.location?.id;
+                    finalLocationId = tempLoc.locationId
+                        ?? tempLocationSource?.id
+                        ?? tempLoc.location?.id;
                     // reflect temporary location on the top-level doc for map pin
                     docOverride = {
-                        map: tempLoc.location?.map ?? d.map,
-                        country: tempLoc.location?.country ?? d.country,
-                        countryId: tempLoc.location?.countryId ?? d.countryId,
-                        state: tempLoc.location?.state ?? d.state,
-                        stateId: tempLoc.location?.stateId ?? d.stateId,
-                        city: tempLoc.location?.city ?? d.city,
-                        cityId: tempLoc.location?.cityId ?? d.cityId,
-                        region: tempLoc.location?.region ?? d.region,
-                        regionId: tempLoc.location?.regionId ?? d.regionId,
-                        subRegion: tempLoc.location?.subRegion ?? d.subRegion,
-                        subRegionId: tempLoc.location?.subRegionId ?? d.subRegionId,
+                        map: tempLocationSource?.map ?? tempLoc.location?.map ?? d.map,
+                        country: tempLocationSource?.country ?? tempLoc.location?.country ?? d.country,
+                        countryId: tempLocationSource?.countryId ?? tempLoc.location?.countryId ?? d.countryId,
+                        state: tempLocationSource?.state ?? tempLoc.location?.state ?? d.state,
+                        stateId: tempLocationSource?.stateId ?? tempLoc.location?.stateId ?? d.stateId,
+                        city: tempLocationSource?.city ?? tempLoc.location?.city ?? d.city,
+                        cityId: tempLocationSource?.cityId ?? tempLoc.location?.cityId ?? d.cityId,
+                        region: tempLocationSource?.region ?? tempLoc.location?.region ?? d.region,
+                        regionId: tempLocationSource?.regionId ?? tempLoc.location?.regionId ?? d.regionId,
+                        subRegion: tempLocationSource?.subRegion ?? tempLoc.location?.subRegion ?? d.subRegion,
+                        subRegionId: tempLocationSource?.subRegionId ?? tempLoc.location?.subRegionId ?? d.subRegionId,
+                        address: tempLocationSource?.address ?? tempLoc.location?.address ?? d.address,
                     } as Partial<I_Location>;
+                    finalSettings = {
+                        ...(user.settings ?? {}),
+                        temporaryLocation: {
+                            ...(user.settings?.temporaryLocation ?? {}),
+                            location: tempLocationSource ?? user.settings?.temporaryLocation?.location,
+                            locationId: finalLocationId ?? user.settings?.temporaryLocation?.locationId,
+                        },
+                    } as I_User['settings'];
                 }
                 else if (travelOverrideLocation) {
                     const userPinStyle = resolveUserPinStyle(user);
@@ -738,7 +789,10 @@ export const locationCtr = {
 
                 // temporary location info from user.settings
                 const tempLoc = user.settings?.temporaryLocation;
-                const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+                const tempInfo = userTempLocationMap.get(user.id);
+                const tempLocationId = tempLoc?.locationId
+                    ?? tempLoc?.location?.id
+                    ?? tempInfo?.tempLocationId;
                 const tempActive = isTempActive(tempLoc);
 
                 if (tempActive && tempLocationId && d.id === tempLocationId) {

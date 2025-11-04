@@ -261,14 +261,17 @@ export const notificationCtr = {
             throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        // Không gửi thông báo nếu user bị xóa hoặc chưa hoàn chỉnh profile
-        if (userFound.result?.isDel === true || userFound.result?.registerStep !== E_RegisterStep.COMPLETE) {
+        const isTargetDeleted = userFound.result?.isDel === true;
+        const isProfileComplete = userFound.result?.registerStep === E_RegisterStep.COMPLETE;
+        const allowIncompleteProfile = types.some(type => ALLOW_INCOMPLETE_PROFILE_TYPES.has(type));
+
+        // Không gửi thông báo nếu user đã bị xóa
+        if (isTargetDeleted) {
             return { success: true, message: null };
         }
 
-        const allowIncompleteProfile = types.some(type => ALLOW_INCOMPLETE_PROFILE_TYPES.has(type));
-
-        if (!allowIncompleteProfile && userFound.result?.registerStep !== E_RegisterStep.COMPLETE) {
+        // Cho phép một số loại noti gửi tới user chưa hoàn tất hồ sơ (ví dụ: lời mời tham gia nhóm)
+        if (!isProfileComplete && !allowIncompleteProfile) {
             return { success: true, message: null };
         }
 
