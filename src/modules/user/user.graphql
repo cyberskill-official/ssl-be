@@ -212,6 +212,8 @@ type T_User {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
@@ -247,6 +249,8 @@ input Input_QueryUser {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
@@ -275,6 +279,8 @@ input Input_CreateUser {
     settings: Input_UserSettings
     flagCount: Int
     membershipExpiresAt: DateTime
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
     notes: [Input_Note]
