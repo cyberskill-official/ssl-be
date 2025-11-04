@@ -64,7 +64,7 @@ import {
     E_ConversationAction,
     E_ConversationType,
 } from './conversation.type.js';
-import { classifyConversation, getOtherParticipantId, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, safeSlice140, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
+import { buildMessagePreview, classifyConversation, getOtherParticipantId, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
 
@@ -1268,7 +1268,7 @@ export const conversationCtr = {
 
         // Create an in-app notification for each admin so clicking it opens the conversation
         try {
-            const preview = safeSlice140(guestMessageValue);
+            const preview = buildMessagePreview(guestMessageValue);
 
             // Try to resolve the actor from the guest email if this guest actually has a registered account
             const actorPresentation: any = {
@@ -1604,7 +1604,7 @@ export const conversationCtr = {
                             // always show the admin as the sender (avoid blank actor in UI).
                             const actorUser = currentUser;
                             const avatar = actorUser.partner1?.gallery?.url ?? actorUser.partner2?.gallery?.url ?? undefined;
-                            const preview = safeSlice140(trimmedMessage);
+                            const preview = buildMessagePreview(trimmedMessage);
 
                             await notificationCtr.createNotificationWithSettings(context, {
                                 doc: {
@@ -2136,7 +2136,10 @@ export const conversationCtr = {
             const avatar = senderUser?.partner1?.gallery?.url
                 ?? senderUser?.partner2?.gallery?.url
                 ?? undefined;
-            const preview = typeof content?.value === 'string' ? safeSlice140(content.value) : '';
+            const previewSource = (content && typeof content === 'object' && 'value' in content)
+                ? (content as { value: unknown }).value
+                : content;
+            const preview = buildMessagePreview(previewSource);
 
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
@@ -2331,7 +2334,10 @@ export const conversationCtr = {
                     }
                 : undefined;
 
-            const preview = 'value' in content && typeof content.value === 'string' ? safeSlice140(content.value) : '';
+            const previewSource = (content && typeof content === 'object' && 'value' in content)
+                ? (content as { value: unknown }).value
+                : content;
+            const preview = buildMessagePreview(previewSource);
 
             // 9) Classify (PUBLIC/BLOG/PROFILE/GROUP) & derive
             const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind }

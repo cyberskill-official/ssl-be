@@ -42,6 +42,81 @@ export function safeSlice140(s: string): string {
     return Array.from(s).slice(0, 140).join('');
 }
 
+function collectPlainText(node: unknown, parts: string[]): void {
+    if (!node)
+        return;
+
+    if (Array.isArray(node)) {
+        for (const child of node)
+            collectPlainText(child, parts);
+        return;
+    }
+
+    if (typeof node !== 'object')
+        return;
+
+    const maybeText = (node as { text?: unknown }).text;
+    const type = (node as { type?: unknown }).type;
+
+    if (typeof maybeText === 'string' && (type === 'text' || type === undefined)) {
+        parts.push(maybeText);
+    }
+
+    if (type === 'linebreak') {
+        parts.push('\n');
+    }
+
+    const children = (node as { children?: unknown }).children;
+    if (Array.isArray(children)) {
+        const before = parts.length;
+        for (const child of children)
+            collectPlainText(child, parts);
+        if (type === 'paragraph' && parts.length > before) {
+            parts.push('\n');
+        }
+    }
+}
+
+export function extractMessagePlainText(raw: unknown): string {
+    if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed)
+            return '';
+
+        const first = trimmed[0];
+        if ((first === '{' || first === '[')) {
+            try {
+                return extractMessagePlainText(JSON.parse(trimmed));
+            }
+            catch {
+                return trimmed;
+            }
+        }
+
+        return trimmed;
+    }
+
+    if (raw && typeof raw === 'object') {
+        const parts: string[] = [];
+        collectPlainText(raw, parts);
+
+        while (parts.length && parts[parts.length - 1] === '\n')
+            parts.pop();
+
+        const joined = parts.join('');
+        return joined.replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    return '';
+}
+
+export function buildMessagePreview(raw: unknown): string {
+    const plain = extractMessagePlainText(raw);
+    if (!plain)
+        return '';
+    return safeSlice140(plain);
+}
+
 /** name helpers */
 function nameIsProfile(name?: unknown): boolean {
     return typeof name === 'string' && name.startsWith('profile:');

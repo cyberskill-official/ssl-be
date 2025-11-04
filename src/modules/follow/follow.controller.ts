@@ -317,27 +317,6 @@ export const followCtr = {
             populate: ['user', 'follow'],
         });
 
-        if (populatedFollow.success && populatedFollow.result) {
-            // const targetUser = populatedFollow.result.follow;
-            // const targetEmail = targetUser?.email ?? '';
-            // const follower = currentUser.username;
-
-            // validate.email.validate(targetEmail);
-
-            // const targetWantsEmail = (targetUser?.settings?.notification?.gainFollower) !== false;
-
-            // if (targetWantsEmail && targetEmail) {
-            //     const followerObj = { name: follower, toString: () => follower };
-            //     const templateData = {
-            //         email: targetEmail,
-            //         follower: followerObj,
-            //         followerName: follower,
-            //     };
-
-            //     await emailCtr.sendEmail(NEW_FOLLOWER, targetEmail, templateData);
-            // }
-        }
-
         return populatedFollow.success ? populatedFollow : followResult;
     },
     unFollow: async (

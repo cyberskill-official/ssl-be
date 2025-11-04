@@ -28,7 +28,7 @@ import { galleryCtr } from '#modules/gallery/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
@@ -474,7 +474,6 @@ export const userCtr = {
                                 entityType: E_NotificationEntityType.USER,
                                 entityId: newUser.id,
                                 actorId: newUser.id,
-                                channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
                                 presentation: {
                                     redirect: { kind: E_RedirectType.PROFILE, id: newUser.id },
                                     actor: {
@@ -487,33 +486,7 @@ export const userCtr = {
                             },
                         }).catch(() => undefined),
                     );
-
-                const emailTasks = allUsers.result.docs
-                    .filter(u => u.id !== newUser.id)
-                    .map(async (u) => {
-                        const targetEmail = u?.email ?? '';
-                        const wantsEmail = (u?.settings?.notification?.newMemberJoined) !== false;
-                        if (!wantsEmail || !targetEmail)
-                            return;
-
-                        try {
-                            // validate.email.validate(targetEmail);
-                            // const templateData = {
-                            //     email: targetEmail,
-                            //     account: newUser.username,
-                            // };
-                            // await emailCtr.sendEmail(
-                            //     NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST,
-                            //     targetEmail,
-                            //     templateData,
-                            // );
-                        }
-                        catch {
-                        // swallow email error per recipient
-                        }
-                    });
-
-                await Promise.allSettled([...notifTasks, ...emailTasks]);
+                await Promise.allSettled(notifTasks);
             }
         }
         catch {
