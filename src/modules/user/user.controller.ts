@@ -627,7 +627,9 @@ export const userCtr = {
 
         dedupArraysIterative(payloadToPersist);
 
-        const updateResult = await mongooseCtr.updateOne(filter, payloadToPersist as unknown as I_Input_UpdateUser, options);
+        const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
+
+        const updateResult = await mongooseCtr.updateOne(filter, payloadToPersist, options);
 
         if (!updateResult.success) {
             return updateResult;
@@ -640,6 +642,13 @@ export const userCtr = {
             const emailResponse = await emailCtr.sendEmail(WELCOME_PUSH_NOTIFICATION, targetEmail);
             if (!emailResponse.success) {
                 console.error('[USER] Failed to queue welcome email:', emailResponse.message);
+            }
+        }
+
+        if (intendsToSoftDelete && targetEmail) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, targetEmail);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue account suspended email:', emailResponse.message);
             }
         }
 

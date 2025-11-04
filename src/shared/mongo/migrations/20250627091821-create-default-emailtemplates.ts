@@ -101,7 +101,6 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: '[Secret Swinger Lust] Your account has been deleted',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">ACC Deleted:</h2>
             <p style="margin:0 0 16px;font-weight:600;">We're sad to see you go – but thank you ❤️</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">Thank you for being a part of <a href="https://secretswingerlust.com" target="_blank" rel="noopener noreferrer">secretswingerlust.com</a> – it's been a pleasure having you with us on this journey into the world of honest and passionate swinger experiences.</p>
@@ -120,7 +119,6 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: '[Secret Swinger Lust] Your profile has been suspended',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">ACC suspended:</h2>
             <p style="margin:0 0 16px;font-weight:600;">Your profile has been suspended</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">We're reaching out to inform you that your profile on <a href="https://secretswingerlust.com" target="_blank" rel="noopener noreferrer">secretswingerlust.com</a> has been suspended due to a serious violation of our community guidelines.</p>
@@ -167,7 +165,6 @@ We're here to create a space where swinger adventures begin with trust, respect 
         subject: '[Secret Swinger Lust] You\'re still part of the adventure 💫',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">DOWNGRDING:</h2>
             <p style="margin:0 0 16px;font-weight:600;">You're still part of the adventure 💫</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">Thank you for your time as a valued member of <a href="https://secretswingerlust.com" target="_blank" rel="noopener noreferrer">secretswingerlust.com</a> – we've truly enjoyed having you as part of our paying community.</p>
@@ -184,7 +181,6 @@ We're here to create a space where swinger adventures begin with trust, respect 
         subject: '[Secret Swinger Lust] Oops – something went wrong with your payment 💳',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">Fail tranaktion:</h2>
             <p style="margin:0 0 16px;font-weight:600;">Oops – Something Went Wrong with Your Payment 💳</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">It looks like something went wrong with your recent payment – it happens to the best of us!</p>
@@ -201,7 +197,6 @@ We're here to create a space where swinger adventures begin with trust, respect 
         subject: '[Secret Swinger Lust] Your profile is at risk of deletion ⏱️',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">30 to delete:</h2>
             <p style="margin:0 0 16px;font-weight:600;">Your profile is at risk of being deleted ⏱️</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">We've noticed that your profile on <a href="https://secretswingerlust.com" target="_blank" rel="noopener noreferrer">secretswingerlust.com</a> has been inactive for quite some time.</p>
@@ -219,7 +214,6 @@ We're here to create a space where swinger adventures begin with trust, respect 
         subject: '[Secret Swinger Lust] Final reminder – profile deletion in 10 days ⏳',
         content: `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
             <hr style="border:none;border-top:1px solid #000000;margin:0 0 24px;" />
-            <h2 style="font-size:20px;margin:0 0 16px;">10 day deletion:</h2>
             <p style="margin:0 0 16px;font-weight:600;">Final reminder – your profile will be deleted in 10 days ⏳</p>
             <p style="margin:0 0 16px;">Hi there,</p>
             <p style="margin:0 0 16px;">This is a friendly reminder that your profile on SecretSwingerLust.com is still inactive – and is now scheduled for deletion in just 10 days.</p>
