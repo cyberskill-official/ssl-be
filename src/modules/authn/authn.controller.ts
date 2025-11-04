@@ -14,7 +14,7 @@ import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
-import type { I_User } from '#modules/user/index.js';
+import type { I_Input_UpdateUser, I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, E_Role_Staff, E_Role_User, roleCtr } from '#modules/authz/index.js';
@@ -1108,10 +1108,21 @@ export const authnCtr = {
                 const myIpInfo = await ipInfoCtr.getMyIp();
                 clientIp = myIpInfo?.result?.ip as string | undefined;
             }
+
+            const updatePayload: Partial<I_Input_UpdateUser> = {};
             if (clientIp) {
+                updatePayload.lastLoginIp = clientIp;
+            }
+
+            if (userFound.result.inactivityDeletionWarning30SentAt || userFound.result.inactivityDeletionWarning10SentAt) {
+                updatePayload.inactivityDeletionWarning30SentAt = null;
+                updatePayload.inactivityDeletionWarning10SentAt = null;
+            }
+
+            if (Object.keys(updatePayload).length > 0) {
                 await userCtr.updateUser(context, {
                     filter: { id: userFound.result.id },
-                    update: { lastLoginIp: clientIp },
+                    update: updatePayload,
                 });
             }
         }

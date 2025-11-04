@@ -20,10 +20,11 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
+import { emailCtr } from '#modules/email/index.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
@@ -579,20 +580,80 @@ export const userCtr = {
             }
         }
 
-        if (update.rolesIds && Array.isArray(update.rolesIds)) {
-            const finalUpdate = { ...update };
-            dedupArraysIterative(finalUpdate);
-            return mongooseCtr.updateOne(filter, finalUpdate, options);
+        const existingRoles = userFound.result.rolesIds ?? [];
+        const previousRegisterStep = userFound.result.registerStep;
+
+        let sanitizedRolesIds: string[] | undefined;
+        if (Array.isArray(update.rolesIds)) {
+            sanitizedRolesIds = Array.from(new Set(
+                update.rolesIds
+                    .map((roleId) => {
+                        if (typeof roleId === 'string')
+                            return roleId.trim();
+                        if (roleId == null)
+                            return '';
+                        return String(roleId).trim();
+                    })
+                    .filter(roleId => roleId.length > 0),
+            ));
+            update.rolesIds = sanitizedRolesIds;
         }
 
-        const mergeUpdate = deepMerge(
-            userFound.result as unknown as Record<string, unknown>,
-            update as Record<string, unknown>,
-        );
+        let paidRoleId: string | null = null;
+        let shouldSendMembershipDowngrade = false;
+        if (sanitizedRolesIds) {
+            const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
+            if (paidRole.success) {
+                paidRoleId = paidRole.result.id;
+                const previouslyPaid = existingRoles.includes(paidRoleId);
+                const willRemainPaid = sanitizedRolesIds.includes(paidRoleId);
+                shouldSendMembershipDowngrade = previouslyPaid && !willRemainPaid;
+            }
+        }
 
-        dedupArraysIterative(mergeUpdate);
+        const intendsToCompleteRegistration = update.registerStep === E_RegisterStep.COMPLETE
+            && previousRegisterStep !== E_RegisterStep.COMPLETE;
 
-        return mongooseCtr.updateOne(filter, mergeUpdate, options);
+        let payloadToPersist: Record<string, unknown>;
+        if (sanitizedRolesIds) {
+            payloadToPersist = { ...update };
+        }
+        else {
+            payloadToPersist = deepMerge(
+                userFound.result as unknown as Record<string, unknown>,
+                update as Record<string, unknown>,
+            );
+        }
+
+        dedupArraysIterative(payloadToPersist);
+
+        const updateResult = await mongooseCtr.updateOne(filter, payloadToPersist as unknown as I_Input_UpdateUser, options);
+
+        if (!updateResult.success) {
+            return updateResult;
+        }
+
+        const updatedUser = updateResult.result;
+        const targetEmail = updatedUser?.email ?? userFound.result.email;
+
+        if (intendsToCompleteRegistration && updatedUser?.registerStep === E_RegisterStep.COMPLETE && targetEmail) {
+            const emailResponse = await emailCtr.sendEmail(WELCOME_PUSH_NOTIFICATION, targetEmail);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue welcome email:', emailResponse.message);
+            }
+        }
+
+        if (shouldSendMembershipDowngrade && paidRoleId && targetEmail) {
+            const stillHasPaidRole = Boolean(updatedUser?.rolesIds?.includes(paidRoleId));
+            if (!stillHasPaidRole) {
+                const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
+                if (!emailResponse.success) {
+                    console.error('[USER] Failed to queue membership downgrade email:', emailResponse.message);
+                }
+            }
+        }
+
+        return updateResult;
     },
 
     updateUsers: async (
@@ -626,6 +687,13 @@ export const userCtr = {
             }
         }
 
+        if (userFound.result.email) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userFound.result.email);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue account deleted email:', emailResponse.message);
+            }
+        }
+
         return mongooseCtr.deleteOne(filter, options);
     },
 
@@ -637,6 +705,13 @@ export const userCtr = {
 
         if (!userFound.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        if (userFound.result.email && userFound.result.isDel !== true) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, userFound.result.email);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue account suspended email:', emailResponse.message);
+            }
         }
 
         return mongooseCtr.updateOne(filter, { isDel: true }, options);

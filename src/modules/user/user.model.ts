@@ -596,6 +596,14 @@ export const UserModel = mongo.createModel<I_User>({
             type: Date,
             default: null,
         },
+        inactivityDeletionWarning30SentAt: {
+            type: Date,
+            default: null,
+        },
+        inactivityDeletionWarning10SentAt: {
+            type: Date,
+            default: null,
+        },
         followerCount: {
             type: Number,
             default: 0,

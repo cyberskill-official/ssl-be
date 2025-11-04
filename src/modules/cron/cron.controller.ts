@@ -1,11 +1,13 @@
 import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
-import { isAfter, parse, set } from 'date-fns';
+import { addDays, isAfter, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
 
+import { PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY } from '#modules/authn/authn.constant.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
+import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_LocationEntityType, LocationModel } from '#modules/location/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -26,6 +28,7 @@ export const cron = {
         cron.cleanupExpiredTemporaryLocations().start();
         cron.disableExpiredAds().start();
         cron.enforceSessionInactivity().start();
+        cron.downgradeExpiredMemberships().start();
         cron.cleanupInactiveFreeUsers().start();
     },
     backupDB: () => {
@@ -321,48 +324,232 @@ export const cron = {
         });
     },
 
+    downgradeExpiredMemberships: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
+            try {
+                log.info('[CRON] Checking for expired memberships...');
+
+                const now = new Date();
+                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+
+                if (!paidRole.success) {
+                    log.warn('[CRON] Paid member role not found; skipping membership downgrade check.');
+                    return;
+                }
+
+                const paidRoleId = paidRole.result.id;
+                const candidatesRes = await userCtr.getUsers({}, {
+                    filter: {
+                        isDel: { $ne: true },
+                        isAdminBlocked: { $ne: true },
+                        rolesIds: { $in: [paidRoleId] },
+                        membershipExpiresAt: { $exists: true, $ne: null, $lte: now },
+                    },
+                    options: { pagination: false },
+                });
+
+                if (!candidatesRes.success || !candidatesRes.result?.docs?.length) {
+                    log.info('[CRON] No expired memberships found');
+                    return;
+                }
+
+                const freeRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.FREE_MEMBER } });
+                const freeRoleId = freeRole.success ? freeRole.result.id : null;
+
+                let downgradedCount = 0;
+
+                for (const user of candidatesRes.result.docs) {
+                    try {
+                        const nextRoles = (user.rolesIds ?? []).filter(roleId => roleId !== paidRoleId);
+
+                        if (freeRoleId && !nextRoles.includes(freeRoleId)) {
+                            nextRoles.push(freeRoleId);
+                        }
+
+                        const updateRes = await userCtr.updateUser({}, {
+                            filter: { id: user.id },
+                            update: {
+                                rolesIds: nextRoles,
+                                membershipExpiresAt: null,
+                            },
+                        });
+
+                        if (updateRes.success) {
+                            downgradedCount += 1;
+                        }
+                        else {
+                            log.error(`[CRON] Failed to downgrade membership for user ${user.id}: ${updateRes.message}`);
+                        }
+                    }
+                    catch (error) {
+                        log.error(`[CRON] Error downgrading membership for user ${user.id}:`, error);
+                    }
+                }
+
+                if (downgradedCount > 0) {
+                    log.success(`[CRON] Downgraded ${downgradedCount} expired membership(s).`);
+                }
+                else {
+                    log.info('[CRON] No memberships downgraded after processing candidates.');
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Error downgrading expired memberships:', error);
+            }
+        });
+    },
+
     // Legal: Remove free profiles inactive for > 12 months. Paying members are exempt.
     cleanupInactiveFreeUsers: () => {
         return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
             try {
                 const now = new Date();
-                const cutoff = new Date(now);
-                cutoff.setMonth(cutoff.getMonth() - 12); // ~12 months inactivity
+                const deletionCutoff = subMonths(now, 12);
+                const warning30Cutoff = addDays(deletionCutoff, 30);
+                const warning10Cutoff = addDays(deletionCutoff, 10);
+                const tenDaysAgo = addDays(now, -10);
 
-                // Resolve Paid Member role id once
                 const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
                 const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
 
-                const baseFilter: Record<string, any> = {
+                const sharedConditions: Record<string, any>[] = [
+                    {
+                        $or: [
+                            { membershipExpiresAt: { $exists: false } },
+                            { membershipExpiresAt: null },
+                            { membershipExpiresAt: { $lte: now } },
+                        ],
+                    },
+                ];
+
+                if (paidRoleId) {
+                    sharedConditions.unshift({ rolesIds: { $nin: [paidRoleId] } });
+                }
+
+                const buildInactivityFilter = (threshold: Date) => ({
+                    $or: [
+                        { lastOnline: { $exists: true, $ne: null, $lte: threshold } },
+                        {
+                            $and: [
+                                {
+                                    $or: [
+                                        { lastOnline: { $exists: false } },
+                                        { lastOnline: null },
+                                    ],
+                                },
+                                { createdAt: { $lte: threshold } },
+                            ],
+                        },
+                    ],
+                });
+
+                const warned30Ids = new Set<string>();
+                let warnings30Sent = 0;
+                const warn30Filter = {
                     isDel: { $ne: true },
                     isAdminBlocked: { $ne: true },
                     $and: [
-                        // Must be inactive beyond cutoff
-                        {
-                            $or: [
-                                { lastOnline: { $lt: cutoff } },
-                                { $and: [
-                                    { lastOnline: { $exists: false } },
-                                    { createdAt: { $lt: cutoff } },
-                                ] },
-                            ],
-                        },
-                        // Exclude active paid members (never delete paying members)
-                        paidRoleId
-                            ? { rolesIds: { $nin: [paidRoleId] } }
-                            : {},
-                        // Also exclude users with currently active membership by date
-                        {
-                            $or: [
-                                { membershipExpiresAt: { $exists: false } },
-                                { membershipExpiresAt: null },
-                                { membershipExpiresAt: { $lte: now } },
-                            ],
-                        },
-                    ].filter(Boolean),
+                        buildInactivityFilter(warning30Cutoff),
+                        ...sharedConditions,
+                    ],
                 };
 
-                const candidates = await userCtr.getUsers({}, { filter: baseFilter, options: { pagination: false } });
+                const warn30Res = await userCtr.getUsers({}, { filter: warn30Filter, options: { pagination: false } });
+                if (warn30Res.success && warn30Res.result?.docs?.length) {
+                    for (const user of warn30Res.result.docs) {
+                        if (!user?.id || !user?.email || user.inactivityDeletionWarning30SentAt) {
+                            continue;
+                        }
+
+                        try {
+                            const emailRes = await emailCtr.sendEmail(PROFILE_DELETION_30_DAY, user.email);
+                            if (!emailRes.success) {
+                                log.error(`[CRON] Failed to send 30-day inactivity warning to ${user.id}: ${emailRes.message}`);
+                                continue;
+                            }
+
+                            warned30Ids.add(user.id);
+                            warnings30Sent += 1;
+
+                            await userCtr.updateUser({}, {
+                                filter: { id: user.id },
+                                update: { inactivityDeletionWarning30SentAt: new Date() },
+                            });
+                        }
+                        catch (error) {
+                            log.error(`[CRON] Error sending 30-day inactivity warning to ${user.id}:`, error);
+                        }
+                    }
+                }
+
+                let warnings10Sent = 0;
+                const warn10Filter = {
+                    isDel: { $ne: true },
+                    isAdminBlocked: { $ne: true },
+                    $and: [
+                        buildInactivityFilter(warning10Cutoff),
+                        ...sharedConditions,
+                    ],
+                };
+
+                const warn10Res = await userCtr.getUsers({}, { filter: warn10Filter, options: { pagination: false } });
+                if (warn10Res.success && warn10Res.result?.docs?.length) {
+                    for (const user of warn10Res.result.docs) {
+                        if (!user?.id || !user?.email || user.inactivityDeletionWarning10SentAt) {
+                            continue;
+                        }
+
+                        const hasThirtyWarning = Boolean(user.inactivityDeletionWarning30SentAt) || warned30Ids.has(user.id);
+                        if (!hasThirtyWarning) {
+                            continue;
+                        }
+
+                        try {
+                            const emailRes = await emailCtr.sendEmail(PROFILE_DELETION_10_DAY, user.email);
+                            if (!emailRes.success) {
+                                log.error(`[CRON] Failed to send 10-day inactivity warning to ${user.id}: ${emailRes.message}`);
+                                continue;
+                            }
+
+                            warnings10Sent += 1;
+                            await userCtr.updateUser({}, {
+                                filter: { id: user.id },
+                                update: { inactivityDeletionWarning10SentAt: new Date() },
+                            });
+                        }
+                        catch (error) {
+                            log.error(`[CRON] Error sending 10-day inactivity warning to ${user.id}:`, error);
+                        }
+                    }
+                }
+
+                if (warnings30Sent > 0) {
+                    log.success(`[CRON] Sent ${warnings30Sent} profile deletion warning(s) (30-day).`);
+                }
+                if (warnings10Sent > 0) {
+                    log.success(`[CRON] Sent ${warnings10Sent} profile deletion warning(s) (10-day).`);
+                }
+                if (warnings30Sent === 0 && warnings10Sent === 0) {
+                    log.info('[CRON] No inactivity warning emails sent.');
+                }
+
+                const deletionFilter: Record<string, any> = {
+                    isDel: { $ne: true },
+                    isAdminBlocked: { $ne: true },
+                    $and: [
+                        buildInactivityFilter(deletionCutoff),
+                        ...sharedConditions,
+                        {
+                            inactivityDeletionWarning10SentAt: {
+                                $exists: true,
+                                $ne: null,
+                                $lte: tenDaysAgo,
+                            },
+                        },
+                    ],
+                };
+
+                const candidates = await userCtr.getUsers({}, { filter: deletionFilter, options: { pagination: false } });
 
                 if (!candidates.success || !candidates.result?.docs?.length) {
                     log.info('[CRON] No inactive free users found for cleanup');
@@ -381,7 +568,7 @@ export const cron = {
                 });
 
                 if (res.success) {
-                    log.success(`[CRON] Soft-deleted ${res.result.modifiedCount} inactive free user(s) (>12 months)`);
+                    log.success(`[CRON] Soft-deleted ${res.result.modifiedCount} inactive free user(s) (>12 months).`);
                 }
                 else {
                     log.error('[CRON] Failed to soft-delete inactive free users:', res.message);

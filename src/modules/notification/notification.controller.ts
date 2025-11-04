@@ -9,7 +9,7 @@ import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE } from '#modules/authn/authn.constant.js';
+import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
@@ -46,70 +46,6 @@ const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
     E_NotificationType.GROUP_JOIN_REQUEST,
     E_NotificationType.GROUP_JOIN_APPROVED,
 ]);
-
-function collectPlainTextSegments(node: unknown, parts: string[]): void {
-    if (!node)
-        return;
-
-    if (Array.isArray(node)) {
-        for (const child of node)
-            collectPlainTextSegments(child, parts);
-        return;
-    }
-
-    if (typeof node !== 'object')
-        return;
-
-    const maybeText = (node as { text?: unknown }).text;
-    const type = (node as { type?: unknown }).type;
-
-    if (typeof maybeText === 'string' && (type === 'text' || type === undefined))
-        parts.push(maybeText);
-
-    if (type === 'linebreak')
-        parts.push('\n');
-
-    const children = (node as { children?: unknown }).children;
-    if (Array.isArray(children)) {
-        const before = parts.length;
-        for (const child of children)
-            collectPlainTextSegments(child, parts);
-        if (type === 'paragraph' && parts.length > before)
-            parts.push('\n');
-    }
-}
-
-function coercePlainText(raw: unknown): string {
-    if (typeof raw === 'string') {
-        const trimmed = raw.trim();
-        if (!trimmed)
-            return '';
-
-        const first = trimmed[0];
-        if (first === '{' || first === '[') {
-            try {
-                return coercePlainText(JSON.parse(trimmed));
-            }
-            catch {
-                return trimmed;
-            }
-        }
-
-        return trimmed;
-    }
-
-    if (raw && typeof raw === 'object') {
-        const parts: string[] = [];
-        collectPlainTextSegments(raw, parts);
-        while (parts.length && parts[parts.length - 1] === '\n')
-            parts.pop();
-
-        const joined = parts.join('');
-        return joined.replace(/\n{3,}/g, '\n\n').trim();
-    }
-
-    return '';
-}
 
 export const notificationCtr = {
     getNotification: async (
@@ -513,8 +449,8 @@ export const notificationCtr = {
 
                         // Determine template key from notification type (first type if array)
                         const tRaw = Array.isArray(result.result.type) ? result.result.type[0] : result.result.type;
-                        const t = tRaw as unknown as E_NotificationType | undefined;
-                        let templateKey: string | undefined;
+                        const t = tRaw as E_NotificationType;
+                        let templateKey: string | '';
                         switch (t) {
                             case E_NotificationType.NEW_FOLLOWER:
                                 templateKey = NEW_FOLLOWER;
@@ -528,54 +464,20 @@ export const notificationCtr = {
                             case E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED:
                                 templateKey = NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY;
                                 break;
+                            case E_NotificationType.PAYMENT_ISSUE:
+                                templateKey = PAYMENT_FAILED;
+                                break;
                             default:
-                                templateKey = undefined;
-                        }
-
-                        const notif = result.result;
-                        const pres = notif.presentation || {};
-                        const actorName = typeof pres.actor?.username === 'string' ? pres.actor.username : undefined;
-                        const actorDisplayName = coercePlainText(actorName);
-                        const messageBody = typeof notif.body === 'string' ? notif.body : undefined;
-                        const cleanMessageBody = coercePlainText(messageBody);
-
-                        const templateData: Record<string, any> = { email: targetEmail };
-
-                        switch (t) {
-                            case E_NotificationType.NEW_FOLLOWER: {
-                                const followerName = actorDisplayName || 'A new member';
-                                templateData['follower'] = followerName;
-                                break;
-                            }
-                            case E_NotificationType.NEW_MESSAGE: {
-                                templateData['sender'] = actorDisplayName || 'Someone on Secret Swinger Lust';
-                                templateData['message'] = cleanMessageBody || 'You have a new message waiting for you.';
-                                break;
-                            }
-                            case E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST: {
-                                const accountName = actorDisplayName || 'A new member';
-                                templateData['account'] = accountName;
-                                break;
-                            }
-                            case E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED: {
-                                const accountName = actorDisplayName || 'A member you follow';
-                                templateData['account'] = accountName;
-                                templateData['eventTitle'] = typeof pres.headline === 'string' && pres.headline.trim() ? pres.headline : 'New announcement';
-                                templateData['eventDescription'] = cleanMessageBody || 'Check the announcement in the app to learn more.';
-                                break;
-                            }
-                            default:
-                                break;
+                                templateKey = '';
                         }
 
                         let sendRes;
                         if (templateKey) {
-                            sendRes = await emailCtr.sendEmail(templateKey, targetEmail, templateData).catch(e => ({ success: false, message: (e as Error).message }));
+                            sendRes = await emailCtr.sendEmail(templateKey, targetEmail).catch(e => ({ success: false, message: (e as Error).message }));
                         }
                         else {
-                            // Fallback to raw email when no template exists for this notification type
-                            const html = emailCtr.generateBasicTemplate(templateData);
-                            sendRes = await emailCtr.sendEmailRaw({ to: targetEmail, subject: 'Notification', html });
+                            await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });
+                            return;
                         }
 
                         if (sendRes && (sendRes as any).success) {
