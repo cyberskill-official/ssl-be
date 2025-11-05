@@ -119,7 +119,7 @@ export const blogCtr = {
         const notifType = doc.type === 'PODCAST' ? E_NotificationType.NEW_PODCAST : E_NotificationType.NEW_BLOG_POST;
         const redirectKind = doc.type === 'PODCAST' ? E_RedirectType.PODCAST : E_RedirectType.BLOG;
         const notifEntity = doc.type === 'PODCAST' ? E_NotificationEntityType.PODCAST : E_NotificationEntityType.BLOG;
-        const redirectId = blogResult.result.slug || blogResult.result.id;
+        const redirectId = blogResult.result.slug;
 
         let thumbnailUrl: string | undefined;
         try {
