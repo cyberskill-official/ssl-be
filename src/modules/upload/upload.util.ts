@@ -155,7 +155,7 @@ export async function applyAiModerationDecision(
                     entityType: E_NotificationEntityType.MEDIA,
                     entityId: moderationUpdated.result.entityId ?? undefined,
                     presentation: {
-                        headline: 'The upload was flagged as sensitive content and has been removed. Please choose another image',
+                        headline: 'We\'re conducting a routine spot check of your image. It will be posted once approved.',
                         context: {
                             profileOwnerId: moderationUpdated.result.uploadedById,
                         },

@@ -51,7 +51,7 @@ import type {
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
-import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
+import { mapEventTypeToPinStyle, normalizeBlurredMedia, shouldBlurForContext, signEventImage, validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
@@ -68,6 +68,9 @@ export const eventCtr = {
 
         if (eventFound.result.image) {
             eventFound.result.image = signEventImage(eventFound.result.image, context);
+
+            if (!shouldBlurForContext(context))
+                eventFound.result.image = normalizeBlurredMedia(eventFound.result.image);
         }
 
         // Blur creator avatar/gallery based on viewer and creator age verification
@@ -172,6 +175,8 @@ export const eventCtr = {
         filteredDocs = filteredDocs.map((event) => {
             if (event.image) {
                 event.image = signEventImage(event.image, context);
+                if (!shouldBlurForContext(context))
+                    event.image = normalizeBlurredMedia(event.image);
             }
             try {
                 const creator: any = (event as any).createdBy;

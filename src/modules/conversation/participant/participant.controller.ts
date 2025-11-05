@@ -21,6 +21,7 @@ import { pubsub } from '#shared/graphql/index.js';
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
 
 import { conversationCtr, E_CONVERSATION_EVENTS, E_ConversationType } from '../conversation/index.js';
+import { messageStatusCtr } from '../message-status/index.js';
 import { messageCtr } from '../message/index.js';
 import { ParticipantModel } from './participant.model.js';
 import { E_ParticipantRole } from './participant.type.js';
@@ -318,6 +319,10 @@ export const participantCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
+
+        await messageStatusCtr.deleteMessageStatuses(context, {
+            filter: { conversationId, userId: currentUser.id },
+        });
 
         await messageCtr.getMessages(context, {
             filter: { conversationId, senderId: currentUser.id },

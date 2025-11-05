@@ -11,6 +11,41 @@ import type { I_Message } from './message.type.js';
 
 import { E_MessageType } from './message.type.js';
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => Object.prototype.toString.call(value) === '[object Object]';
+
+function normalizeBlurMarkers<T>(input: T): T {
+    if (Array.isArray(input)) {
+        return input.map(item => normalizeBlurMarkers(item)) as unknown as T;
+    }
+
+    if (isPlainObject(input)) {
+        const clone: Record<string, unknown> = {};
+
+        for (const [key, value] of Object.entries(input)) {
+            if (key === 'class' && typeof value === 'string' && value.toLowerCase() === 'blur') {
+                clone[key] = 'normal';
+                continue;
+            }
+
+            clone[key] = normalizeBlurMarkers(value);
+        }
+
+        return clone as unknown as T;
+    }
+
+    if (typeof input === 'string') {
+        let normalized = input as string;
+
+        normalized = normalized.replace(/([?&]class=)blur(?=&|$)/gi, '$1normal');
+        normalized = normalized.replace(/\bclass=("|')blur\1/gi, (_match, quote: string) => `class=${quote}normal${quote}`);
+        normalized = normalized.replace(/\bclass=blur\b/gi, 'class=normal');
+
+        return normalized as unknown as T;
+    }
+
+    return input;
+}
+
 function toPlain<T>(input: T): T {
     if (hasToObject(input)) {
         try {
@@ -47,7 +82,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     if (!plainMessage)
         return plainMessage;
 
-    const content = plainMessage.content ? { ...plainMessage.content } : undefined;
+    let content = plainMessage.content ? { ...plainMessage.content } : undefined;
 
     // Check viewer's age verification status once per message
     let isViewerVerified = false;
@@ -82,6 +117,10 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
             content.contactAdmin = contactAdmin;
         }
+    }
+
+    if (isViewerVerified && content) {
+        content = normalizeBlurMarkers(content);
     }
 
     // Transform sender avatar based on viewer's age verification status
@@ -122,6 +161,10 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         catch {
             // Non-fatal: if transformation fails, keep original sender
         }
+    }
+
+    if (isViewerVerified && sender) {
+        sender = normalizeBlurMarkers(sender);
     }
 
     const transformed = {

@@ -151,3 +151,38 @@ export function signEventImage(fullUrl: string, context?: I_Context): string {
         extraQueryParams: { class: 'normal' },
     });
 }
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => Object.prototype.toString.call(value) === '[object Object]';
+
+export function normalizeBlurredMedia<T>(input: T): T {
+    if (Array.isArray(input)) {
+        return input.map(item => normalizeBlurredMedia(item)) as unknown as T;
+    }
+
+    if (isPlainObject(input)) {
+        const clone: Record<string, unknown> = {};
+
+        for (const [key, value] of Object.entries(input)) {
+            if (key === 'class' && typeof value === 'string' && value.toLowerCase() === 'blur') {
+                clone[key] = 'normal';
+                continue;
+            }
+
+            clone[key] = normalizeBlurredMedia(value);
+        }
+
+        return clone as unknown as T;
+    }
+
+    if (typeof input === 'string') {
+        let normalized = input as string;
+
+        normalized = normalized.replace(/([?&]class=)blur(?=&|$)/gi, '$1normal');
+        normalized = normalized.replace(/\bclass=("|')blur\1/gi, (_match, quote: string) => `class=${quote}normal${quote}`);
+        normalized = normalized.replace(/\bclass=blur\b/gi, 'class=normal');
+
+        return normalized as unknown as T;
+    }
+
+    return input;
+}

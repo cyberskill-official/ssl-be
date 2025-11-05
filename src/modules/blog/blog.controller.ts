@@ -119,6 +119,7 @@ export const blogCtr = {
         const notifType = doc.type === 'PODCAST' ? E_NotificationType.NEW_PODCAST : E_NotificationType.NEW_BLOG_POST;
         const redirectKind = doc.type === 'PODCAST' ? E_RedirectType.PODCAST : E_RedirectType.BLOG;
         const notifEntity = doc.type === 'PODCAST' ? E_NotificationEntityType.PODCAST : E_NotificationEntityType.BLOG;
+        const redirectId = blogResult.result.slug || blogResult.result.id;
 
         let thumbnailUrl: string | undefined;
         try {
@@ -148,7 +149,8 @@ export const blogCtr = {
                             entityId: blogResult.result.id,
                             actorId: authorId,
                             presentation: {
-                                redirect: { kind: redirectKind, id: blogResult.result.id },
+                                // Use slug when available so the client can navigate without hitting 404 pages.
+                                redirect: { kind: redirectKind, id: redirectId },
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,

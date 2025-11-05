@@ -476,7 +476,7 @@ export const userCtr = {
                                 entityId: newUser.id,
                                 actorId: newUser.id,
                                 presentation: {
-                                    redirect: { kind: E_RedirectType.PROFILE, id: newUser.id },
+                                    redirect: { kind: E_RedirectType.PROFILE, id: newUser.username ?? newUser.id },
                                     actor: {
                                         username: newUser.username,
                                         accountType: newUser.accountType,
