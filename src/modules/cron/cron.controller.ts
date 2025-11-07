@@ -282,7 +282,7 @@ export const cron = {
     // Enforce session inactivity by removing sessions that haven't had activity
     // within SESSION_INACTIVITY_MINUTES. Runs every minute.
     enforceSessionInactivity: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_MINUTE, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.SESSION_INACTIVITY_MINUTES, async () => {
             try {
                 const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
                 const cutoff = Date.now() - inactivityMs;

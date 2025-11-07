@@ -195,15 +195,67 @@ export const blogCtr = {
             }
         }
 
+        const normalizeCdnUrl = (value?: string | null): string | undefined => {
+            if (!value)
+                return undefined;
+            const raw = String(value).trim();
+            if (!raw)
+                return undefined;
+            try {
+                const url = new URL(raw);
+                return `${url.origin}${url.pathname}`;
+            }
+            catch {
+                const [path] = raw.split('?');
+                return path;
+            }
+        };
+
+        const toStoragePath = (value?: string | null): string | undefined => {
+            const normalized = normalizeCdnUrl(value);
+            if (!normalized)
+                return undefined;
+            try {
+                const url = new URL(normalized);
+                return url.pathname.replace(/^\/+/u, '');
+            }
+            catch {
+                return normalized
+                    .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                    .replace(/^\/+/u, '');
+            }
+        };
+
         if (update.featuredImage || update.logo || update.cover || update.file) {
             const existingBlog = await blogCtr.getBlog(context, { filter });
             if (existingBlog.success) {
                 const mediaFields: Array<keyof Pick<I_Input_UpdateBlog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
 
                 for (const field of mediaFields) {
-                    if (update[field] && existingBlog.result[field] && existingBlog.result[field] !== update[field]) {
-                        const path = String(existingBlog.result[field]).replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
-                        await bunnyCtr.deleteFile(context, path);
+                    const incomingRaw = update[field];
+                    if (incomingRaw === undefined)
+                        continue;
+
+                    const incomingNormalized = normalizeCdnUrl(incomingRaw);
+                    const existingNormalized = normalizeCdnUrl(existingBlog.result[field]);
+
+                    // Keep the DB value free from expiring query params.
+                    (update as Record<string, unknown>)[field as string] = incomingNormalized ?? incomingRaw ?? null;
+
+                    if (!existingNormalized)
+                        continue;
+
+                    if (!incomingNormalized) {
+                        const storagePath = toStoragePath(existingNormalized);
+                        if (storagePath)
+                            await bunnyCtr.deleteFile(context, storagePath);
+                        continue;
+                    }
+
+                    if (incomingNormalized !== existingNormalized) {
+                        const storagePath = toStoragePath(existingNormalized);
+                        if (storagePath)
+                            await bunnyCtr.deleteFile(context, storagePath);
                     }
                 }
             }

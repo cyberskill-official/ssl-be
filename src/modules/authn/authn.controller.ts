@@ -15,6 +15,7 @@ import { omit } from 'lodash-es';
 
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
 import type { I_Input_UpdateUser, I_User } from '#modules/user/index.js';
+import type { I_Request } from '#shared/typescript/express.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_Role, E_Role_Staff, E_Role_User, roleCtr } from '#modules/authz/index.js';
@@ -102,6 +103,23 @@ function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
     }
 
     return Array.isArray(user.rolesIds) && user.rolesIds.includes(roleId);
+}
+
+function assignSessionUser(session: I_Request['session'], user: I_User) {
+    if (!session)
+        return;
+
+    session.user = user;
+
+    try {
+        Reflect.set(session, 'lastActivity', Date.now());
+        if (typeof session.save === 'function') {
+            session.save(() => { /* best-effort */ });
+        }
+    }
+    catch (error) {
+        console.warn('Failed to persist session activity during assignment:', error);
+    }
 }
 
 // extractClientIp is now shared in env.util
@@ -345,18 +363,7 @@ export const authnCtr = {
             sanitizedUser.guardianOwnerId = undefined;
         }
 
-        context.req.session.user = sanitizedUser;
-
-        // Update session lastActivity timestamp (sliding inactivity window)
-        try {
-            (context.req.session as any).lastActivity = Date.now();
-            if (typeof (context.req.session as any).save === 'function') {
-                (context.req.session as any).save(() => { /* best-effort */ });
-            }
-        }
-        catch (err) {
-            console.warn('Failed to update session lastActivity in checkAuth:', err);
-        }
+        assignSessionUser(context.req.session, sanitizedUser);
         try {
             // Prefer client IP from request headers (proxied environments)
             const clientIp = extractClientIp(context?.req, true);
@@ -545,9 +552,10 @@ export const authnCtr = {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        context.req.session.user = omit(userCreated.result, 'password');
+        const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
+        assignSessionUser(context.req.session, sanitizedNewUser);
 
-        return { success: true, result: { user: context.req.session.user } };
+        return { success: true, result: { user: sanitizedNewUser } };
     },
 
     registerSendVerifyEmail: async (
@@ -1007,7 +1015,7 @@ export const authnCtr = {
         sanitizedUser.isEmailVerified = true;
         sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
 
-        context.req.session.user = sanitizedUser;
+        assignSessionUser(context.req.session, sanitizedUser);
         context.req.session.guardianView = {
             ownerId: adminUser.result.id,
             issuedAt: Date.now(),
@@ -1153,7 +1161,7 @@ export const authnCtr = {
             sanitizedLoginUser.guardianOwnerId = undefined;
         }
 
-        context.req.session.user = sanitizedLoginUser;
+        assignSessionUser(context.req.session, sanitizedLoginUser);
 
         return {
             success: true,
