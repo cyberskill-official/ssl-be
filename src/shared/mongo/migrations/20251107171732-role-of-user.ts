@@ -28,11 +28,14 @@ export async function up(db: C_Db): Promise<void> {
 
     // Case 1: users still on an active paid membership -> drop FREE_MEMBER role
     const activePaidFilter: Record<string, any> = {
-        rolesIds: { $all: [freeRoleId, paidRoleId] },
+        rolesIds: { $in: [paidRoleId] },
         membershipExpiresAt: { $gt: now },
     };
 
-    const activeCleanup = await userCtr.updateMany(activePaidFilter, { $pull: { rolesIds: freeRoleId } });
+    const activeCleanup = await userCtr.updateMany(activePaidFilter, {
+        $pull: { rolesIds: freeRoleId },
+        $addToSet: { rolesIds: paidRoleId },
+    });
     if (!activeCleanup.success) {
         log.error('[20251107164540-role-of-user] Failed to clean FREE_MEMBER from active paid users.');
     }
@@ -44,7 +47,7 @@ export async function up(db: C_Db): Promise<void> {
 
     // Case 2: users whose paid membership has ended (or missing expiry) -> ensure FREE_MEMBER only
     const expiredFilter: Record<string, any> = {
-        rolesIds: { $all: [freeRoleId, paidRoleId] },
+        rolesIds: { $in: [paidRoleId] },
         $or: [
             { membershipExpiresAt: { $exists: false } },
             { membershipExpiresAt: null },
