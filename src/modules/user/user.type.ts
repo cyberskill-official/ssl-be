@@ -125,7 +125,7 @@ export interface I_User extends I_GenericDocument {
     settings?: I_UserSettings;
     flagCount?: number;
     hasUpcomingEvent?: boolean;
-    membershipExpiresAt?: Date;
+    membershipExpiresAt?: Date | null;
     inactivityDeletionWarning30SentAt?: Date | null;
     inactivityDeletionWarning10SentAt?: Date | null;
     followerCount?: number;

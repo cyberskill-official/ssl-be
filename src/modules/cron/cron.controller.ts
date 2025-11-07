@@ -312,7 +312,10 @@ export const cron = {
                 if ((userIds as string[]).length) {
                     await userCtr.updateUsers({}, {
                         filter: { id: { $in: userIds as string[] } },
-                        update: { isOnline: false },
+                        update: {
+                            isOnline: false,
+                            lastOnline: new Date(),
+                        },
                     });
                 }
 
