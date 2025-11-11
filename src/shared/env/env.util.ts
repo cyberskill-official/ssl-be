@@ -79,6 +79,12 @@ export function getEnv(): I_Environment {
         BUNNY_OPTIMIZER_BLUR_CLASS: str({ default: BUNNY_OPTIMIZER_BLUR_CLASS }),
         POSTMARK_SERVER_API_TOKEN: str(),
         SESSION_INACTIVITY_MINUTES: port({ default: SESSION_INACTIVITY_MINUTES }),
+        NETVALVE_API_BASE_URL: str(),
+        NETVALVE_CLIENT_ID: str(),
+        NETVALVE_API_KEY: str(),
+        NETVALVE_SITE_ID: str({ default: '' }),
+        NETVALVE_MID_EUR: str({ default: '' }),
+        NETVALVE_MID_USD: str({ default: '' }),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;

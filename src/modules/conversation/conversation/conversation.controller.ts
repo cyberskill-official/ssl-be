@@ -14,6 +14,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import ejs from 'ejs';
 import { withFilter } from 'graphql-subscriptions';
 
+import type { I_Event } from '#modules/event/index.js';
 import type { I_Notification } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
@@ -25,7 +26,7 @@ import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';
-import { eventCtr } from '#modules/event/index.js';
+import { E_EventType, eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -816,6 +817,26 @@ export const conversationCtr = {
             };
         }
 
+        let eventContext: I_Event | null = null;
+        if (
+            conversation.entityType === E_NotificationEntityType.EVENT
+            && typeof conversation.entityId === 'string'
+        ) {
+            try {
+                const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
+                if (eventRes.success && eventRes.result) {
+                    eventContext = eventRes.result;
+                }
+            }
+            catch (error) {
+                log.warn('Failed to load event for join approval notification', {
+                    conversationId: conversation.id,
+                    eventId: conversation.entityId,
+                    error,
+                });
+            }
+        }
+
         const requester = await userCtr.getUser(context, {
             filter: { id: effectiveRequesterId },
             projection: 'id username accountType registerStep isEmailVerified ageVerify partner1 partner2',
@@ -981,6 +1002,10 @@ export const conversationCtr = {
             });
         }
 
+        const pushMessageBody = eventContext?.type === E_EventType.PRIVATE
+            ? (eventContext.pushMessage ?? '').trim()
+            : '';
+
         // Notify the requester that they were approved
         await notificationCtr.createNotificationWithSettings(context, {
             doc: {
@@ -989,6 +1014,7 @@ export const conversationCtr = {
                 entityType: E_NotificationEntityType.CONVERSATION,
                 entityId: conversationId,
                 actorId: currentUser.id,
+                ...(pushMessageBody ? { body: pushMessageBody } : {}),
                 presentation: {
                     headline: conversation.name
                         ? `Your request to join ${conversation.name} was approved`
@@ -1049,17 +1075,15 @@ export const conversationCtr = {
 
         // Send event's push message as a normal message if event exists
         let messageSent = false;
-        if (conversation.entityType === E_NotificationEntityType.EVENT && conversation.entityId) {
-            try {
-                const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
-
-                if (eventRes.success) {
-                    messageSent = await sendConversationTextMessage(eventRes.result?.pushMessage);
+        if (conversation.entityType === E_NotificationEntityType.EVENT) {
+            if (eventContext) {
+                try {
+                    messageSent = await sendConversationTextMessage(eventContext.pushMessage);
                 }
-            }
-            catch (error) {
-                // Non-fatal: log and continue if push message fails
-                log.error('Failed to send event push message:', error);
+                catch (error) {
+                    // Non-fatal: log and continue if push message fails
+                    log.error('Failed to send event push message:', error);
+                }
             }
         }
 

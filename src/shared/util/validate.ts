@@ -106,3 +106,31 @@ export const validate = {
         },
     },
 };
+
+export function asString(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed || undefined;
+    }
+
+    if (typeof value === 'number') {
+        const converted = String(value);
+        return converted || undefined;
+    }
+
+    return undefined;
+}
+
+export function asNumber(value: unknown): number | undefined {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+
+    const resolved = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number(value)
+            : Number.NaN;
+
+    return Number.isFinite(resolved) ? resolved : undefined;
+}

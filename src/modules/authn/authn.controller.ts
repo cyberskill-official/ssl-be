@@ -803,95 +803,104 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const freeRole = await roleCtr.getRole(context, {
-            filter: {
-                name: E_Role_User.FREE_MEMBER,
-            },
-        });
-
-        if (!freeRole.success) {
-            throwError({
-                message: 'Role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const freeRoleId = freeRole.result.id;
-
-        const paidRole = await roleCtr.getRole(context, {
-            filter: {
-                name: E_Role_User.PAID_MEMBER,
-            },
-        });
-
-        if (!paidRole.success) {
-            throwError({
-                message: 'Role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const paidRoleId = paidRole.result.id;
-
+        let roleId;
         let membershipExpiresAt: Date | undefined;
 
-        if (type === E_MembershipType.PROMO) {
-            if (!promoCode) {
-                throwError({
-                    message:
-                        'Promo code is required for this membership type.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
+        switch (type) {
+            case E_MembershipType.FREE: {
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_Role_User.FREE_MEMBER,
+                    },
                 });
+
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
             }
+            case E_MembershipType.PROMO: {
+                if (!promoCode) {
+                    throwError({
+                        message:
+                            'Promo code is required for this membership type.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
 
-            const applyPromo = await promoCodeCtr.applyPromoCode(context, {
-                userId: currentUser.id,
-                code: promoCode,
-            });
-
-            if (!applyPromo.success) {
-                throwError({
-                    message: applyPromo.message,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                const applyPromo = await promoCodeCtr.applyPromoCode(context, {
+                    userId: currentUser.id,
+                    code: promoCode,
                 });
+
+                if (!applyPromo.success) {
+                    throwError({
+                        message: applyPromo.message,
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                membershipExpiresAt = applyPromo.result.expiresAt;
+
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_Role_User.PAID_MEMBER,
+                    },
+                });
+
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
             }
+            case E_MembershipType.PAID: {
+                // TODO: Handle payment logic
+                const roleFound = await roleCtr.getRole(context, {
+                    filter: {
+                        name: E_Role_User.PAID_MEMBER,
+                    },
+                });
 
-            membershipExpiresAt = applyPromo.result.expiresAt;
+                if (!roleFound.success) {
+                    throwError({
+                        message: 'Role not found.',
+                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                roleId = roleFound.result.id;
+                break;
+            }
         }
-
-        const rolesSet = new Set(currentUser.rolesIds || []);
-
-        if (type === E_MembershipType.FREE) {
-            rolesSet.delete(paidRoleId);
-            rolesSet.add(freeRoleId);
-        }
-        else {
-            rolesSet.delete(freeRoleId);
-            rolesSet.add(paidRoleId);
-        }
-
-        const updatedRoles = Array.from(rolesSet);
 
         const stepsAfter = [E_RegisterStep.COMPLETE];
 
-        const updatePayload: Partial<I_Input_UpdateUser> = {
-            rolesIds: updatedRoles,
-        };
-
-        if (!stepsAfter.includes(currentUser.registerStep!)) {
-            updatePayload.registerStep = E_RegisterStep.COMPLETE;
-        }
-
-        if (type === E_MembershipType.FREE) {
-            updatePayload.membershipExpiresAt = null;
-        }
-        else if (membershipExpiresAt) {
-            updatePayload.membershipExpiresAt = membershipExpiresAt;
-        }
+        const currentRoles = currentUser.rolesIds || [];
+        const updatedRoles = currentRoles.includes(roleId)
+            ? currentRoles
+            : [...currentRoles, roleId];
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
-            update: updatePayload,
+            update: {
+                rolesIds: updatedRoles,
+                ...(!stepsAfter.includes(currentUser.registerStep!) && {
+                    registerStep: E_RegisterStep.COMPLETE,
+                }),
+                ...(type === E_MembershipType.PROMO && membershipExpiresAt && {
+                    membershipExpiresAt,
+                }),
+            },
         });
 
         if (!userUpdated.success) {
