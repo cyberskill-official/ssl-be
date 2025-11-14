@@ -1,9 +1,9 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import type { I_PaymentTransaction } from './payment.type.js';
+import type { I_PaymentTransaction } from './payment-transaction.type.js';
 
-import { E_PaymentGatewayOperation, E_PaymentProvider } from './payment.type.js';
+import { E_PaymentGatewayOperation, E_PaymentProvider } from './payment-transaction.type.js';
 
 export const PaymentTransactionModel = mongo.createModel<I_PaymentTransaction>({
     mongoose,

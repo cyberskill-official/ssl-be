@@ -1,0 +1,49 @@
+type T_PaymentRequest {
+    id: String!
+    orderId: String
+    clientOrderId: String
+    amount: Float
+    currency: String
+    gateway: String
+    status: String
+    paymentUrl: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    attempts: Int
+    expiresAt: String
+    meta: JSON
+}
+
+input Input_CreatePaymentRequest {
+    orderId: String
+    clientOrderId: String
+    amount: Float
+    currency: String
+    gateway: String
+    meta: JSON
+}
+
+input Input_UpdatePaymentRequest {
+    status: String
+    paymentUrl: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    attempts: Int
+    expiresAt: String
+}
+
+type T_Response_PaymentRequest {
+    success: Boolean!
+    message: String
+    result: T_PaymentRequest
+}
+
+extend type Query {
+    getPaymentRequest(filter: JSON!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
+    getPaymentRequests(filter: JSON!, options: JSON): JSON!
+}
+
+extend type Mutation {
+    createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
+    updatePaymentRequest(filter: JSON!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
+}

@@ -1,0 +1,58 @@
+type T_Order {
+    id: String!
+    userId: String
+    amount: Float
+    currency: String
+    status: String
+    successUrl: String
+    cancelUrl: String
+    pendingUrl: String
+    externalGateway: String
+    externalOrderId: String
+    gatewayMidId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+input Input_CreateOrder {
+    userId: String
+    amount: Float
+    currency: String
+    successUrl: String
+    cancelUrl: String
+    pendingUrl: String
+    externalGateway: String
+    gatewayMidId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+}
+
+input Input_UpdateOrder {
+    status: String
+    externalOrderId: String
+    gatewayMidId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+}
+
+type T_Response_Order {
+    success: Boolean!
+    message: String
+    result: T_Order
+}
+
+extend type Query {
+    getOrder(filter: JSON!, projection: JSON, options: JSON, populate: JSON): T_Response_Order!
+    getOrders(filter: JSON, options: JSON): JSON!
+}
+
+extend type Mutation {
+    createOrder(doc: Input_CreateOrder!): T_Response_Order!
+    updateOrder(filter: JSON!, update: Input_UpdateOrder!, options: JSON): T_Response_Order!
+    deleteOrder(filter: JSON!, options: JSON): T_Response_Order!
+}

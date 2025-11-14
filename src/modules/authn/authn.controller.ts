@@ -555,6 +555,49 @@ export const authnCtr = {
         const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
         assignSessionUser(context.req.session, sanitizedNewUser);
 
+        // Try to detect user's country/state from IP and update user record (best-effort)
+        try {
+            const clientIp = extractClientIp(context?.req, true);
+            let ipToLookup: string | undefined = clientIp;
+            if (!ipToLookup) {
+                const myIpInfo = await ipInfoCtr.getMyIp();
+                ipToLookup = myIpInfo?.result?.ip as string | undefined;
+            }
+
+            if (ipToLookup) {
+                const ipInfo = await ipInfoCtr.getIpInfo(ipToLookup);
+                if (ipInfo.success && ipInfo.result) {
+                    const country = (ipInfo.result as any).country as string | undefined;
+                    const region = (ipInfo.result as any).region as string | undefined;
+                    const updatePayload: Record<string, unknown> = {};
+                    if (country)
+                        updatePayload['countryId'] = country;
+                    if (region)
+                        updatePayload['stateId'] = region;
+
+                    if (Object.keys(updatePayload).length > 0) {
+                        // Cast to any to avoid strict type mismatch on optional user update fields
+                        await userCtr.updateUser(context, {
+                            filter: { id: userCreated.result.id },
+                            update: updatePayload as any,
+                        }).catch(() => { /* best-effort */ });
+
+                        // sync session user with geo info (use any to avoid type errors)
+                        if (context.req?.session?.user) {
+                            const sessUser = context.req.session.user as any;
+                            if (country)
+                                sessUser.countryId = country;
+                            if (region)
+                                sessUser.stateId = region;
+                        }
+                    }
+                }
+            }
+        }
+        catch (err) {
+            console.warn('Failed to detect user geo at registration:', err);
+        }
+
         return { success: true, result: { user: sanitizedNewUser } };
     },
 

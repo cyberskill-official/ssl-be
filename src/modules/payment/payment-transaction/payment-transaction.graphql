@@ -1,0 +1,117 @@
+enum E_PaymentProvider {
+    NETVALVE
+}
+
+enum E_PaymentGatewayOperation {
+    THREE_DS_INITIALIZATION
+    THREE_DS_AUTHENTICATION
+    THREE_DS_RESULT
+    HPP_ORDER
+    TOKEN_CREATE
+    SALE
+    REFUND
+    REBILL
+    CAPTURE
+    CANCEL
+    AUTHORIZE
+    GET_TRANSACTION
+    GET_TRANSACTIONS
+    GET_ORDER
+    GET_ORDERS
+    QUERY_TRANSACTION_STATUS
+}
+
+type T_PaymentTransaction {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    provider: E_PaymentProvider
+    operation: E_PaymentGatewayOperation
+    transactionId: String
+    orderId: String
+    amount: Float
+    currency: String
+    status: String
+    success: Boolean
+    errorCode: String
+    errorMessage: String
+    responsePayload: JSON
+    performedAt: DateTime
+}
+
+input Input_QueryPaymentTransaction {
+    id: String
+    provider: E_PaymentProvider
+    operation: E_PaymentGatewayOperation
+    transactionId: String
+    orderId: String
+    status: String
+    success: Boolean
+    currency: String
+    amount: Float
+    createdAt: DateTime
+    updatedAt: DateTime
+    performedAt: DateTime
+}
+
+input Input_RecordPaymentTransaction {
+    provider: E_PaymentProvider!
+    operation: E_PaymentGatewayOperation!
+    transactionId: String
+    orderId: String
+    amount: Float
+    currency: String
+    status: String
+    success: Boolean!
+    errorCode: String
+    errorMessage: String
+    responsePayload: JSON
+    performedAt: DateTime
+}
+
+type T_Response_PaymentTransaction {
+    success: Boolean
+    message: String
+    result: T_PaymentTransaction
+}
+
+type T_PaymentTransactions {
+    docs: [T_PaymentTransaction]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PaymentTransactions {
+    success: Boolean
+    message: String
+    result: T_PaymentTransactions
+}
+
+extend type Query {
+    getPaymentTransaction(
+        filter: Input_QueryPaymentTransaction!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PaymentTransaction!
+    getPaymentTransactions(
+        filter: Input_QueryPaymentTransaction
+        options: JSON
+    ): T_Response_PaymentTransactions!
+}
+
+extend type Mutation {
+    recordPaymentTransaction(
+        doc: Input_RecordPaymentTransaction!
+    ): T_Response_PaymentTransaction!
+}

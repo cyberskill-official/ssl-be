@@ -39,7 +39,7 @@ import type {
     I_NetvalveSaleResponse,
 } from './netvalve.type.js';
 
-import { E_PaymentGatewayOperation } from '../payment.type.js';
+import { E_PaymentGatewayOperation } from '../payment-transaction/payment-transaction.type.js';
 import {
     NETVALVE_3DS_AUTHENTICATION_ENDPOINT,
     NETVALVE_3DS_INITIALIZATION_ENDPOINT,

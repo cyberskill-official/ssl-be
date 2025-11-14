@@ -26,6 +26,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { isNetvalvePaymentType, NETVALVE_PAYMENT_TYPES } from '#modules/payment/netvalve/netvalve.constant.js';
 import { netvalveCtr } from '#modules/payment/netvalve/netvalve.controller.js';
 import { resolveThreeDSFlow } from '#modules/payment/netvalve/netvalve.handler.js';
+import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
@@ -149,17 +150,35 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         const errors: string[] = [];
 
-        const resolvedAmount
+        let resolvedAmount
             = typeof amount === 'number'
                 ? amount
                 : typeof amount === 'string'
                     ? Number(amount)
                     : Number.NaN;
+
+        let resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
+
+        // If amount not provided or invalid, derive price from pricing controller using user's persisted geo
+        if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
+            try {
+                const context: I_Context = { req };
+                const priceRes = await pricingCtr.getSubscriptionPrice(context);
+                if (priceRes.success && priceRes.result) {
+                    resolvedAmount = priceRes.result.price ?? resolvedAmount;
+                    resolvedCurrency = priceRes.result.currency ?? resolvedCurrency;
+                }
+            }
+            catch (err) {
+                // fallback: record error and continue validation
+                console.warn('Failed to resolve pricing for HPP order:', err);
+            }
+        }
+
         if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
             errors.push('amount must be a positive number');
         }
 
-        const resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
         if (!resolvedCurrency) {
             errors.push('currency is required');
         }
@@ -251,11 +270,82 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         }
 
         const context: I_Context = { req };
+
+        // dynamically import controllers and enums to avoid import ordering conflicts
+        const { orderCtr } = await import('#modules/order/order.controller.js');
+        const { paymentRequestCtr } = await import('#modules/payment/payment-request/payment-request.controller.js');
+        const { paymentCtr } = await import('#modules/payment/payment-transaction/payment-transaction.controller.js');
+        const { E_PaymentRequestStatus } = await import('#modules/payment/payment-request/payment-request.type.js');
+        const { E_PaymentProvider, E_PaymentGatewayOperation } = await import('#modules/payment/payment-transaction/payment-transaction.type.js');
+
+        // 1) persist an Order record for this request
+        const orderDoc: Record<string, unknown> = {
+            amount: resolvedAmount,
+            currency: resolvedCurrency,
+            successUrl: resolvedSuccessUrl,
+            cancelUrl: resolvedCancelUrl,
+            pendingUrl: resolvedPendingUrl,
+            externalGateway: 'NETVALVE',
+            clientOrderId: resolvedClientOrderId,
+        };
+
+        if (normalizedCustomerDetails) {
+            (orderDoc as any)['customerDetails'] = normalizedCustomerDetails;
+        }
+
+        const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
+        if (!orderRes.success) {
+            res.status(typeof orderRes.code === 'number' ? orderRes.code : 500).json({ success: false, message: orderRes.message ?? 'Failed to create order' });
+            return;
+        }
+
+        const createdOrder = orderRes.result ?? null;
+
+        // 2) idempotent PaymentRequest: try reuse WAITING by clientOrderId
+        const existingPr = await paymentRequestCtr.getPaymentRequest(context, { filter: { clientOrderId: resolvedClientOrderId, status: E_PaymentRequestStatus.WAITING } });
+        let paymentRequestResult = existingPr;
+        if (!existingPr.success || !existingPr.result) {
+            const prDoc: Record<string, unknown> = {
+                orderId: createdOrder?._id ?? createdOrder?.id,
+                clientOrderId: resolvedClientOrderId,
+                amount: resolvedAmount,
+                currency: resolvedCurrency,
+                gateway: 'NETVALVE',
+                status: E_PaymentRequestStatus.WAITING,
+                attempts: 0,
+                expiresAt: new Date(Date.now() + 30 * 60 * 1000), // default 30 minutes
+            };
+
+            paymentRequestResult = await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
+        }
+
+        if (!paymentRequestResult.success || !paymentRequestResult.result) {
+            res.status(500).json({ success: false, message: 'Failed to create or retrieve payment session' });
+            return;
+        }
+
+        const paymentRequest = paymentRequestResult.result;
+
+        // 3) call Netvalve to create HPP session
         const response = await netvalveCtr.createOrder(context, payload);
 
         if (!response.success) {
             const statusCode = typeof response.code === 'number' ? response.code : 502;
             const failureResult = 'result' in response ? response.result : null;
+
+            // record failed gateway transaction
+            await paymentCtr.recordGatewayTransaction(context, {
+                provider: E_PaymentProvider.NETVALVE,
+                operation: E_PaymentGatewayOperation.HPP_ORDER,
+                transactionId: undefined,
+                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                amount: resolvedAmount,
+                currency: resolvedCurrency,
+                status: 'FAILED',
+                success: false,
+                errorMessage: response.message ?? 'Netvalve HPP order creation failed',
+                responsePayload: (failureResult as Record<string, unknown>) ?? null,
+            });
 
             res.status(statusCode).json({
                 success: false,
@@ -273,12 +363,83 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 : '';
 
         if (responseCode && responseCode !== 'GTW_1000') {
+            // record unexpected gateway response
+            await paymentCtr.recordGatewayTransaction(context, {
+                provider: E_PaymentProvider.NETVALVE,
+                operation: E_PaymentGatewayOperation.HPP_ORDER,
+                transactionId: undefined,
+                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                amount: resolvedAmount,
+                currency: resolvedCurrency,
+                status: 'FAILED',
+                success: false,
+                errorMessage: `Netvalve returned unexpected responseCode: ${responseCode}`,
+                responsePayload: (resultPayload as Record<string, unknown>) ?? null,
+            });
+
             res.status(502).json({
                 success: false,
                 message: `Netvalve returned unexpected responseCode: ${responseCode}`,
                 result: resultPayload,
             });
             return;
+        }
+
+        // success: update payment request and order with gateway response
+        const paymentUrl = resultPayload && typeof resultPayload === 'object' && 'redirectUrl' in resultPayload ? (resultPayload as any).redirectUrl : undefined;
+        const externalOrderId = resultPayload && typeof resultPayload === 'object' && 'orderId' in resultPayload ? (resultPayload as any).orderId : undefined;
+
+        try {
+            await paymentRequestCtr.updatePaymentRequest(context, {
+                filter: { _id: paymentRequest._id ?? paymentRequest.id },
+                update: {
+                    $set: {
+                        status: paymentUrl ? E_PaymentRequestStatus.PENDING : E_PaymentRequestStatus.FAILED,
+                        paymentUrl: paymentUrl ?? null,
+                        externalOrderId: externalOrderId ?? null,
+                        gatewayResponse: resultPayload ?? null,
+                        attempts: (paymentRequest.attempts ?? 0) + 1,
+                    },
+                },
+            });
+
+            await orderCtr.updateOrder(context, {
+                filter: { _id: createdOrder?._id ?? createdOrder?.id },
+                update: {
+                    $set: {
+                        externalOrderId: externalOrderId ?? null,
+                        status: paymentUrl ? 'PENDING' : 'FAILED',
+                    },
+                },
+            });
+
+            // record success gateway transaction
+            await paymentCtr.recordGatewayTransaction(context, {
+                provider: E_PaymentProvider.NETVALVE,
+                operation: E_PaymentGatewayOperation.HPP_ORDER,
+                transactionId: undefined,
+                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                amount: resolvedAmount,
+                currency: resolvedCurrency,
+                status: paymentUrl ? 'PENDING' : 'FAILED',
+                success: true,
+                responsePayload: (resultPayload as Record<string, unknown>) ?? null,
+            });
+        }
+        catch (err) {
+            // non-fatal: still return result but record failure
+            await paymentCtr.recordGatewayTransaction(context, {
+                provider: E_PaymentProvider.NETVALVE,
+                operation: E_PaymentGatewayOperation.HPP_ORDER,
+                transactionId: undefined,
+                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                amount: resolvedAmount,
+                currency: resolvedCurrency,
+                status: 'FAILED',
+                success: false,
+                errorMessage: err instanceof Error ? err.message : 'Failed to update payment records',
+                responsePayload: (resultPayload as Record<string, unknown>) ?? null,
+            });
         }
 
         res.status(200).json({

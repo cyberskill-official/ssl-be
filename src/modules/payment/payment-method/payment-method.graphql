@@ -1,0 +1,93 @@
+type T_PaymentMethod {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    provider: String
+    providerId: String
+    brand: String
+    last4: String
+    expMonth: Int
+    expYear: Int
+    billingName: String
+    billingEmail: String
+    isDefault: Boolean
+}
+
+input Input_QueryPaymentMethod {
+    id: String
+    userId: String
+    providerId: String
+    brand: String
+    last4: String
+    expMonth: Int
+    expYear: Int
+    billingName: String
+    billingEmail: String
+    isDefault: Boolean
+}
+
+type T_Response_PaymentMethod {
+    success: Boolean
+    message: String
+    result: T_PaymentMethod
+}
+
+type T_PaymentMethods {
+    docs: [T_PaymentMethod]
+    totalDocs: Int
+    limit: Int
+    page: Int
+    totalPages: Int
+    pagingCounter: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    prevPage: Int
+    nextPage: Int
+}
+
+type T_Response_PaymentMethods {
+    success: Boolean
+    message: String
+    result: T_PaymentMethods
+}
+
+input Input_CreatePaymentMethod {
+    userId: String!
+    providerId: String!
+    brand: String
+    last4: String
+    expMonth: Int
+    expYear: Int
+    billingName: String
+    billingEmail: String
+    isDefault: Boolean
+}
+
+input Input_UpdatePaymentMethod {
+    isDel: Boolean
+    userId: String
+    providerId: String
+    brand: String
+    last4: String
+    expMonth: Int
+    expYear: Int
+    billingName: String
+    billingEmail: String
+    isDefault: Boolean
+}
+
+type Query {
+    getPaymentMethod(filter: Input_QueryPaymentMethod!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentMethod!
+    getPaymentMethods(
+        filter: Input_QueryPaymentMethod, options: JSON
+    ): T_Response_PaymentMethods!
+}
+
+type Mutation {
+    createPaymentMethod(doc: Input_CreatePaymentMethod!): T_Response_PaymentMethod
+    updatePaymentMethod(filter: Input_QueryPaymentMethod!, options: JSON): T_Response_PaymentMethod
+    deletePaymentMethod(filter: Input_QueryPaymentMethod!, options: JSON): T_Response_PaymentMethod
+}

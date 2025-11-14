@@ -9,11 +9,11 @@ import type { I_Context } from '#shared/typescript/express.js';
 
 import { asNumber, asString } from '#shared/util/index.js';
 
-import type { E_PaymentGatewayOperation } from '../payment.type.js';
+import type { E_PaymentGatewayOperation } from '../payment-transaction/payment-transaction.type.js';
 import type { I_Netvalve3DSProviderResponse, I_NetvalveCredentials, I_NetvalveErrorResponse, I_NetvalveHppOrderPayload, I_NetvalveRoutingPayload } from './index.js';
 
-import { paymentCtr } from '../payment.controller.js';
-import { E_PaymentProvider } from '../payment.type.js';
+import { paymentCtr } from '../payment-transaction/payment-transaction.controller.js';
+import { E_PaymentProvider } from '../payment-transaction/payment-transaction.type.js';
 import { E_Netvalve3DSFlow, getNetvalveCredentials, NETVALVE_DEFAULT_TIMEOUT_MS, NETVALVE_HEADER_API_KEY, NETVALVE_HEADER_AUTHORIZATION, NETVALVE_HEADER_CLIENT_ID } from './index.js';
 
 export function applyMerchantRouting<T extends I_NetvalveRoutingPayload & Record<string, unknown>>(
