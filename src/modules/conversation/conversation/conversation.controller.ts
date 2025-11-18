@@ -613,6 +613,25 @@ export const conversationCtr = {
             });
         }
 
+        // Prevent duplicate join requests while a prior one is still pending/active
+        const existingJoinRequest = await notificationCtr.getNotifications(context, {
+            filter: {
+                type: [E_NotificationType.GROUP_JOIN_REQUEST],
+                entityType: E_NotificationEntityType.CONVERSATION,
+                entityId: targetConversationId,
+                actorId: currentUser.id,
+                dismissedAt: null,
+                isDel: false,
+            },
+            options: { pagination: false, limit: 1 },
+        });
+        if (existingJoinRequest.success && (existingJoinRequest.result.docs?.length ?? 0) > 0) {
+            throwError({
+                message: 'You have already requested to join this group.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         const participantFound = await participantCtr.getParticipant(context, {
             filter: { conversationId: targetConversationId, userId: currentUser.id },
         });
@@ -817,13 +836,11 @@ export const conversationCtr = {
             };
         }
 
+        const eventId = typeof conversation.entityId === 'string' ? conversation.entityId : undefined;
         let eventContext: I_Event | null = null;
-        if (
-            conversation.entityType === E_NotificationEntityType.EVENT
-            && typeof conversation.entityId === 'string'
-        ) {
+        if (eventId) {
             try {
-                const eventRes = await eventCtr.getEvent(context, { filter: { id: conversation.entityId } });
+                const eventRes = await eventCtr.getEvent(context, { filter: { id: eventId } });
                 if (eventRes.success && eventRes.result) {
                     eventContext = eventRes.result;
                 }
@@ -831,7 +848,7 @@ export const conversationCtr = {
             catch (error) {
                 log.warn('Failed to load event for join approval notification', {
                     conversationId: conversation.id,
-                    eventId: conversation.entityId,
+                    eventId,
                     error,
                 });
             }
@@ -1003,6 +1020,13 @@ export const conversationCtr = {
         }
 
         const pushMessageBody = (eventContext?.pushMessage ?? '').trim();
+        const eventRedirect = eventContext
+            ? {
+                    kind: E_RedirectType.EVENT,
+                    id: eventId!,
+                    eventType: eventContext.type,
+                }
+            : undefined;
 
         // Notify the requester that they were approved
         await notificationCtr.createNotificationWithSettings(context, {
@@ -1017,6 +1041,7 @@ export const conversationCtr = {
                     headline: conversation.name
                         ? `Your request to join ${conversation.name} was approved`
                         : 'Your request to join the group was approved',
+                    ...(eventRedirect ? { redirect: eventRedirect } : {}),
                     context: {
                         conversationType: E_ConversationType.GROUP,
                         groupName: conversation.name ?? undefined,
@@ -1031,6 +1056,33 @@ export const conversationCtr = {
                 },
             },
         });
+
+        // If this group is tied to an event, send event participation accepted notification
+        if (eventContext && eventRedirect) {
+            try {
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: effectiveRequesterId,
+                        actorId: currentUser.id,
+                        type: [E_NotificationType.EVENT_PARTICIPATION_ACCEPTED],
+                        entityType: E_NotificationEntityType.EVENT,
+                        entityId: eventId as string,
+                        ...(pushMessageBody ? { body: pushMessageBody } : {}),
+                        presentation: {
+                            headline: pushMessageBody || 'You were accepted to an event',
+                            ...(pushMessageBody ? { body: pushMessageBody } : {}),
+                            redirect: eventRedirect,
+                            context: {
+                                groupName: conversation.name ?? eventContext.title ?? '',
+                            },
+                        },
+                    },
+                });
+            }
+            catch {
+                // best-effort; do not block approval
+            }
+        }
 
         // Notify the group creator/admin that someone joined
         const requesterUser = requester.result;

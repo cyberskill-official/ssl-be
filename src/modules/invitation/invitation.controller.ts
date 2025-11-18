@@ -75,6 +75,22 @@ export const invitationCtr = {
     ): Promise<I_Return<I_Invitation>> => {
         await invitationCtr._validateConversationInvitation(conversationId, userId, currentUserId);
 
+        // Block multiple invitations to the same group for the same user (regardless of status)
+        const alreadyInvited = await invitationCtr.getInvitations({}, {
+            filter: {
+                type: E_InvitationType.CONVERSATION,
+                entityId: conversationId,
+                userId,
+                isDel: false,
+            },
+        });
+        if (alreadyInvited) {
+            throwError({
+                message: 'User has already received an invitation to this group',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         // Check for existing pending invitation
         const existingPending = await InvitationModel.findOne({
             type: E_InvitationType.CONVERSATION,
@@ -491,6 +507,35 @@ export const invitationCtr = {
                             if (isActive && future) {
                                 await userCtr.updateUser(context, { filter: { id: currentUser.id }, update: { hasUpcomingEvent: true } });
                             }
+
+                            const pushMessage = (eventFound.result.pushMessage || '').trim();
+                            const headline = pushMessage || 'You were accepted to an event';
+
+                            try {
+                                await notificationCtr.createNotificationWithSettings(context, {
+                                    doc: {
+                                        targetId: currentUser.id,
+                                        actorId: invitation.result.inviterId || undefined,
+                                        type: [E_NotificationType.EVENT_PARTICIPATION_ACCEPTED],
+                                        entityType: E_NotificationEntityType.EVENT,
+                                        entityId: invitation.result.entityId,
+                                        ...(pushMessage ? { body: pushMessage } : {}),
+                                        presentation: {
+                                            headline,
+                                            ...(pushMessage ? { body: pushMessage } : {}),
+                                            redirect: {
+                                                kind: E_RedirectType.EVENT,
+                                                id: invitation.result.entityId,
+                                                eventType: eventFound.result.type,
+                                            },
+                                            context: {
+                                                groupName: eventFound.result.title || '',
+                                            },
+                                        },
+                                    },
+                                });
+                            }
+                            catch { /* best effort notify */ }
                         }
                     }
                     break;
