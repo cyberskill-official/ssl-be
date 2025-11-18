@@ -78,6 +78,7 @@ const env = getEnv();
             return adminSession(req, res, next);
         }
 
+        const hostHeader = (req.headers.host ?? '').toString().toLowerCase();
         const normalizeOrigin = (value: unknown): string | undefined => {
             if (typeof value !== 'string' || !value.trim()) {
                 return undefined;
@@ -91,11 +92,19 @@ const env = getEnv();
         };
 
         const originHeader = normalizeOrigin(req.headers.origin) || normalizeOrigin(req.headers.referer);
-        if (originHeader) {
-            if ((env.ADMIN_PANEL_ORIGINS?.length ?? 0) === 0 && originHeader.includes('admin.')) {
-                return adminSession(req, res, next);
-            }
+        const originLikelyAdmin = originHeader
+            ? ((env.ADMIN_PANEL_ORIGINS?.length ?? 0) === 0
+                    ? originHeader.includes('admin.')
+                    : adminOrigins.has(originHeader))
+            : false;
+        const hostLikelyAdmin = hostHeader ? hostHeader.includes('admin.') : false;
 
+        if (hostLikelyAdmin || originLikelyAdmin) {
+            return adminSession(req, res, next);
+        }
+
+        if (originHeader) {
+            // Allow explicit admin origins set even if above heuristics miss
             if (adminOrigins.has(originHeader)) {
                 return adminSession(req, res, next);
             }
