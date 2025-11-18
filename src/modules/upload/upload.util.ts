@@ -8,11 +8,13 @@ import {
     E_RiskLevel,
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
+import { E_NoteType } from '#modules/note/note.type.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationEntityType,
     E_NotificationType,
 } from '#modules/notification/notification.type.js';
+import { userCtr } from '#modules/user/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type { I_UploadPathConfig } from './upload.type.js';
@@ -148,21 +150,44 @@ export async function applyAiModerationDecision(
         });
 
         if (moderationUpdated.success && moderationUpdated.result?.uploadedById) {
+            const ownerId = moderationUpdated.result.uploadedById;
+            const reasonText = autoRejectReason ?? 'AI flagged and removed media.';
+
             await notificationCtr.createNotification(context, {
                 doc: {
-                    targetId: moderationUpdated.result.uploadedById,
+                    targetId: ownerId,
                     type: [E_NotificationType.MODERATION_MEDIA_REJECTED],
                     entityType: E_NotificationEntityType.MEDIA,
                     entityId: moderationUpdated.result.entityId ?? undefined,
                     presentation: {
                         headline: 'We\'re conducting a routine spot check of your image. It will be posted once approved.',
                         context: {
-                            profileOwnerId: moderationUpdated.result.uploadedById,
+                            profileOwnerId: ownerId,
                         },
                         thumbnailUrl: moderationUpdated.result.url,
                     },
                 },
             });
+
+            // Red-flag the profile and attach an automated note when AI removes media
+            try {
+                await userCtr.updateUser(context, {
+                    filter: { id: ownerId },
+                    update: {
+                        $inc: { flagCount: 1 },
+                        $push: {
+                            notes: {
+                                type: E_NoteType.AUTOMATED_DETECTION,
+                                content: reasonText,
+                                createdAt: new Date(),
+                            },
+                        },
+                    } as any,
+                });
+            }
+            catch {
+                /* best-effort; do not block moderation flow */
+            }
         }
 
         try {
@@ -180,10 +205,36 @@ export async function applyAiModerationDecision(
         }
     }
     else if (warnReason) {
-        await moderationMediaCtr.updateModerationMedia(context, {
+        const moderationUpdated = await moderationMediaCtr.updateModerationMedia(context, {
             filter: { id: moderationId },
             update: { reason: warnReason },
         });
+
+        // Flag user for AI warnings as well (non-removal)
+        if (moderationUpdated.success) {
+            const ownerId = moderationUpdated.result?.uploadedById;
+            const reasonText = warnReason;
+            if (ownerId) {
+                try {
+                    await userCtr.updateUser(context, {
+                        filter: { id: ownerId },
+                        update: {
+                            $inc: { flagCount: 1 },
+                            $push: {
+                                notes: {
+                                    type: E_NoteType.AUTOMATED_DETECTION,
+                                    content: reasonText,
+                                    createdAt: new Date(),
+                                },
+                            },
+                        } as any,
+                    });
+                }
+                catch {
+                    /* best-effort */
+                }
+            }
+        }
     }
 
     return shouldAutoReject;

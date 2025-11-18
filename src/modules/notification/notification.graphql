@@ -97,9 +97,13 @@ type T_NotificationPresentationActor {
 type T_NotificationRedirect {
     kind: E_RedirectType
     id: String
+    url: String
     map: T_Map
     eventType: E_EventType
     commentId: String
+    locationId: String
+    entityId: String
+    entityType: E_LocationEntityType
 }
 
 type T_NotificationContext {
@@ -171,9 +175,13 @@ input Input_QueryNotification {
 input Input_NotificationRedirect {
     kind: E_RedirectType
     id: String
+    url: String
     map: Input_Map
     eventType: E_EventType
     commentId: String
+    locationId: String
+    entityId: String
+    entityType: E_LocationEntityType
 }
 
 input Input_NotificationPresentationActor {

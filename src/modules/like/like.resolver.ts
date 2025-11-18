@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -37,6 +37,7 @@ const likeResolver = {
     Mutation: {
         createLike: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateLike>, context: I_Context) => likeCtr.createLike(context, args),
         deleteLike: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryLike>, context: I_Context) => likeCtr.deleteLike(context, args),
+        deleteLikes: (_parent: unknown, args: I_Input_DeleteMany<I_Input_QueryLike>, context: I_Context) => likeCtr.deleteLikes(context, args),
     },
 };
 

@@ -21,6 +21,8 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
+import { E_NoteType } from '#modules/note/note.type.js';
+import { userCtr } from '#modules/user/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
 import type {
@@ -424,6 +426,29 @@ export const moderationMediaCtr = {
                         message: `Unsupported module type: ${currentEntity}`,
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
+            }
+
+            // Red-flag profile when moderation is rejected (manual flow)
+            if (status === E_ModerationMediaStatus.REJECTED && moderation.uploadedById) {
+                const noteContent = reason?.trim() || 'Media rejected by moderator.';
+                try {
+                    await userCtr.updateUser(context, {
+                        filter: { id: moderation.uploadedById },
+                        update: {
+                            $inc: { flagCount: 1 },
+                            $push: {
+                                notes: {
+                                    type: E_NoteType.AUTOMATED_DETECTION,
+                                    content: noteContent,
+                                    createdAt: new Date(),
+                                },
+                            },
+                        } as any,
+                    });
+                }
+                catch {
+                    /* best-effort; do not block moderation flow */
+                }
             }
 
             return mongooseCtr.updateOne(

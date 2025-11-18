@@ -1,8 +1,10 @@
 import type {
     I_Input_CreateOne,
+    I_Input_DeleteMany,
     I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
+    T_DeleteResult,
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
@@ -189,6 +191,12 @@ export const likeCtr = {
             },
             options,
         );
+    },
+    deleteLikes: async (
+        _context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryLike>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        return mongooseCtr.deleteMany(filter, options);
     },
     getUserLikesBatch: async (
         _context: I_Context,

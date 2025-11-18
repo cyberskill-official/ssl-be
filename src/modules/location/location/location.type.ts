@@ -80,4 +80,5 @@ export interface I_Input_GetLocationInViewport {
     northEastLongitude: number;
     entityType?: E_LocationEntityType;
     eventType?: E_EventType;
+    entityId?: string;
 }

@@ -235,24 +235,7 @@ export const authnCtr = {
             };
         }
 
-        // Enforce inactivity timeout (sliding window based on SESSION_INACTIVITY_MINUTES)
-        try {
-            const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
-            const lastActivity = (context.req.session as any)?.lastActivity;
-            if (lastActivity && (Date.now() - Number(lastActivity) > inactivityMs)) {
-                // Destroy session and reject
-                context.req.session.destroy(() => { /* best-effort */ });
-                return {
-                    success: false,
-                    message: 'Session expired due to inactivity.',
-                    code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
-                };
-            }
-        }
-        catch (err) {
-            // If anything goes wrong checking activity, continue with existing flow (best-effort)
-            console.warn('Failed to validate session inactivity:', err);
-        }
+        // NOTE: inactivity timeout will be enforced later after we determine admin/guardian status
 
         const userFound = await userCtr.getUser(context, {
             filter: {
@@ -306,6 +289,23 @@ export const authnCtr = {
                 message: 'Guardian access revoked.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
             });
+        }
+
+        // Enforce inactivity timeout for non-admin, non-guardian sessions
+        try {
+            const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
+            const lastActivity = (context.req.session as any)?.lastActivity;
+            if (!isAdmin && !isGuardianSession && lastActivity && (Date.now() - Number(lastActivity) > inactivityMs)) {
+                context.req.session.destroy(() => { /* best-effort */ });
+                return {
+                    success: false,
+                    message: 'Session expired due to inactivity.',
+                    code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
+                };
+            }
+        }
+        catch (err) {
+            console.warn('Failed to validate session inactivity:', err);
         }
 
         if (!isGuardianSession && isAdmin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
@@ -1472,9 +1472,8 @@ export const authnCtr = {
         }
 
         const aiResult = compareFaceResult.result;
-        const isAiApproved = aiResult?.isOver18 === true;
         const ageVerifyPayload: I_AgeVerify = {
-            status: isAiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING,
+            status: E_AgeVerifyStatus.PENDING,
             method: E_AgeVerifyMethod.PASSPORT,
             preApproval: {
                 documentPic: documentUrl,
@@ -1491,10 +1490,6 @@ export const authnCtr = {
 
         if (aiResult?.dateOfBirth) {
             ageVerifyPayload.dateOfBirth = aiResult.dateOfBirth;
-        }
-
-        if (isAiApproved) {
-            ageVerifyPayload.approvedAt = new Date();
         }
 
         const userUpdated = await userCtr.updateUser(context, {

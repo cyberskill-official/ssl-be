@@ -90,12 +90,6 @@ export const blogCtr = {
         const authorId = currentUser.id;
 
         doc.authorId = authorId;
-        // Default to published/active if not explicitly provided
-        // New posts created from the Admin panel should appear on the dashboard by default
-        if (doc.isActive === undefined) {
-            doc.isActive = true;
-        }
-
         if (doc.languageId) {
             const language = await languageCtr.getLanguage(context, { filter: { id: doc.languageId } });
             if (!language.success) {
@@ -119,7 +113,15 @@ export const blogCtr = {
         const notifType = doc.type === 'PODCAST' ? E_NotificationType.NEW_PODCAST : E_NotificationType.NEW_BLOG_POST;
         const redirectKind = doc.type === 'PODCAST' ? E_RedirectType.PODCAST : E_RedirectType.BLOG;
         const notifEntity = doc.type === 'PODCAST' ? E_NotificationEntityType.PODCAST : E_NotificationEntityType.BLOG;
-        const redirectId = blogResult.result.slug;
+        // Build correct URL for notification
+        let redirectUrl = '';
+        if (doc.type === 'PODCAST') {
+            redirectUrl = `/blog/podcast/${blogResult.result.slug ?? ''}`;
+        }
+        else {
+            const category = (blogResult.result.category || '').toLowerCase();
+            redirectUrl = `/blog/${category}/${blogResult.result.slug}`;
+        }
 
         let thumbnailUrl: string | undefined;
         try {
@@ -150,7 +152,7 @@ export const blogCtr = {
                             actorId: authorId,
                             presentation: {
                                 // Use slug when available so the client can navigate without hitting 404 pages.
-                                redirect: { kind: redirectKind, id: redirectId },
+                                redirect: { kind: redirectKind, id: blogResult.result.slug, url: redirectUrl },
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,

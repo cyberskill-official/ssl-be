@@ -75,23 +75,22 @@ export const invitationCtr = {
     ): Promise<I_Return<I_Invitation>> => {
         await invitationCtr._validateConversationInvitation(conversationId, userId, currentUserId);
 
-        const existingInvitation = await invitationCtr.getInvitation({}, {
-            filter: {
-                type: E_InvitationType.CONVERSATION,
-                entityId: conversationId,
-                userId,
-                isDel: false,
-            },
+        // Find and mark previous pending invitations as deleted
+        const previousPending = await InvitationModel.findOne({
+            type: E_InvitationType.CONVERSATION,
+            entityId: conversationId,
+            userId,
+            status: E_InvitationStatus.PENDING,
+            isDel: false,
         });
-
-        if (existingInvitation.success && existingInvitation.result.status === E_InvitationStatus.PENDING) {
-            throwError({
-                message: 'User already has a pending invitation to this conversation',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+        if (previousPending) {
+            previousPending.isDel = true;
+            previousPending.status = E_InvitationStatus.DELETED;
+            await previousPending.save();
         }
 
-        if (existingInvitation.success && existingInvitation.result.status === E_InvitationStatus.BLACKLISTED) {
+        // If previous invitation is blacklisted, block new invitation
+        if (previousPending && previousPending.status === E_InvitationStatus.BLACKLISTED) {
             throwError({
                 message: 'You have been blacklisted by this user',
                 status: RESPONSE_STATUS.FORBIDDEN,

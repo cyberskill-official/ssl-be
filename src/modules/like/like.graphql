@@ -67,4 +67,5 @@ type Query {
 type Mutation {
     createLike(doc: Input_CreateLike!): T_Response_Like!
     deleteLike(filter: Input_QueryLike!, options: JSON): T_Response_Like!
+    deleteLikes(filter: Input_QueryLike!, options: JSON): T_Response_Likes!
 }

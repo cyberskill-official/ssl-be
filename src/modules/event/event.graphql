@@ -58,8 +58,8 @@ input Input_CreateEvent {
     type: E_EventType!
     title: String
     description: String!
-    startDate: DateTime!
-    endDate: DateTime!
+    startDate: DateTime
+    endDate: DateTime
     image: String
     createdById: String
     destinationId: String
@@ -127,5 +127,6 @@ type Mutation {
     createEvent(doc: Input_CreateEvent!): T_Response_Event!
     updateEvent(filter: Input_QueryEvent!, update: Input_UpdateEvent!, options: JSON): T_Response_Event!
     deleteEvent(filter: Input_QueryEvent!, options: JSON): T_Response_Event!
+    deleteEvents(filter: Input_QueryEvent!, options: JSON): T_Response_Events!
 }
 

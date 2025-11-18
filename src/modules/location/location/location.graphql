@@ -119,6 +119,7 @@ input Input_GetLocationInViewport {
     northEastLongitude: Float!
     entityType: E_LocationEntityType
     eventType: E_EventType
+    entityId: String
 }
 
 type T_Response_Location {

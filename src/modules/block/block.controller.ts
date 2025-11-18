@@ -1,8 +1,10 @@
 import type {
     I_Input_CreateOne,
+    I_Input_DeleteMany,
     I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
+    T_DeleteResult,
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
@@ -65,6 +67,13 @@ export const blockCtr = {
 
         return mongooseCtr.deleteOne(filter, options);
     },
+    deleteBlocks: async (
+        _context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryBlock>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        return mongooseCtr.deleteMany(filter, options);
+    },
+
     block: async (
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_Block>,

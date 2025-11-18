@@ -8,6 +8,7 @@ enum E_InvitationStatus {
     ACCEPTED
     REJECTED
     BLACKLISTED
+    DELETED
 }
 enum E_InvitationEvent {
     INVITATION_SENT

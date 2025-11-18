@@ -1,4 +1,4 @@
-import type { I_Input_FindOne, I_Input_FindPaging } from '@cyberskill/shared/node/mongo';
+import type { I_Input_DeleteMany, I_Input_FindOne, I_Input_FindPaging, T_DeleteResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -111,5 +111,11 @@ export const paymentCtr = {
                 code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
             };
         }
+    },
+    deletePaymentTransactions: async (
+        _context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryPaymentTransaction>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        return mongooseCtr.deleteMany(filter, options);
     },
 };

@@ -1,14 +1,17 @@
 import type {
     I_Input_CreateOne,
+    I_Input_DeleteMany,
     I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateMany,
     I_Input_UpdateOne,
+    T_DeleteResult,
     T_PaginateResult,
     T_UpdateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
+import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -17,7 +20,9 @@ import { isAfter, startOfDay } from 'date-fns';
 
 import type {
     E_Destination_PinStyle,
+    I_Location,
 } from '#modules/location/index.js';
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
@@ -55,15 +60,61 @@ import { mapEventTypeToPinStyle, normalizeBlurredMedia, shouldBlurForContext, si
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
+type T_PopulateEntry = string | PopulateOptions;
+type T_PopulateArg = T_PopulateEntry | T_PopulateEntry[] | undefined;
+
+function normalizePopulateEntries(populate?: T_PopulateArg): T_PopulateEntry[] {
+    if (!populate)
+        return [];
+    if (Array.isArray(populate))
+        return [...populate];
+    return [populate];
+}
+
+function ensureCreatedByPopulate(populate?: T_PopulateArg): T_PopulateEntry[] {
+    const normalized = normalizePopulateEntries(populate);
+    const hasCreatedBy = normalized.some((entry) => {
+        if (!entry)
+            return false;
+        if (typeof entry === 'string')
+            return entry === 'createdBy';
+        return (entry as PopulateOptions).path === 'createdBy';
+    });
+    if (!hasCreatedBy) {
+        normalized.push({ path: 'createdBy', select: 'id isDel isAdminBlocked' });
+    }
+    return normalized;
+}
+
+function isOwnerInactive(creator: Pick<I_User, 'isDel' | 'isAdminBlocked'> | null | undefined, ownerId?: string): boolean {
+    if (creator?.isDel === true || creator?.isAdminBlocked === true) {
+        return true;
+    }
+    if (!creator && ownerId) {
+        return true;
+    }
+    return false;
+}
+
 export const eventCtr = {
     getEvent: async (
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
-        const eventFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const eventFound = await mongooseCtr.findOne(
+            filter,
+            projection,
+            options,
+            ensureCreatedByPopulate(populate) as any,
+        );
 
         if (!eventFound.success) {
             return eventFound;
+        }
+
+        const eventOwner = (eventFound.result)?.createdBy as Pick<I_User, 'isDel' | 'isAdminBlocked'> | null;
+        if (isOwnerInactive(eventOwner, eventFound.result.createdById)) {
+            throwError({ message: 'Event not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
         if (eventFound.result.image) {
@@ -84,7 +135,7 @@ export const eventCtr = {
                 isViewerVerified = false;
             }
 
-            const creator: any = (eventFound.result as any).createdBy;
+            const creator = (eventFound.result)?.createdBy;
             let isCreatorVerified = false;
             try {
                 isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -146,7 +197,12 @@ export const eventCtr = {
             effectiveFilterAny['$and'] = [expiryCondition];
         }
 
-        const events = await mongooseCtr.findPaging(effectiveFilterAny, options);
+        const pagingOptions = {
+            ...(options ?? {}),
+        } as Record<string, unknown>;
+        pagingOptions['populate'] = ensureCreatedByPopulate(pagingOptions['populate'] as T_PopulateArg);
+
+        const events = await mongooseCtr.findPaging(effectiveFilterAny, pagingOptions);
         if (!events.success)
             return events;
 
@@ -156,11 +212,16 @@ export const eventCtr = {
         // Filter out events from blocked users
         let filteredDocs = events.result.docs;
         if (blockedUserIds.size > 0) {
-            filteredDocs = events.result.docs.filter((event) => {
-                const creatorId = event.createdById || (event.createdBy as any)?.id;
+            filteredDocs = filteredDocs.filter((event) => {
+                const creatorId = event.createdById || (event.createdBy)?.id;
                 return !creatorId || !blockedUserIds.has(creatorId);
             });
         }
+
+        filteredDocs = filteredDocs.filter((event) => {
+            const creator = (event)?.createdBy as Pick<I_User, 'isDel' | 'isAdminBlocked'> | null;
+            return !isOwnerInactive(creator, event.createdById);
+        });
 
         // Blur/signed media according to viewer + creator verification
         let isViewerVerified = false;
@@ -179,7 +240,7 @@ export const eventCtr = {
                     event.image = normalizeBlurredMedia(event.image);
             }
             try {
-                const creator: any = (event as any).createdBy;
+                const creator = (event).createdBy;
                 let isCreatorVerified = false;
                 try {
                     isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -283,7 +344,7 @@ export const eventCtr = {
         }
 
         // helper: valid map check
-        const hasValidMap = (loc?: any) => {
+        const hasValidMap = (loc?: I_Location) => {
             if (!loc || !loc.map)
                 return false;
             const { latitude, longitude } = loc.map;
@@ -310,7 +371,7 @@ export const eventCtr = {
             }
 
             const destination = destinationFound.result;
-            destinationLocationId = destination.locationId ?? (destination.location as any)?.id ?? destinationLocationId;
+            destinationLocationId = destination.locationId ?? (destination.location)?.id ?? destinationLocationId;
 
             // read destination pin style (if destination model exposes it)
             destinationPinStyle = (destination as any)?.pinStyle as E_Destination_PinStyle | undefined;
@@ -336,18 +397,17 @@ export const eventCtr = {
                             cityName = cityFound.result.name ?? cityName;
                     }
                     // fallback location candidate from locationId
-                    destLocationCandidate = destination.location ?? (locationFound.result as any);
+                    destLocationCandidate = destination.location ?? (locationFound.result);
                     destinationLocationId = destinationLocationId ?? locationFound.result?.id ?? destination.locationId ?? destinationLocationId;
                 }
             }
             else {
                 destLocationCandidate = destination.location ?? destLocationCandidate;
-                destinationLocationId = destinationLocationId ?? destination.locationId ?? (destination.location as any)?.id;
+                destinationLocationId = destinationLocationId ?? destination.locationId ?? (destination.location)?.id;
             }
 
-            const autoTitle = `Going clubbing in ${countryName}${countryName && cityName ? ', ' : ''}${cityName}`.trim();
-            if (autoTitle)
-                doc.title = autoTitle;
+            const clubName = destination.name?.trim() ?? '';
+            doc.title = clubName ? `Going clubbing ${clubName}` : 'Going clubbing';
             doc.image = (destination.images && destination.images[0]) ?? image;
 
             // persist pinStyle on the event doc to make UI rendering easier (if available)
@@ -415,7 +475,7 @@ export const eventCtr = {
 
         // Coordinate format check if client sent location.map (preserve previous strictness)
         if (location?.map) {
-            const { latitude, longitude } = location.map as any;
+            const { latitude, longitude } = location.map;
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
                 throwError({ message: 'Coordinates must be valid numbers', status: RESPONSE_STATUS.BAD_REQUEST });
             }
@@ -436,7 +496,11 @@ export const eventCtr = {
             doc.fee = totalFee;
         }
 
-        // Ensure CLUB_VISIT events are marked as active
+        // Ensure new announcements are active by default unless explicitly disabled by moderators
+        // (front-end currently sends false for new submissions, so force true here).
+        doc.isActive = true;
+
+        // CLUB_VISIT already handled above but keep explicit assignment for clarity
         if (type === E_EventType.CLUB_VISIT) {
             doc.isActive = true;
         }
@@ -486,14 +550,14 @@ export const eventCtr = {
 
             if (isTempActive) {
                 if (tempLocationSettings.location) {
-                    tempLocationCandidate = tempLocationSettings.location as any;
+                    tempLocationCandidate = tempLocationSettings.location;
                 }
 
                 const tempLocId = tempLocationSettings.locationId;
                 if (tempLocId) {
                     const tempFound = await locationCtr.getLocation(context, { filter: { id: tempLocId } });
                     if (tempFound.success && tempFound.result) {
-                        tempLocationCandidate = tempFound.result as any;
+                        tempLocationCandidate = tempFound.result;
                     }
                 }
             }
@@ -506,7 +570,7 @@ export const eventCtr = {
             if (partner1LocId) {
                 const partnerLocFound = await locationCtr.getLocation(context, { filter: { id: partner1LocId } });
                 if (partnerLocFound.success && partnerLocFound.result) {
-                    partnerLocationCandidate = partnerLocFound.result as any;
+                    partnerLocationCandidate = partnerLocFound.result;
                 }
             }
         }
@@ -514,7 +578,7 @@ export const eventCtr = {
 
         // prioritize candidate that has a valid map (lat/lon)
         const candidates = [tempLocationCandidate, location, partnerLocationCandidate, destLocationCandidate];
-        const sourceWithMap = candidates.find(c => hasValidMap(c)) as any | undefined;
+        const sourceWithMap = candidates.find(c => hasValidMap(c));
 
         // If we found a candidate with map, prefer it; otherwise fallback to original priority
         const sourceLocation = sourceWithMap ?? (tempLocationCandidate ?? location ?? partnerLocationCandidate ?? destLocationCandidate);
@@ -564,7 +628,7 @@ export const eventCtr = {
                 // location. This avoids duplicate pins for the same physical club/resort.
                 finalLocationId = resolvedDestLocation.id;
                 locMapForRedirect = hasValidMap(resolvedDestLocation)
-                    ? (resolvedDestLocation as any).map as { latitude?: number; longitude?: number } | undefined
+                    ? (resolvedDestLocation).map as { latitude?: number; longitude?: number } | undefined
                     : undefined;
             }
             else {
@@ -582,18 +646,18 @@ export const eventCtr = {
                                 entityType: _omitET,
                                 entityId: _omitEID,
                                 ...rest
-                            } = sourceLocation as any;
+                            } = sourceLocation;
                             return {
                                 ...rest,
                                 // ensure we pass map if present
                                 ...(hasValidMap(sourceLocation) ? { map: sourceLocation.map } : {}),
-                                pinStyle: locationPinStyle as any,
+                                pinStyle: locationPinStyle,
                                 entityType: E_LocationEntityType.EVENT,
                                 entityId: eventCreated.result.id,
                             };
                         })()
                     : {
-                            pinStyle: locationPinStyle as any,
+                            pinStyle: locationPinStyle,
                             entityType: E_LocationEntityType.EVENT,
                             entityId: eventCreated.result.id,
                         };
@@ -605,6 +669,14 @@ export const eventCtr = {
                 }
                 finalLocationId = locationCreated.result.id;
                 locMapForRedirect = (locationCreated as any).result?.map as { latitude?: number; longitude?: number } | undefined;
+            }
+
+            // Some createLocation calls return docs without the embedded map hydrated; fall back to refetching
+            if (!locMapForRedirect && finalLocationId) {
+                const fetchedLocation = await locationCtr.getLocation(context, { filter: { id: finalLocationId } });
+                if (fetchedLocation.success && hasValidMap(fetchedLocation.result)) {
+                    locMapForRedirect = (fetchedLocation.result.map ?? undefined) as { latitude?: number; longitude?: number } | undefined;
+                }
             }
 
             // Thumbnail for notification
@@ -639,6 +711,9 @@ export const eventCtr = {
                 kind: E_RedirectType.EVENT,
                 id: eventCreated.result.id,
                 eventType: eventCreated.result.type,
+                locationId: finalLocationId,
+                entityId: eventCreated.result.id,
+                entityType: E_LocationEntityType.EVENT,
                 ...(isValidMap(locMap) ? { map: { latitude: locMap!.latitude!, longitude: locMap!.longitude! } } : {}),
             } as const;
 
@@ -676,6 +751,7 @@ export const eventCtr = {
                             doc: {
                                 targetId,
                                 type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
+                                entityType: E_NotificationEntityType.EVENT,
                                 entityId: eventCreated.result.id,
                                 actorId: currentUser.id,
                                 presentation: commonPresentation,
@@ -690,7 +766,9 @@ export const eventCtr = {
 
             // Notify nearby users (no radius change)
             const nearbyUsers = await userCtr.getUsers(context, {
-                filter: { 'isActive': true, 'partner1.locationId': { $exists: true } },
+                // Include users that have a partner1.locationId regardless of their `isActive` status
+                // so offline profiles still appear on the map.
+                filter: { 'partner1.locationId': { $exists: true } },
                 options: { pagination: false },
             });
 
@@ -729,6 +807,12 @@ export const eventCtr = {
             await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* ignore */ });
             throw err;
         }
+    },
+    deleteEvents: async (
+        _context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryEvent>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        return mongooseCtr.deleteMany(filter, options);
     },
 
     updateEvent: async (

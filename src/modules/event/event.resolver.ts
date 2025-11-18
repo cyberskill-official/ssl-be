@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -15,6 +15,7 @@ const eventResolver = {
         createEvent: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateEvent>, context: I_Context) => eventCtr.createEvent(context, args),
         updateEvent: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdateEvent>, context: I_Context) => eventCtr.updateEvent(context, args),
         deleteEvent: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryEvent>, context: I_Context) => eventCtr.deleteEvent(context, args),
+        deleteEvents: (_parent: unknown, args: I_Input_DeleteMany<I_Input_QueryEvent>, context: I_Context) => eventCtr.deleteEvents(context, args),
     },
 };
 

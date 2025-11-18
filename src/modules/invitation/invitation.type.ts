@@ -19,6 +19,7 @@ export enum E_InvitationStatus {
     ACCEPTED = 'ACCEPTED',
     REJECTED = 'REJECTED',
     BLACKLISTED = 'BLACKLISTED',
+    DELETED = 'DELETED',
 }
 
 export interface I_Invitation extends I_GenericDocument {

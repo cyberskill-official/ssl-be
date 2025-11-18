@@ -89,6 +89,36 @@ function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
     return E_User_PinStyle.COUPLE;
 }
 
+function extractPlainTextFromRichContent(value?: string | null): string | undefined {
+    if (typeof value !== 'string')
+        return undefined;
+    const trimmed = value.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}'))
+        return undefined;
+    try {
+        const json = JSON.parse(trimmed);
+        const collect = (node: any): string => {
+            if (!node || typeof node !== 'object')
+                return '';
+            let text = typeof node.text === 'string' ? node.text : '';
+            if (Array.isArray(node.children)) {
+                for (const child of node.children) {
+                    text += collect(child);
+                }
+            }
+            if (node.type === 'paragraph')
+                return text ? `${text}\n` : '';
+            return text;
+        };
+        const rootChildren = Array.isArray(json?.root?.children) ? json.root.children : [];
+        const result = rootChildren.map(collect).join('').replace(/\n{2,}/g, '\n').trim();
+        return result || undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
 export const locationCtr = {
     distinct: async (
         key: string,
@@ -161,17 +191,26 @@ export const locationCtr = {
             });
         }
 
+        const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+
         const baseFilter: Record<string, unknown> = {
-            map: {
-                longitude: {
-                    $gte: filter.southWestLongitude,
-                    $lte: filter.northEastLongitude,
-                },
-                latitude: {
-                    $gte: filter.southWestLatitude,
-                    $lte: filter.northEastLatitude,
-                },
+            'map.latitude': {
+                $gte: filter.southWestLatitude,
+                $lte: filter.northEastLatitude,
             },
+            ...(crossesAntimeridian
+                ? {
+                        $or: [
+                            { 'map.longitude': { $gte: filter.southWestLongitude } },
+                            { 'map.longitude': { $lte: filter.northEastLongitude } },
+                        ],
+                    }
+                : {
+                        'map.longitude': {
+                            $gte: filter.southWestLongitude,
+                            $lte: filter.northEastLongitude,
+                        },
+                    }),
         };
 
         if (filter.entityType) {
@@ -276,7 +315,9 @@ export const locationCtr = {
         ];
 
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
-            ...options,
+            // Defaults: return a large batch without pagination unless caller overrides
+            ...(options ?? {}),
+            ...(options?.pagination === undefined ? { pagination: false, limit: 500 } : {}),
             populate: populates,
         });
 
@@ -311,6 +352,7 @@ export const locationCtr = {
         }
 
         const travelEventOverrides = new Map<string, { location: I_Location; event?: I_Event }>();
+        let forcedEntityInserted = false;
         const now = new Date();
 
         // Type guards to avoid any
@@ -338,6 +380,7 @@ export const locationCtr = {
                 // Check if user is blocked (bidirectional)
                 // Ẩn user + tất cả content của user (events, destinations)
                 let isBlockedUser = false;
+                let isOwnerInactive = false;
                 if (d.entityType === E_LocationEntityType.USER) {
                     const user = e as I_User;
                     if (user?.id && blockedUserIds.has(user.id)) {
@@ -346,9 +389,23 @@ export const locationCtr = {
                 }
                 else if (d.entityType === E_LocationEntityType.EVENT) {
                     const event = e as I_Event;
+                    const eventOwner = (event?.createdBy ?? null) as I_User | null;
+                    const eventOwnerId = eventOwner?.id ?? event?.createdById;
                     // Ẩn event nếu người tạo bị block
-                    if (event?.createdById && blockedUserIds.has(event.createdById)) {
+                    if (eventOwnerId && blockedUserIds.has(eventOwnerId)) {
                         isBlockedUser = true;
+                    }
+                    // Hide announcements/events whose owners are deleted or admin blocked
+                    if (eventOwner?.isDel === true || eventOwner?.isAdminBlocked === true) {
+                        isOwnerInactive = true;
+                    }
+                    else if (
+                        eventOwnerId
+                        && eventOwner === null
+                        && Object.prototype.hasOwnProperty.call(event ?? {}, 'createdBy')
+                    ) {
+                        // createdBy virtual failed to populate (likely because the user document was removed)
+                        isOwnerInactive = true;
                     }
                 }
                 else if (d.entityType === E_LocationEntityType.DESTINATION) {
@@ -393,18 +450,15 @@ export const locationCtr = {
                     }
                 }
 
-                if (shouldHideTravelEvent)
+                if (shouldHideTravelEvent && filter.entityType === E_LocationEntityType.USER)
                     return false;
 
-                let isIncompleteUser = false;
+                let shouldHideUser = false;
                 if (d.entityType === E_LocationEntityType.USER || (!d.entityType && isUserEntity(e))) {
                     const userEntity = e as I_User;
                     const step = userEntity?.registerStep as E_RegisterStep | undefined;
-                    const isActiveUser = userEntity?.isActive as boolean | undefined;
                     if (step && step !== E_RegisterStep.COMPLETE)
-                        isIncompleteUser = true;
-                    if (isActiveUser === false)
-                        isIncompleteUser = true;
+                        shouldHideUser = true;
                 }
 
                 return (
@@ -413,8 +467,9 @@ export const locationCtr = {
                     && !locationDeleted
                     && !isAdminBlocked
                     && !isBlockedUser
+                    && !isOwnerInactive
                     && !isEventExpired
-                    && !isIncompleteUser
+                    && !shouldHideUser
                 );
             });
 
@@ -947,9 +1002,14 @@ export const locationCtr = {
             };
 
             for (const d of allDocs) {
+                // Only dedupe USER entity pins; keep EVENT/DESTINATION pins even if they belong to same owner
+                if (d.entityType !== E_LocationEntityType.USER) {
+                    nonUser.push(d);
+                    continue;
+                }
+
                 const ownerId = extractOwnerId(d);
                 if (!ownerId) {
-                    // keep docs that we can't associate with a user
                     nonUser.push(d);
                     continue;
                 }
@@ -981,6 +1041,41 @@ export const locationCtr = {
         };
 
         docs = dedupeFinalDocs(docs);
+
+        if (filter.entityId) {
+            const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
+            if (!alreadyInDocs) {
+                const focusPopulate = populates ?? [];
+                const focusLocation = await mongooseCtr.findOne(
+                    { entityId: filter.entityId },
+                    undefined,
+                    undefined,
+                    focusPopulate,
+                );
+                if (focusLocation.success && focusLocation.result) {
+                    const processedFocusDocs = preprocessBatch([focusLocation.result]);
+                    if (processedFocusDocs.length > 0) {
+                        forcedEntityInserted = true;
+                        docs = dedupeFinalDocs([
+                            ...processedFocusDocs,
+                            ...docs,
+                        ]);
+                    }
+                }
+            }
+        }
+
+        if (forcedEntityInserted && usePagination && docs.length > requestedLimit) {
+            hasMoreAfterFill = true;
+            const focusIndex = docs.findIndex(doc => doc.entityId === filter.entityId);
+            if (focusIndex > 0) {
+                const [focusDoc] = docs.splice(focusIndex, 1);
+                if (focusDoc) {
+                    docs.unshift(focusDoc);
+                }
+            }
+            docs = docs.slice(0, requestedLimit);
+        }
 
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
         let viewerAgeVerified = false;
@@ -1072,6 +1167,10 @@ export const locationCtr = {
                         dest.logo = viewerAgeVerified
                             ? bunnyCtr.generateSignedUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'normal' } })
                             : bunnyCtr.generateBlurredUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'blur' } });
+                    }
+                    const intro = extractPlainTextFromRichContent(dest.introductionContent);
+                    if (intro) {
+                        dest.introductionContent = intro;
                     }
                 }
             }

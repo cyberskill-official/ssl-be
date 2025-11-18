@@ -26,7 +26,7 @@ import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';
-import { E_EventType, eventCtr } from '#modules/event/index.js';
+import { eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -1002,9 +1002,7 @@ export const conversationCtr = {
             });
         }
 
-        const pushMessageBody = eventContext?.type === E_EventType.PRIVATE
-            ? (eventContext.pushMessage ?? '').trim()
-            : '';
+        const pushMessageBody = (eventContext?.pushMessage ?? '').trim();
 
         // Notify the requester that they were approved
         await notificationCtr.createNotificationWithSettings(context, {
@@ -1076,9 +1074,10 @@ export const conversationCtr = {
         // Send event's push message as a normal message if event exists
         let messageSent = false;
         if (conversation.entityType === E_NotificationEntityType.EVENT) {
-            if (eventContext) {
+            const pushMsg = (eventContext?.pushMessage ?? '').trim();
+            if (pushMsg) {
                 try {
-                    messageSent = await sendConversationTextMessage(eventContext.pushMessage);
+                    messageSent = await sendConversationTextMessage(pushMsg);
                 }
                 catch (error) {
                     // Non-fatal: log and continue if push message fails
