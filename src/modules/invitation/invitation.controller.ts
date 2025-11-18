@@ -75,26 +75,24 @@ export const invitationCtr = {
     ): Promise<I_Return<I_Invitation>> => {
         await invitationCtr._validateConversationInvitation(conversationId, userId, currentUserId);
 
-        // Find and mark previous pending invitations as deleted
-        const previousPending = await InvitationModel.findOne({
+        // Check for existing pending invitation
+        const existingPending = await InvitationModel.findOne({
             type: E_InvitationType.CONVERSATION,
             entityId: conversationId,
             userId,
             status: E_InvitationStatus.PENDING,
             isDel: false,
         });
-        if (previousPending) {
-            previousPending.isDel = true;
-            previousPending.status = E_InvitationStatus.DELETED;
-            await previousPending.save();
-        }
-
-        // If previous invitation is blacklisted, block new invitation
-        if (previousPending && previousPending.status === E_InvitationStatus.BLACKLISTED) {
-            throwError({
-                message: 'You have been blacklisted by this user',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
+        if (existingPending) {
+            // If blacklisted, block
+            if (existingPending.status === E_InvitationStatus.BLACKLISTED) {
+                throwError({
+                    message: 'You have been blacklisted by this user',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+            // Return the existing pending invitation
+            return { success: true, message: 'Pending invitation already exists', result: existingPending };
         }
 
         const invitationData: I_Input_CreateInvitation = {
@@ -443,6 +441,16 @@ export const invitationCtr = {
                                 conversationId: invitation.result.entityId,
                                 userId: currentUser.id,
                                 role: E_ParticipantRole.MEMBER,
+                            },
+                        });
+
+                        // Delete all old group invitation notifications for this user/conversation
+                        await notificationCtr.deleteNotification(context, {
+                            filter: {
+                                targetId: currentUser.id,
+                                entityType: E_NotificationEntityType.CONVERSATION,
+                                entityId: invitation.result.entityId,
+                                type: E_NotificationType.CONVERSATION_INVITATION,
                             },
                         });
 

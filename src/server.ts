@@ -29,9 +29,7 @@ const env = getEnv();
         whiteList: env.CORS_WHITELIST,
     }));
 
-    const sessionParser = createSession({
-        name: env.SESSION_NAME,
-        secret: env.SESSION_SECRET,
+    const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
         saveUninitialized: false,
         store: mongoStore.create({
@@ -43,7 +41,68 @@ const env = getEnv();
             maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
+    };
+
+    const userSession = createSession({
+        ...sharedSessionOptions,
+        name: env.SESSION_NAME_USER,
+        secret: env.SESSION_SECRET_USER,
     });
+
+    const adminSession = createSession({
+        ...sharedSessionOptions,
+        name: env.SESSION_NAME_ADMIN,
+        secret: env.SESSION_SECRET_ADMIN,
+    });
+
+    const adminOrigins = new Set(
+        (env.ADMIN_PANEL_ORIGINS || []).map(origin => origin.toLowerCase().replace(/\/$/, '')),
+    );
+
+    const sessionParser = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const headerScope = (req.headers['x-session-scope']
+            || req.headers['x-ssl-session-scope']
+            || req.headers['x-app-session']
+            || '') as string;
+
+        const normalizedHeader = headerScope ? headerScope.toString().toLowerCase() : '';
+        if (normalizedHeader === 'admin') {
+            return adminSession(req, res, next);
+        }
+        if (normalizedHeader === 'user') {
+            return userSession(req, res, next);
+        }
+
+        const cookieHeader = req.headers.cookie || '';
+        if (cookieHeader.includes(`${env.SESSION_NAME_ADMIN}=`)) {
+            return adminSession(req, res, next);
+        }
+
+        const normalizeOrigin = (value: unknown): string | undefined => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return undefined;
+            }
+            try {
+                return new URL(value).origin.toLowerCase();
+            }
+            catch {
+                return value.toLowerCase().replace(/\/$/, '');
+            }
+        };
+
+        const originHeader = normalizeOrigin(req.headers.origin) || normalizeOrigin(req.headers.referer);
+        if (originHeader) {
+            if ((env.ADMIN_PANEL_ORIGINS?.length ?? 0) === 0 && originHeader.includes('admin.')) {
+                return adminSession(req, res, next);
+            }
+
+            if (adminOrigins.has(originHeader)) {
+                return adminSession(req, res, next);
+            }
+        }
+
+        return userSession(req, res, next);
+    };
     app.use(sessionParser);
 
     const httpServer = createServer(app);

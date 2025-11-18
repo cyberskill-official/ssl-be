@@ -12,6 +12,10 @@ export interface I_Environment {
     BODY_PARSER_LIMIT: string;
     SESSION_NAME: string;
     SESSION_SECRET: string;
+    SESSION_NAME_USER: string;
+    SESSION_SECRET_USER: string;
+    SESSION_NAME_ADMIN: string;
+    SESSION_SECRET_ADMIN: string;
     MONGO_HOST: string;
     MONGO_PORT: number;
     MONGO_NAME: string;
@@ -46,6 +50,7 @@ export interface I_Environment {
     BUNNY_OPTIMIZER_BLUR_CLASS: string;
     POSTMARK_SERVER_API_TOKEN: string;
     SESSION_INACTIVITY_MINUTES: number;
+    ADMIN_PANEL_ORIGINS: string[];
     NETVALVE_API_BASE_URL: string;
     NETVALVE_CLIENT_ID: string;
     NETVALVE_API_KEY: string;

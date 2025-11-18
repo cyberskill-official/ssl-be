@@ -45,6 +45,10 @@ export function getEnv(): I_Environment {
         STATIC_FOLDER: str({ default: STATIC_FOLDER }),
         SESSION_NAME: str(),
         SESSION_SECRET: str(),
+        SESSION_NAME_USER: str({ default: '' }),
+        SESSION_SECRET_USER: str({ default: '' }),
+        SESSION_NAME_ADMIN: str({ default: '' }),
+        SESSION_SECRET_ADMIN: str({ default: '' }),
         MONGO_HOST: str({ default: MONGO_HOST }),
         MONGO_PORT: port({ default: MONGO_PORT }),
         MONGO_NAME: str(),
@@ -79,6 +83,7 @@ export function getEnv(): I_Environment {
         BUNNY_OPTIMIZER_BLUR_CLASS: str({ default: BUNNY_OPTIMIZER_BLUR_CLASS }),
         POSTMARK_SERVER_API_TOKEN: str(),
         SESSION_INACTIVITY_MINUTES: port({ default: SESSION_INACTIVITY_MINUTES }),
+        ADMIN_PANEL_ORIGINS: json({ default: [] }),
         NETVALVE_API_BASE_URL: str(),
         NETVALVE_CLIENT_ID: str(),
         NETVALVE_API_KEY: str(),
@@ -88,6 +93,11 @@ export function getEnv(): I_Environment {
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;
+
+    const SESSION_NAME_USER = cleanedEnv.SESSION_NAME_USER || cleanedEnv.SESSION_NAME;
+    const SESSION_SECRET_USER = cleanedEnv.SESSION_SECRET_USER || cleanedEnv.SESSION_SECRET;
+    const SESSION_NAME_ADMIN = cleanedEnv.SESSION_NAME_ADMIN || `${cleanedEnv.SESSION_NAME}-admin`;
+    const SESSION_SECRET_ADMIN = cleanedEnv.SESSION_SECRET_ADMIN || cleanedEnv.SESSION_SECRET;
 
     const MONGO_URI = `mongodb://${haveAuth
         ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@`
@@ -101,5 +111,9 @@ export function getEnv(): I_Environment {
             NODE_ENV_MODE: cleanedEnv.NODE_ENV_MODE,
         }),
         MONGO_URI,
+        SESSION_NAME_USER,
+        SESSION_SECRET_USER,
+        SESSION_NAME_ADMIN,
+        SESSION_SECRET_ADMIN,
     };
 }
