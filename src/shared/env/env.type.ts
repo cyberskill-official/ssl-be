@@ -12,10 +12,6 @@ export interface I_Environment {
     BODY_PARSER_LIMIT: string;
     SESSION_NAME: string;
     SESSION_SECRET: string;
-    SESSION_NAME_USER: string;
-    SESSION_SECRET_USER: string;
-    SESSION_NAME_ADMIN: string;
-    SESSION_SECRET_ADMIN: string;
     MONGO_HOST: string;
     MONGO_PORT: number;
     MONGO_NAME: string;
