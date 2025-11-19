@@ -23,6 +23,8 @@ import type {
 } from '#modules/payment/netvalve/netvalve.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import orderCtr from '#modules/order/order.controller.js';
+import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentRequestStatus, paymentCtr, paymentRequestCtr } from '#modules/payment/index.js';
 import { isNetvalvePaymentType, NETVALVE_PAYMENT_TYPES } from '#modules/payment/netvalve/netvalve.constant.js';
 import { netvalveCtr } from '#modules/payment/netvalve/netvalve.controller.js';
 import { resolveThreeDSFlow } from '#modules/payment/netvalve/netvalve.handler.js';
@@ -270,13 +272,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         }
 
         const context: I_Context = { req };
-
-        // dynamically import controllers and enums to avoid import ordering conflicts
-        const { orderCtr } = await import('#modules/order/order.controller.js');
-        const { paymentRequestCtr } = await import('#modules/payment/payment-request/payment-request.controller.js');
-        const { paymentCtr } = await import('#modules/payment/payment-transaction/payment-transaction.controller.js');
-        const { E_PaymentRequestStatus } = await import('#modules/payment/payment-request/payment-request.type.js');
-        const { E_PaymentProvider, E_PaymentGatewayOperation } = await import('#modules/payment/payment-transaction/payment-transaction.type.js');
 
         // 1) persist an Order record for this request
         const orderDoc: Record<string, unknown> = {

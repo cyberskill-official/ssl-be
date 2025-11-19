@@ -22,8 +22,10 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { blockCtr } from '#modules/block/block.controller.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
+import { eventCtr } from '#modules/event/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
 import type {
@@ -181,7 +183,7 @@ export const locationCtr = {
         return mongooseCtr.deleteOne(filter, options);
     },
     getLocationsInViewport: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
         if (!filter) {
@@ -193,7 +195,7 @@ export const locationCtr = {
 
         const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
 
-        const baseFilter: Record<string, unknown> = {
+        const locationBoundsFilter: T_FilterQuery<I_Location> = {
             'map.latitude': {
                 $gte: filter.southWestLatitude,
                 $lte: filter.northEastLatitude,
@@ -213,8 +215,12 @@ export const locationCtr = {
                     }),
         };
 
+        const baseFilter: T_FilterQuery<I_Location> = {
+            ...locationBoundsFilter,
+        };
+
         if (filter.entityType) {
-            baseFilter['entityType'] = filter.entityType;
+            baseFilter.entityType = filter.entityType;
         }
 
         const basePopulate: PopulateOptions[] = [
@@ -325,14 +331,104 @@ export const locationCtr = {
             return pagingResult;
         }
 
+        const rawDocs = pagingResult.result.docs ?? [];
+        const existingEventIds = new Set<string>();
+        for (const doc of rawDocs) {
+            if (doc?.entityType !== E_LocationEntityType.EVENT)
+                continue;
+            const eventFromEntity = doc.entity as I_Event | undefined;
+            const entityId = typeof doc.entityId === 'string'
+                ? doc.entityId
+                : eventFromEntity?.id;
+            if (entityId) {
+                existingEventIds.add(entityId);
+            }
+        }
+
+        const shouldInjectClubVisits
+            = filter.entityType === E_LocationEntityType.EVENT
+                && (!filter.eventType || filter.eventType === E_EventType.CLUB_VISIT);
+
+        let syntheticClubVisitDocs: I_Location[] = [];
+        if (shouldInjectClubVisits) {
+            try {
+                const destinationFilter: T_FilterQuery<I_Location> = {
+                    ...locationBoundsFilter,
+                    entityType: E_LocationEntityType.DESTINATION,
+                    isDel: { $ne: true },
+                };
+                const destinationIdsResult = await mongooseCtr.distinct('id', destinationFilter);
+                const destinationIds = destinationIdsResult.success
+                    ? (destinationIdsResult.result ?? []).filter(
+                            (value): value is string => typeof value === 'string',
+                        )
+                    : [];
+
+                if (destinationIds.length > 0) {
+                    const eventFilter: T_FilterQuery<I_Event> = {
+                        type: E_EventType.CLUB_VISIT,
+                        isActive: true,
+                        isDel: { $ne: true },
+                        locationId: { $in: destinationIds },
+                    };
+
+                    const clubEventsResult = await eventCtr.getEvents(context, {
+                        filter: eventFilter as any,
+                        options: {
+                            pagination: false,
+                            populate: eventPopulate,
+                        },
+                    });
+
+                    if (clubEventsResult.success && clubEventsResult.result?.docs) {
+                        syntheticClubVisitDocs
+                            = clubEventsResult.result.docs
+                                .map((eventDoc) => {
+                                    if (!eventDoc?.id || existingEventIds.has(eventDoc.id))
+                                        return null;
+                                    const loc = eventDoc.location as I_Location | undefined;
+                                    if (!loc?.map)
+                                        return null;
+
+                                    const locPlain = typeof (loc as any).toObject === 'function'
+                                        ? (loc as any).toObject()
+                                        : { ...(loc as any) };
+                                    const {
+                                        id: baseLocationId,
+                                        entity: _omitEntity,
+                                        entityType: _omitEntityType,
+                                        entityId: _omitLocEntityId,
+                                        _id: _omitMongoId,
+                                        ...restLocation
+                                    } = locPlain;
+                                    const syntheticId = `${baseLocationId ?? eventDoc.locationId ?? eventDoc.id}-club-${eventDoc.id}`;
+                                    existingEventIds.add(eventDoc.id);
+                                    return {
+                                        ...restLocation,
+                                        id: syntheticId,
+                                        entityType: E_LocationEntityType.EVENT,
+                                        entityId: eventDoc.id,
+                                        entity: eventDoc,
+                                    } as I_Location;
+                                })
+                                .filter((doc): doc is I_Location => Boolean(doc));
+                    }
+                }
+            }
+            catch {
+                syntheticClubVisitDocs = [];
+            }
+        }
+
+        const docsSource = [...rawDocs, ...syntheticClubVisitDocs];
+
         // Fetch blocked users list để filter bidirectional blocking
         let blockedUserIds = new Set<string>();
         try {
-            const viewer = await authnCtr.getUserFromSession(_context);
+            const viewer = await authnCtr.getUserFromSession(context);
             if (viewer?.id) {
                 // Import blockCtr để fetch blocks
-                const { blockCtr } = await import('#modules/block/index.js');
-                const blocks = await blockCtr.getBlocks(_context, { options: { pagination: false } });
+                const blocks = await blockCtr.getBlocks(context, { options: { pagination: false } });
                 if (blocks.success && blocks.result?.docs) {
                     blocks.result.docs.forEach((block) => {
                         // Add both userId and blockId để hide bidirectional
@@ -897,12 +993,15 @@ export const locationCtr = {
         };
 
         // Process first page
-        let docs: I_Location[] = preprocessBatch(pagingResult.result.docs ?? []);
+        let docs: I_Location[] = preprocessBatch(docsSource);
 
         // If pagination is enabled and the page after filtering has fewer than limit items, backfill from next pages
-        const requestedLimit = (typeof pagingResult.result?.limit === 'number'
+        const limitCandidate = typeof pagingResult.result?.limit === 'number'
             ? pagingResult.result!.limit
-            : (options?.limit as number | undefined)) ?? docs.length;
+            : (options?.limit as number | undefined);
+        const requestedLimit = limitCandidate && limitCandidate > 0
+            ? limitCandidate
+            : Math.max(docs.length, 1);
         const pageNumber = (pagingResult.result?.page ?? options?.page ?? 1) as number;
 
         let nextPageToFetch = (pagingResult.result?.nextPage ?? (pageNumber + 1)) as number | null;
@@ -1080,7 +1179,7 @@ export const locationCtr = {
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
         let viewerAgeVerified = false;
         try {
-            const viewer = await authnCtr.getUserFromSession(_context);
+            const viewer = await authnCtr.getUserFromSession(context);
             viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
         }
         catch {
