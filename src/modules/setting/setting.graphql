@@ -3,6 +3,7 @@ enum E_SettingType {
     ADMIN_NOTIFICATION
     AI_MODERATION
     PRICING_DEFAULT
+    FAQ
 }
 
 type T_SocialLink {
@@ -103,13 +104,34 @@ type T_PricingDefault {
     taxRate: Float
 }
 
-union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig | T_PricingDefault
+type T_FAQEntry {
+    question: String
+    answer: String
+    isPublished: Boolean
+}
+
+input Input_FAQEntry {
+    question: String!
+    answer: String!
+    isPublished: Boolean
+}
+
+type T_FAQ {
+    entries: [T_FAQEntry!]!
+}
+
+input Input_FAQ {
+    entries: [Input_FAQEntry!]!
+}
+
+union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig | T_PricingDefault | T_FAQ
 
 input Input_Setting {
     footer: Input_Footer
     adminNotification: Input_AdminNotification
     aiModeration: Input_AIModerationConfig
     pricingDefault: Input_PricingDefault
+    faq: Input_FAQ
 }
 
 type T_Setting {

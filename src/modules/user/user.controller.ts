@@ -43,7 +43,7 @@ import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
+import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User, I_UserSettings_TemporaryLocation } from './user.type.js';
 
 import { UserModel } from './user.model.js';
 import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
@@ -564,6 +564,8 @@ export const userCtr = {
             }
         }
 
+        const previousTempLocationId = userFound.result.settings?.temporaryLocation?.locationId || null;
+
         if (update.settings?.temporaryLocation) {
             const temp = update.settings.temporaryLocation;
             const existingTempLocationId = userFound.result.settings?.temporaryLocation?.locationId;
@@ -661,6 +663,18 @@ export const userCtr = {
                 console.error('[USER] Failed to queue welcome email:', emailResponse.message);
             }
             await broadcastNewMemberInArea(context, updatedUser.id);
+        }
+
+        const tempLocationUpdated = Boolean(update.settings?.temporaryLocation);
+        if (tempLocationUpdated && updatedUser?.settings?.temporaryLocation) {
+            const tempSettings = updatedUser.settings.temporaryLocation;
+            const hasLocationData = Boolean(tempSettings.location?.map || tempSettings.locationId);
+            const tempLocationId = tempSettings.locationId ?? null;
+            const providedLocationObject = Boolean(update.settings?.temporaryLocation?.location);
+            const locationChanged = tempLocationId !== previousTempLocationId || providedLocationObject;
+            if (hasLocationData && locationChanged && isTemporaryLocationActive(tempSettings)) {
+                await broadcastNewMemberInArea(context, updatedUser.id);
+            }
         }
 
         if (intendsToSoftDelete && targetEmail) {
@@ -1085,6 +1099,29 @@ export const userCtr = {
     },
 
 };
+
+function isTemporaryLocationActive(temp?: I_UserSettings_TemporaryLocation | null): boolean {
+    if (!temp)
+        return false;
+    if (!temp.endAt)
+        return true;
+    try {
+        const rawEnd = new Date(temp.endAt);
+        if (Number.isNaN(rawEnd.getTime()))
+            return false;
+        const isMidnight = rawEnd.getHours() === 0
+            && rawEnd.getMinutes() === 0
+            && rawEnd.getSeconds() === 0
+            && rawEnd.getMilliseconds() === 0;
+        const normalizedEnd = isMidnight
+            ? new Date(rawEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
+            : rawEnd;
+        return normalizedEnd > new Date();
+    }
+    catch {
+        return false;
+    }
+}
 
 async function broadcastNewMemberInArea(context: I_Context, newUserId: string) {
     try {

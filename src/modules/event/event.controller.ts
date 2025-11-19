@@ -541,19 +541,30 @@ export const eventCtr = {
 
         let tempLocationCandidate: typeof location | undefined;
         try {
-            const tempEndAt = tempLocationSettings?.endAt ? new Date(tempLocationSettings.endAt) : undefined;
-            const isTempActive = !!tempLocationSettings
-                && (
-                    !tempEndAt
-                    || (!Number.isNaN(tempEndAt.getTime()) && tempEndAt > now)
-                );
+            const isTempActive = (() => {
+                if (!tempLocationSettings)
+                    return false;
+                if (!tempLocationSettings.endAt)
+                    return true;
+                const rawEnd = new Date(tempLocationSettings.endAt);
+                if (Number.isNaN(rawEnd.getTime()))
+                    return false;
+                const isMidnight = rawEnd.getHours() === 0
+                    && rawEnd.getMinutes() === 0
+                    && rawEnd.getSeconds() === 0
+                    && rawEnd.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight
+                    ? new Date(rawEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
+                    : rawEnd;
+                return normalizedEnd > now;
+            })();
 
             if (isTempActive) {
-                if (tempLocationSettings.location) {
+                if (tempLocationSettings?.location) {
                     tempLocationCandidate = tempLocationSettings.location;
                 }
 
-                const tempLocId = tempLocationSettings.locationId;
+                const tempLocId = tempLocationSettings?.locationId;
                 if (tempLocId) {
                     const tempFound = await locationCtr.getLocation(context, { filter: { id: tempLocId } });
                     if (tempFound.success && tempFound.result) {

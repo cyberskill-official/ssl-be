@@ -3,7 +3,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import { E_SocialPlatform } from '#modules/social-platform/index.js';
 
-import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_PricingDefault } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_FAQ, I_FAQEntry, I_Footer, I_PricingDefault } from './setting.type.js';
 
 import { E_SettingType } from './setting.type.js';
 
@@ -125,6 +125,24 @@ export function validatePricingDefault(value: I_PricingDefault): boolean {
     return true;
 }
 
+export function validateFAQ(value: I_FAQ): boolean {
+    if (!value || typeof value !== 'object' || !Array.isArray(value.entries)) {
+        return false;
+    }
+
+    return value.entries.every((entry: I_FAQEntry) => {
+        if (!entry || typeof entry !== 'object')
+            return false;
+        if (typeof entry.question !== 'string' || entry.question.trim().length === 0)
+            return false;
+        if (typeof entry.answer !== 'string' || entry.answer.trim().length === 0)
+            return false;
+        if (entry.isPublished !== undefined && typeof entry.isPublished !== 'boolean')
+            return false;
+        return true;
+    });
+}
+
 export function validateFooterBusinessRules(footer: I_Footer): void {
     if (footer.socialLinks && footer.socialLinks.length === 0) {
         throwError({
@@ -189,7 +207,16 @@ export function validationPricingDefault(config: I_PricingDefault): void {
     }
 }
 
-export function validateSettingValue(value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault, settingType: E_SettingType): boolean {
+export function validateFaqBusinessRules(faq: I_FAQ): void {
+    if (!faq.entries || faq.entries.length === 0) {
+        throwError({
+            message: 'At least one Q&A entry is required',
+            status: RESPONSE_STATUS.BAD_REQUEST,
+        });
+    }
+}
+
+export function validateSettingValue(value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault | I_FAQ, settingType: E_SettingType): boolean {
     switch (settingType) {
         case E_SettingType.FOOTER:
             return validateFooter(value as I_Footer);
@@ -199,6 +226,8 @@ export function validateSettingValue(value: I_Footer | I_AdminNotification | I_A
             return validateAIModerationConfig(value as I_AIModerationConfig);
         case E_SettingType.PRICING_DEFAULT:
             return validatePricingDefault(value as I_PricingDefault);
+        case E_SettingType.FAQ:
+            return validateFAQ(value as I_FAQ);
         default:
             return false;
     }

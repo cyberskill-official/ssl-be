@@ -31,6 +31,9 @@ const settingResolver = {
             else if (parent.type === E_SettingType.PRICING_DEFAULT) {
                 return parent.value ? { ...parent.value, __typename: 'T_PricingDefault' } : null;
             }
+            else if (parent.type === E_SettingType.FAQ) {
+                return parent.value ? { ...parent.value, __typename: 'T_FAQ' } : null;
+            }
             return null;
         },
     },

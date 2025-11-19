@@ -8,6 +8,7 @@ export enum E_SettingType {
     ADMIN_NOTIFICATION = 'ADMIN_NOTIFICATION',
     AI_MODERATION = 'AI_MODERATION',
     PRICING_DEFAULT = 'PRICING_DEFAULT',
+    FAQ = 'FAQ',
 }
 
 export interface I_SocialLink {
@@ -17,6 +18,16 @@ export interface I_SocialLink {
 
 export interface I_Footer {
     socialLinks?: I_SocialLink[];
+}
+
+export interface I_FAQEntry {
+    question: string;
+    answer: string;
+    isPublished?: boolean;
+}
+
+export interface I_FAQ {
+    entries: I_FAQEntry[];
 }
 
 export interface I_AdminNotification {
@@ -63,7 +74,7 @@ export interface I_PricingDefault {
 
 export interface I_Setting extends I_GenericDocument {
     type: E_SettingType;
-    value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault;
+    value: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault | I_FAQ;
 }
 
 export interface I_GraphQLSettingValue {
@@ -71,6 +82,7 @@ export interface I_GraphQLSettingValue {
     adminNotification?: I_AdminNotification;
     aiModeration?: I_AIModerationConfig;
     pricingDefault?: I_PricingDefault;
+    faq?: I_FAQ;
 }
 
 export interface I_GraphQLSetting extends I_GenericDocument {

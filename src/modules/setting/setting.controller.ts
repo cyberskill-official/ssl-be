@@ -7,18 +7,18 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_AdminNotification, I_AIModerationConfig, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_PricingDefault, I_Setting } from './setting.type.js';
+import type { I_AdminNotification, I_AIModerationConfig, I_FAQ, I_Footer, I_Input_CreateSetting, I_Input_CreateSettingGraphQL, I_Input_QuerySetting, I_Input_UpdateSetting, I_Input_UpdateSettingGraphQL, I_PricingDefault, I_Setting } from './setting.type.js';
 
 import { SettingsModel } from './setting.model.js';
 import { E_SettingType } from './setting.type.js';
-import { validateAdminNotificationBusinessRules, validateAIModerationBusinessRules, validateFooterBusinessRules, validateSettingValue, validationPricingDefault } from './setting.validation.js';
+import { validateAdminNotificationBusinessRules, validateAIModerationBusinessRules, validateFaqBusinessRules, validateFooterBusinessRules, validateSettingValue, validationPricingDefault } from './setting.validation.js';
 
 const mongooseCtr = new MongooseController<I_Setting>(SettingsModel);
 
 function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_CreateSetting {
     const transformed: I_Input_CreateSetting = {
         ...doc,
-        value: undefined as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
+        value: undefined as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault | I_FAQ,
     };
 
     if (doc.type === E_SettingType.FOOTER && doc.value?.footer) {
@@ -33,6 +33,9 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
     else if (doc.type === E_SettingType.PRICING_DEFAULT && doc.value?.pricingDefault) {
         transformed.value = doc.value.pricingDefault as unknown as I_PricingDefault;
     }
+    else if (doc.type === E_SettingType.FAQ && doc.value?.faq) {
+        transformed.value = doc.value.faq;
+    }
 
     else {
         throwError({
@@ -46,11 +49,11 @@ function transformGraphQLInput(doc: I_Input_CreateSettingGraphQL): I_Input_Creat
 
 function transformGraphQLUpdateInput(
     update: I_Input_UpdateSettingGraphQL,
-    currentValue: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
+    currentValue: I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault | I_FAQ,
 ): I_Input_UpdateSetting {
     const transformed: I_Input_UpdateSetting = {
         ...update,
-        value: currentValue as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault,
+        value: currentValue as unknown as I_Footer | I_AdminNotification | I_AIModerationConfig | I_PricingDefault | I_FAQ,
     };
 
     if (update.type === E_SettingType.FOOTER && update.value?.footer) {
@@ -64,6 +67,9 @@ function transformGraphQLUpdateInput(
     }
     else if (update.type === E_SettingType.PRICING_DEFAULT && update.value?.pricingDefault) {
         transformed.value = update.value.pricingDefault;
+    }
+    else if (update.type === E_SettingType.FAQ && update.value?.faq) {
+        transformed.value = update.value.faq;
     }
     return transformed;
 }
@@ -106,6 +112,9 @@ export const settingCtr = {
         }
         else if (transformedDoc.type === E_SettingType.PRICING_DEFAULT) {
             validationPricingDefault(transformedDoc.value as I_PricingDefault);
+        }
+        else if (transformedDoc.type === E_SettingType.FAQ) {
+            validateFaqBusinessRules(transformedDoc.value as I_FAQ);
         }
         else {
             throwError({
@@ -159,6 +168,9 @@ export const settingCtr = {
         }
         else if (effectiveType === E_SettingType.PRICING_DEFAULT && transformedUpdate.value) {
             validationPricingDefault(transformedUpdate.value as I_PricingDefault);
+        }
+        else if (effectiveType === E_SettingType.FAQ && transformedUpdate.value) {
+            validateFaqBusinessRules(transformedUpdate.value as I_FAQ);
         }
 
         return await mongooseCtr.updateOne(filter, transformedUpdate, options);
