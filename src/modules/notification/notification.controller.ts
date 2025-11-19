@@ -302,6 +302,48 @@ export const notificationCtr = {
             return LEVEL_TO_RADIUS_MAP[closest] || DEFAULT_RADIUS_KM;
         };
 
+        const viewport = (lat?: number, lng?: number, level?: number) => {
+            if (typeof lat !== 'number' || Number.isNaN(lat))
+                return null;
+            if (typeof lng !== 'number' || Number.isNaN(lng))
+                return null;
+            if (typeof level !== 'number' || Number.isNaN(level))
+                return null;
+
+            const radiusKm = convertLevelToRadius(level);
+            const radiusMeters = radiusKm * 1000;
+
+            const deltaLat = radiusMeters / 110540;
+            const deltaLng = radiusMeters / (111200 * Math.cos((lat * Math.PI) / 180));
+
+            return {
+                northEastLatitude: lat + deltaLat,
+                northEastLongitude: lng + deltaLng,
+                southWestLatitude: lat - deltaLat,
+                southWestLongitude: lng - deltaLng,
+            };
+        };
+
+        const isPointInsideViewport = (
+            lat: number,
+            lng: number,
+            area?: ReturnType<typeof viewport>,
+        ): boolean => {
+            if (!area)
+                return false;
+
+            const withinLat = lat >= area.southWestLatitude && lat <= area.northEastLatitude;
+            let withinLng = false;
+            if (area.southWestLongitude <= area.northEastLongitude) {
+                withinLng = lng >= area.southWestLongitude && lng <= area.northEastLongitude;
+            }
+            else {
+                // Handle wrap-around at antimeridian
+                withinLng = lng >= area.southWestLongitude || lng <= area.northEastLongitude;
+            }
+            return withinLat && withinLng;
+        };
+
         const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
             const toRad = (v: number) => (v * Math.PI) / 180;
             const R = 6371; // Earth radius km
@@ -375,8 +417,13 @@ export const notificationCtr = {
                 }
 
                 // Determine radius from recipient zoomLevel setting (fallback to default)
-                const zoomLevel = (recipient.result.settings?.zoomLevel as number | undefined) ?? undefined;
+                const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
                 const radiusKm = convertLevelToRadius(zoomLevel);
+                const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
+
+                if (!isPointInsideViewport(actorMap.latitude, actorMap.longitude, interestViewport)) {
+                    return { success: true, message: null };
+                }
 
                 const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
                 if (distanceKm > radiusKm) {

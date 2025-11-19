@@ -435,6 +435,21 @@ export const userCtr = {
             });
         }
 
+        const partner1LocationPayload = doc.partner1?.location
+            ? { ...doc.partner1.location }
+            : undefined;
+        if (partner1LocationPayload && doc.partner1) {
+            doc.partner1 = { ...doc.partner1, location: undefined };
+        }
+
+        const tempLocationPayload = doc.settings?.temporaryLocation?.location
+            ? { ...doc.settings.temporaryLocation.location }
+            : undefined;
+        if (tempLocationPayload && doc.settings?.temporaryLocation) {
+            const { location, ...restTempLocation } = doc.settings.temporaryLocation;
+            doc.settings.temporaryLocation = { ...restTempLocation, location: tempLocationPayload };
+        }
+
         // 3) Tạo user mới
         const userCreated = await mongooseCtr.createOne({
             ...doc,
@@ -448,6 +463,7 @@ export const userCtr = {
         // 4) Tạo location mặc định
         const locationCreated = await locationCtr.createLocation(context, {
             doc: {
+                ...(partner1LocationPayload ?? {}),
                 entityType: E_LocationEntityType.USER,
                 entityId: userCreated.result.id,
             },
@@ -459,6 +475,7 @@ export const userCtr = {
         // 5) Tạo temporary location
         const temporaryLocationCreated = await locationCtr.createLocation(context, {
             doc: {
+                ...(tempLocationPayload ?? {}),
                 entityType: E_LocationEntityType.USER,
                 entityId: userCreated.result.id,
             },
@@ -471,55 +488,25 @@ export const userCtr = {
         const updatedUser = await mongooseCtr.updateOne(
             { id: userCreated.result.id },
             {
-                partner1: { locationId: locationCreated.result.id },
+                partner1: {
+                    ...(userCreated.result.partner1 ?? {}),
+                    locationId: locationCreated.result.id,
+                },
                 settings: {
+                    ...(userCreated.result.settings ?? {}),
                     temporaryLocation: {
+                        ...(userCreated.result.settings?.temporaryLocation ?? {}),
                         locationId: temporaryLocationCreated.result.id,
                     },
                 },
             },
         );
 
-        // 7) Sau khi update thành công → gửi thông báo + email “New member in your area”
-        try {
-            const [newUserHydrated, allUsers] = await Promise.all([
-                userCtr.getUser(context, { filter: { id: userCreated.result.id } }),
-                userCtr.getUsers(context, { filter: { isActive: true }, options: { pagination: false } }),
-            ]);
-
-            if (newUserHydrated.success && allUsers.success) {
-                const newUser = newUserHydrated.result;
-                // IN-APP notification đến tất cả user đang active (trừ chính chủ)
-                const notifTasks = allUsers.result.docs
-                    .filter(u => u.id !== newUser.id)
-                    .map(u =>
-                        notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId: u.id,
-                                type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
-                                entityType: E_NotificationEntityType.USER,
-                                entityId: newUser.id,
-                                actorId: newUser.id,
-                                presentation: {
-                                    redirect: { kind: E_RedirectType.PROFILE, id: newUser.username ?? newUser.id },
-                                    actor: {
-                                        username: newUser.username,
-                                        accountType: newUser.accountType,
-                                        avatarUrl: newUser.partner1?.gallery?.url,
-                                        gender: newUser.partner1?.gender,
-                                    },
-                                },
-                            },
-                        }).catch(() => undefined),
-                    );
-                await Promise.allSettled(notifTasks);
-            }
-        }
-        catch {
-        // swallow batch notification/email errors
+        if (doc.registerStep === E_RegisterStep.COMPLETE) {
+            await broadcastNewMemberInArea(context, userCreated.result.id);
         }
 
-        // 8) Trả kết quả cuối cùng
+        // 7) Trả kết quả cuối cùng
         return updatedUser;
     },
 
@@ -673,6 +660,7 @@ export const userCtr = {
             if (!emailResponse.success) {
                 console.error('[USER] Failed to queue welcome email:', emailResponse.message);
             }
+            await broadcastNewMemberInArea(context, updatedUser.id);
         }
 
         if (intendsToSoftDelete && targetEmail) {
@@ -1097,3 +1085,63 @@ export const userCtr = {
     },
 
 };
+
+async function broadcastNewMemberInArea(context: I_Context, newUserId: string) {
+    try {
+        const [newUserRes, recipientsRes] = await Promise.all([
+            userCtr.getUser(context, {
+                filter: { id: newUserId },
+                populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
+            }),
+            userCtr.getUsers(context, { filter: { isActive: true }, options: { pagination: false } }),
+        ]);
+
+        if (!newUserRes.success || !newUserRes.result) {
+            return;
+        }
+
+        if (!recipientsRes.success || !Array.isArray(recipientsRes.result?.docs)) {
+            return;
+        }
+
+        const newUser = newUserRes.result;
+        const hasLocation = Boolean(
+            newUser.partner1?.locationId
+            || newUser.partner2?.locationId
+            || newUser.settings?.temporaryLocation?.locationId,
+        );
+        if (!hasLocation) {
+            return;
+        }
+
+        const tasks = recipientsRes.result.docs
+            .filter(u => u.id && u.id !== newUser.id)
+            .map(u =>
+                notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: u.id,
+                        type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
+                        entityType: E_NotificationEntityType.USER,
+                        entityId: newUser.id,
+                        actorId: newUser.id,
+                        presentation: {
+                            redirect: { kind: E_RedirectType.PROFILE, id: newUser.username ?? newUser.id },
+                            actor: {
+                                username: newUser.username,
+                                accountType: newUser.accountType,
+                                avatarUrl: newUser.partner1?.gallery?.url,
+                                gender: newUser.partner1?.gender,
+                            },
+                        },
+                    },
+                }).catch(() => undefined),
+            );
+
+        if (tasks.length > 0) {
+            await Promise.allSettled(tasks);
+        }
+    }
+    catch (error) {
+        console.error('[USER] Failed to broadcast new member notification:', error);
+    }
+}
