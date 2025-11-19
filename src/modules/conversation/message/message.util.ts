@@ -111,10 +111,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         const trimmed = content.contactAdmin.image.trim();
         if (trimmed) {
             const contactAdmin = { ...content.contactAdmin };
-            contactAdmin.image = isViewerVerified
-                ? bunnyCtr.generateSignedUrl({ fullUrl: trimmed, extraQueryParams: { class: 'normal' } })
-                : bunnyCtr.generateBlurredUrl({ fullUrl: trimmed, extraQueryParams: { class: 'blur' } });
-
+            contactAdmin.image = bunnyCtr.generateSignedUrl({ fullUrl: trimmed, extraQueryParams: { class: 'normal' } });
             content.contactAdmin = contactAdmin;
         }
     }

@@ -7,6 +7,7 @@ import type {
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
+import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -61,10 +62,52 @@ export const invitationCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Invitation>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
+        const inviterPopulate: PopulateOptions = {
+            path: 'inviter',
+            select: 'id username accountType partner1 partner2',
+            populate: [
+                {
+                    path: 'partner1',
+                    select: 'id gallery',
+                    populate: [{ path: 'gallery' }],
+                },
+                {
+                    path: 'partner2',
+                    select: 'id gallery',
+                    populate: [{ path: 'gallery' }],
+                },
+            ],
+        };
+
+        const entityPopulate: PopulateOptions = {
+            path: 'entity',
+            populate: [{ path: 'createdBy', select: 'id username accountType' }],
+        };
+
+        const incomingPopulate = (() => {
+            const p = options?.populate as unknown;
+            if (!p)
+                return [];
+            return Array.isArray(p) ? p.slice() : [p];
+        })();
+
+        const normalizedPopulate = incomingPopulate.map((entry: any) =>
+            typeof entry === 'string' ? ({ path: entry } as PopulateOptions) : (entry as PopulateOptions),
+        );
+
+        const mergedOptions = {
+            ...(options ?? {}),
+            populate: [
+                ...normalizedPopulate,
+                inviterPopulate,
+                entityPopulate,
+            ],
+        };
+
         return mongooseCtr.findPaging({
             ...filter,
             userId: currentUser.id,
-        }, options);
+        }, mergedOptions as typeof options);
     },
 
     _handleConversationInvitation: async (
@@ -455,6 +498,20 @@ export const invitationCtr = {
                         // Notify inviter that the user accepted and joined the group
                         // Load conversation to include group name
                         const conversationFound = await conversationCtr.getConversation(context, { filter: { id: invitation.result.entityId } });
+                        const profileRedirectId
+                            = currentUser.username
+                                ?? invitation.result.user?.username
+                                ?? invitation.result.userId
+                                ?? currentUser.id;
+
+                        const actorPresentation = {
+                            username: currentUser.username,
+                            accountType: currentUser.accountType,
+                            avatarUrl: currentUser.partner1?.gallery?.url
+                                ?? currentUser.partner2?.gallery?.url
+                                ?? undefined,
+                            gender: currentUser.partner1?.gender ?? currentUser.partner2?.gender,
+                        };
 
                         try {
                             await notificationCtr.createNotificationWithSettings(context, {
@@ -466,12 +523,13 @@ export const invitationCtr = {
                                     entityId: invitation.result.entityId,
                                     channels: [E_NotificationChannel.IN_APP],
                                     presentation: {
-                                        redirect: { kind: E_RedirectType.CONVERSATION, id: invitation.result.entityId },
+                                        redirect: { kind: E_RedirectType.PROFILE, id: profileRedirectId },
                                         context: {
                                             conversationType: E_ConversationType.GROUP,
                                             groupName: conversationFound?.success ? (conversationFound.result?.name || '') : '',
                                         },
                                         headline: 'accepted your group invitation',
+                                        actor: actorPresentation,
                                     },
                                 },
                             });
