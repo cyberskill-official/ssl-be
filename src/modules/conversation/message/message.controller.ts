@@ -15,10 +15,12 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { escapeRegExp } from 'lodash-es';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { keywordCtr } from '#modules/keyword/index.js';
 import { aiModerationCtr } from '#modules/moderation/index.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
@@ -75,6 +77,36 @@ export const messageCtr = {
                 message: 'Only one of recipientId or conversationId should be provided',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        // Keyword hard-block check (active keywords from keyword model)
+        if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
+            try {
+                const activeKeywords = await keywordCtr.getActiveKeywords(context);
+                if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
+                    const textValue = content.value.trim();
+                    const matchedKeyword = activeKeywords.result.find((keyword) => {
+                        const word = keyword.word?.trim();
+                        if (!word)
+                            return false;
+                        const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
+                        return pattern.test(textValue);
+                    });
+
+                    if (matchedKeyword) {
+                        throwError({
+                            message: 'Message contains prohibited keywords.',
+                            status: RESPONSE_STATUS.BAD_REQUEST,
+                        });
+                    }
+                }
+            }
+            catch (keywordError) {
+                throwError({
+                    message: `Keyword validation failed: ${keywordError instanceof Error ? keywordError.message : 'Unknown error'}`,
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
         }
 
         // AI Moderation - only for text content

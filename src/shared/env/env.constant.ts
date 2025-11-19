@@ -16,4 +16,4 @@ export const AWS_MODERATION_REGION = 'eu-central-1';
 export const AWS_BUCKET_REGION = 'eu-central-1';
 export const AWS_BUCKET_NAME = 'ssl-moderation-video';
 export const BUNNY_OPTIMIZER_BLUR_CLASS = 'blur';
-export const SESSION_INACTIVITY_MINUTES = 30;
+export const SESSION_INACTIVITY_MINUTES = 240;

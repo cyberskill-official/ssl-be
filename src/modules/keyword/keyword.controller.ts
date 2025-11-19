@@ -27,6 +27,26 @@ export const keywordCtr = {
     ): Promise<I_Return<I_Keyword>> => {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
+    getActiveKeywords: async (
+        _context: I_Context,
+        category?: string,
+    ): Promise<I_Return<I_Keyword[]>> => {
+        const filter: Record<string, unknown> = { isActive: true };
+        if (category) {
+            filter['category'] = category;
+        }
+
+        const res = await mongooseCtr.findPaging(filter, { pagination: false });
+        if (!res.success || !res.result) {
+            return res as unknown as I_Return<I_Keyword[]>;
+        }
+
+        return {
+            success: true,
+            message: res.message,
+            result: res.result.docs ?? [],
+        };
+    },
     getKeywords: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryKeyword>,
