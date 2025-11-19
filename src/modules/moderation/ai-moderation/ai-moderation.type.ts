@@ -50,6 +50,7 @@ export interface I_Input_VideoModeration {
 
 export enum E_ModerationCategory {
     SENTIMENT = 'SENTIMENT',
+    TOXICITY = 'TOXICITY',
     EXPLICIT_NUDITY = 'EXPLICIT_NUDITY',
     NON_EXPLICIT_NUDITY = 'NON_EXPLICIT_NUDITY',
     SWIMWEAR_OR_UNDERWEAR = 'SWIMWEAR_OR_UNDERWEAR',

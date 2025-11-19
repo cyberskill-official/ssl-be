@@ -27,6 +27,8 @@ const conversationResolver = {
             conversationCtr.getConversation(context, args),
         getConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation>, context: I_Context) =>
             conversationCtr.getConversations(context, args),
+        getSupportConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation>, context: I_Context) =>
+            conversationCtr.getSupportConversations(context, args),
         getMyPrivateConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>
             conversationCtr.getMyPrivateConversations(context, args),
         getMyGroupConversations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string }, context: I_Context) =>

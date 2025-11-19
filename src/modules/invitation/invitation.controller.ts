@@ -75,40 +75,22 @@ export const invitationCtr = {
     ): Promise<I_Return<I_Invitation>> => {
         await invitationCtr._validateConversationInvitation(conversationId, userId, currentUserId);
 
-        // Block multiple invitations to the same group for the same user (regardless of status)
-        const alreadyInvited = await invitationCtr.getInvitations({}, {
-            filter: {
-                type: E_InvitationType.CONVERSATION,
-                entityId: conversationId,
-                userId,
-                isDel: false,
-            },
-        });
-        if (alreadyInvited) {
-            throwError({
-                message: 'User has already received an invitation to this group',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        // Check for existing pending invitation
+        // Block duplicate pending/blacklisted invitations to the same group for the same user
         const existingPending = await InvitationModel.findOne({
             type: E_InvitationType.CONVERSATION,
             entityId: conversationId,
             userId,
-            status: E_InvitationStatus.PENDING,
+            status: { $in: [E_InvitationStatus.PENDING, E_InvitationStatus.BLACKLISTED] },
             isDel: false,
         });
         if (existingPending) {
-            // If blacklisted, block
-            if (existingPending.status === E_InvitationStatus.BLACKLISTED) {
-                throwError({
-                    message: 'You have been blacklisted by this user',
-                    status: RESPONSE_STATUS.FORBIDDEN,
-                });
-            }
-            // Return the existing pending invitation
-            return { success: true, message: 'Pending invitation already exists', result: existingPending };
+            const isBlacklisted = existingPending.status === E_InvitationStatus.BLACKLISTED;
+            throwError({
+                message: isBlacklisted
+                    ? 'You have been blacklisted by this user'
+                    : 'Pending invitation already exists for this user',
+                status: isBlacklisted ? RESPONSE_STATUS.FORBIDDEN : RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         const invitationData: I_Input_CreateInvitation = {

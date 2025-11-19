@@ -290,16 +290,86 @@ export const conversationCtr = {
         return { success: true, message: res.message, result: out };
     },
 
+    getSupportConversations: async (
+        context: I_Context,
+        { options }: I_Input_FindPaging<I_Input_QueryConversation>,
+    ): Promise<I_Return<T_PaginateResult<I_Conversation & { resolvedContact?: I_ResolvedContact }>>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+        if (!isAdmin) {
+            throwError({ message: 'Only admins can view support conversations.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        const privateConversationIds = await participantCtr.getConversationIdsByUserId(
+            currentUser.id,
+            E_ConversationType.PRIVATE,
+        );
+
+        const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
+            currentUser.id,
+            E_ConversationType.ADMIN_BROADCAST,
+        );
+
+        const supportConversationIds = Array.from(new Set([...(privateConversationIds || []), ...(adminBroadcastIds || [])]));
+
+        const supportFilter: Record<string, any> = {
+            ...(supportConversationIds.length ? { id: { $in: supportConversationIds } } : {}),
+            type: { $in: [E_ConversationType.PRIVATE, E_ConversationType.ADMIN_BROADCAST] },
+        };
+
+        const res = await mongooseCtr.findPaging(supportFilter, options);
+        if (!res.success || !res.result)
+            return res as any;
+
+        const docsWithMedia = await transformConversationDocs(context, res.result.docs);
+
+        // Filter support threads server-side (contactAdmin on conversation OR meta.contactTopic OR lastMessage.contactAdmin)
+        const supportDocs = docsWithMedia.filter((doc) => {
+            const hasContact = !!doc.contactAdmin;
+            const hasMetaContact = !!(doc.meta && (doc.meta as any).contactTopic);
+            const hasLastMessageContact = !!(doc.lastMessage as any)?.content?.contactAdmin;
+            const isAdminBroadcast = doc.type === E_ConversationType.ADMIN_BROADCAST;
+            return hasContact || hasMetaContact || hasLastMessageContact || isAdminBroadcast;
+        });
+
+        const resolvedPromises = supportDocs.map(async (doc) => {
+            try {
+                const resolved = await resolveConversationContact(context, doc);
+                return { ...doc, resolvedContact: resolved };
+            }
+            catch {
+                return doc;
+            }
+        });
+
+        const resolvedDocs = await Promise.all(resolvedPromises);
+
+        const out: T_PaginateResult<I_Conversation & { resolvedContact?: I_ResolvedContact }> = {
+            ...res.result,
+            docs: resolvedDocs,
+            totalDocs: resolvedDocs.length,
+        };
+
+        return { success: true, message: res.message, result: out };
+    },
+
     getMyPrivateConversations: async (
         context: I_Context,
         { options }: I_Input_FindPaging<I_Input_QueryConversation>,
     ): Promise<I_Return<T_PaginateResult<I_Conversation>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const userConversationIds = await participantCtr.getConversationIdsByUserId(
+        const privateConversationIds = await participantCtr.getConversationIdsByUserId(
             currentUser.id,
             E_ConversationType.PRIVATE,
 
         );
+        const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
+            currentUser.id,
+            E_ConversationType.ADMIN_BROADCAST,
+        );
+        const userConversationIds = Array.from(new Set([...privateConversationIds, ...adminBroadcastIds]));
+
         const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
         if (!result.success || !result.result)
             return result;
@@ -1259,7 +1329,7 @@ export const conversationCtr = {
         if (currentUser?.id) {
             const conversationResult = await conversationCtr.createConversationInternal(context, {
                 doc: {
-                    type: E_ConversationType.PRIVATE,
+                    type: E_ConversationType.ADMIN_BROADCAST,
                     createdById: currentUser.id,
                     contactAdmin: contactTyped,
                 },
@@ -1317,7 +1387,7 @@ export const conversationCtr = {
         // --- guest flow ---
         const guestConversation = await conversationCtr.createConversationInternal(context, {
             doc: {
-                type: E_ConversationType.PRIVATE,
+                type: E_ConversationType.ADMIN_BROADCAST,
                 createdById: null, // guest -> null owner
                 contactAdmin: contactTyped,
             },
@@ -1675,7 +1745,17 @@ export const conversationCtr = {
                     else {
                     // create new private conv and add participants (admin + recipient)
                         const newConv = await conversationCtr.createConversationInternal(context, {
-                            doc: { type: E_ConversationType.PRIVATE, createdById: currentUser.id, contactAdmin: undefined as any },
+                            doc: {
+                                type: E_ConversationType.PRIVATE,
+                                createdById: currentUser.id,
+                                contactAdmin: {
+                                    topic: topic ?? validatedRequestType,
+                                    requestType: validatedRequestType,
+                                    email: rawEmail,
+                                    username: userRes.result?.username ?? currentUser.username,
+                                } as any,
+                                meta: { contactTopic: topic ?? validatedRequestType, contactEmail: rawEmail } as any,
+                            },
                         });
                         if (newConv.success && newConv.result) {
                             targetConversationId = newConv.result.id;
@@ -1983,40 +2063,33 @@ export const conversationCtr = {
 
             const conversation = conversationResult.result;
 
-            if (conversation.type === E_ConversationType.PRIVATE) {
-                const participants = conversation.participants || [];
-                if (!isPrivateConversationParticipant(participants, userId)) {
-                    throwError({
-                        message: 'You are not a participant in this private conversation',
-                        status: RESPONSE_STATUS.FORBIDDEN,
-                    });
-                }
-            }
-            else if (conversation.type === E_ConversationType.GROUP) {
-                if (isOpenPublicThread(conversation)) {
-                    return {
-                        success: true,
-                        message: 'Open comment thread does not support read status',
-                        result: { conversation, totalMarked: 0 },
-                    };
-                }
-
-                const participantResult = await participantCtr.getParticipant(context, {
-                    filter: { conversationId, userId },
-                });
-
-                if (!participantResult.success || !participantResult.result) {
-                    throwError({
-                        message: 'You are not a participant in this group conversation',
-                        status: RESPONSE_STATUS.FORBIDDEN,
-                    });
-                }
-            }
-            else {
+            const participantResult = await participantCtr.getParticipant(context, { filter: { conversationId, userId } });
+            if (!participantResult.success || !participantResult.result) {
                 throwError({
-                    message: 'This conversation type does not support read status',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: 'You are not a participant in this conversation',
+                    status: RESPONSE_STATUS.FORBIDDEN,
                 });
+            }
+
+            switch (conversation.type) {
+                case E_ConversationType.PRIVATE:
+                    break;
+                case E_ConversationType.GROUP:
+                    if (isOpenPublicThread(conversation)) {
+                        return {
+                            success: true,
+                            message: 'Open comment thread does not support read status',
+                            result: { conversation, totalMarked: 0 },
+                        };
+                    }
+                    break;
+                case E_ConversationType.ADMIN_BROADCAST:
+                    break;
+                default:
+                    throwError({
+                        message: 'This conversation type does not support read status',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
             }
 
             const messagesResult = await messageCtr.getMessages(context, {
@@ -2102,8 +2175,11 @@ export const conversationCtr = {
                         const participants = conversation.participants || [];
                         return participants.some(p => p.userId === userId);
                     }
-                    case E_ConversationType.ADMIN_BROADCAST:
-                        return true;
+                    case E_ConversationType.ADMIN_BROADCAST: {
+                        const participants = conversation.participants || [];
+                        return participants.some(p => p.userId === userId)
+                            || conversation.createdById === userId;
+                    }
                     default:
                         return false;
                 }
@@ -2176,17 +2252,20 @@ export const conversationCtr = {
         content: I_MessageContent,
     ): Promise<I_Return<I_Conversation>> => {
         let isFreeMember = false;
+        let isAdminUser = false;
         try {
             isFreeMember = await authnCtr.isFreeMember(context);
+            isAdminUser = await authnCtr.isAdmin(context);
         }
         catch {
             isFreeMember = false;
+            isAdminUser = false;
         }
 
         try {
             const directMessageResult = await participantCtr.directMessageBetween(context, recipientId);
 
-            if (isFreeMember && !directMessageResult.exists && !directMessageResult.conversationId) {
+            if (isFreeMember && !isAdminUser && !directMessageResult.exists && !directMessageResult.conversationId) {
                 throwError({
                     message: 'Free users cannot initiate new chats. Please upgrade your membership.',
                     status: RESPONSE_STATUS.FORBIDDEN,
@@ -2358,7 +2437,11 @@ export const conversationCtr = {
                 }
             }
             else if (conversation.type === E_ConversationType.ADMIN_BROADCAST) {
-                throwError({ message: 'Cannot send to admin broadcast', status: RESPONSE_STATUS.FORBIDDEN });
+                const isParticipant = conversation.participants?.some(p => p.userId === senderId);
+                const isOwner = conversation.createdById === senderId;
+                if (!isParticipant && !isOwner) {
+                    throwError({ message: 'Cannot send to admin broadcast', status: RESPONSE_STATUS.FORBIDDEN });
+                }
             }
             else {
                 const isParticipant = conversation.participants?.some(p => p.userId === senderId);

@@ -387,7 +387,7 @@ export const participantCtr = {
     },
     getConversationIdsByUserId: async (
         userId: string,
-        conversationType: E_ConversationType.PRIVATE | E_ConversationType.GROUP,
+        conversationType: E_ConversationType.PRIVATE | E_ConversationType.GROUP | E_ConversationType.ADMIN_BROADCAST,
         search?: string,
     ): Promise<string[]> => {
         const hasSearch = !!(search && search.trim());
