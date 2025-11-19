@@ -40,14 +40,10 @@ export const blogCtr = {
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        // Apply safe defaults: exclude soft-deleted and prefer active posts unless explicitly overridden
         const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
         const efAny = effectiveFilter as Record<string, any>;
         if (efAny['isDel'] === undefined) {
             efAny['isDel'] = { $ne: true };
-        }
-        if (efAny['isActive'] === undefined) {
-            efAny['isActive'] = true;
         }
 
         const blogs = await mongooseCtr.findPaging(effectiveFilter, options);
