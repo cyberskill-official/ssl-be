@@ -567,6 +567,12 @@ export const UserModel = mongo.createModel<I_User>({
         rulesOfEngagementIds: {
             type: [String],
         },
+        tempOtp: {
+            type: String,
+        },
+        tempOtpCreatedAt: {
+            type: Date,
+        },
         isActive: {
             type: Boolean,
             default: false,

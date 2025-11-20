@@ -1,5 +1,9 @@
 import type { E_AccountType, I_Input_UserPartner, I_Input_UserSettings, I_User } from '#modules/user/index.js';
 
+export interface I_Input_SendOTPEmailForAdminStaff {
+    email: string;
+}
+
 export enum E_RegisterStep {
     VERIFY_EMAIL = 'VERIFY_EMAIL', // Step 2
     PERSONAL_INFO = 'PERSONAL_INFO', // Step 3
@@ -24,6 +28,7 @@ export interface I_Input_CheckAuth {
 export interface I_Input_Login {
     identity: string;
     password: string;
+    tempOtp?: string;
     rememberMe?: boolean;
 }
 

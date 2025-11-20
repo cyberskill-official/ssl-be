@@ -98,6 +98,8 @@ export interface I_User extends I_GenericDocument {
     username?: string;
     email?: string;
     password?: string;
+    tempOtp?: string;
+    tempOtpCreatedAt?: Date;
     rolesIds?: string[];
     registerStep?: E_RegisterStep;
     isEmailVerified?: boolean;

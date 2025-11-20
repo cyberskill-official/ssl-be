@@ -220,6 +220,8 @@ type T_User {
     isGuardianView: Boolean
     guardianOwnerId: String
     notes: [T_Note]
+    tempOtp: String
+    tempOtpCreatedAt: DateTime
 }
 
 input Input_QueryUser {

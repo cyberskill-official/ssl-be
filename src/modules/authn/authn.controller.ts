@@ -125,6 +125,97 @@ function assignSessionUser(session: I_Request['session'], user: I_User) {
 // extractClientIp is now shared in env.util
 
 export const authnCtr = {
+    sendOTPEmailForAdmin: async (
+        context: I_Context,
+        email: string,
+    ): Promise<I_Return<I_Response_Auth>> => {
+        const emailLowerCase = email.toLowerCase();
+        validate.email.validate(emailLowerCase);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: { email: emailLowerCase },
+        });
+        if (!userFound.success) {
+            return {
+                success: false,
+                message: 'User not found.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const now = Date.now();
+        const lastCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt).getTime() : 0;
+        if (lastCreatedAt && now - lastCreatedAt < 30000) {
+            return {
+                success: false,
+                message: 'Please wait 30 seconds before requesting another OTP.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const otp = helper.generateOTP();
+
+        // Lưu OTP và thời gian tạo vào user
+        await userCtr.updateUser(context, {
+            filter: { id: userFound.result.id },
+            update: {
+                tempOtp: otp,
+                tempOtpCreatedAt: new Date(),
+            },
+        });
+
+        // Create verification entry so OTP can be validated via verificationCtr
+        try {
+            const expiresAt = date.getDate(VERIFICATION_EXPIRES.EMAIL, 'sec');
+            const verificationCreated = await verificationCtr.createVerification(
+                context,
+                {
+                    doc: {
+                        identifier: `${EMAIL_VERIFICATION}:${emailLowerCase}`,
+                        value: otp,
+                        expiresAt,
+                        maxAttempts: 5,
+                        method: E_VerificationMethod.EMAIL_OTP,
+                    },
+                },
+            );
+
+            if (!verificationCreated.success) {
+                throwError({
+                    message: verificationCreated.message || 'Failed to create OTP verification.',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+        catch (err) {
+            console.warn('[AUTHN] failed to create verification entry for admin OTP', err);
+            // best-effort: continue to send email even if verification creation fails
+        }
+
+        // Gửi email OTP
+        const emailResult = await emailCtr.sendEmail(
+            EMAIL_VERIFICATION,
+            emailLowerCase,
+            {
+                otp,
+                expireIn: Math.floor(VERIFICATION_EXPIRES.EMAIL / 60),
+                email: emailLowerCase,
+            },
+        );
+
+        if (!emailResult.success) {
+            return {
+                success: false,
+                message: emailResult.message || 'Failed to send OTP email.',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        return {
+            success: true,
+            result: { user: omit(userFound.result, 'password') },
+        };
+    },
     generateToken: (_context: I_Context, id: string): string => {
         return jwt.sign(
             {
@@ -1131,25 +1222,67 @@ export const authnCtr = {
         const adminRoleIdLogin = await getAdminRoleId(context);
         const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
 
+        console.warn('isAdminLogin', isAdminLogin);
+
+        // If target account is admin/staff, validate OTP early (before password)
+        if (isAdminLogin) {
+            // Normalize input — treat literal "null"/"undefined" and empty as missing
+            const rawOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim() : '';
+            const otpProvided = rawOtp && rawOtp !== 'null' && rawOtp !== 'undefined';
+            // Accept alphanumeric OTPs (letters + digits), 6 chars; normalize to uppercase
+            const rawOtpNormalized = otpProvided ? rawOtp.toUpperCase() : '';
+            const isValidOtpFormat = otpProvided && (/^[A-Z0-9]{6}$/.test(rawOtpNormalized));
+
+            if (!otpProvided) {
+                throwError({ message: 'OTP not provided.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            if (!isValidOtpFormat) {
+                throwError({ message: 'Invalid OTP format.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            const identifier = `${EMAIL_VERIFICATION}:${(userFound.result.email || '').toLowerCase()}`;
+
+            const checkResult = await verificationCtr.checkVerification(context, {
+                identifier,
+                value: rawOtpNormalized,
+                method: E_VerificationMethod.EMAIL_OTP,
+            });
+
+            if (!checkResult.success) {
+                throwError({ message: checkResult.message || 'Invalid OTP.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            // Best-effort cleanup now
+            await verificationCtr.deleteVerifications(context, { filter: { identifier } }).catch(() => { /* best-effort */ });
+            await userCtr.updateUser(context, { filter: { id: userFound.result.id }, update: { tempOtp: null, tempOtpCreatedAt: null } }).catch(() => { /* best-effort */ });
+        }
+
         if (!isAdminLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
-        const isPasswordMatched = bcrypt.compareSync(
-            password,
-            userFound.result.password!,
-        );
+        const isPasswordMatched = bcrypt.compareSync(password, userFound.result.password!);
 
         if (!isPasswordMatched) {
-            throwError({
-                message: 'Invalid password.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            throwError({ message: 'Invalid password.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         if (userFound.result.isDel) {
+            throwError({ message: 'Account has been deleted.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (!isAdminLogin && userFound.result.tempOtp !== null) {
+            const expectedOtp = String(userFound.result.tempOtp || '').toUpperCase();
+            const providedOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim().toUpperCase() : '';
+            if (expectedOtp !== providedOtp) {
+                throwError({ message: 'OTP verification required.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (!isAdminLogin && !userFound.result.isActive) {
             throwError({
-                message: 'Account has been deleted.',
+                message: 'Account is not active.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
@@ -1206,6 +1339,12 @@ export const authnCtr = {
             sanitizedLoginUser.isGuardianView = false;
             sanitizedLoginUser.guardianOwnerId = undefined;
         }
+
+        // Xóa tempOtp và tempOtpCreatedAt sau khi đăng nhập thành công
+        // await userCtr.updateUser(context, {
+        //     filter: { id: userFound.result.id },
+        //     update: { tempOtp: null, tempOtpCreatedAt: null },
+        // });
 
         assignSessionUser(context.req.session, sanitizedLoginUser);
 
