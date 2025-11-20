@@ -77,6 +77,11 @@ export const cron = {
                         if (!event.startDate || !event.startTime || !event.endTime)
                             continue;
 
+                        // Multi-day events (endDate after startDate) are handled by the endDate branch later.
+                        if (event.endDate && isAfter(event.endDate, event.startDate)) {
+                            continue;
+                        }
+
                         const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
                         const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());
 
@@ -115,6 +120,10 @@ export const cron = {
                     for (const event of overnightExpiredEvents.result.docs) {
                         if (!event.startDate || !event.startTime || !event.endTime)
                             continue;
+
+                        if (event.endDate && isAfter(event.endDate, event.startDate)) {
+                            continue;
+                        }
 
                         const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
                         const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());

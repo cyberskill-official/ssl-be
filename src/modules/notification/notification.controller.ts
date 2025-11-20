@@ -14,6 +14,7 @@ import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/inde
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { messageStatusCtr } from '#modules/conversation/index.js';
 import { emailCtr } from '#modules/email/index.js';
+import { followCtr } from '#modules/follow/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
@@ -38,7 +39,7 @@ import {
     E_NotificationType,
     OTHER_TYPES,
 } from './notification.type.js';
-import { hasInApp } from './notification.util.js';
+import { hasInApp, isValidMap } from './notification.util.js';
 
 const mongooseCtr = new MongooseController<I_Notification>(NotificationModel);
 
@@ -384,6 +385,40 @@ export const notificationCtr = {
             return null;
         };
 
+        let cachedInterestRecipient: Awaited<ReturnType<typeof userCtr.getUser>> | null | undefined;
+        const loadInterestRecipient = async () => {
+            if (cachedInterestRecipient !== undefined) {
+                return cachedInterestRecipient;
+            }
+            cachedInterestRecipient = await userCtr.getUser(context, {
+                filter: { $or: orFilters },
+                populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
+            }).catch(() => null);
+            return cachedInterestRecipient;
+        };
+
+        let cachedIsFollower: boolean | undefined;
+        const isTargetFollowingActor = async (): Promise<boolean> => {
+            if (cachedIsFollower !== undefined) {
+                return cachedIsFollower;
+            }
+            if (!doc.actorId || !doc.targetId) {
+                cachedIsFollower = false;
+                return false;
+            }
+            try {
+                const followFound = await followCtr.getFollow(context, {
+                    filter: { userId: doc.targetId, followId: doc.actorId },
+                });
+                cachedIsFollower = Boolean(followFound.success && followFound.result);
+                return cachedIsFollower;
+            }
+            catch {
+                cachedIsFollower = false;
+                return false;
+            }
+        };
+
         // If notification type is a 'new member in your area' then perform geofence check
         if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST)) {
             try {
@@ -405,7 +440,7 @@ export const notificationCtr = {
                 }
 
                 // Fetch recipient (target) with location & zoom data so we can test area-of-interest
-                const recipient = await userCtr.getUser(context, { filter: { $or: orFilters }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] });
+                const recipient = await loadInterestRecipient();
                 if (!recipient?.success || !recipient.result) {
                     return { success: true, message: null };
                 }
@@ -434,6 +469,48 @@ export const notificationCtr = {
             catch {
                 // On any error during geofence check, be conservative and skip notifying
                 return { success: true, message: null };
+            }
+        }
+
+        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED)) {
+            const skipInterestArea = await isTargetFollowingActor();
+            if (!skipInterestArea) {
+                try {
+                    const redirectMap = doc.presentation?.redirect?.map;
+                    if (!isValidMap(redirectMap)) {
+                        return { success: true, message: null };
+                    }
+
+                    const recipient = await loadInterestRecipient();
+                    if (!recipient?.success || !recipient.result) {
+                        return { success: true, message: null };
+                    }
+
+                    const recipientMap = getEffectiveMap(recipient.result as any);
+                    if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
+                        return { success: true, message: null };
+                    }
+
+                    const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
+                    const radiusKm = convertLevelToRadius(zoomLevel);
+                    const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
+                    if (!redirectMap || !isPointInsideViewport(redirectMap.latitude!, redirectMap.longitude!, interestViewport)) {
+                        return { success: true, message: null };
+                    }
+
+                    const distanceKm = haversineKm(
+                        recipientMap.latitude,
+                        recipientMap.longitude,
+                        redirectMap.latitude!,
+                        redirectMap.longitude!,
+                    );
+                    if (distanceKm > radiusKm) {
+                        return { success: true, message: null };
+                    }
+                }
+                catch {
+                    return { success: true, message: null };
+                }
             }
         }
 

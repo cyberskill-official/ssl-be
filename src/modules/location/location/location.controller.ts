@@ -91,6 +91,71 @@ function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
     return E_User_PinStyle.COUPLE;
 }
 
+function isTemporaryLocationActiveNow(temp?: NonNullable<I_User['settings']>['temporaryLocation'] | null): boolean {
+    if (!temp)
+        return false;
+    if (!temp.endAt)
+        return true;
+    try {
+        const rawEnd = new Date(temp.endAt);
+        if (Number.isNaN(rawEnd.getTime()))
+            return false;
+        const isMidnight = rawEnd.getHours() === 0
+            && rawEnd.getMinutes() === 0
+            && rawEnd.getSeconds() === 0
+            && rawEnd.getMilliseconds() === 0;
+        const normalizedEnd = isMidnight
+            ? new Date(rawEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
+            : rawEnd;
+        return normalizedEnd > new Date();
+    }
+    catch {
+        return false;
+    }
+}
+
+function dedupeUserLocationDocs(docs: I_Location[]): I_Location[] {
+    if (!Array.isArray(docs) || docs.length === 0)
+        return docs;
+
+    const nonUserDocs: I_Location[] = [];
+    const perUserBest = new Map<string, { doc: I_Location; score: number }>();
+
+    for (const doc of docs) {
+        if (doc.entityType !== E_LocationEntityType.USER) {
+            nonUserDocs.push(doc);
+            continue;
+        }
+
+        const user = doc.entity as I_User | undefined;
+        const ownerId = user?.id ?? doc.entityId;
+        if (!ownerId) {
+            nonUserDocs.push(doc);
+            continue;
+        }
+
+        let score = 10;
+        const tempLoc = user?.settings?.temporaryLocation;
+        const tempActive = isTemporaryLocationActiveNow(tempLoc);
+        const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+
+        if (tempActive && tempLocationId && doc.id === tempLocationId) {
+            score += 100;
+        }
+        else if (!tempActive && user?.partner1?.locationId && doc.id === user.partner1.locationId) {
+            score += 60;
+        }
+
+        const existing = perUserBest.get(ownerId);
+        if (!existing || score > existing.score) {
+            perUserBest.set(ownerId, { doc, score });
+        }
+    }
+
+    const bestUserDocs = Array.from(perUserBest.values()).map(v => v.doc);
+    return [...nonUserDocs, ...bestUserDocs];
+}
+
 function extractPlainTextFromRichContent(value?: string | null): string | undefined {
     if (typeof value !== 'string')
         return undefined;
@@ -144,7 +209,37 @@ export const locationCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryLocation>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const locations = await mongooseCtr.findPaging(filter, options);
+        if (!locations.success || !locations.result) {
+            return locations;
+        }
+
+        const shouldDedupeUserPins = !filter?.entityType || filter.entityType === E_LocationEntityType.USER;
+
+        if (shouldDedupeUserPins) {
+            const dedupedDocs = dedupeUserLocationDocs(locations.result.docs ?? []);
+            locations.result.docs = dedupedDocs;
+
+            if (options?.pagination === false) {
+                locations.result.totalDocs = dedupedDocs.length;
+                locations.result.limit = dedupedDocs.length;
+                locations.result.totalPages = 1;
+                locations.result.page = 1;
+                locations.result.pagingCounter = dedupedDocs.length > 0 ? 1 : 0;
+                locations.result.hasNextPage = false;
+                locations.result.hasPrevPage = false;
+                locations.result.nextPage = null;
+                locations.result.prevPage = null;
+            }
+            else {
+                // keep existing pagination metadata but ensure totalDocs reflects the deduped output count minimum
+                locations.result.totalDocs = typeof locations.result.totalDocs === 'number'
+                    ? Math.min(locations.result.totalDocs, dedupedDocs.length)
+                    : dedupedDocs.length;
+            }
+        }
+
+        return locations;
     },
     createLocation: async (
         _context: I_Context,
@@ -591,8 +686,10 @@ export const locationCtr = {
             // Build user temp location map để filter partner locations sớm
             // Helper: determine if a temporary location is still active at the moment "now"
             const isTempActive = (tempLoc?: NonNullable<I_User['settings']>['temporaryLocation']): boolean => {
-                if (!tempLoc?.endAt)
+                if (!tempLoc)
                     return false;
+                if (!tempLoc.endAt)
+                    return true;
                 const end = new Date(tempLoc.endAt);
                 // If endAt is provided as a date-only (midnight), treat it as inclusive end-of-day
                 const isMidnight
@@ -665,7 +762,6 @@ export const locationCtr = {
                 if (tempLocationSource?.map) {
                     tempLocationSourceByUser.set(user.id, tempLocationSource);
                 }
-                const canProvideTemporaryPin = Boolean(tempLocationSource?.map);
 
                 // If temporary exists but is NOT active, and there's a tempLocationId that is different
                 // from the default partner location, remove the temp location document to avoid duplicate pins.
@@ -688,18 +784,14 @@ export const locationCtr = {
                 const isDefaultLocationActive = d.id === tempInfo.defaultLocationId;
                 const isTempLocationActive = tempInfo.tempLocationId ? d.id === tempInfo.tempLocationId : false;
 
-                // FIX: Nếu tempLocationId và defaultLocationId trùng nhau (duplicate)
-                // → Luôn giữ lại để tránh mất location trên map
+                // Nếu tempLocationId và defaultLocationId trùng nhau (duplicate) → giữ lại document duy nhất
                 if (tempInfo.tempLocationId && tempInfo.tempLocationId === tempInfo.defaultLocationId) {
-                    return true;
+                    return isTempLocationActive;
                 }
 
-                // Nếu đây là default location và KHÔNG phải temp location → loại bỏ
-                if (isDefaultLocationActive && !isTempLocationActive) {
-                    if (!canProvideTemporaryPin || !tempInfo.tempLocationId)
-                        return true;
+                // Nếu đây là default location và KHÔNG phải temp location → luôn loại bỏ
+                if (isDefaultLocationActive && !isTempLocationActive)
                     return false;
-                }
 
                 // Các trường hợp khác → giữ lại
                 return true;
@@ -1043,8 +1135,10 @@ export const locationCtr = {
         const isTempStillActive = (user?: I_User | undefined): boolean => {
             try {
                 const tempLoc = user?.settings?.temporaryLocation;
-                if (!tempLoc?.endAt)
+                if (!tempLoc)
                     return false;
+                if (!tempLoc.endAt)
+                    return true;
                 const end = new Date(tempLoc.endAt);
                 const isMidnight = end.getHours() === 0
                     && end.getMinutes() === 0
@@ -1140,6 +1234,7 @@ export const locationCtr = {
         };
 
         docs = dedupeFinalDocs(docs);
+        docs = dedupeUserLocationDocs(docs);
 
         if (filter.entityId) {
             const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
