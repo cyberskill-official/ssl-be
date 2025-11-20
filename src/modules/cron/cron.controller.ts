@@ -1,8 +1,10 @@
 import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
-import { addDays, isAfter, parse, set, subMonths } from 'date-fns';
+import { addDays, isAfter, isValid, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
+
+import type { I_Event } from '#modules/event/index.js';
 
 import { PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY } from '#modules/authn/authn.constant.js';
 import { roleCtr } from '#modules/authz/index.js';
@@ -19,6 +21,59 @@ import { AdvertisementModel } from '../advertisement/advertisement.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
+
+const AM_PM_REGEX = /\bAM\b|\bPM\b/i;
+
+function parseTimeToClock(value?: string | null): { hours: number; minutes: number } | null {
+    if (!value || typeof value !== 'string')
+        return null;
+    const format = AM_PM_REGEX.test(value) ? 'hh:mm a' : 'HH:mm';
+    const parsed = parse(value, format, new Date());
+    if (!isValid(parsed))
+        return null;
+    return {
+        hours: parsed.getHours(),
+        minutes: parsed.getMinutes(),
+    };
+}
+
+function computeEventEndDateTime(event: I_Event): Date | null {
+    const startDate = event.startDate ? new Date(event.startDate) : null;
+    const endDate = event.endDate ? new Date(event.endDate) : null;
+
+    const startClock = parseTimeToClock(event.startTime);
+    const endClock = parseTimeToClock(event.endTime);
+
+    if (endDate) {
+        if (endClock) {
+            return set(endDate, {
+                hours: endClock.hours,
+                minutes: endClock.minutes,
+                seconds: 0,
+                milliseconds: 0,
+            });
+        }
+        return endDate;
+    }
+
+    if (!startDate || !startClock || !endClock)
+        return null;
+
+    const isOvernight = endClock.hours < startClock.hours
+        || (endClock.hours === startClock.hours && endClock.minutes < startClock.minutes);
+
+    const endBase = new Date(startDate);
+    if (isOvernight) {
+        endBase.setDate(endBase.getDate() + 1);
+    }
+
+    return set(endBase, {
+        hours: endClock.hours,
+        minutes: endClock.minutes,
+        seconds: 0,
+        milliseconds: 0,
+    });
+}
 
 export const cron = {
     start: () => {
@@ -59,10 +114,9 @@ export const cron = {
                 log.info('Checking for expired events...');
 
                 const currentTime = new Date();
-                const expiredEventIds: string[] = [];
+                const expiredEventIds = new Set<string>();
 
-                // Query 1A: Same-day events with endTime that have expired
-                const sameDayExpiredEvents = await eventCtr.getEvents({}, {
+                const timeBasedEvents = await eventCtr.getEvents({}, {
                     filter: {
                         isActive: true,
                         startTime: { $exists: true, $ne: null },
@@ -72,80 +126,13 @@ export const cron = {
                     options: { pagination: false },
                 });
 
-                if (sameDayExpiredEvents.success && sameDayExpiredEvents.result?.docs) {
-                    for (const event of sameDayExpiredEvents.result.docs) {
-                        if (!event.startDate || !event.startTime || !event.endTime)
+                if (timeBasedEvents.success && timeBasedEvents.result?.docs) {
+                    for (const event of timeBasedEvents.result.docs) {
+                        if (!event?.id)
                             continue;
-
-                        // Multi-day events (endDate after startDate) are handled by the endDate branch later.
-                        if (event.endDate && isAfter(event.endDate, event.startDate)) {
-                            continue;
-                        }
-
-                        const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
-                        const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());
-
-                        const startTimeHours = startTimeParsed.getHours();
-                        const endTimeHours = endTimeParsed.getHours();
-                        const isOvernight = endTimeHours < startTimeHours
-                            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
-
-                        if (!isOvernight) {
-                            const eventEndDateTime = set(event.startDate, {
-                                hours: endTimeParsed.getHours(),
-                                minutes: endTimeParsed.getMinutes(),
-                                seconds: 0,
-                                milliseconds: 0,
-                            });
-
-                            if (isAfter(currentTime, eventEndDateTime)) {
-                                expiredEventIds.push(event.id);
-                            }
-                        }
-                    }
-                }
-
-                // Query 1B: Overnight events that have expired
-                const overnightExpiredEvents = await eventCtr.getEvents({}, {
-                    filter: {
-                        isActive: true,
-                        startTime: { $exists: true, $ne: null },
-                        endTime: { $exists: true, $ne: null },
-                        startDate: { $exists: true, $ne: null, $lte: new Date(currentTime.getTime() - 24 * 60 * 60 * 1000) },
-                    },
-                    options: { pagination: false },
-                });
-
-                if (overnightExpiredEvents.success && overnightExpiredEvents.result?.docs) {
-                    for (const event of overnightExpiredEvents.result.docs) {
-                        if (!event.startDate || !event.startTime || !event.endTime)
-                            continue;
-
-                        if (event.endDate && isAfter(event.endDate, event.startDate)) {
-                            continue;
-                        }
-
-                        const endTimeParsed = parse(event.endTime, 'hh:mm a', new Date());
-                        const startTimeParsed = parse(event.startTime, 'hh:mm a', new Date());
-
-                        const startTimeHours = startTimeParsed.getHours();
-                        const endTimeHours = endTimeParsed.getHours();
-                        const isOvernight = endTimeHours < startTimeHours
-                            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
-
-                        if (isOvernight) {
-                            const nextDay = new Date(event.startDate);
-                            nextDay.setDate(nextDay.getDate() + 1);
-                            const eventEndDateTime = set(nextDay, {
-                                hours: endTimeParsed.getHours(),
-                                minutes: endTimeParsed.getMinutes(),
-                                seconds: 0,
-                                milliseconds: 0,
-                            });
-
-                            if (isAfter(currentTime, eventEndDateTime)) {
-                                expiredEventIds.push(event.id);
-                            }
+                        const eventEndDateTime = computeEventEndDateTime(event as I_Event);
+                        if (eventEndDateTime && isAfter(currentTime, eventEndDateTime)) {
+                            expiredEventIds.add(event.id);
                         }
                     }
                 }
@@ -161,16 +148,15 @@ export const cron = {
 
                 if (eventsWithEndDate.success && eventsWithEndDate.result?.docs) {
                     for (const event of eventsWithEndDate.result.docs) {
-                        if (!expiredEventIds.includes(event.id)) {
-                            expiredEventIds.push(event.id);
-                        }
+                        expiredEventIds.add(event.id);
                     }
                 }
 
                 // Batch update all expired events
-                if (expiredEventIds.length > 0) {
+                const expiredIdsArray = Array.from(expiredEventIds);
+                if (expiredIdsArray.length > 0) {
                     const updateResult = await eventCtr.updateEvents({}, {
-                        filter: { id: { $in: expiredEventIds } },
+                        filter: { id: { $in: expiredIdsArray } },
                         update: { isActive: false, isDel: true },
                     });
 
@@ -179,13 +165,13 @@ export const cron = {
                             const locationResult = await LocationModel.updateMany(
                                 {
                                     entityType: E_LocationEntityType.EVENT,
-                                    entityId: { $in: expiredEventIds },
+                                    entityId: { $in: expiredIdsArray },
                                 },
                                 { $set: { isDel: true } },
                             );
 
                             const updatedLocations = locationResult?.modifiedCount ?? 0;
-                            log.success(`Successfully marked ${expiredEventIds.length} events as expired (locations updated: ${updatedLocations}).`);
+                            log.success(`Successfully marked ${expiredIdsArray.length} events as expired (locations updated: ${updatedLocations}).`);
                         }
                         catch (locationError) {
                             log.error('Expired events updated, but failed to mark locations as deleted:', locationError);
@@ -291,7 +277,7 @@ export const cron = {
     // Enforce session inactivity by removing sessions that haven't had activity
     // within SESSION_INACTIVITY_MINUTES. Runs every minute.
     enforceSessionInactivity: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.SESSION_INACTIVITY_MINUTES, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
             try {
                 const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
                 const cutoff = Date.now() - inactivityMs;

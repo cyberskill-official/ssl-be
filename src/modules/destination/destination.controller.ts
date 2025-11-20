@@ -21,6 +21,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
 
 import type {
     I_Destination,
@@ -100,6 +101,11 @@ export const destinationCtr = {
                     },
                 }),
             );
+        }
+
+        const intro = extractPlainTextFromRichContent(destinationFound.result.introductionContent);
+        if (intro) {
+            destinationFound.result.introductionContent = intro;
         }
 
         return destinationFound;
@@ -208,6 +214,11 @@ export const destinationCtr = {
                             Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: imageUrl, extraQueryParams: { class: 'normal' } })),
                         ),
                     );
+                }
+
+                const intro = extractPlainTextFromRichContent(doc.introductionContent);
+                if (intro) {
+                    doc.introductionContent = intro;
                 }
 
                 return doc as I_Destination;
