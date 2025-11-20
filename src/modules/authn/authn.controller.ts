@@ -274,6 +274,9 @@ export const authnCtr = {
             });
         }
 
+        // Cập nhật lại lastActivity ngay sau khi xác thực user thành công
+        assignSessionUser(context.req.session, userFound.result);
+
         const guardianViewMeta = context.req.session.guardianView;
         const isGuardianSession = Boolean(
             guardianViewMeta?.ownerId
