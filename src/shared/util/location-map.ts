@@ -1,25 +1,31 @@
-import { log } from '@cyberskill/shared/node/log';
-
 import type { I_Map } from '#modules/location/index.js';
 import type { I_User } from '#modules/user/index.js';
 
-export function getEffectiveLocation(user: I_User): I_Map | null {
-    // Ưu tiên temporaryLocation nếu có
-    const tempLoc = user.settings?.temporaryLocation?.location?.map;
+import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
 
-    log.info('tempLoc', tempLoc);
-
-    if (tempLoc?.latitude && tempLoc?.longitude) {
-        return tempLoc;
+function getTemporaryLocationMap(user: I_User): I_Map | null {
+    const tempLoc = user.settings?.temporaryLocation;
+    if (!tempLoc || !isTemporaryLocationActive(tempLoc)) {
+        return null;
     }
 
-    // Nếu không có, fallback sang partner1.location
-    const mainLoc = user.partner1?.location?.map;
+    const tempMap = tempLoc.location?.map;
+    if (tempMap?.latitude && tempMap?.longitude) {
+        return tempMap;
+    }
 
-    log.info('mainLoc', mainLoc);
+    return null;
+}
 
-    if (mainLoc?.latitude && mainLoc?.longitude) {
-        return mainLoc;
+export function getEffectiveLocation(user: I_User): I_Map | null {
+    const tempLocation = getTemporaryLocationMap(user);
+    if (tempLocation) {
+        return tempLocation;
+    }
+
+    const mainLocation = user.partner1?.location?.map;
+    if (mainLocation?.latitude && mainLocation?.longitude) {
+        return mainLocation;
     }
 
     return null;

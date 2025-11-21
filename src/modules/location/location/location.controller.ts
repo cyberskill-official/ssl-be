@@ -28,6 +28,7 @@ import { E_EventType } from '#modules/event/event.type.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
+import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
 
 import type {
     I_Input_CreateLocation,
@@ -92,29 +93,6 @@ function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
     return E_User_PinStyle.COUPLE;
 }
 
-function isTemporaryLocationActiveNow(temp?: NonNullable<I_User['settings']>['temporaryLocation'] | null): boolean {
-    if (!temp)
-        return false;
-    if (!temp.endAt)
-        return true;
-    try {
-        const rawEnd = new Date(temp.endAt);
-        if (Number.isNaN(rawEnd.getTime()))
-            return false;
-        const isMidnight = rawEnd.getHours() === 0
-            && rawEnd.getMinutes() === 0
-            && rawEnd.getSeconds() === 0
-            && rawEnd.getMilliseconds() === 0;
-        const normalizedEnd = isMidnight
-            ? new Date(rawEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
-            : rawEnd;
-        return normalizedEnd > new Date();
-    }
-    catch {
-        return false;
-    }
-}
-
 function dedupeUserLocationDocs(docs: I_Location[]): I_Location[] {
     if (!Array.isArray(docs) || docs.length === 0)
         return docs;
@@ -137,7 +115,7 @@ function dedupeUserLocationDocs(docs: I_Location[]): I_Location[] {
 
         let score = 10;
         const tempLoc = user?.settings?.temporaryLocation;
-        const tempActive = isTemporaryLocationActiveNow(tempLoc);
+        const tempActive = isTemporaryLocationActive(tempLoc);
         const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
 
         if (tempActive && tempLocationId && doc.id === tempLocationId) {
