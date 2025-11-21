@@ -107,6 +107,7 @@ input Input_QueryLocation {
     stateId: String
     cityId: String
     address: String
+    map: Input_Map
     pinStyle: E_PinStyle
     entityType: E_LocationEntityType
     entityId: String
