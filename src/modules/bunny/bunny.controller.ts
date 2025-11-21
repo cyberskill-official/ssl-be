@@ -1,5 +1,6 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import fetch from 'node-fetch';
 import { Buffer } from 'node:buffer';
@@ -11,7 +12,7 @@ import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_GenerateBlurredUrl, I_Input_GenerateSignedUrl } from './bunny.type.js';
 
-import { BUNNY_IFRAME_URL, BUNNY_OPTIMIZER_DEFAULTS } from './bunny.constant.js';
+import { BUNNY_IFRAME_URL, BUNNY_OPTIMIZER_DEFAULTS, storageZone } from './bunny.constant.js';
 import { isValidReadableStream } from './bunny.util.js';
 
 const env = getEnv();
@@ -194,6 +195,20 @@ export const bunnyCtr = {
             return {
                 success: false,
                 message: `Delete file request error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+    },
+    uploadFile: async (_context: I_Context, storagePath: string, fileStreamOrBuffer: NodeJS.ReadableStream | Buffer): Promise<I_Return<string>> => {
+        try {
+            await BunnyFile.upload(storageZone, `${storagePath}`, fileStreamOrBuffer as any);
+            const publicUrl = `${env.BUNNY_CDN_HOSTNAME}/${storagePath}`;
+            return { success: true, result: publicUrl };
+        }
+        catch (error) {
+            return {
+                success: false,
+                message: `Upload file request error: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
             };
         }

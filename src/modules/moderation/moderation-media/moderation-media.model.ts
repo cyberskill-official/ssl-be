@@ -46,6 +46,9 @@ export const ModerationMediaModel = mongo.createModel<I_ModerationMedia>({
                 },
             ],
         },
+        thumbnailUrl: {
+            type: String,
+        },
         status: {
             type: String,
             enum: Object.values(E_ModerationMediaStatus),

@@ -121,19 +121,27 @@ export const galleryCtr = {
         const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerAgeVerified;
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
-        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
+        const applyThumbnailPolicy = (url?: string | null) => {
+            if (!url)
+                return url;
             if (shouldBlur) {
-                galleryFound.result.url = bunnyCtr.generateBlurredUrl({
-                    fullUrl: galleryFound.result.url,
+                return bunnyCtr.generateBlurredUrl({
+                    fullUrl: url,
                     extraQueryParams: { class: 'blur' },
                 });
             }
-            else {
-                galleryFound.result.url = bunnyCtr.generateSignedUrl({
-                    fullUrl: galleryFound.result.url,
-                    extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
-                });
-            }
+            return bunnyCtr.generateSignedUrl({
+                fullUrl: url,
+                extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
+            });
+        };
+
+        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
+            galleryFound.result.url = applyThumbnailPolicy(galleryFound.result.url) ?? galleryFound.result.url;
+        }
+
+        if (galleryFound.result.thumbnailUrl) {
+            galleryFound.result.thumbnailUrl = applyThumbnailPolicy(galleryFound.result.thumbnailUrl) ?? galleryFound.result.thumbnailUrl;
         }
 
         return galleryFound;
@@ -188,6 +196,10 @@ export const galleryCtr = {
 
         const mongoFilter: Record<string, unknown> = { ...(modifiedFilter as Record<string, unknown>) };
 
+        const hasExplicitUploaderFilter
+            = Boolean(filter?.uploadedById)
+                || (Array.isArray(filter?.uploadedByIds) && filter.uploadedByIds.length > 0);
+
         if (!isStaff && !isAdmin && !isOwner) {
             if (mongoFilter['status'] === undefined) {
                 mongoFilter['status'] = { $in: [E_ModerationMediaStatus.APPROVED, null] };
@@ -198,7 +210,9 @@ export const galleryCtr = {
             // Default public feed (e.g. "New Photos") to only show user-uploaded galleries.
             // This prevents galleries created for other entities (catalogue, blog, etc.)
             // from appearing in the global photos feed unless explicitly requested.
-            if (mongoFilter['entity'] === undefined) {
+            // However, when the request explicitly targets certain uploaders (e.g. profile page),
+            // we shouldn't force the entity filter, otherwise their media tied to events won't show.
+            if (!hasExplicitUploaderFilter && mongoFilter['entity'] === undefined) {
                 mongoFilter['entity'] = E_UploadEntity.USER;
             }
         }
@@ -274,25 +288,31 @@ export const galleryCtr = {
                 : (isFreeMember ? 'free' : 'premium');
             const ownerVerified = await isUploaderAgeVerified(context, gallery, uploaderVerifiedCache);
             const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerVerified;
-
-            if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
+            const transformMediaUrl = (url?: string | null) => {
+                if (!url)
+                    return url;
                 if (shouldBlur) {
-                    galleryResult.url = bunnyCtr.generateBlurredUrl({
-                        fullUrl: galleryResult.url,
+                    return bunnyCtr.generateBlurredUrl({
+                        fullUrl: url,
                         extraQueryParams: { class: 'blur' },
                     });
                 }
-                else {
-                    galleryResult.url = bunnyCtr.generateSignedUrl({
-                        fullUrl: galleryResult.url,
-                        extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
-                    });
-                }
+                return bunnyCtr.generateSignedUrl({
+                    fullUrl: url,
+                    extraQueryParams: membershipClass ? { class: membershipClass } : undefined,
+                });
+            };
+
+            if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
+                galleryResult.url = transformMediaUrl(galleryResult.url) ?? galleryResult.url;
             }
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
                 galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
                     fullUrl: galleryResult.url,
                 });
+            }
+            if (galleryResult.thumbnailUrl) {
+                galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? galleryResult.thumbnailUrl;
             }
 
             return galleryResult;

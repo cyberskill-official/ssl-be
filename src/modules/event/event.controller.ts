@@ -588,11 +588,12 @@ export const eventCtr = {
         catch { /* ignore partner location errors */ }
 
         // prioritize candidate that has a valid map (lat/lon)
-        const candidates = [tempLocationCandidate, location, partnerLocationCandidate, destLocationCandidate];
+        // NOTE: always respect the explicit location provided by client first, then fall back to temp/partner/destination
+        const candidates = [location, tempLocationCandidate, partnerLocationCandidate, destLocationCandidate];
         const sourceWithMap = candidates.find(c => hasValidMap(c));
 
         // If we found a candidate with map, prefer it; otherwise fallback to original priority
-        const sourceLocation = sourceWithMap ?? (tempLocationCandidate ?? location ?? partnerLocationCandidate ?? destLocationCandidate);
+        const sourceLocation = sourceWithMap ?? (location ?? tempLocationCandidate ?? partnerLocationCandidate ?? destLocationCandidate);
 
         // For non-club events we require coordinates (map) so event shows on map
         if (type !== E_EventType.CLUB_VISIT) {

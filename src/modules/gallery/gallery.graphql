@@ -12,6 +12,7 @@ type T_Gallery {
     moderationMedia: T_ModerationMedia
     type: E_GalleryType
     url: String
+    thumbnailUrl: String
     uploadedById: String
     uploadedBy: T_User
     status: E_ModerationMediaStatus
@@ -48,6 +49,7 @@ input Input_CreateGallery {
     url: String!
     uploadedById: String!
     isPublished: Boolean
+    thumbnailUrl: String
 }
 
 input Input_UpdateGallery {
@@ -55,6 +57,7 @@ input Input_UpdateGallery {
     url: String
     uploadedById: String
     isPublished: Boolean
+    thumbnailUrl: String
 }
 
 type T_Response_Gallery {

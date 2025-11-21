@@ -15,6 +15,7 @@ export interface I_Gallery extends I_GenericDocument {
     moderationMedia?: I_ModerationMedia;
     type?: E_GalleryType;
     url?: string;
+    thumbnailUrl?: string;
     uploadedById?: string;
     uploadedBy?: I_User;
     status?: E_ModerationMediaStatus;
@@ -42,6 +43,7 @@ export interface I_Input_CreateGallery extends Omit<I_Gallery, T_Omit_Create | T
     type: E_GalleryType;
     url: string;
     uploadedById: string;
+    thumbnailUrl?: string;
 }
 
 export interface I_Input_UpdateGallery extends Omit<I_Gallery, T_Omit_Update | T_Gallery_Populate> { }

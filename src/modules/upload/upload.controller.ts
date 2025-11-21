@@ -16,6 +16,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
+import { generateAndUploadThumbnail } from '#modules/gallery/thumbnail.util.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import {
     aiModerationCtr,
@@ -219,6 +220,19 @@ export const uploadCtr = {
 
             const myIpInfo = await ipInfoCtr.getMyIp();
             const clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+            // Generate and upload thumbnail (best-effort)
+            let thumbnailUrl: string | undefined;
+            try {
+                const thumbnailStoragePath = `${uploadPath}.thumbnail.jpg`;
+                const thumbRes = await generateAndUploadThumbnail(context, videoBuffer, thumbnailStoragePath, 1);
+                if (thumbRes.success) {
+                    thumbnailUrl = thumbRes.result!;
+                }
+            }
+            catch {
+                // swallow thumbnail errors; not critical for upload
+            }
+
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                 doc: {
                     type: E_ModerationMediaType.VIDEO,
@@ -228,6 +242,7 @@ export const uploadCtr = {
                     entityId: resolvedEntityId,
                     tagId,
                     ipAddress: clientIp,
+                    thumbnailUrl,
                 },
             });
 

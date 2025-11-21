@@ -19,6 +19,7 @@ type T_ModerationMedia {
     uploadedBy: T_User
     ipAddress: String
     url: String
+    thumbnailUrl: String
     status: E_ModerationMediaStatus
     moderatedById: String
     moderatedBy: T_User
@@ -54,6 +55,7 @@ input Input_CreateModerationMedia {
     type: E_ModerationMediaType!
     ipAddress: String
     url: String!
+    thumbnailUrl: String
     status: E_ModerationMediaStatus
     reason: String
     notes: [Input_Note]
@@ -65,6 +67,7 @@ input Input_CreateModerationMedia {
 input Input_UpdateModerationMedia {
     isDel: Boolean
     type: E_ModerationMediaType
+    thumbnailUrl: String
     url: String
     ipAddress: String
     status: E_ModerationMediaStatus

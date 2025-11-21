@@ -24,6 +24,7 @@ export interface I_ModerationMedia extends I_GenericDocument {
     uploadedBy?: I_User;
     ipAddress?: string;
     url?: string;
+    thumbnailUrl?: string;
     status?: E_ModerationMediaStatus;
     moderatedById?: string;
     moderatedBy?: I_User;
@@ -48,6 +49,7 @@ export interface I_Input_CreateModerationMedia extends Omit<I_ModerationMedia, T
     type: E_ModerationMediaType;
     uploadedById: string;
     url: string;
+    thumbnailUrl?: string;
 }
 
 export interface I_Input_UpdateModerationMedia extends Omit<I_ModerationMedia, T_Omit_Update | T_ModerationMedia_Populate> { }

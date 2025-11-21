@@ -248,14 +248,14 @@ export const moderationMediaCtr = {
             switch (entity) {
                 case E_UploadEntity.GALLERY: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
-                        doc: {
+                        doc: Object.assign({
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
                             url: moderationCreated.result.url!,
                             uploadedById: moderationCreated.result.uploadedById!,
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
-                        },
+                        }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
                     });
                     if (galleryCreated.success && galleryCreated.result?.id) {
                         await mongooseCtr.updateOne(
@@ -268,14 +268,14 @@ export const moderationMediaCtr = {
 
                 case E_UploadEntity.USER: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
-                        doc: {
+                        doc: Object.assign({
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
                             url: moderationCreated.result.url!,
                             uploadedById: moderationCreated.result.uploadedById!,
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
-                        },
+                        }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
                     });
 
                     if (galleryCreated.success && galleryCreated.result?.id) {

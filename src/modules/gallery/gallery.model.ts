@@ -40,6 +40,9 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
                 },
             ],
         },
+        thumbnailUrl: {
+            type: String,
+        },
         uploadedById: {
             type: String,
             required: true,
