@@ -128,6 +128,11 @@ export interface I_NotificationContext {
     parentMessageId?: string;
     profileOwnerId?: string;
     participantCount?: number;
+    profileOwnerUsername?: string;
+    mediaId?: string;
+    mediaType?: string;
+    galleryType?: string;
+    isVideo?: boolean;
 }
 
 export interface I_NotificationPresentation {

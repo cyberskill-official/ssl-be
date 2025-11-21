@@ -20,10 +20,10 @@ export function safeRedirect(r?: { kind?: string; id?: string }) {
 }
 
 export function buildNotifThumbnail(g: I_Gallery): string | undefined {
-    if (!g?.url)
+    if (!g)
         return undefined;
 
-    if (g.type === E_GalleryType.IMAGE) {
+    if (g.type === E_GalleryType.IMAGE && g.url) {
         return bunnyCtr.generateBlurredUrl({
             fullUrl: g.url,
             extraQueryParams: { class: 'blur' },
@@ -31,11 +31,13 @@ export function buildNotifThumbnail(g: I_Gallery): string | undefined {
     }
 
     if (g.type === E_GalleryType.VIDEO) {
-        // poster nhẹ cho bell, không iframe
-        return bunnyCtr.generateSignedUrl({
-            fullUrl: g.url,
-            extraQueryParams: { class: 'free' },
-        });
+        if (g.thumbnailUrl) {
+            return bunnyCtr.generateSignedUrl({
+                fullUrl: g.thumbnailUrl,
+                extraQueryParams: { class: 'free' },
+            });
+        }
+        return undefined;
     }
 
     return undefined;

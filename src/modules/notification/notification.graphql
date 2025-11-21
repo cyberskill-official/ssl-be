@@ -114,6 +114,11 @@ type T_NotificationContext {
     parentMessageId: String
     profileOwnerId: String
     participantCount: Int
+    profileOwnerUsername: String
+    mediaId: String
+    mediaType: String
+    galleryType: String
+    isVideo: Boolean
 }
 
 type T_NotificationPresentation {
@@ -195,7 +200,15 @@ input Input_NotificationPresentationActor {
 input Input_NotificationContext {
     conversationType: E_ConversationType
     groupName: String
+    isOpenComment: Boolean
+    parentMessageId: String
     participantCount: Int
+    profileOwnerId: String
+    profileOwnerUsername: String
+    mediaId: String
+    mediaType: String
+    galleryType: String
+    isVideo: Boolean
 }
 
 input Input_NotificationPresentation {

@@ -135,6 +135,7 @@ export const likeCtr = {
                     // Determine media type label for clearer UX
                     const mediaKind = galleryFound.result.type === E_GalleryType.VIDEO ? 'video' : 'picture';
                     const headline = `liked your ${mediaKind}`;
+                    const ownerUsername = galleryFound.result.uploadedBy?.username;
 
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
@@ -154,6 +155,14 @@ export const likeCtr = {
                                     gender: currentUser.partner1?.gender,
                                 },
                                 headline,
+                                context: {
+                                    mediaId: doc.entityId,
+                                    mediaType: galleryFound.result.type,
+                                    galleryType: galleryFound.result.type,
+                                    isVideo: galleryFound.result.type === E_GalleryType.VIDEO,
+                                    profileOwnerId: ownerId,
+                                    ...(ownerUsername ? { profileOwnerUsername: ownerUsername } : {}),
+                                },
                             },
                         },
                     });

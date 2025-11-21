@@ -52,6 +52,11 @@ export const ContextSchema = mongo.createSchema<I_NotificationContext>({
         parentMessageId: { type: String },
         profileOwnerId: { type: String },
         participantCount: { type: Number },
+        profileOwnerUsername: { type: String },
+        mediaId: { type: String },
+        mediaType: { type: String },
+        galleryType: { type: String },
+        isVideo: { type: Boolean },
     },
 });
 

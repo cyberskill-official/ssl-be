@@ -15,6 +15,8 @@ import { userCtr } from '#modules/user/index.js';
 
 import type { I_Gallery } from './gallery.type.js';
 
+import { E_GalleryType } from './gallery.type.js';
+
 export async function assertCanUploadVideo(context: I_Context, uploadedById?: string): Promise<void> {
     if (!uploadedById)
         return;
@@ -96,7 +98,14 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
                         presentation: ({
                             id: gallery.id,
                             redirect: { kind: E_RedirectType.PROFILE, id: uploaderName, mediaId: gallery.id },
-                            context: { profileOwnerId: uploaderId, profileOwnerUsername: uploaderName, mediaId: gallery.id },
+                            context: {
+                                profileOwnerId: uploaderId,
+                                profileOwnerUsername: uploaderName,
+                                mediaId: gallery.id,
+                                mediaType: gallery.type,
+                                galleryType: gallery.type,
+                                isVideo: gallery.type === E_GalleryType.VIDEO,
+                            },
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             actor: {
                                 username: uploaderName,
