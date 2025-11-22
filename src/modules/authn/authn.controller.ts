@@ -67,6 +67,9 @@ import {
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
+const disableOtpEnforcement = String(
+    ((env as unknown) as Record<string, unknown>)?.['DISABLE_OTP_ENFORCEMENT'] ?? 'true',
+).toLowerCase() !== 'false';
 
 interface I_GuardianTokenPayload extends I_SessionPayload {
     guardian: true;
@@ -145,7 +148,7 @@ export const authnCtr = {
 
         const now = Date.now();
         const lastCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt).getTime() : 0;
-        if (lastCreatedAt && now - lastCreatedAt < 30000) {
+        if (!disableOtpEnforcement && lastCreatedAt && now - lastCreatedAt < 30000) {
             return {
                 success: false,
                 message: 'Please wait 30 seconds before requesting another OTP.',
@@ -1236,7 +1239,15 @@ export const authnCtr = {
             });
         }
 
-        const requiresOtp = isAdminLogin && Boolean(otpValue) && !otpExpired;
+        const skipOtp = disableOtpEnforcement;
+        const requiresOtp = !skipOtp && isAdminLogin && Boolean(otpValue) && !otpExpired;
+
+        if (skipOtp && otpValue) {
+            await userCtr.updateUser(context, {
+                filter: { id: userFound.result.id },
+                update: { tempOtp: null, tempOtpCreatedAt: null },
+            }).catch(() => { /* best-effort */ });
+        }
 
         // If target account is admin/staff and an OTP is active, validate OTP early (before password)
         if (requiresOtp) {
@@ -1271,7 +1282,7 @@ export const authnCtr = {
             await verificationCtr.deleteVerifications(context, { filter: { identifier } }).catch(() => { /* best-effort */ });
             await userCtr.updateUser(context, { filter: { id: userFound.result.id }, update: { tempOtp: null, tempOtpCreatedAt: null } }).catch(() => { /* best-effort */ });
         }
-        else if (isAdminLogin && otpExpired) {
+        else if (!skipOtp && isAdminLogin && otpExpired) {
             throwError({
                 message: 'OTP expired. Please request a new code.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -1292,7 +1303,7 @@ export const authnCtr = {
             throwError({ message: 'Account has been deleted.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (!isAdminLogin && userFound.result.tempOtp !== null) {
+        if (!skipOtp && !isAdminLogin && userFound.result.tempOtp !== null) {
             const expectedOtp = String(userFound.result.tempOtp || '').toUpperCase();
             const providedOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim().toUpperCase() : '';
             if (expectedOtp !== providedOtp) {
