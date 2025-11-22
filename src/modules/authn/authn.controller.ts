@@ -1224,8 +1224,10 @@ export const authnCtr = {
 
         console.warn('isAdminLogin', isAdminLogin);
 
-        // If target account is admin/staff, validate OTP early (before password)
-        if (isAdminLogin) {
+        const requiresOtp = isAdminLogin && Boolean(userFound.result.tempOtp);
+
+        // If target account is admin/staff and an OTP is active, validate OTP early (before password)
+        if (requiresOtp) {
             // Normalize input — treat literal "null"/"undefined" and empty as missing
             const rawOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim() : '';
             const otpProvided = rawOtp && rawOtp !== 'null' && rawOtp !== 'undefined';

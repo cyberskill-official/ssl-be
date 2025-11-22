@@ -103,6 +103,7 @@ type Query {
 type Mutation {
     sendInvitation(doc: Input_SendInvitation!): T_Response_Invitation!
     respondToInvitation(doc: Input_RespondToInvitation!): T_Response_Invitation!
+    clearInvitation(id: String!): T_Response_Invitation!
 }
 
 type Subscription {

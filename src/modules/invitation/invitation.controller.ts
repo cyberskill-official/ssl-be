@@ -680,4 +680,19 @@ export const invitationCtr = {
             },
         );
     },
+
+    clearInvitation: async (
+        context: I_Context,
+        { filter }: I_Input_FindOne<I_Input_QueryInvitation>,
+    ): Promise<I_Return<I_Invitation>> => {
+        await authnCtr.getUserFromSession(context); // require login
+        const invitation = await invitationCtr.getInvitation({}, { filter });
+        if (!invitation.success || !invitation.result) {
+            throwError({ message: 'Invitation not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+        return mongooseCtr.updateOne(
+            { id: invitation.result.id },
+            { status: E_InvitationStatus.DELETED, isDel: true },
+        );
+    },
 };

@@ -38,6 +38,8 @@ const invitationResolver = {
             invitationCtr.sendInvitation(context, args),
         respondToInvitation: (_parent: unknown, args: I_Input_CreateOne<I_Input_RespondToInvitation>, context: I_Context) =>
             invitationCtr.respondToInvitation(context, args),
+        clearInvitation: (_parent: unknown, args: { id: string }, context: I_Context) =>
+            invitationCtr.clearInvitation(context, { filter: { id: args.id } }),
     },
     Subscription: {
         onInvitationEvent: {
