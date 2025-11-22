@@ -310,6 +310,7 @@ input Input_UpdateUser {
     lastOnline: DateTime
     settings: Input_UserSettings
     flagCount: Int
+    tempOtp: String
     membershipExpiresAt: DateTime
     hasUpcomingEvent: Boolean
     followerCount: Int
