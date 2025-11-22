@@ -12,18 +12,9 @@ export interface I_HydrateUserMediaOptions {
 }
 
 function shouldBlurProfile(
-    user?: I_User | null,
+    _user?: I_User | null,
     options: I_HydrateUserMediaOptions = {},
 ): boolean {
-    if (!user) {
-        return false;
-    }
-
-    const ownerAgeVerified = user.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-    if (!ownerAgeVerified) {
-        return true;
-    }
-
     const viewerAgeVerified = options.viewerAgeVerified ?? false;
     const viewerIsStaff = options.viewerIsStaff ?? false;
     const viewerIsAdmin = options.viewerIsAdmin ?? false;

@@ -1224,7 +1224,19 @@ export const authnCtr = {
 
         console.warn('isAdminLogin', isAdminLogin);
 
-        const requiresOtp = isAdminLogin && Boolean(userFound.result.tempOtp);
+        const otpValue = userFound.result.tempOtp;
+        const otpCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt) : null;
+        const otpAgeMs = otpCreatedAt ? Date.now() - otpCreatedAt.getTime() : null;
+        const otpExpired = typeof otpAgeMs === 'number' && otpAgeMs > 5 * 60 * 1000;
+
+        if (otpExpired) {
+            await userCtr.updateUser(context, {
+                filter: { id: userFound.result.id },
+                update: { tempOtp: null, tempOtpCreatedAt: null },
+            });
+        }
+
+        const requiresOtp = isAdminLogin && Boolean(otpValue) && !otpExpired;
 
         // If target account is admin/staff and an OTP is active, validate OTP early (before password)
         if (requiresOtp) {
@@ -1258,6 +1270,12 @@ export const authnCtr = {
             // Best-effort cleanup now
             await verificationCtr.deleteVerifications(context, { filter: { identifier } }).catch(() => { /* best-effort */ });
             await userCtr.updateUser(context, { filter: { id: userFound.result.id }, update: { tempOtp: null, tempOtpCreatedAt: null } }).catch(() => { /* best-effort */ });
+        }
+        else if (isAdminLogin && otpExpired) {
+            throwError({
+                message: 'OTP expired. Please request a new code.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         if (!isAdminLogin && userFound.result.isAdminBlocked) {

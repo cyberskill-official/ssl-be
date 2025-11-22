@@ -51,6 +51,73 @@ import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './u
 const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
 
+type T_LocationPayload = Record<string, unknown> & {
+    map?: {
+        latitude?: number | null;
+        longitude?: number | null;
+    } | null;
+};
+
+function hasValidMap(payload?: T_LocationPayload): boolean {
+    if (!payload?.map)
+        return false;
+    const { latitude, longitude } = payload.map;
+    return typeof latitude === 'number'
+        && Number.isFinite(latitude)
+        && typeof longitude === 'number'
+        && Number.isFinite(longitude);
+}
+
+async function createLocationForUser(
+    context: I_Context,
+    userId: string,
+    payload: T_LocationPayload,
+): Promise<string> {
+    const locationCreated = await locationCtr.createLocation(context, {
+        doc: {
+            ...payload,
+            entityType: E_LocationEntityType.USER,
+            entityId: userId,
+            map: (payload.map && typeof payload.map.latitude === 'number' && typeof payload.map.longitude === 'number')
+                ? { latitude: payload.map.latitude, longitude: payload.map.longitude }
+                : undefined,
+        },
+    });
+    if (!locationCreated.success) {
+        throwError({ message: locationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+    }
+    return locationCreated.result.id;
+}
+
+async function upsertLocationForUser(
+    context: I_Context,
+    userId: string,
+    payload: T_LocationPayload,
+    existingLocationId?: string | null,
+): Promise<string> {
+    if (!existingLocationId) {
+        return createLocationForUser(context, userId, payload);
+    }
+
+    try {
+        const existing = await locationCtr.getLocation(context, { filter: { id: existingLocationId } });
+        if (existing.success && existing.result) {
+            const updated = await locationCtr.updateLocation(context, {
+                filter: { id: existingLocationId },
+                update: { ...payload },
+            });
+            if (updated.success) {
+                return existingLocationId;
+            }
+        }
+    }
+    catch {
+        // fall back to creating a new location
+    }
+
+    return createLocationForUser(context, userId, payload);
+}
+
 function ensurePopulateIncludes(populate: any, paths: string[]): any {
     const arr = Array.isArray(populate) ? [...populate] : (populate ? [populate] : []);
     for (const p of paths) {
@@ -445,9 +512,9 @@ export const userCtr = {
         const tempLocationPayload = doc.settings?.temporaryLocation?.location
             ? { ...doc.settings.temporaryLocation.location }
             : undefined;
-        if (tempLocationPayload && doc.settings?.temporaryLocation) {
+        if (doc.settings?.temporaryLocation) {
             const { location, ...restTempLocation } = doc.settings.temporaryLocation;
-            doc.settings.temporaryLocation = { ...restTempLocation, location: tempLocationPayload };
+            doc.settings.temporaryLocation = { ...restTempLocation, location };
         }
 
         // 3) Tạo user mới
@@ -460,54 +527,63 @@ export const userCtr = {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        // 4) Tạo location mặc định
-        const locationCreated = await locationCtr.createLocation(context, {
-            doc: {
-                ...(partner1LocationPayload ?? {}),
-                entityType: E_LocationEntityType.USER,
-                entityId: userCreated.result.id,
-            },
-        });
-        if (!locationCreated.success) {
-            throwError({ message: locationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        // 4) Tạo location mặc định nếu có payload hợp lệ
+        let partnerLocationId: string | undefined;
+        if (partner1LocationPayload && hasValidMap(partner1LocationPayload)) {
+            partnerLocationId = await createLocationForUser(
+                context,
+                userCreated.result.id,
+                partner1LocationPayload,
+            );
         }
 
-        // 5) Tạo temporary location
-        const temporaryLocationCreated = await locationCtr.createLocation(context, {
-            doc: {
-                ...(tempLocationPayload ?? {}),
-                entityType: E_LocationEntityType.USER,
-                entityId: userCreated.result.id,
-            },
-        });
-        if (!temporaryLocationCreated.success) {
-            throwError({ message: temporaryLocationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        // 5) Tạo temporary location nếu có payload hợp lệ
+        let temporaryLocationId: string | undefined;
+        if (tempLocationPayload && hasValidMap(tempLocationPayload)) {
+            temporaryLocationId = await createLocationForUser(
+                context,
+                userCreated.result.id,
+                tempLocationPayload,
+            );
         }
 
-        // 6) Cập nhật lại user với locationId
-        const updatedUser = await mongooseCtr.updateOne(
-            { id: userCreated.result.id },
-            {
-                partner1: {
-                    ...(userCreated.result.partner1 ?? {}),
-                    locationId: locationCreated.result.id,
+        // 6) Cập nhật lại user với locationId khi cần
+        let finalUser = userCreated;
+        const updatePayload: Record<string, unknown> = {};
+        if (partnerLocationId) {
+            updatePayload['partner1'] = {
+                ...(userCreated.result.partner1 ?? {}),
+                locationId: partnerLocationId,
+            };
+        }
+        if (temporaryLocationId) {
+            updatePayload['settings'] = {
+                ...(userCreated.result.settings ?? {}),
+                temporaryLocation: {
+                    ...(userCreated.result.settings?.temporaryLocation ?? {}),
+                    locationId: temporaryLocationId,
                 },
-                settings: {
-                    ...(userCreated.result.settings ?? {}),
-                    temporaryLocation: {
-                        ...(userCreated.result.settings?.temporaryLocation ?? {}),
-                        locationId: temporaryLocationCreated.result.id,
-                    },
-                },
-            },
-        );
+            };
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
+            const updatedUser = await mongooseCtr.updateOne(
+                { id: userCreated.result.id },
+                updatePayload,
+            );
+
+            if (!updatedUser.success) {
+                throwError({ message: updatedUser.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            }
+            finalUser = updatedUser;
+        }
 
         if (doc.registerStep === E_RegisterStep.COMPLETE) {
-            await broadcastNewMemberInArea(context, userCreated.result.id);
+            await broadcastNewMemberInArea(context, finalUser.result.id);
         }
 
         // 7) Trả kết quả cuối cùng
-        return updatedUser;
+        return finalUser;
     },
 
     updateUser: async (
@@ -555,13 +631,20 @@ export const userCtr = {
 
         // cập nhật location nếu có
         if (update?.partner1?.location) {
-            const locationUpdated = await locationCtr.updateLocation(context, {
-                filter: { id: userFound.result.partner1?.locationId },
-                update: { ...update.partner1.location },
-            });
-            if (!locationUpdated.success) {
-                throwError({ message: locationUpdated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            if (!hasValidMap(update.partner1.location)) {
+                throwError({
+                    message: 'Latitude and longitude are required for location updates.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
             }
+            const partnerLocationId = await upsertLocationForUser(
+                context,
+                userFound.result.id,
+                update.partner1.location,
+                userFound.result.partner1?.locationId,
+            );
+            update.partner1.locationId = partnerLocationId;
+            delete update.partner1.location;
         }
 
         const previousTempLocationId = userFound.result.settings?.temporaryLocation?.locationId || null;
@@ -571,28 +654,21 @@ export const userCtr = {
             const existingTempLocationId = userFound.result.settings?.temporaryLocation?.locationId;
 
             if (temp.location) {
-                if (existingTempLocationId) {
-                    const locationUpdated = await locationCtr.updateLocation(context, {
-                        filter: { id: existingTempLocationId },
-                        update: { ...temp.location },
+                if (!hasValidMap(temp.location)) {
+                    throwError({
+                        message: 'Latitude and longitude are required for temporary location.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
                     });
-                    if (!locationUpdated.success) {
-                        throwError({ message: locationUpdated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                    }
                 }
-                else {
-                    const locationCreated = await locationCtr.createLocation(context, {
-                        doc: {
-                            ...temp.location,
-                            entityType: E_LocationEntityType.USER,
-                            entityId: userFound.result.id,
-                        },
-                    });
-                    if (!locationCreated.success) {
-                        throwError({ message: locationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                    }
-                    update.settings.temporaryLocation.locationId = locationCreated.result.id;
-                }
+
+                const tempLocationId = await upsertLocationForUser(
+                    context,
+                    userFound.result.id,
+                    temp.location,
+                    existingTempLocationId ?? undefined,
+                );
+
+                update.settings.temporaryLocation.locationId = tempLocationId;
                 delete (update.settings.temporaryLocation as unknown as { location?: unknown }).location;
             }
         }

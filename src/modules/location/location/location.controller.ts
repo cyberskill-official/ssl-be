@@ -1257,18 +1257,8 @@ export const locationCtr = {
                 if (d.entityType === E_LocationEntityType.EVENT) {
                     const ev = e as I_Event;
 
-                    // Check if event creator is age verified
-                    let creatorAgeVerified = false;
-                    try {
-                        const creator = ev.createdBy as I_User | undefined;
-                        creatorAgeVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                    }
-                    catch {
-                        creatorAgeVerified = false;
-                    }
-
-                    // Blur nếu viewer HOẶC creator chưa age verify
-                    const shouldBlur = !viewerAgeVerified || !creatorAgeVerified;
+                    // Blur nếu viewer chưa age verify
+                    const shouldBlur = !viewerAgeVerified;
 
                     if (ev?.image) {
                         ev.image = shouldBlur

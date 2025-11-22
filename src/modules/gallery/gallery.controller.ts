@@ -36,7 +36,7 @@ import type {
 
 import { GalleryModel } from './gallery.model.js';
 import { E_GalleryType } from './gallery.type.js';
-import { assertCanUploadVideo, isUploaderAgeVerified, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
+import { assertCanUploadVideo, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
 
 const env = getEnv();
 
@@ -117,8 +117,7 @@ export const galleryCtr = {
             });
         }
 
-        const ownerAgeVerified = await isUploaderAgeVerified(context, galleryFound.result);
-        const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerAgeVerified;
+        const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin);
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
         const applyThumbnailPolicy = (url?: string | null) => {
@@ -255,7 +254,6 @@ export const galleryCtr = {
             return isApproved;
         });
         const galleryIds = galleryDocs.map(g => g.id);
-        const uploaderVerifiedCache = new Map<string, boolean>();
 
         // batch like/view
         const likeCountsMap = await likeCtr.getLikeCountsBatch(context, {
@@ -286,8 +284,7 @@ export const galleryCtr = {
             const membershipClass = (sessionUserId && gallery.uploadedById === sessionUserId)
                 ? 'normal'
                 : (isFreeMember ? 'free' : 'premium');
-            const ownerVerified = await isUploaderAgeVerified(context, gallery, uploaderVerifiedCache);
-            const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin) || !ownerVerified;
+            const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin);
             const transformMediaUrl = (url?: string | null) => {
                 if (!url)
                     return url;
