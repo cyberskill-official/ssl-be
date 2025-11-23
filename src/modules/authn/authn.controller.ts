@@ -1645,8 +1645,9 @@ export const authnCtr = {
         }
 
         const aiResult = compareFaceResult.result;
+        const aiApproved = aiResult?.isOver18 === true;
         const ageVerifyPayload: I_AgeVerify = {
-            status: E_AgeVerifyStatus.PENDING,
+            status: aiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING,
             method: E_AgeVerifyMethod.PASSPORT,
             preApproval: {
                 documentPic: documentUrl,
@@ -1660,6 +1661,12 @@ export const authnCtr = {
                 },
             },
         };
+
+        if (aiApproved) {
+            ageVerifyPayload.approvedAt = new Date();
+            ageVerifyPayload.approvedById = undefined;
+            ageVerifyPayload.reason = undefined;
+        }
 
         if (aiResult?.dateOfBirth) {
             ageVerifyPayload.dateOfBirth = aiResult.dateOfBirth;
@@ -1711,10 +1718,15 @@ export const authnCtr = {
             });
         }
 
-        if (userFound.result.ageVerify.status !== E_AgeVerifyStatus.PENDING) {
+        const currentStatus = userFound.result.ageVerify.status;
+        const awaitingManualReview
+            = currentStatus === E_AgeVerifyStatus.PENDING
+                || (currentStatus === E_AgeVerifyStatus.APPROVED && !userFound.result.ageVerify.approvedById);
+
+        if (!awaitingManualReview) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'User is not in pending age verification',
+                message: 'User is not awaiting manual age verification',
             });
         }
 
@@ -1785,10 +1797,14 @@ export const authnCtr = {
             });
         }
 
-        if (userFound.result.ageVerify.status !== E_AgeVerifyStatus.PENDING) {
+        const rejectableStatuses = [
+            E_AgeVerifyStatus.PENDING,
+            E_AgeVerifyStatus.APPROVED,
+        ];
+        if (!rejectableStatuses.includes(userFound.result.ageVerify.status ?? E_AgeVerifyStatus.PENDING)) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'User is not in pending age verification',
+                message: 'User verification cannot be rejected in its current state',
             });
         }
 

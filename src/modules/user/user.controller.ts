@@ -214,7 +214,26 @@ export const userCtr = {
             };
         }
 
-        // support uploading for partner1 and partner2: if two files provided, first -> partner1, second -> partner2
+        // Determine desired partner order from custom header (if provided)
+        const rawPartnerHeader = context.req?.headers?.['x-partner-slot'];
+        const headerValues: string[] = Array.isArray(rawPartnerHeader)
+            ? rawPartnerHeader
+            : typeof rawPartnerHeader === 'string'
+                ? rawPartnerHeader.split(',')
+                : [];
+        const targetQueue: Array<'partner1' | 'partner2'> = headerValues
+            .map((value) => {
+                const normalized = value.trim().toLowerCase();
+                if (normalized === 'partner2' || normalized === 'partner_2')
+                    return 'partner2';
+                if (normalized === 'partner1' || normalized === 'partner_1')
+                    return 'partner1';
+                return null;
+            })
+            .filter((value): value is 'partner1' | 'partner2' => value !== null)
+            .slice(0, 2);
+
+        // support uploading for partner1 and partner2: if two files provided, first -> partner1, second -> partner2 (unless overridden via header)
         const currentUser = await authnCtr.getUserFromSession(context);
         if (!currentUser?.id) {
             throwError({
@@ -248,7 +267,7 @@ export const userCtr = {
             previousRelativePath?: string;
         }> = [];
 
-        // process up to two files: index 0 -> partner1, index 1 -> partner2
+        // process up to two files: index 0 -> partner1, index 1 -> partner2 (unless overridden)
         for (let i = 0; i < Math.min(files.length, 2); i++) {
             const fp = files[i];
             if (!fp)
@@ -264,7 +283,9 @@ export const userCtr = {
                 };
             }
 
-            const partnerKey: 'partner1' | 'partner2' = i === 0 ? 'partner1' : 'partner2';
+            const partnerKey: 'partner1' | 'partner2'
+                = (targetQueue.length ? targetQueue.shift() : undefined)
+                    ?? (i === 0 ? 'partner1' : 'partner2');
             interface PartnerShim { gallery?: { id?: string; url?: string }; galleryId?: string }
             const cu = currentUser as unknown as { partner1?: PartnerShim; partner2?: PartnerShim } | undefined;
             const previousGallery = cu?.[partnerKey]?.gallery;

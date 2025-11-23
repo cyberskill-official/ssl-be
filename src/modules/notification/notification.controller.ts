@@ -6,6 +6,7 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 import { isValidObjectId, Types } from 'mongoose';
+import process from 'node:process';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
@@ -47,6 +48,83 @@ const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
     E_NotificationType.GROUP_JOIN_REQUEST,
     E_NotificationType.GROUP_JOIN_APPROVED,
 ]);
+
+const USER_APP_BASE_URL = (() => {
+    const raw = process.env['USER_APP_URL']?.trim();
+    if (!raw) {
+        return 'https://secretswingerlust.com';
+    }
+    return raw.replace(/\/+$/, '');
+})();
+
+function sanitizeSlug(value?: string | null): string | undefined {
+    if (!value)
+        return undefined;
+    return encodeURIComponent(value.toString().trim().replace(/^\/+|\/+$/g, ''));
+}
+
+function buildMediaLikedLink(username?: string | null, mediaId?: string | null | undefined): string {
+    const slug = sanitizeSlug(username);
+    const query = mediaId ? `?mediaId=${encodeURIComponent(mediaId)}` : '';
+    if (slug) {
+        return `${USER_APP_BASE_URL}/profile/${slug}${query}`;
+    }
+    return `${USER_APP_BASE_URL}/gallery${query}`;
+}
+
+function buildMediaLikedEmailHtml(input: {
+    targetDisplayName?: string;
+    actorDisplayName: string;
+    mediaKindLabel: string;
+    mediaLink: string;
+    thumbnailUrl?: string;
+}) {
+    const greetingName = input.targetDisplayName?.trim() || 'there';
+    const thumbnailBlock = input.thumbnailUrl
+        ? `<div style="margin:16px 0;"><img src="${input.thumbnailUrl}" alt="Liked ${input.mediaKindLabel}" style="max-width:100%;border-radius:8px;" /></div>`
+        : '';
+    return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
+        <hr style="border:none;border-top:1px solid #000;margin:0 0 24px;" />
+        <h2 style="font-size:20px;margin:0 0 16px;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
+        <p style="margin:0 0 16px;">Hi ${greetingName},</p>
+        <p style="margin:0 0 16px;"><strong>${input.actorDisplayName}</strong> just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer">SecretSwingerLust.com</a>.</p>
+        ${thumbnailBlock}
+        <p style="margin:0 0 24px;"><a href="${input.mediaLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 24px;background:#b41c33;color:#fff;text-decoration:none;border-radius:999px;">See who liked you</a></p>
+        <p style="margin:0 0 16px;">Yours playfully,<br/>SecretSwingerLust Team</p>
+        <p style="margin:0 0 24px;"><a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer">${USER_APP_BASE_URL.replace(/^https?:\/\//, '')}</a></p>
+        <hr style="border:none;border-top:1px solid #000;margin:24px 0 0;" />
+    </div>`;
+}
+
+function sendMediaLikedEmail(input: {
+    targetEmail: string;
+    targetDisplayName?: string;
+    actorDisplayName: string;
+    mediaKindLabel: string;
+    mediaLink: string;
+    thumbnailUrl?: string;
+}) {
+    const subject = `[Secret Swinger Lust] ${input.actorDisplayName} liked your ${input.mediaKindLabel}`;
+    const html = buildMediaLikedEmailHtml({
+        targetDisplayName: input.targetDisplayName,
+        actorDisplayName: input.actorDisplayName,
+        mediaKindLabel: input.mediaKindLabel,
+        mediaLink: input.mediaLink,
+        thumbnailUrl: input.thumbnailUrl,
+    });
+
+    return emailCtr.sendEmailRaw({
+        to: input.targetEmail,
+        subject,
+        html,
+        metadata: {
+            templateKey: 'media-liked',
+            actorDisplayName: input.actorDisplayName,
+            mediaKind: input.mediaKindLabel,
+            mediaLink: input.mediaLink,
+        },
+    });
+}
 
 export const notificationCtr = {
     getNotification: async (
@@ -276,7 +354,13 @@ export const notificationCtr = {
             return { success: true, message: null };
         }
 
-        const s = userFound.result.settings?.notification ?? {};
+        const rawSettings = userFound.result.settings?.notification ?? {};
+        const s = {
+            gainFollower: rawSettings.gainFollower === true,
+            receiveMessage: rawSettings.receiveMessage === true,
+            newMemberJoined: rawSettings.newMemberJoined === true,
+            followingPostAnnouncement: rawSettings.followingPostAnnouncement === true,
+        };
         const has = (t: E_NotificationType) => types.includes(t);
 
         // --- Helper: area-of-interest filtering for location-based notifications ---
@@ -517,16 +601,19 @@ export const notificationCtr = {
         // channels
         const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
 
-        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower === true) {
+        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage === true) {
+        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined === true) {
+        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
-        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement === true) {
+        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement) {
+            channelSet.add(E_NotificationChannel.EMAIL);
+        }
+        if (has(E_NotificationType.MEDIA_LIKED)) {
             channelSet.add(E_NotificationChannel.EMAIL);
         }
 
@@ -569,6 +656,10 @@ export const notificationCtr = {
                     try {
                         const userRes = await userCtr.getUser({}, { filter: { id: result.result.targetId } });
                         const targetEmail = userRes.success && userRes.result ? userRes.result.email : '';
+                        const targetDisplayName = userRes.success && userRes.result
+                            ? (userRes.result.username
+                                || undefined)
+                            : undefined;
                         if (!targetEmail) {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                             return;
@@ -578,6 +669,7 @@ export const notificationCtr = {
                         const tRaw = Array.isArray(result.result.type) ? result.result.type[0] : result.result.type;
                         const t = tRaw as E_NotificationType;
                         let templateKey: string | '';
+                        let sendRes;
                         switch (t) {
                             case E_NotificationType.NEW_FOLLOWER:
                                 templateKey = NEW_FOLLOWER;
@@ -594,17 +686,37 @@ export const notificationCtr = {
                             case E_NotificationType.PAYMENT_ISSUE:
                                 templateKey = PAYMENT_FAILED;
                                 break;
+                            case E_NotificationType.MEDIA_LIKED: {
+                                templateKey = '';
+                                const presentation = (result.result.presentation ?? doc.presentation) as I_NotificationPresentation | undefined;
+                                const actorDisplayName = presentation?.actor?.username || 'Someone';
+                                const isVideo = Boolean((presentation?.context as any)?.isVideo);
+                                const mediaKindLabel = isVideo ? 'video' : 'picture';
+                                const ownerUsername = (presentation?.context as any)?.profileOwnerUsername;
+                                const mediaLink = buildMediaLikedLink(ownerUsername, result.result.entityId ?? doc.entityId);
+                                const thumbnailUrl = presentation?.thumbnailUrl;
+                                sendRes = await sendMediaLikedEmail({
+                                    targetEmail,
+                                    targetDisplayName,
+                                    actorDisplayName,
+                                    mediaKindLabel,
+                                    mediaLink,
+                                    thumbnailUrl,
+                                });
+                                break;
+                            }
                             default:
                                 templateKey = '';
                         }
 
-                        let sendRes;
-                        if (templateKey) {
-                            sendRes = await emailCtr.sendEmail(templateKey, targetEmail).catch(e => ({ success: false, message: (e as Error).message }));
-                        }
-                        else {
-                            await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });
-                            return;
+                        if (!sendRes) {
+                            if (templateKey) {
+                                sendRes = await emailCtr.sendEmail(templateKey, targetEmail).catch(e => ({ success: false, message: (e as Error).message }));
+                            }
+                            else {
+                                await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });
+                                return;
+                            }
                         }
 
                         if (sendRes && (sendRes as any).success) {
