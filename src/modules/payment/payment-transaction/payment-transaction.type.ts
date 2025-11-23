@@ -6,11 +6,10 @@ export enum E_PaymentProvider {
 
 export enum E_PaymentStatus {
     PENDING = 'PENDING',
-    COMPLETED = 'COMPLETED',
+    SUCCESS = 'SUCCESS',
     FAILED = 'FAILED',
     CANCELED = 'CANCELED',
     REFUNDED = 'REFUNDED',
-    includes = 'includes',
 }
 
 export enum E_PaymentGatewayOperation {

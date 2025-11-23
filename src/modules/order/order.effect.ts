@@ -8,11 +8,12 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { eventCtr } from '#modules/event/index.js';
+import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Order } from './order.type.js';
 
-import { E_OrderPaymentPurpose, E_OrderStatus } from './order.type.js';
+import { E_OrderStatus } from './order.type.js';
 
 interface I_OrderPaidEffectsResult {
     event?: I_Event | null;
@@ -113,10 +114,10 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         return result;
     }
 
-    if (order.paymentPurpose === E_OrderPaymentPurpose.EVENT_POST) {
+    if (order.pricingType === E_PricingType.ANNOUNCEMENT) {
         result.event = await createEventFromOrder(context, order);
     }
-    else if (order.paymentPurpose === E_OrderPaymentPurpose.MEMBERSHIP) {
+    else if (order.pricingType === E_PricingType.MEMBERSHIP) {
         result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
     }
 

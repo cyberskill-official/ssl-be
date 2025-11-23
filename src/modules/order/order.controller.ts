@@ -12,7 +12,6 @@ import { getNetvalveCredentials } from '#modules/payment/netvalve/index.js';
 import type { I_Input_CreateOrder, I_Input_QueryOrder, I_Input_UpdateOrder, I_Order } from './order.type.js';
 
 import { OrderModel } from './order.model.js';
-import { E_OrderPaymentPurpose } from './order.type.js';
 
 const mongooseCtr = new MongooseController<I_Order>(OrderModel);
 
@@ -28,7 +27,6 @@ export const orderCtr = {
     async createOrder(_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
         // Gateway-specific validation: currently only NETVALVE supported for HPP
         const externalGateway = (doc.externalGateway ?? 'NETVALVE') as string;
-        const paymentPurpose = (doc.paymentPurpose as E_OrderPaymentPurpose) ?? E_OrderPaymentPurpose.MEMBERSHIP;
         if (externalGateway.toUpperCase() === 'NETVALVE') {
             let credentials;
             try {
@@ -43,13 +41,6 @@ export const orderCtr = {
             if (doc.gatewayMidId) {
                 if (!midValues.includes(doc.gatewayMidId)) {
                     throwError({ message: 'gatewayMidId is not configured for Netvalve', status: RESPONSE_STATUS.BAD_REQUEST });
-                }
-            }
-
-            // HPP requires callback URLs; enforce presence for Netvalve HPP orders
-            if (paymentPurpose !== E_OrderPaymentPurpose.EVENT_POST) {
-                if (!doc.successUrl || !doc.cancelUrl || !doc.pendingUrl) {
-                    throwError({ message: 'Netvalve HPP orders require successUrl, cancelUrl and pendingUrl', status: RESPONSE_STATUS.BAD_REQUEST });
                 }
             }
         }

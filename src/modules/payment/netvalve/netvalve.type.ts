@@ -8,8 +8,8 @@ export interface I_NetvalveCredentials {
 
 export enum E_NetvalvePaymentType {
     CARD = 'CARD',
-    APPLE_PAY = 'APPLE_PAY',
-    GOOGLE_PAY = 'GOOGLE_PAY',
+    TOKEN = 'TOKEN',
+    WALLET = 'WALLET',
 }
 
 export interface I_NetvalveRoutingPayload {

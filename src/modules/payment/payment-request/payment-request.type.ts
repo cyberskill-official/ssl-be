@@ -34,4 +34,4 @@ export interface I_Input_QueryPaymentRequest extends Partial<I_PaymentRequest> {
 export interface I_Input_CreatePaymentRequest extends Omit<I_PaymentRequest, T_Omit_Create> {}
 export interface I_Input_UpdatePaymentRequest extends Omit<I_PaymentRequest, T_Omit_Update> {}
 
-export type T_PaymentRequest_Populate = 'order';
+export type T_PaymentRequest_Populate = 'order' | 'currency';

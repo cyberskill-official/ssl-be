@@ -39,7 +39,7 @@ function signProfileImage(
 }
 
 export function hydrateUserMedia(
-    user?: I_User | null,
+    user?: I_User,
     options?: I_HydrateUserMediaOptions,
 ): void {
     if (!user) {

@@ -1,38 +1,42 @@
-import type { I_Event } from '#modules/event/event.type.js';
-import type { E_OrderPaymentPurpose } from '#modules/order/order.type.js';
-import type { E_NetvalvePaymentType } from '#modules/payment/netvalve/netvalve.type.js';
+import type { I_Order } from '#modules/order/order.type.js';
+import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 
-// Types specific to the payment module public API
+export enum E_PaymentStatus {
+    PENDING = 'PENDING',
+    SUCCESS = 'SUCCESS',
+    FAILED = 'FAILED',
+    CANCELED = 'CANCELED',
+    REFUNDED = 'REFUNDED',
+}
+
+export enum E_PaymentMethod {
+    CARD = 'CARD',
+    WALLET = 'WALLET',
+    TOKEN = 'TOKEN',
+}
+
 export interface I_Input_MakePayment {
-    amount?: number | string;
-    currency?: string;
+    order?: I_Order;
+    orderId?: string;
+    cardName?: string;
+    cardNumber?: string;
+    cardExpiryMonth?: string;
+    cardExpiryYear?: string;
+    cardCvc?: string;
+    amount?: number;
+    paymentStatus?: E_PaymentStatus;
+    paymentType?: E_PaymentMethod;
+    pricingId?: string;
+    pricing?: I_Pricing;
     clientOrderId?: string;
-    successUrl?: string;
-    cancelUrl?: string;
-    failedUrl?: string;
-    pendingUrl?: string;
-    orderDesc?: string;
-    midId?: string;
-    customerDetails?: Record<string, unknown>;
-    taxStateId?: string;
-    taxCountryId?: string;
-    paymentPurpose?: E_OrderPaymentPurpose;
-    paymentType?: E_NetvalvePaymentType;
-    token?: string;
     eventPayload?: Record<string, unknown>;
 }
 
-export enum E_MakePaymentResultStatus {
-    PENDING = 'PENDING',
-    PAID = 'PAID',
-    FAILED = 'FAILED',
-}
-
 export interface I_MakePaymentResult {
-    status: E_MakePaymentResultStatus;
-    redirectUrl?: string | null;
-    externalOrderId?: string | null;
-    event?: I_Event | null;
-    membershipExpiresAt?: Date | null;
-    gatewayResponse?: Record<string, unknown> | null;
+    orderId: string;
+    amount: number;
+    currencyCode: string;
+    paymentMethod: E_PaymentMethod;
+    paymentStatus: E_PaymentStatus;
+    pricingId: string;
 }

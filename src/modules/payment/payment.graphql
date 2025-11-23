@@ -3,54 +3,47 @@ enum E_PaymentPurpose {
     EVENT_POST
 }
 
-enum E_NetvalvePaymentType {
+enum E_PaymentStatus {
+    PENDING
+    SUCCESS
+    FAILED
+    CANCELED
+    REFUNDED
+}   
+
+enum E_PaymentMethod {
     CARD
     WALLET
     TOKEN
-    APPLE_PAY
-    GOOGLE_PAY
 }
 
-input Input_MakePayment {
+type T_Payment {
+    orderId: String
     amount: Float
-    currency: String
-    clientOrderId: String!
-    successUrl: String
-    cancelUrl: String
-    failedUrl: String
-    pendingUrl: String
-    orderDesc: String
-    midId: String
-    customerDetails: JSON
-    taxStateId: String
-    taxCountryId: String
-    paymentPurpose: E_PaymentPurpose
-    paymentType: E_NetvalvePaymentType
-    token: String
-    eventPayload: JSON
+    currencyCode: String
+    paymentMethod: E_PaymentMethod
+    paymentStatus: E_PaymentStatus
+    pricingId: String
 }
 
-enum E_PaymentResultStatus {
-    PENDING
-    PAID
-    FAILED
-}
-
-type T_MakePaymentResult {
-    status: E_PaymentResultStatus
-    redirectUrl: String
-    externalOrderId: String
-    event: T_Event
-    membershipExpiresAt: DateTime
-    gatewayResponse: JSON
+input Input_QueryMakePayment {
+    cardName: String!
+    cardNumber: String!
+    cardExpiryMonth: String!
+    cardExpiryYear: String!
+    cardCvc: String!
+    amount: Float!
+    pricingId: String!
+    paymentType: E_PaymentMethod!
+    clientOrderId: String
 }
 
 type T_Response_MakePayment {
     success: Boolean!
     message: String
-    result: T_MakePaymentResult
+    result: T_Payment
 }
 
 extend type Mutation {
-    makePayment(input: Input_MakePayment!): T_Response_MakePayment!
+    makePayment(input: Input_QueryMakePayment!): T_Response_MakePayment!
 }
