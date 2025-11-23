@@ -9,7 +9,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_QueryPaymentTransaction, I_Input_RecordPaymentTransaction, I_PaymentTransaction } from './payment-transaction.type.js';
 
-import { PaymentTransactionModel } from './payment-transaction.js';
+import { PaymentTransactionModel } from './payment-transaction.model.js';
 
 const mongooseCtr = new MongooseController<I_PaymentTransaction>(PaymentTransactionModel);
 
@@ -67,7 +67,7 @@ export const paymentCtr = {
             transactionId,
             orderId,
             amount: payload.amount,
-            currency: payload.currency?.toUpperCase(),
+            currencyId: payload.currencyId,
             status: payload.status,
             success: payload.success,
             errorCode: payload.errorCode,

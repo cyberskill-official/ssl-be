@@ -28,7 +28,7 @@ export const PaymentTransactionModel = mongo.createModel<I_PaymentTransaction>({
         amount: {
             type: Number,
         },
-        currency: {
+        currencyId: {
             type: String,
         },
         status: {
@@ -53,4 +53,24 @@ export const PaymentTransactionModel = mongo.createModel<I_PaymentTransaction>({
             index: true,
         },
     },
+    virtuals: [
+        {
+            name: 'currency',
+            options: {
+                ref: 'Currency',
+                localField: 'currencyId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'order',
+            options: {
+                ref: 'Order',
+                localField: 'orderId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+    ],
 });

@@ -9,11 +9,11 @@ import type { I_Context } from '#shared/typescript/express.js';
 
 import { asNumber, asString } from '#shared/util/index.js';
 
-import type { E_PaymentGatewayOperation } from '../payment-transaction/payment-transaction.type.js';
+import type { E_PaymentGatewayOperation } from '../payment-transaction/index.js';
 import type { I_Netvalve3DSProviderResponse, I_NetvalveCredentials, I_NetvalveErrorResponse, I_NetvalveHppOrderPayload, I_NetvalveRoutingPayload } from './index.js';
 
+import { E_PaymentProvider, E_PaymentStatus } from '../payment-transaction/index.js';
 import { paymentCtr } from '../payment-transaction/payment-transaction.controller.js';
-import { E_PaymentProvider } from '../payment-transaction/payment-transaction.type.js';
 import { E_Netvalve3DSFlow, getNetvalveCredentials, NETVALVE_DEFAULT_TIMEOUT_MS, NETVALVE_HEADER_API_KEY, NETVALVE_HEADER_AUTHORIZATION, NETVALVE_HEADER_CLIENT_ID } from './index.js';
 
 export function applyMerchantRouting<T extends I_NetvalveRoutingPayload & Record<string, unknown>>(
@@ -316,9 +316,14 @@ export async function recordNetvalveTransaction(
 
     const amount = asNumber(requestPayload['amount'] ?? resultPayload?.['amount']);
     const currencySource = asString(requestPayload['currency']) ?? asString(resultPayload?.['currency']);
-    const status = asString(resultPayload?.['status'])
+
+    const statusString = asString(resultPayload?.['status'])
         ?? asString(resultPayload?.['responseCode'])
         ?? asString(resultPayload?.['orderState']);
+
+    const status = statusString && Object.values(E_PaymentStatus).includes(statusString as E_PaymentStatus)
+        ? statusString as E_PaymentStatus
+        : undefined;
 
     const errorCode = response.success
         ? undefined
@@ -333,7 +338,7 @@ export async function recordNetvalveTransaction(
             transactionId,
             orderId,
             amount,
-            currency: currencySource?.toUpperCase(),
+            currencyId: currencySource?.toUpperCase(),
             status,
             success: response.success,
             errorCode: errorCode ?? undefined,

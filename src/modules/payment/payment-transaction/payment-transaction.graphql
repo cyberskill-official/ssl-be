@@ -2,6 +2,14 @@ enum E_PaymentProvider {
     NETVALVE
 }
 
+enum E_PaymentStatus {
+    PENDING
+    SUCCESS
+    FAILED
+    CANCELED
+    REFUNDED
+}   
+
 enum E_PaymentGatewayOperation {
     THREE_DS_INITIALIZATION
     THREE_DS_AUTHENTICATION
@@ -29,10 +37,12 @@ type T_PaymentTransaction {
     provider: E_PaymentProvider
     operation: E_PaymentGatewayOperation
     transactionId: String
+    currencyId: String
+    currency: T_Currency
+    order: T_Order
     orderId: String
     amount: Float
-    currency: String
-    status: String
+    status: E_PaymentStatus
     success: Boolean
     errorCode: String
     errorMessage: String
@@ -46,9 +56,9 @@ input Input_QueryPaymentTransaction {
     operation: E_PaymentGatewayOperation
     transactionId: String
     orderId: String
-    status: String
+    status: E_PaymentStatus
     success: Boolean
-    currency: String
+    currencyId: String
     amount: Float
     createdAt: DateTime
     updatedAt: DateTime
@@ -61,8 +71,8 @@ input Input_RecordPaymentTransaction {
     transactionId: String
     orderId: String
     amount: Float
-    currency: String
-    status: String
+    currencyId: String
+    status: E_PaymentStatus
     success: Boolean!
     errorCode: String
     errorMessage: String

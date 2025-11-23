@@ -1,5 +1,7 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { I_Currency } from '#modules/location/currency/currency.type.js';
+
 export enum E_OrderStatus {
     CREATED = 'CREATED',
     PENDING = 'PENDING',
@@ -8,10 +10,16 @@ export enum E_OrderStatus {
     CANCELLED = 'CANCELLED',
 }
 
+export enum E_OrderPaymentPurpose {
+    MEMBERSHIP = 'MEMBERSHIP',
+    EVENT_POST = 'EVENT_POST',
+}
+
 export interface I_Order extends I_GenericDocument {
     userId?: string;
     amount?: number;
-    currency?: string;
+    currency?: I_Currency;
+    currencyId?: string;
     status?: E_OrderStatus;
     successUrl?: string;
     cancelUrl?: string;
@@ -22,6 +30,7 @@ export interface I_Order extends I_GenericDocument {
     clientOrderId?: string; // client's idempotency id
     customerDetails?: Record<string, unknown> | null;
     meta?: Record<string, unknown> | null;
+    paymentPurpose?: E_OrderPaymentPurpose;
 }
 
 export interface I_Input_QueryOrder extends Partial<I_Order> {}

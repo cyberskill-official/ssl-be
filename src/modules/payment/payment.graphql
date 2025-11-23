@@ -1,14 +1,56 @@
-input Input_MakePayment {
-    # Accept a free-form JSON payload for flexibility
-    doc: JSON!
+enum E_PaymentPurpose {
+    MEMBERSHIP
+    EVENT_POST
 }
 
-type T_Response_HppOrder {
+enum E_NetvalvePaymentType {
+    CARD
+    WALLET
+    TOKEN
+    APPLE_PAY
+    GOOGLE_PAY
+}
+
+input Input_MakePayment {
+    amount: Float
+    currency: String
+    clientOrderId: String!
+    successUrl: String
+    cancelUrl: String
+    failedUrl: String
+    pendingUrl: String
+    orderDesc: String
+    midId: String
+    customerDetails: JSON
+    taxStateId: String
+    taxCountryId: String
+    paymentPurpose: E_PaymentPurpose
+    paymentType: E_NetvalvePaymentType
+    token: String
+    eventPayload: JSON
+}
+
+enum E_PaymentResultStatus {
+    PENDING
+    PAID
+    FAILED
+}
+
+type T_MakePaymentResult {
+    status: E_PaymentResultStatus
+    redirectUrl: String
+    externalOrderId: String
+    event: T_Event
+    membershipExpiresAt: DateTime
+    gatewayResponse: JSON
+}
+
+type T_Response_MakePayment {
     success: Boolean!
     message: String
-    result: JSON
+    result: T_MakePaymentResult
 }
 
 extend type Mutation {
-    makePayment(doc: JSON!): T_Response_HppOrder!
+    makePayment(input: Input_MakePayment!): T_Response_MakePayment!
 }

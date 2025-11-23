@@ -14,7 +14,7 @@ export * from './payment-request/payment-request.model.js';
 export * from './payment-request/payment-request.type.js';
 
 export * from './payment-transaction/payment-transaction.controller.js';
-export * from './payment-transaction/payment-transaction.js';
+export * from './payment-transaction/payment-transaction.model.js';
 export * from './payment-transaction/payment-transaction.resolver.js';
 export * from './payment-transaction/payment-transaction.type.js';
 

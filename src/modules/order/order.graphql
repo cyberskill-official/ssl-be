@@ -1,8 +1,10 @@
 type T_Order {
     id: String!
+    user: T_User
     userId: String
     amount: Float
-    currency: String
+    currency: T_Currency
+    currencyId: String
     status: String
     successUrl: String
     cancelUrl: String
@@ -13,14 +15,15 @@ type T_Order {
     clientOrderId: String
     customerDetails: JSON
     meta: JSON
+    paymentPurpose: E_PaymentPurpose
     createdAt: DateTime
     updatedAt: DateTime
 }
-
+    
 input Input_CreateOrder {
     userId: String
     amount: Float
-    currency: String
+    currencyId: String
     successUrl: String
     cancelUrl: String
     pendingUrl: String
@@ -29,6 +32,7 @@ input Input_CreateOrder {
     clientOrderId: String
     customerDetails: JSON
     meta: JSON
+    paymentPurpose: E_PaymentPurpose
 }
 
 input Input_UpdateOrder {
@@ -38,6 +42,7 @@ input Input_UpdateOrder {
     clientOrderId: String
     customerDetails: JSON
     meta: JSON
+    paymentPurpose: E_PaymentPurpose
 }
 
 type T_Response_Order {

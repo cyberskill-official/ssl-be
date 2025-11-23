@@ -4,6 +4,15 @@ export enum E_PaymentProvider {
     NETVALVE = 'NETVALVE',
 }
 
+export enum E_PaymentStatus {
+    PENDING = 'PENDING',
+    COMPLETED = 'COMPLETED',
+    FAILED = 'FAILED',
+    CANCELED = 'CANCELED',
+    REFUNDED = 'REFUNDED',
+    includes = 'includes',
+}
+
 export enum E_PaymentGatewayOperation {
     THREE_DS_INITIALIZATION = 'THREE_DS_INITIALIZATION',
     THREE_DS_AUTHENTICATION = 'THREE_DS_AUTHENTICATION',
@@ -24,13 +33,13 @@ export enum E_PaymentGatewayOperation {
 }
 
 export interface I_PaymentTransaction extends I_GenericDocument {
-    provider: E_PaymentProvider;
-    operation: E_PaymentGatewayOperation;
+    provider?: E_PaymentProvider;
+    operation?: E_PaymentGatewayOperation;
     transactionId?: string;
     orderId?: string;
     amount?: number;
-    currency?: string;
-    status?: string;
+    currencyId?: string;
+    status?: E_PaymentStatus;
     success: boolean;
     errorCode?: string;
     errorMessage?: string;
@@ -46,12 +55,12 @@ export interface I_Input_UpdatePaymentTransaction extends Omit<I_PaymentTransact
 
 export interface I_Input_RecordPaymentTransaction {
     provider: E_PaymentProvider;
-    operation: E_PaymentGatewayOperation;
+    operation?: E_PaymentGatewayOperation;
     transactionId?: string;
     orderId?: string;
     amount?: number;
-    currency?: string;
-    status?: string;
+    currencyId?: string;
+    status?: E_PaymentStatus;
     success: boolean;
     errorCode?: string;
     errorMessage?: string;

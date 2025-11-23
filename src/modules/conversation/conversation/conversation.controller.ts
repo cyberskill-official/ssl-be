@@ -750,7 +750,7 @@ export const conversationCtr = {
         }
 
         const headline
-        = `${currentUser.username ?? 'A user'} would like to attend your event "${eventTitle}"`;
+            = `${currentUser.username ?? 'A user'} would like to attend your event "${eventTitle}"`;
 
         const actorAvatar = currentUser.partner1?.gallery?.url
             ?? currentUser.partner2?.gallery?.url
@@ -2550,7 +2550,7 @@ export const conversationCtr = {
 
             // 9) Classify (PUBLIC/BLOG/PROFILE/GROUP) & derive
             const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind }
-      = classifyConversation(populatedConversation);
+                = classifyConversation(populatedConversation);
 
             // 10) Parent sender (only when public)
             let parentSenderId: string | undefined;

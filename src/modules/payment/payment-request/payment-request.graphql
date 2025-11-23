@@ -1,9 +1,11 @@
 type T_PaymentRequest {
     id: String!
+    order: T_Order
     orderId: String
     clientOrderId: String
     amount: Float
-    currency: String
+    currency: T_Currency
+    currencyId: String
     gateway: String
     status: String
     paymentUrl: String
@@ -18,7 +20,7 @@ input Input_CreatePaymentRequest {
     orderId: String
     clientOrderId: String
     amount: Float
-    currency: String
+    currencyId: String
     gateway: String
     meta: JSON
 }

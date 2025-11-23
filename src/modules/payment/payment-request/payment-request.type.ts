@@ -1,5 +1,8 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { I_Currency } from '#modules/location/currency/currency.type.js';
+import type { I_Order } from '#modules/order/order.type.js';
+
 export enum E_PaymentRequestStatus {
     WAITING = 'WAITING',
     PENDING = 'PENDING',
@@ -11,10 +14,12 @@ export enum E_PaymentRequestStatus {
 }
 
 export interface I_PaymentRequest extends I_GenericDocument {
+    order?: I_Order;
     orderId?: string;
     clientOrderId?: string;
     amount?: number;
-    currency?: string;
+    currencyId?: string;
+    currency?: I_Currency;
     gateway?: string;
     status?: E_PaymentRequestStatus;
     paymentUrl?: string;

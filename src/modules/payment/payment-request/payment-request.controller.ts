@@ -23,7 +23,7 @@ export const paymentRequestCtr = {
     },
 
     async createPaymentRequest(_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePaymentRequest>): Promise<I_Return<I_PaymentRequest>> {
-        return mongooseCtr.createOne(doc as unknown as any);
+        return mongooseCtr.createOne(doc);
     },
 
     async updatePaymentRequest(context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePaymentRequest>): Promise<I_Return<I_PaymentRequest>> {
@@ -31,7 +31,7 @@ export const paymentRequestCtr = {
         if (!found.success) {
             throwError({ message: 'PaymentRequest not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
-        return mongooseCtr.updateOne(filter, update as unknown as any, options);
+        return mongooseCtr.updateOne(filter, update, options);
     },
 
     async deletePaymentRequest(_context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryPaymentRequest>): Promise<I_Return<I_PaymentRequest>> {

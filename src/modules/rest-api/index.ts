@@ -24,10 +24,17 @@ import type {
 import type { I_Context } from '#shared/typescript/index.js';
 
 import orderCtr from '#modules/order/order.controller.js';
-import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentRequestStatus, paymentCtr, paymentRequestCtr } from '#modules/payment/index.js';
 import { isNetvalvePaymentType, NETVALVE_PAYMENT_TYPES } from '#modules/payment/netvalve/netvalve.constant.js';
 import { netvalveCtr } from '#modules/payment/netvalve/netvalve.controller.js';
 import { resolveThreeDSFlow } from '#modules/payment/netvalve/netvalve.handler.js';
+import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
+import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
+import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
+import {
+    E_PaymentGatewayOperation,
+    E_PaymentProvider,
+    E_PaymentStatus,
+} from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 import { getEnv } from '#shared/env/index.js';
 
@@ -304,7 +311,7 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 orderId: createdOrder?._id ?? createdOrder?.id,
                 clientOrderId: resolvedClientOrderId,
                 amount: resolvedAmount,
-                currency: resolvedCurrency,
+                currencyId: resolvedCurrency,
                 gateway: 'NETVALVE',
                 status: E_PaymentRequestStatus.WAITING,
                 attempts: 0,
@@ -335,8 +342,8 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 transactionId: undefined,
                 orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
                 amount: resolvedAmount,
-                currency: resolvedCurrency,
-                status: 'FAILED',
+                currencyId: resolvedCurrency,
+                status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: response.message ?? 'Netvalve HPP order creation failed',
                 responsePayload: (failureResult as Record<string, unknown>) ?? null,
@@ -365,8 +372,8 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 transactionId: undefined,
                 orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
                 amount: resolvedAmount,
-                currency: resolvedCurrency,
-                status: 'FAILED',
+                currencyId: resolvedCurrency,
+                status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: `Netvalve returned unexpected responseCode: ${responseCode}`,
                 responsePayload: (resultPayload as Record<string, unknown>) ?? null,
@@ -413,10 +420,10 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                orderId: String(createdOrder?.id),
                 amount: resolvedAmount,
-                currency: resolvedCurrency,
-                status: paymentUrl ? 'PENDING' : 'FAILED',
+                currencyId: resolvedCurrency,
+                status: paymentUrl ? E_PaymentStatus.PENDING : E_PaymentStatus.FAILED,
                 success: true,
                 responsePayload: (resultPayload as Record<string, unknown>) ?? null,
             });
@@ -427,10 +434,10 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
+                orderId: String(createdOrder?.id),
                 amount: resolvedAmount,
-                currency: resolvedCurrency,
-                status: 'FAILED',
+                currencyId: resolvedCurrency,
+                status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: err instanceof Error ? err.message : 'Failed to update payment records',
                 responsePayload: (resultPayload as Record<string, unknown>) ?? null,

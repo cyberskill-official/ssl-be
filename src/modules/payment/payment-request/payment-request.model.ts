@@ -11,9 +11,9 @@ export const PaymentRequestModel = mongo.createModel<I_PaymentRequest>({
         orderId: { type: String },
         clientOrderId: { type: String, index: true },
         amount: { type: Number },
-        currency: { type: String },
+        currencyId: { type: String },
         gateway: { type: String },
-        status: { type: String, default: 'WAITING', index: true },
+        status: { type: String },
         paymentUrl: { type: String },
         externalOrderId: { type: String },
         gatewayResponse: { type: mongoose.Schema.Types.Mixed },
@@ -27,6 +27,15 @@ export const PaymentRequestModel = mongo.createModel<I_PaymentRequest>({
             options: {
                 ref: 'Order',
                 localField: 'orderId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'currency',
+            options: {
+                ref: 'Currency',
+                localField: 'currencyId',
                 foreignField: 'id',
                 justOne: true,
             },

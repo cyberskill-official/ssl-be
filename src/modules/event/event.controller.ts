@@ -706,9 +706,9 @@ export const eventCtr = {
             let actorAvatarUrl: string | undefined;
             try {
                 const rawAvatar
-            = currentUser.partner1?.gallery?.url
-                ?? currentUser.partner2?.gallery?.url
-                ?? undefined;
+                    = currentUser.partner1?.gallery?.url
+                        ?? currentUser.partner2?.gallery?.url
+                        ?? undefined;
                 if (rawAvatar) {
                     actorAvatarUrl = bunnyCtr.generateBlurredUrl({
                         fullUrl: rawAvatar,

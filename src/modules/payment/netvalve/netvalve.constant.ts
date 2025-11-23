@@ -6,8 +6,8 @@ export const NETVALVE_HEADER_CLIENT_ID = 'netvalve-client-id';
 export const NETVALVE_HEADER_AUTHORIZATION = 'Authorization';
 export const NETVALVE_PAYMENT_TYPES = [
     E_NetvalvePaymentType.CARD,
-    E_NetvalvePaymentType.WALLET,
-    E_NetvalvePaymentType.TOKEN,
+    E_NetvalvePaymentType.APPLE_PAY,
+    E_NetvalvePaymentType.GOOGLE_PAY,
 ] as const;
 export const NETVALVE_3DS_AUTHENTICATION_ENDPOINT = '/3ds/authentication';
 export const NETVALVE_3DS_INITIALIZATION_ENDPOINT = '/3ds/initialization';
