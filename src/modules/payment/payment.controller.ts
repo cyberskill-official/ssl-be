@@ -23,15 +23,6 @@ import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const toStr = (value: unknown): string | undefined => typeof value === 'string' ? value.trim() : undefined;
-function toNum(value: unknown): number | undefined {
-    if (typeof value === 'number')
-        return value;
-    if (typeof value === 'string' && value.trim() !== '') {
-        const n = Number(value);
-        return Number.isFinite(n) ? n : undefined;
-    }
-    return undefined;
-}
 
 function mapPaymentTypeToNetvalve(method?: E_PaymentMethod): E_NetvalvePaymentType {
     switch (method) {
@@ -57,7 +48,6 @@ export const paymentController = {
         const cardExpiryYear = toStr(input.cardExpiryYear);
         const cardCvc = toStr(input.cardCvc);
         const pricingId = toStr(input.pricingId);
-        const requestedAmount = toNum(input.amount);
         const clientOrderId = toStr(input.clientOrderId) ?? randomUUID();
         const paymentMethod = input.paymentType ?? E_PaymentMethod.CARD;
         const netvalvePaymentType = mapPaymentTypeToNetvalve(paymentMethod);
@@ -90,10 +80,13 @@ export const paymentController = {
         const pricing = pricingRes.result;
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
 
-        const resolvedAmount = requestedAmount ?? pricing.price ?? Number.NaN;
-        if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'amount must be a positive number' });
+        const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
+        const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
+        if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing amount is invalid' });
         }
+        const taxPortion = baseAmount * (taxRate / 100);
+        const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
         const currencyCode = pricing.currency?.code?.toUpperCase();
         if (!currencyCode) {

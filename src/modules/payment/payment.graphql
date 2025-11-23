@@ -17,6 +17,7 @@ enum E_PaymentMethod {
     TOKEN
 }
 
+
 type T_Payment {
     orderId: String
     amount: Float
@@ -32,7 +33,6 @@ input Input_QueryMakePayment {
     cardExpiryMonth: String!
     cardExpiryYear: String!
     cardCvc: String!
-    amount: Float!
     pricingId: String!
     paymentType: E_PaymentMethod!
     clientOrderId: String

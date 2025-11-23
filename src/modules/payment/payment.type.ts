@@ -23,7 +23,6 @@ export interface I_Input_MakePayment {
     cardExpiryMonth?: string;
     cardExpiryYear?: string;
     cardCvc?: string;
-    amount?: number;
     paymentStatus?: E_PaymentStatus;
     paymentType?: E_PaymentMethod;
     pricingId?: string;
