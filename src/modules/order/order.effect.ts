@@ -98,6 +98,11 @@ async function createEventFromOrder(context: I_Context, order: I_Order): Promise
         return null;
     }
 
+    const eventData = meta['event'] && typeof meta['event'] === 'object' ? meta['event'] as Partial<I_Input_CreateEvent> : null;
+    if (!eventData) {
+        return null;
+    }
+
     // Ensure createdById is set to order.userId (the user who paid for the announcement)
     if (!order.userId) {
         throwError({
@@ -106,77 +111,37 @@ async function createEventFromOrder(context: I_Context, order: I_Order): Promise
         });
     }
 
-    // Note: When payment is ANNOUNCEMENT, user has already paid for the event
-    // So we don't deduct freeEventCount here (freeEventCount is for free events from membership)
+    // Create event from event data in order.meta
+    const eventDoc: I_Input_CreateEvent = {
+        type: eventData.type!,
+        description: eventData.description!,
+        createdById: order.userId as string,
+        title: eventData.title ?? '',
+        startDate: typeof eventData.startDate === 'string' ? new Date(eventData.startDate) : eventData.startDate!,
+        endDate: typeof eventData.endDate === 'string' ? new Date(eventData.endDate) : eventData.endDate!,
+        image: eventData.image ?? '',
+        destinationId: eventData.destinationId,
+        startTime: eventData.startTime,
+        endTime: eventData.endTime,
+        locationId: eventData.locationId,
+        fee: eventData.fee,
+        currency: eventData.currency,
+        pushMessage: eventData.pushMessage,
+        isActive: eventData.isActive ?? true,
+    };
 
-    const eventId = typeof meta['eventId'] === 'string' ? meta['eventId'] : null;
-    const eventData = meta['event'] && typeof meta['event'] === 'object' ? meta['event'] as Partial<I_Event> : null;
+    const createRes = await eventCtr.createEvent(context, {
+        doc: eventDoc,
+    });
 
-    // If eventId is provided, update existing event (activate it and set createdById)
-    if (eventId) {
-        const updateRes = await eventCtr.updateEvent(context, {
-            filter: { id: eventId },
-            update: {
-                isActive: true,
-                createdById: order.userId as string,
-            },
+    if (!createRes.success) {
+        throwError({
+            message: createRes.message ?? 'Failed to create event for paid order.',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
         });
-
-        if (!updateRes.success) {
-            throwError({
-                message: updateRes.message ?? 'Failed to update event for paid order.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        // Fetch updated event
-        const eventRes = await eventCtr.getEvent(context, { filter: { id: eventId } });
-        if (!eventRes.success || !eventRes.result) {
-            throwError({
-                message: 'Failed to fetch updated event.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        return eventRes.result;
     }
 
-    // If event data is provided, create new event
-    if (eventData) {
-        const eventDoc: I_Input_CreateEvent = {
-            type: eventData.type!,
-            description: eventData.description!,
-            createdById: order.userId as string,
-            title: eventData.title ?? '',
-            startDate: typeof eventData.startDate === 'string' ? new Date(eventData.startDate) : eventData.startDate!,
-            endDate: typeof eventData.endDate === 'string' ? new Date(eventData.endDate) : eventData.endDate!,
-            image: eventData.image ?? '',
-            destinationId: eventData.destinationId,
-            startTime: eventData.startTime,
-            endTime: eventData.endTime,
-            locationId: eventData.locationId,
-            fee: eventData.fee,
-            currency: eventData.currency,
-            pushMessage: eventData.pushMessage,
-            isActive: eventData.isActive ?? true,
-        };
-
-        const createRes = await eventCtr.createEvent(context, {
-            doc: eventDoc,
-        });
-
-        if (!createRes.success) {
-            throwError({
-                message: createRes.message ?? 'Failed to create event for paid order.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        return createRes.result ?? null;
-    }
-
-    // No eventId or event data, skip
-    return null;
+    return createRes.result ?? null;
 }
 
 export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
@@ -186,6 +151,7 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
     }
 
     if (order.pricingType === E_PricingType.ANNOUNCEMENT) {
+        // Create event from event object in order.meta
         result.event = await createEventFromOrder(context, order);
     }
     else if (order.pricingType === E_PricingType.MEMBERSHIP) {

@@ -6,7 +6,6 @@ import { throwError } from '@cyberskill/shared/node/log';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { eventCtr } from '#modules/event/index.js';
 import { orderCtr } from '#modules/order/index.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
@@ -79,27 +78,11 @@ export const paymentController = {
             pricingType,
         };
 
-        // For ANNOUNCEMENT payment, save event or eventId to order.meta for later processing
-        if (pricingType === E_PricingType.ANNOUNCEMENT) {
-            const meta: Record<string, unknown> = {};
-
-            if (input.eventId) {
-                // If eventId is provided, fetch event from database
-                const eventRes = await eventCtr.getEvent(context, { filter: { id: input.eventId } });
-                if (!eventRes.success || !eventRes.result) {
-                    throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'Event not found' });
-                }
-                meta['eventId'] = input.eventId;
-                meta['event'] = eventRes.result; // Store event data for later use
-            }
-            else if (input.event) {
-                // If event object is provided, save it directly
-                meta['event'] = input.event;
-            }
-
-            if (Object.keys(meta).length > 0) {
-                orderDoc['meta'] = meta;
-            }
+        // For ANNOUNCEMENT payment, save event object to order.meta for later creation
+        if (pricingType === E_PricingType.ANNOUNCEMENT && input.event) {
+            orderDoc['meta'] = {
+                event: input.event,
+            };
         }
 
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
