@@ -51,10 +51,13 @@ mainRouter.get('/payment', async (req, res, next) => {
                 ? String(query['transactionID'])
                 : '';
 
+        // Get frontend redirect URL (always use PAYMENT_REDIRECT_URL or default)
+        const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
+        const frontendRedirectUrl = env.PAYMENT_REDIRECT_URL || `${baseUrl}/payment`;
+
         // Only process if status is SUCCESS
         if (status !== 'SUCCESS') {
-            const redirectUrl = typeof query['redirect'] === 'string' ? query['redirect'] : `${env.USER_APP_URL}/op/payment`;
-            res.redirect(`${redirectUrl}?status=${status}${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`);
+            res.redirect(`${frontendRedirectUrl}?status=${status}${transactionID ? `&transactionID=${encodeURIComponent(transactionID)}` : ''}`);
             return;
         }
 
@@ -93,22 +96,25 @@ mainRouter.get('/payment', async (req, res, next) => {
 
         const order = orderRes.result;
 
-        // Only process if order is not already PAID
-        if (order.status === E_OrderStatus.PAID) {
-            // Already processed, redirect to frontend
-            const redirectUrl = typeof query['redirect'] === 'string' ? query['redirect'] : `${env.USER_APP_URL}/payment`;
-            res.redirect(`${redirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(resolvedTransactionId || '')}&orderId=${order.id}${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`);
-            return;
-        }
-
-        // Query order status from Netvalve to verify payment
+        // Query order from Netvalve to get transactionID and verify payment status
         let netvalveOrderStatus: string | undefined;
+        let netvalveTransactionID: string | undefined;
         if (order.externalOrderId) {
             try {
                 const netvalveOrderRes = await netvalveCtr.getOrder(context, { orderId: order.externalOrderId });
                 if (netvalveOrderRes.success && netvalveOrderRes.result) {
                     const netvalveOrder = netvalveOrderRes.result as Record<string, unknown>;
                     netvalveOrderStatus = typeof netvalveOrder['orderState'] === 'string' ? netvalveOrder['orderState'] : undefined;
+                    // Get transactionID from Netvalve response
+                    netvalveTransactionID = typeof netvalveOrder['transactionID'] === 'string'
+                        ? netvalveOrder['transactionID']
+                        : typeof netvalveOrder['transactionID'] === 'number'
+                            ? String(netvalveOrder['transactionID'])
+                            : typeof netvalveOrder['transactionId'] === 'string'
+                                ? netvalveOrder['transactionId']
+                                : typeof netvalveOrder['transactionId'] === 'number'
+                                    ? String(netvalveOrder['transactionId'])
+                                    : undefined;
                 }
             }
             catch {
@@ -116,13 +122,22 @@ mainRouter.get('/payment', async (req, res, next) => {
             }
         }
 
+        // Use transactionID from Netvalve response if available, otherwise use from query
+        const finalTransactionID = netvalveTransactionID || resolvedTransactionId || '';
+
+        // Only process if order is not already PAID
+        if (order.status === E_OrderStatus.PAID) {
+            // Already processed, redirect to frontend
+            res.redirect(`${frontendRedirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(finalTransactionID)}`);
+            return;
+        }
+
         // Verify payment is successful (PAID/SUCCESS from Netvalve)
         const isPaymentSuccess = netvalveOrderStatus === 'PAID' || netvalveOrderStatus === 'SUCCESS' || netvalveOrderStatus === E_PaymentStatus.SUCCESS;
 
         if (!isPaymentSuccess) {
             // Payment not confirmed, redirect to frontend with FAILED status
-            const redirectUrl = typeof query['redirect'] === 'string' ? query['redirect'] : `${env.USER_APP_URL}/payment`;
-            res.redirect(`${redirectUrl}?status=FAILED&transactionID=${encodeURIComponent(resolvedTransactionId || '')}&orderId=${order.id}${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`);
+            res.redirect(`${frontendRedirectUrl}?status=FAILED&transactionID=${encodeURIComponent(finalTransactionID)}`);
             return;
         }
 
@@ -144,8 +159,7 @@ mainRouter.get('/payment', async (req, res, next) => {
         }
 
         // Redirect to frontend with SUCCESS status
-        const redirectUrl = typeof query['redirect'] === 'string' ? query['redirect'] : `${env.USER_APP_URL}/payment`;
-        res.redirect(`${redirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(resolvedTransactionId || '')}&orderId=${order.id}${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`);
+        res.redirect(`${frontendRedirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(finalTransactionID)}`);
     }
     catch (error) {
         next(error);

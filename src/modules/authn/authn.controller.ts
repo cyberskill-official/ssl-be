@@ -307,7 +307,7 @@ export const authnCtr = {
     },
     checkAuth: async (
         context: I_Context,
-        args?: I_Input_CheckAuth,
+        _args?: I_Input_CheckAuth,
     ): Promise<I_Return<I_Response_Auth>> => {
         // First try to get token from Authorization header as fallback
         // const authHeader = context?.req?.headers?.authorization;
@@ -317,9 +317,10 @@ export const authnCtr = {
         //     token = authHeader.substring(7); // Remove 'Bearer ' prefix
         // }
 
-        if (args?.token) {
-            return authnCtr.checkToken(context, { token: args.token });
-        }
+        // Temporarily skip token check - only use session
+        // if (args?.token) {
+        //     return authnCtr.checkToken(context, { token: args.token });
+        // }
 
         if (!context?.req?.session?.user) {
             return {
