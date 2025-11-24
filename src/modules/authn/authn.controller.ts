@@ -1030,17 +1030,26 @@ export const authnCtr = {
             ? currentRoles
             : [...currentRoles, roleId];
 
+        const updatePayload: Record<string, unknown> = {
+            rolesIds: updatedRoles,
+            ...(!stepsAfter.includes(currentUser.registerStep!) && {
+                registerStep: E_RegisterStep.COMPLETE,
+            }),
+        };
+
+        // PROMO: Set membershipExpiresAt và freeEventCount = 1 (mỗi tháng được 1 tin miễn phí)
+        if (type === E_MembershipType.PROMO && membershipExpiresAt) {
+            updatePayload['membershipExpiresAt'] = membershipExpiresAt;
+            // Mỗi tháng membership = 1 lần tạo event miễn phí
+            updatePayload['freeEventCount'] = 1;
+        }
+
+        // PAID: Không cần set freeEventCount ở đây vì đã được xử lý trong order.effect.ts
+        // khi thanh toán thành công (payment callback sẽ gọi applyOrderPaidEffects)
+
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
-            update: {
-                rolesIds: updatedRoles,
-                ...(!stepsAfter.includes(currentUser.registerStep!) && {
-                    registerStep: E_RegisterStep.COMPLETE,
-                }),
-                ...(type === E_MembershipType.PROMO && membershipExpiresAt && {
-                    membershipExpiresAt,
-                }),
-            },
+            update: updatePayload,
         });
 
         if (!userUpdated.success) {
@@ -1048,6 +1057,18 @@ export const authnCtr = {
                 message: userUpdated.message,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
+        }
+
+        // Update session if user is logged in
+        if (context.req?.session?.user?.id === currentUser.id) {
+            context.req.session.user.rolesIds = updatedRoles;
+            if (!stepsAfter.includes(currentUser.registerStep!)) {
+                context.req.session.user.registerStep = E_RegisterStep.COMPLETE;
+            }
+            if (type === E_MembershipType.PROMO && membershipExpiresAt) {
+                context.req.session.user.membershipExpiresAt = membershipExpiresAt;
+                context.req.session.user.freeEventCount = 1;
+            }
         }
 
         return {

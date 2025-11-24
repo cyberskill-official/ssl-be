@@ -128,6 +128,7 @@ export interface I_User extends I_GenericDocument {
     flagCount?: number;
     hasUpcomingEvent?: boolean;
     membershipExpiresAt?: Date;
+    freeEventCount?: number; // Số lần tạo event miễn phí còn lại (mỗi tháng membership = +1)
     inactivityDeletionWarning30SentAt?: Date | null;
     inactivityDeletionWarning10SentAt?: Date | null;
     followerCount?: number;

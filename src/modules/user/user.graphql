@@ -212,6 +212,7 @@ type T_User {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    freeEventCount: Int
     inactivityDeletionWarning30SentAt: DateTime
     inactivityDeletionWarning10SentAt: DateTime
     followerCount: Int
@@ -251,6 +252,7 @@ input Input_QueryUser {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    freeEventCount: Int
     inactivityDeletionWarning30SentAt: DateTime
     inactivityDeletionWarning10SentAt: DateTime
     followerCount: Int

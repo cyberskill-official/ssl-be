@@ -1,3 +1,5 @@
+import type { I_Event } from '#modules/event/event.type.js';
+
 export enum E_PaymentStatus {
     PENDING = 'PENDING',
     SUCCESS = 'SUCCESS',
@@ -14,6 +16,8 @@ export enum E_PaymentMethod {
 
 export interface I_Input_MakePayment {
     pricingId?: string;
+    event?: I_Event; // Optional: full event object for creating new event
+    eventId?: string; // Optional: existing event ID to activate/update
 }
 
 export interface I_MakePaymentResult {

@@ -29,6 +29,7 @@ type T_Payment {
 
 input Input_QueryMakePayment {
     pricingId: String!
+    eventId: String
 }
 
 type T_Response_MakePayment {

@@ -602,6 +602,10 @@ export const UserModel = mongo.createModel<I_User>({
             type: Date,
             default: null,
         },
+        freeEventCount: {
+            type: Number,
+            default: 0,
+        },
         inactivityDeletionWarning30SentAt: {
             type: Date,
             default: null,

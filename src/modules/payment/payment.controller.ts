@@ -6,6 +6,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { eventCtr } from '#modules/event/index.js';
 import { orderCtr } from '#modules/order/index.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
@@ -14,31 +15,13 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
+import { getPaymentUrls } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const toStr = (value: unknown): string | undefined => typeof value === 'string' ? value.trim() : undefined;
-
-// Get payment redirect URLs from environment variables
-// USER_APP_URL: giữ nguyên, không cần thay đổi
-// PAYMENT_REDIRECT_URL: chỉ set khi muốn URL khác (optional)
-//   - Nếu set: dùng PAYMENT_REDIRECT_URL và tự động thêm ?status=...
-//   - Nếu không set: fallback về USER_APP_URL + /payment?status=...
-function getPaymentUrls() {
-    const env = getEnv();
-    const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
-    const redirectBase = env.PAYMENT_REDIRECT_URL || `${baseUrl}/payment`;
-
-    return {
-        successUrl: `${redirectBase}?status=SUCCESS`,
-        cancelUrl: `${redirectBase}?status=CANCEL`,
-        failedUrl: `${redirectBase}?status=FAILED`,
-        pendingUrl: `${redirectBase}?status=PENDING`,
-    };
-}
 
 export const paymentController = {
     /**
@@ -96,6 +79,29 @@ export const paymentController = {
             pricingType,
         };
 
+        // For ANNOUNCEMENT payment, save event or eventId to order.meta for later processing
+        if (pricingType === E_PricingType.ANNOUNCEMENT) {
+            const meta: Record<string, unknown> = {};
+
+            if (input.eventId) {
+                // If eventId is provided, fetch event from database
+                const eventRes = await eventCtr.getEvent(context, { filter: { id: input.eventId } });
+                if (!eventRes.success || !eventRes.result) {
+                    throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'Event not found' });
+                }
+                meta['eventId'] = input.eventId;
+                meta['event'] = eventRes.result; // Store event data for later use
+            }
+            else if (input.event) {
+                // If event object is provided, save it directly
+                meta['event'] = input.event;
+            }
+
+            if (Object.keys(meta).length > 0) {
+                orderDoc['meta'] = meta;
+            }
+        }
+
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
         if (!orderRes.success || !orderRes.result) {
             throwError({ status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR, message: orderRes.message ?? 'Failed to create order' });
@@ -151,7 +157,7 @@ export const paymentController = {
         // TODO: Add customerPhone when available in user model or input
         // customerDetails['customerPhone'] = '+1234567890'; // Format: +countrycode-phonenumber
 
-        const paymentUrls = getPaymentUrls();
+        const paymentUrls = getPaymentUrls(clientOrderId);
         const hppPayload: Record<string, unknown> = {
             amount: resolvedAmount,
             currency: currencyCode,

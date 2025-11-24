@@ -35,6 +35,7 @@ import {
     E_PaymentProvider,
     E_PaymentStatus,
 } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { paymentRouter } from '#modules/payment/payment.handler.js';
 import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 import { getEnv } from '#shared/env/index.js';
 
@@ -1583,5 +1584,8 @@ mainRouter.post('/payment/netvalve/3ds/result', async (req, res, next) => {
         next(error);
     }
 });
+
+// Mount payment router
+mainRouter.use(paymentRouter);
 
 export { mainRouter };
