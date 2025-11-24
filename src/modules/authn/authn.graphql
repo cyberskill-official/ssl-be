@@ -84,7 +84,7 @@ type T_Response_VerifyAge {
 }
 
 type Query {
-    checkAuth(token: String): T_Response_Auth!
+    checkAuth: T_Response_Auth!
 }
 
 type Mutation {

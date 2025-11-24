@@ -10,84 +10,45 @@ import { getEnv } from '#shared/env/index.js';
 import { netvalveCtr } from './netvalve/netvalve.controller.js';
 import { E_PaymentStatus } from './payment.type.js';
 
-const env = getEnv();
 const mainRouter = Router();
 
-export function getPaymentUrls(clientOrderId?: string) {
+export function getPaymentUrls() {
     const env = getEnv();
     const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
-    const redirectBase = env.PAYMENT_REDIRECT_URL || `${baseUrl}/payment`;
-
-    // API base URL for payment callback endpoint
-    const apiBaseUrl = env.ENDPOINT_RESTAPI || '/rest';
-    const callbackBase = `${baseUrl}${apiBaseUrl}/payment`;
-
-    // For SUCCESS: Call backend endpoint to process payment, then redirect to frontend
-    // For other statuses: Redirect directly to frontend (no processing needed)
-    const callbackParams = clientOrderId
-        ? `?clientOrderId=${encodeURIComponent(clientOrderId)}&status=SUCCESS`
-        : '?status=SUCCESS';
-    const frontendRedirect = `&redirect=${encodeURIComponent(redirectBase)}`;
+    const redirectBase = env.PAYMENT_REDIRECT_URL ?? `${baseUrl}/payment`;
 
     return {
-        successUrl: `${callbackBase}${callbackParams}${frontendRedirect}`,
-        cancelUrl: `${redirectBase}?status=CANCEL${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`,
-        failedUrl: `${redirectBase}?status=FAILED${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`,
-        pendingUrl: `${redirectBase}?status=PENDING${clientOrderId ? `&clientOrderId=${encodeURIComponent(clientOrderId)}` : ''}`,
+        // SUCCESS: Netvalve redirects directly to frontend, Netvalve will add transactionID to query
+        // Format: PAYMENT_REDIRECT_URL?status=SUCCESS&transactionID={transactionID}
+        successUrl: `${redirectBase}?status=SUCCESS`,
+        // Other statuses: Redirect directly to frontend
+        cancelUrl: `${redirectBase}?status=CANCEL`,
+        failedUrl: `${redirectBase}?status=FAILED`,
+        pendingUrl: `${redirectBase}?status=PENDING`,
     };
 }
 
-// Payment callback endpoint - called by Netvalve redirect when payment is SUCCESS
-// URL: /rest/payment?status=SUCCESS&transactionID=64558
-// Processes membership extension or event creation, then redirects to frontend
+// Payment processing endpoint - called by frontend after receiving transactionID from Netvalve redirect
+// URL: /rest/payment/process?transactionID=64558
+// Processes membership extension or event creation, then returns JSON response
 mainRouter.get('/payment', async (req, res, next) => {
     try {
         const query = req.query as Record<string, unknown>;
-        const clientOrderId = typeof query['clientOrderId'] === 'string' ? query['clientOrderId'].trim() : '';
-        const status = typeof query['status'] === 'string' ? query['status'].toUpperCase() : '';
         const transactionID = typeof query['transactionID'] === 'string'
             ? query['transactionID'].trim()
             : typeof query['transactionID'] === 'number'
                 ? String(query['transactionID'])
                 : '';
 
-        // Get frontend redirect URL (always use PAYMENT_REDIRECT_URL or default)
-        const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
-        const frontendRedirectUrl = env.PAYMENT_REDIRECT_URL || `${baseUrl}/payment`;
-
-        // Only process if status is SUCCESS
-        if (status !== 'SUCCESS') {
-            res.redirect(`${frontendRedirectUrl}?status=${status}${transactionID ? `&transactionID=${encodeURIComponent(transactionID)}` : ''}`);
-            return;
-        }
-
-        if (!clientOrderId && !transactionID) {
-            res.status(400).json({ success: false, message: 'clientOrderId or transactionID is required' });
-            return;
-        }
-
-        const resolvedClientOrderId = clientOrderId;
-        const resolvedTransactionId = transactionID;
-
-        if (!resolvedClientOrderId && !resolvedTransactionId) {
-            res.status(400).json({ success: false, message: 'clientOrderId or transactionID is required' });
+        if (!transactionID) {
+            res.status(400).json({ success: false, message: 'transactionID is required' });
             return;
         }
 
         const context: I_Context = { req };
 
-        // Find order by clientOrderId or transactionID (externalOrderId)
-        let orderRes;
-        if (resolvedClientOrderId) {
-            orderRes = await orderCtr.getOrder(context, { filter: { clientOrderId: resolvedClientOrderId } });
-        }
-        else if (resolvedTransactionId) {
-            orderRes = await orderCtr.getOrder(context, { filter: { externalOrderId: resolvedTransactionId } });
-        }
-        else {
-            res.status(400).json({ success: false, message: 'clientOrderId or transactionID is required' });
-            return;
-        }
+        // Find order by transactionID (externalOrderId)
+        const orderRes = await orderCtr.getOrder(context, { filter: { externalOrderId: transactionID } });
 
         if (!orderRes.success || !orderRes.result) {
             res.status(404).json({ success: false, message: 'Order not found' });
@@ -95,6 +56,12 @@ mainRouter.get('/payment', async (req, res, next) => {
         }
 
         const order = orderRes.result;
+
+        // Only process if order is not already PAID
+        if (order.status === E_OrderStatus.PAID) {
+            res.status(200).json({ success: true, message: 'Order already processed', orderId: order.id });
+            return;
+        }
 
         // Query order from Netvalve to get transactionID and verify payment status
         let netvalveOrderStatus: string | undefined;
@@ -123,21 +90,13 @@ mainRouter.get('/payment', async (req, res, next) => {
         }
 
         // Use transactionID from Netvalve response if available, otherwise use from query
-        const finalTransactionID = netvalveTransactionID || resolvedTransactionId || '';
-
-        // Only process if order is not already PAID
-        if (order.status === E_OrderStatus.PAID) {
-            // Already processed, redirect to frontend
-            res.redirect(`${frontendRedirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(finalTransactionID)}`);
-            return;
-        }
+        const finalTransactionID = netvalveTransactionID || transactionID;
 
         // Verify payment is successful (PAID/SUCCESS from Netvalve)
         const isPaymentSuccess = netvalveOrderStatus === 'PAID' || netvalveOrderStatus === 'SUCCESS' || netvalveOrderStatus === E_PaymentStatus.SUCCESS;
 
         if (!isPaymentSuccess) {
-            // Payment not confirmed, redirect to frontend with FAILED status
-            res.redirect(`${frontendRedirectUrl}?status=FAILED&transactionID=${encodeURIComponent(finalTransactionID)}`);
+            res.status(400).json({ success: false, message: 'Payment not confirmed by gateway' });
             return;
         }
 
@@ -158,8 +117,7 @@ mainRouter.get('/payment', async (req, res, next) => {
             await applyOrderPaidEffects(context, updatedOrderRes.result);
         }
 
-        // Redirect to frontend with SUCCESS status
-        res.redirect(`${frontendRedirectUrl}?status=SUCCESS&transactionID=${encodeURIComponent(finalTransactionID)}`);
+        res.status(200).json({ success: true, message: 'Payment processed successfully', orderId: order.id, transactionID: finalTransactionID });
     }
     catch (error) {
         next(error);

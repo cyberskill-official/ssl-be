@@ -40,7 +40,6 @@ import { date, extractClientIp, helper, validate } from '#shared/util/index.js';
 import type {
     I_AgeVerify,
     I_Input_ApproveAgeVerify,
-    I_Input_CheckAuth,
     I_Input_CheckToken,
     I_Input_ForgotPasswordRequest,
     I_Input_GuardianLogin,
@@ -307,7 +306,6 @@ export const authnCtr = {
     },
     checkAuth: async (
         context: I_Context,
-        _args?: I_Input_CheckAuth,
     ): Promise<I_Return<I_Response_Auth>> => {
         // First try to get token from Authorization header as fallback
         // const authHeader = context?.req?.headers?.authorization;

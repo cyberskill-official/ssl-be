@@ -3,10 +3,11 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 
+import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { orderCtr } from '#modules/order/index.js';
+import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
@@ -20,8 +21,6 @@ import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js
 import { getPaymentUrls } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
-const toStr = (value: unknown): string | undefined => typeof value === 'string' ? value.trim() : undefined;
-
 export const paymentController = {
     /**
      * Make payment - BE automatically gets userId from session, FE only needs to pass pricingId
@@ -33,38 +32,45 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
 
-        // FE only needs to pass: pricingId (no country validation)
-        const pricingId = toStr(input.pricingId); // Required from FE
+        const { pricingId } = input;
 
-        const errors: string[] = [];
         if (!pricingId)
-            errors.push('pricingId is required');
-
-        if (errors.length > 0) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: errors.join(', ') });
-        }
+            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'pricingId is required' });
 
         const pricingRes = await pricingCtr.getPricing(context, {
             filter: { id: pricingId },
             populate: ['currency'],
         });
+
         if (!pricingRes.success || !pricingRes.result) {
-            throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'Pricing not found' });
+            throwError({
+                status: RESPONSE_STATUS.NOT_FOUND,
+                message: 'Pricing not found',
+            });
         }
+
         const pricing = pricingRes.result;
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
 
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
         const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
+
         if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing amount is invalid' });
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'Pricing amount is invalid',
+            });
         }
         const taxPortion = baseAmount * (taxRate / 100);
         const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
-        const currencyCode = pricing.currency?.code?.toUpperCase();
+        const currencyCode = pricing.currency?.code;
+
         if (!currencyCode) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing currency is missing' });
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'Pricing currency is missing',
+            });
         }
 
         // Create order first - clientOrderId will be set to order.id after creation
@@ -78,16 +84,14 @@ export const paymentController = {
             pricingType,
         };
 
-        // For ANNOUNCEMENT payment, save event object to order.meta for later creation
-        if (pricingType === E_PricingType.ANNOUNCEMENT && input.event) {
-            orderDoc['meta'] = {
-                event: input.event,
-            };
-        }
-
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
+
         if (!orderRes.success || !orderRes.result) {
-            throwError({ status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR, message: orderRes.message ?? 'Failed to create order' });
+            throwError({
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                message:
+                orderRes.message ?? 'Failed to create order',
+            });
         }
         const createdOrder = orderRes.result;
 
@@ -140,7 +144,7 @@ export const paymentController = {
         // TODO: Add customerPhone when available in user model or input
         // customerDetails['customerPhone'] = '+1234567890'; // Format: +countrycode-phonenumber
 
-        const paymentUrls = getPaymentUrls(clientOrderId);
+        const paymentUrls = getPaymentUrls();
         const hppPayload: Record<string, unknown> = {
             amount: resolvedAmount,
             currency: currencyCode,
@@ -155,9 +159,13 @@ export const paymentController = {
             hppPayload['customerDetails'] = customerDetails;
         }
 
-        const hppResponse = await netvalveCtr.createOrder(context, hppPayload as any);
+        const hppResponse = await netvalveCtr.createOrder(context, hppPayload as I_NetvalveHppOrderPayload);
+
         if (!hppResponse.success || !hppResponse.result) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: hppResponse.message ?? 'Failed to initiate payment' });
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: hppResponse.message ?? 'Failed to initiate payment',
+            });
         }
 
         const hppPayloadResult = hppResponse.result as Record<string, unknown>;
