@@ -22,20 +22,13 @@ type T_Payment {
     orderId: String
     amount: Float
     currencyCode: String
-    paymentMethod: E_PaymentMethod
     paymentStatus: E_PaymentStatus
     pricingId: String
+    redirectUrl: String
 }
 
 input Input_QueryMakePayment {
-    cardName: String!
-    cardNumber: String!
-    cardExpiryMonth: String!
-    cardExpiryYear: String!
-    cardCvc: String!
     pricingId: String!
-    paymentType: E_PaymentMethod!
-    clientOrderId: String
 }
 
 type T_Response_MakePayment {

@@ -1,6 +1,3 @@
-import type { I_Order } from '#modules/order/order.type.js';
-import type { I_Pricing } from '#modules/pricing/pricing.type.js';
-
 export enum E_PaymentStatus {
     PENDING = 'PENDING',
     SUCCESS = 'SUCCESS',
@@ -16,19 +13,7 @@ export enum E_PaymentMethod {
 }
 
 export interface I_Input_MakePayment {
-    order?: I_Order;
-    orderId?: string;
-    cardName?: string;
-    cardNumber?: string;
-    cardExpiryMonth?: string;
-    cardExpiryYear?: string;
-    cardCvc?: string;
-    paymentStatus?: E_PaymentStatus;
-    paymentType?: E_PaymentMethod;
     pricingId?: string;
-    pricing?: I_Pricing;
-    clientOrderId?: string;
-    eventPayload?: Record<string, unknown>;
 }
 
 export interface I_MakePaymentResult {
@@ -38,4 +23,5 @@ export interface I_MakePaymentResult {
     paymentMethod: E_PaymentMethod;
     paymentStatus: E_PaymentStatus;
     pricingId: string;
+    redirectUrl?: string | null;
 }

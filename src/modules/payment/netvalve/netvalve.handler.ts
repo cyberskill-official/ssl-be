@@ -2,8 +2,6 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log } from '@cyberskill/shared/node/log';
-import axios from 'axios';
-import { Buffer } from 'node:buffer';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
@@ -14,7 +12,7 @@ import type { I_Netvalve3DSProviderResponse, I_NetvalveCredentials, I_NetvalveEr
 
 import { E_PaymentProvider, E_PaymentStatus } from '../payment-transaction/index.js';
 import { paymentCtr } from '../payment-transaction/payment-transaction.controller.js';
-import { E_Netvalve3DSFlow, getNetvalveCredentials, NETVALVE_DEFAULT_TIMEOUT_MS, NETVALVE_HEADER_API_KEY, NETVALVE_HEADER_AUTHORIZATION, NETVALVE_HEADER_CLIENT_ID } from './index.js';
+import { E_Netvalve3DSFlow, getNetvalveCredentials, NETVALVE_HEADER_API_KEY, NETVALVE_HEADER_CLIENT_ID } from './index.js';
 
 export function applyMerchantRouting<T extends I_NetvalveRoutingPayload & Record<string, unknown>>(
     payload: T,
@@ -49,75 +47,58 @@ export function applyHppMerchantRouting(
         ? resolved.currency.toUpperCase()
         : '';
 
-    if (!resolved.midId && currency) {
+    // Set netvalveMidId based on currency (EUR -> NETVALVE_MID_EUR, USD -> NETVALVE_MID_USD)
+    // netvalveMidId is a UUID string (e.g., "af14c6a4-55df-44bf-a0f6-6252f1fe890b")
+    if (!resolved.netvalveMidId && currency) {
         const fallbackMid = credentials.midByCurrency[currency];
         if (fallbackMid) {
-            resolved.midId = fallbackMid;
+            resolved.netvalveMidId = fallbackMid;
         }
     }
 
     return resolved;
 }
 
-function normalizeNetvalveError(error: unknown): { message: string; code: number; details?: unknown } {
-    if (axios.isAxiosError(error)) {
-        const responseData = (error.response?.data ?? {}) as I_NetvalveErrorResponse;
-        const responseStatus = error.response?.status;
-        const messageFromApi = typeof responseData.message === 'string'
-            ? responseData.message
-            : undefined;
-        const nestedMessages = Array.isArray(responseData.errors)
-            ? responseData.errors
-                    .map((item) => {
-                        if (!item || typeof item !== 'object') {
-                            return undefined;
-                        }
+async function fetchNetvalve<T>(url: string, options: RequestInit, action: string): Promise<I_Return<T>> {
+    try {
+        const response = await fetch(url, options);
 
-                        const potentialMessage = typeof item['message'] === 'string' ? item['message'] : undefined;
-                        if (potentialMessage) {
-                            return potentialMessage;
-                        }
+        if (!response.ok) {
+            let errorData: I_NetvalveErrorResponse = {};
+            try {
+                errorData = (await response.json()) as I_NetvalveErrorResponse;
+            }
+            catch {
+                // Ignore JSON parse errors
+            }
 
-                        const potentialCode = typeof item['code'] === 'string' || typeof item['code'] === 'number'
-                            ? String(item['code'])
-                            : undefined;
+            const message = typeof errorData.message === 'string' ? errorData.message : response.statusText || 'Netvalve request failed';
+            log.error(`Netvalve ${action} request failed`, {
+                statusCode: response.status,
+                details: errorData,
+            });
 
-                        return potentialCode ? `Code: ${potentialCode}` : undefined;
-                    })
-                    .filter((value): value is string => Boolean(value))
-            : [];
-
-        const codeFromApi = typeof responseData.code === 'string' || typeof responseData.code === 'number'
-            ? String(responseData.code)
-            : undefined;
-
-        const messageParts: string[] = [];
-        if (messageFromApi) {
-            messageParts.push(messageFromApi);
-        }
-        if (codeFromApi) {
-            messageParts.push(`Code: ${codeFromApi}`);
-        }
-        if (nestedMessages.length > 0) {
-            messageParts.push(nestedMessages.join(' | '));
+            return {
+                success: false,
+                message,
+                code: response.status || RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
         }
 
-        const combinedMessage = messageParts.length > 0
-            ? messageParts.join(' - ')
-            : 'Netvalve sale request failed';
-
+        const data = await response.json() as T;
         return {
-            message: combinedMessage,
-            code: responseStatus ?? RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
-            details: responseData,
+            success: true,
+            result: data,
         };
     }
-
-    return {
-        message: error instanceof Error ? error.message : 'Netvalve sale request failed',
-        code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
-        details: error,
-    };
+    catch (error) {
+        log.error(`Netvalve ${action} request failed`, { error });
+        return {
+            success: false,
+            message: error instanceof Error ? error.message : 'Netvalve request failed',
+            code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+        };
+    }
 }
 
 export function ensureCredentials(): { credentials?: I_NetvalveCredentials; error?: string } {
@@ -129,102 +110,81 @@ export function ensureCredentials(): { credentials?: I_NetvalveCredentials; erro
     }
 }
 
+/**
+ * Post request to Netvalve HPP endpoint.
+ * Headers: netvalve-client-id, netvalve-api-key
+ */
+export async function postNetvalveHppRequest<T_Response extends Record<string, unknown>>(
+    credentials: I_NetvalveCredentials,
+    endpoint: string,
+    body: Record<string, unknown>,
+    action: string,
+    overrideBaseUrl?: string,
+): Promise<I_Return<T_Response>> {
+    const url = `${overrideBaseUrl ?? credentials.baseUrl}${endpoint}`;
+
+    return fetchNetvalve<T_Response>(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            [NETVALVE_HEADER_CLIENT_ID]: credentials.clientId,
+            [NETVALVE_HEADER_API_KEY]: credentials.apiKey,
+        },
+        body: JSON.stringify(body),
+    }, action);
+}
+
+/**
+ * Post request to Netvalve Payment Service API endpoints.
+ * Headers: netvalve-client-id, netvalve-api-key
+ */
 export async function postNetvalveRequest<T_Response extends Record<string, unknown>>(
     credentials: I_NetvalveCredentials,
     endpoint: string,
     body: Record<string, unknown>,
     action: string,
+    overrideBaseUrl?: string,
 ): Promise<I_Return<T_Response>> {
-    const url = `${credentials.baseUrl}${endpoint}`;
-    const basicAuthToken = Buffer.from(`${credentials.clientId}:${credentials.apiKey}`).toString('base64');
+    const url = `${overrideBaseUrl ?? credentials.baseUrl}${endpoint}`;
 
-    try {
-        const response = await axios.post<T_Response>(url, body, {
-            timeout: NETVALVE_DEFAULT_TIMEOUT_MS,
-            headers: {
-                'Content-Type': 'application/json',
-                [NETVALVE_HEADER_CLIENT_ID]: credentials.clientId,
-                [NETVALVE_HEADER_API_KEY]: credentials.apiKey,
-                [NETVALVE_HEADER_AUTHORIZATION]: `Basic ${basicAuthToken}`,
-            },
-        });
-
-        return {
-            success: true,
-            result: response.data,
-        };
-    }
-    catch (errorRequest) {
-        const normalized = normalizeNetvalveError(errorRequest);
-
-        log.error(`Netvalve ${action} request failed`, {
-            statusCode: normalized.code,
-            endpoint,
-            details: normalized.details,
-        });
-
-        return {
-            success: false,
-            message: normalized.message,
-            code: normalized.code,
-        };
-    }
+    return fetchNetvalve<T_Response>(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            [NETVALVE_HEADER_CLIENT_ID]: credentials.clientId,
+            [NETVALVE_HEADER_API_KEY]: credentials.apiKey,
+        },
+        body: JSON.stringify(body),
+    }, action);
 }
 
+/**
+ * Get request to Netvalve Payment Service API endpoints.
+ * Headers: netvalve-client-id, netvalve-api-key
+ */
 export async function postNetvalveGetRequest<T_Response extends Record<string, unknown>>(
     credentials: I_NetvalveCredentials,
     endpoint: string,
     query: Record<string, unknown>,
     action: string,
 ): Promise<I_Return<T_Response>> {
-    const url = `${credentials.baseUrl}${endpoint}`;
-    const basicAuthToken = Buffer.from(`${credentials.clientId}:${credentials.apiKey}`).toString('base64');
-
-    const params: Record<string, string | number | boolean> = {};
+    const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
         if (value === undefined || value === null || value === '') {
             continue;
         }
-
-        if (typeof value === 'object') {
-            params[key] = JSON.stringify(value);
-            continue;
-        }
-
-        params[key] = value as string | number | boolean;
+        params.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
     }
 
-    try {
-        const response = await axios.get<T_Response>(url, {
-            timeout: NETVALVE_DEFAULT_TIMEOUT_MS,
-            params,
-            headers: {
-                [NETVALVE_HEADER_CLIENT_ID]: credentials.clientId,
-                [NETVALVE_HEADER_API_KEY]: credentials.apiKey,
-                [NETVALVE_HEADER_AUTHORIZATION]: `Basic ${basicAuthToken}`,
-            },
-        });
+    const url = `${credentials.baseUrl}${endpoint}${params.toString() ? `?${params.toString()}` : ''}`;
 
-        return {
-            success: true,
-            result: response.data,
-        };
-    }
-    catch (errorRequest) {
-        const normalized = normalizeNetvalveError(errorRequest);
-
-        log.error(`Netvalve ${action} request failed`, {
-            statusCode: normalized.code,
-            endpoint,
-            details: normalized.details,
-        });
-
-        return {
-            success: false,
-            message: normalized.message,
-            code: normalized.code,
-        };
-    }
+    return fetchNetvalve<T_Response>(url, {
+        method: 'GET',
+        headers: {
+            [NETVALVE_HEADER_CLIENT_ID]: credentials.clientId,
+            [NETVALVE_HEADER_API_KEY]: credentials.apiKey,
+        },
+    }, action);
 }
 
 export function resolveThreeDSFlow(provider: I_Netvalve3DSProviderResponse | null | undefined) {

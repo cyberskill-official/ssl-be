@@ -1,7 +1,8 @@
 export interface I_NetvalveCredentials {
     baseUrl: string;
-    clientId: string;
-    apiKey: string;
+    hppBaseUrl?: string;
+    clientId: string; // Used as userName for Basic Auth
+    apiKey: string; // Used as password for Basic Auth, or as apiKey for API Key method
     siteId?: string;
     midByCurrency: Partial<Record<string, string>>;
 }
@@ -34,7 +35,8 @@ export interface I_NetvalveHppOrderCustomerDetails extends Record<string, unknow
 export interface I_NetvalveHppOrderPayload extends Record<string, unknown> {
     amount: number;
     currency: string;
-    midId?: string;
+    midId?: string | number;
+    netvalveMidId?: string;
     clientOrderId: string;
     orderDesc?: string;
     successUrl: string;
@@ -45,10 +47,16 @@ export interface I_NetvalveHppOrderPayload extends Record<string, unknown> {
 }
 
 export interface I_NetvalveHppOrderResponse extends Record<string, unknown> {
-    redirectUrl?: string;
-    responseCode?: string;
+    traceID?: string;
+    responseTimestamp?: string;
+    orderId?: number | string;
+    transactionID?: string;
+    responseCode?: string; // "GTW_1000" for success
     responseMessage?: string;
-    orderState?: string;
+    orderState?: string; // "CREATED" for success
+    redirectUrl?: string;
+    midId?: string;
+    netvalveMidId?: string;
 }
 
 export interface I_NetvalveSalePayload extends I_NetvalveRoutingPayload, Record<string, unknown> {

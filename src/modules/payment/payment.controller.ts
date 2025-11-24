@@ -2,21 +2,21 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
-import { randomUUID } from 'node:crypto';
+import process from 'node:process';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { orderCtr } from '#modules/order/index.js';
-import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
-import { E_NetvalvePaymentType } from '#modules/payment/netvalve/netvalve.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
@@ -24,45 +24,53 @@ import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const toStr = (value: unknown): string | undefined => typeof value === 'string' ? value.trim() : undefined;
 
-function mapPaymentTypeToNetvalve(method?: E_PaymentMethod): E_NetvalvePaymentType {
-    switch (method) {
-        case E_PaymentMethod.WALLET:
-            return E_NetvalvePaymentType.WALLET;
-        case E_PaymentMethod.TOKEN:
-            return E_NetvalvePaymentType.TOKEN;
-        default:
-            return E_NetvalvePaymentType.CARD;
+function resolveLocationCountryId(location?: { countryId?: string | null; country?: { id?: string | null } | null } | null): string | undefined {
+    if (!location) {
+        return undefined;
     }
+    return location.countryId ?? location.country?.id ?? undefined;
 }
 
+function resolveUserCountryId(user?: I_User | null): string | undefined {
+    if (!user) {
+        return undefined;
+    }
+    return (
+        resolveLocationCountryId(user.settings?.temporaryLocation?.location)
+        ?? resolveLocationCountryId(user.partner1?.location)
+        ?? resolveLocationCountryId(user.partner2?.location)
+        ?? undefined
+    );
+}
+
+const USER_APP_BASE_URL = (process.env['USER_APP_URL']?.trim() || 'https://secretswingerlust.com').replace(/\/+$/, '');
+// All payment redirects go to /payment with status query param
+const PAYMENT_SUCCESS_URL = process.env['PAYMENT_SUCCESS_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=SUCCESS`;
+const PAYMENT_CANCEL_URL = process.env['PAYMENT_CANCEL_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=CANCEL`;
+const PAYMENT_FAILED_URL = process.env['PAYMENT_FAILED_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=FAILED`;
+const PAYMENT_PENDING_URL = process.env['PAYMENT_PENDING_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=PENDING`;
+
 export const paymentController = {
+    /**
+     * Make payment - BE automatically gets userId from session, FE only needs to pass pricingId
+     */
     async makePayment(context: I_Context, { input }: { input: I_Input_MakePayment }): Promise<I_Return<I_MakePaymentResult>> {
+        // BE automatically gets userId from session (not from FE input)
         const currentUser = await authnCtr.getUserFromSession(context);
         if (!currentUser) {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
+        const userDetails = await userCtr.getUser(context, {
+            filter: { id: currentUser.id },
+            populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
+        }).catch(() => null);
 
-        const cardNumber = toStr(input.cardNumber);
-        const cardName = toStr(input.cardName);
-        const cardExpiryMonth = toStr(input.cardExpiryMonth);
-        const cardExpiryYear = toStr(input.cardExpiryYear);
-        const cardCvc = toStr(input.cardCvc);
-        const pricingId = toStr(input.pricingId);
-        const clientOrderId = toStr(input.clientOrderId) ?? randomUUID();
-        const paymentMethod = input.paymentType ?? E_PaymentMethod.CARD;
-        const netvalvePaymentType = mapPaymentTypeToNetvalve(paymentMethod);
+        const userCountryId = userDetails && userDetails.success ? resolveUserCountryId(userDetails.result) : undefined;
+
+        // FE only needs to pass: pricingId
+        const pricingId = toStr(input.pricingId); // Required from FE
 
         const errors: string[] = [];
-        if (!cardName)
-            errors.push('cardName is required');
-        if (!cardNumber)
-            errors.push('cardNumber is required');
-        if (!cardExpiryMonth)
-            errors.push('cardExpiryMonth is required');
-        if (!cardExpiryYear)
-            errors.push('cardExpiryYear is required');
-        if (!cardCvc)
-            errors.push('cardCvc is required');
         if (!pricingId)
             errors.push('pricingId is required');
 
@@ -79,6 +87,9 @@ export const paymentController = {
         }
         const pricing = pricingRes.result;
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
+        if (userCountryId && pricing.countryId && pricing.countryId !== userCountryId) {
+            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing is not available for your country' });
+        }
 
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
         const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
@@ -93,24 +104,35 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing currency is missing' });
         }
 
+        // Create order first - clientOrderId will be set to order.id after creation
+        // userId is automatically set from currentUser (BE), not from FE input
         const orderDoc: Record<string, unknown> = {
-            userId: currentUser.id,
+            userId: currentUser.id, // BE automatically sets userId from session
             amount: resolvedAmount,
             currencyId: pricing.currencyId,
             externalGateway: E_PaymentProvider.NETVALVE,
-            clientOrderId,
-            pricingId,
+            pricingId, // From FE input
             pricingType,
         };
-        if (pricingType === E_PricingType.ANNOUNCEMENT && input.eventPayload && typeof input.eventPayload === 'object') {
-            orderDoc['meta'] = { eventPayload: input.eventPayload };
-        }
 
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
         if (!orderRes.success || !orderRes.result) {
             throwError({ status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR, message: orderRes.message ?? 'Failed to create order' });
         }
         const createdOrder = orderRes.result;
+
+        // clientOrderId is the order ID in our system (used for Netvalve HPP)
+        const clientOrderId = createdOrder.id;
+
+        // Update order with clientOrderId
+        await orderCtr.updateOrder(context, {
+            filter: { id: createdOrder.id },
+            update: {
+                $set: {
+                    clientOrderId,
+                },
+            },
+        });
 
         const prDoc = {
             orderId: createdOrder.id,
@@ -132,33 +154,68 @@ export const paymentController = {
         }
         const paymentRequest = prRes.result;
 
-        const salePayload = {
-            token: cardNumber!,
+        // Build customerDetails - email and phone are required for 3DS Visa mandate
+        // See: https://docs.netvalve.com/#tag/Hosted-Payment-Page/operation/createOrder
+        // Note: customerPhone format should be "+countrycode-phonenumber" (e.g., "+919900000000")
+        const customerDetails: Record<string, string> = {};
+        if (currentUser.email) {
+            customerDetails['customerEmail'] = currentUser.email;
+        }
+        // Get customer IP from request context
+        // Express sets req.ip if trust proxy is enabled, otherwise use socket.remoteAddress
+        const customerIp = (context.req as any)?.ip || (context.req as any)?.connection?.remoteAddress || undefined;
+        if (customerIp) {
+            customerDetails['customerIp'] = customerIp;
+        }
+        // TODO: Add customerPhone when available in user model or input
+        // customerDetails['customerPhone'] = '+1234567890'; // Format: +countrycode-phonenumber
+
+        const hppPayload: Record<string, unknown> = {
             amount: resolvedAmount,
             currency: currencyCode,
-            paymentType: netvalvePaymentType,
             clientOrderId,
+            successUrl: PAYMENT_SUCCESS_URL,
+            cancelUrl: PAYMENT_CANCEL_URL,
+            failedUrl: PAYMENT_FAILED_URL,
+            pendingUrl: PAYMENT_PENDING_URL,
         };
-        const gatewayRes = await netvalveCtr.sale(context, salePayload);
-        if (!gatewayRes.success) {
-            throwError({ message: gatewayRes.message, status: RESPONSE_STATUS.BAD_REQUEST });
+        // Always include customerDetails if we have at least email (required for 3DS)
+        if (customerDetails['customerEmail'] || Object.keys(customerDetails).length > 0) {
+            hppPayload['customerDetails'] = customerDetails;
         }
 
-        const resultPayload = (gatewayRes.result as Record<string, unknown> | null) ?? null;
-        const statusRaw = typeof resultPayload?.['status'] === 'string' ? resultPayload['status'].toUpperCase() : '';
-        const isPaidStatus = ['PAID'].includes(statusRaw);
-        const externalOrderId = resultPayload && typeof resultPayload === 'object' && 'transactionId' in resultPayload
-            ? String(resultPayload['transactionId'])
-            : undefined;
+        const hppResponse = await netvalveCtr.createOrder(context, hppPayload as any);
+        if (!hppResponse.success || !hppResponse.result) {
+            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: hppResponse.message ?? 'Failed to initiate payment' });
+        }
+
+        const hppPayloadResult = hppResponse.result as Record<string, unknown>;
+
+        // Validate response according to Netvalve HPP documentation
+        // See: https://docs.netvalve.com/#tag/Hosted-Payment-Page
+        // responseCode "GTW_1000" and orderState "CREATED" indicate success
+        const responseCode = typeof hppPayloadResult?.['responseCode'] === 'string' ? hppPayloadResult['responseCode'] : '';
+        const orderState = typeof hppPayloadResult?.['orderState'] === 'string' ? hppPayloadResult['orderState'] : '';
+        const redirectUrl = typeof hppPayloadResult?.['redirectUrl'] === 'string' ? hppPayloadResult['redirectUrl'] : undefined;
+        const externalOrderId = hppPayloadResult?.['orderId'] ? String(hppPayloadResult['orderId']) : undefined;
+
+        // Check if order was successfully created
+        const isSuccess = responseCode === 'GTW_1000' && orderState === 'CREATED' && redirectUrl;
+        if (!isSuccess) {
+            const errorMessage = typeof hppPayloadResult?.['responseMessage'] === 'string'
+                ? hppPayloadResult['responseMessage']
+                : `Payment gateway error: responseCode=${responseCode}, orderState=${orderState}`;
+            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: errorMessage });
+        }
 
         await paymentRequestCtr.updatePaymentRequest(context, {
             filter: { id: paymentRequest.id },
             update: {
                 $set: {
-                    status: isPaidStatus ? E_PaymentRequestStatus.PAID : E_PaymentRequestStatus.FAILED,
-                    paymentUrl: null,
+                    status: E_PaymentRequestStatus.PENDING,
+                    paymentUrl: redirectUrl ?? null,
                     externalOrderId: externalOrderId ?? undefined,
-                    gatewayResponse: resultPayload ?? null,
+                    gatewayResponse: hppPayloadResult ?? null,
                     attempts: (paymentRequest.attempts ?? 0) + 1,
                 },
             },
@@ -168,35 +225,26 @@ export const paymentController = {
             filter: { id: createdOrder.id },
             update: {
                 $set: {
-                    status: isPaidStatus ? E_OrderStatus.PAID : E_OrderStatus.FAILED,
+                    status: E_OrderStatus.PENDING,
                     externalOrderId: externalOrderId ?? undefined,
                 },
             },
         });
 
-        if (!isPaidStatus) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: `Payment status is ${statusRaw || 'UNKNOWN'}` });
-        }
-
-        const paidOrder = {
-            ...createdOrder,
-            status: E_OrderStatus.PAID,
-            externalOrderId: externalOrderId ?? undefined,
-        };
-        await applyOrderPaidEffects(context, paidOrder);
-
+        // Payment method will be selected by user on HPP page, default to CARD
         const paymentResult: I_MakePaymentResult = {
             orderId: createdOrder.id,
             amount: resolvedAmount,
             currencyCode,
-            paymentMethod,
-            paymentStatus: E_PaymentStatus.SUCCESS,
+            paymentMethod: E_PaymentMethod.CARD, // Default, user selects on HPP
+            paymentStatus: E_PaymentStatus.PENDING,
             pricingId: pricingId!,
+            redirectUrl,
         };
 
         return {
             success: true,
-            message: gatewayRes.message ?? 'Payment successful',
+            message: hppResponse.message ?? 'Payment initiated',
             result: paymentResult,
         };
     },

@@ -1,7 +1,7 @@
 import { E_NetvalvePaymentType } from './netvalve.type.js';
 
 export const NETVALVE_DEFAULT_TIMEOUT_MS = 15000;
-export const NETVALVE_HEADER_API_KEY = 'api-key';
+export const NETVALVE_HEADER_API_KEY = 'netvalve-api-key';
 export const NETVALVE_HEADER_CLIENT_ID = 'netvalve-client-id';
 export const NETVALVE_HEADER_AUTHORIZATION = 'Authorization';
 export const NETVALVE_PAYMENT_TYPES = [
