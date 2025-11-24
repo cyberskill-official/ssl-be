@@ -40,6 +40,7 @@ import { date, extractClientIp, helper, validate } from '#shared/util/index.js';
 import type {
     I_AgeVerify,
     I_Input_ApproveAgeVerify,
+    I_Input_CheckAuth,
     I_Input_CheckToken,
     I_Input_ForgotPasswordRequest,
     I_Input_GuardianLogin,
@@ -306,19 +307,12 @@ export const authnCtr = {
     },
     checkAuth: async (
         context: I_Context,
+        args?: I_Input_CheckAuth,
     ): Promise<I_Return<I_Response_Auth>> => {
-        // First try to get token from Authorization header as fallback
-        // const authHeader = context?.req?.headers?.authorization;
-        // let token: string | undefined;
-
-        // if (authHeader && authHeader.startsWith('Bearer ')) {
-        //     token = authHeader.substring(7); // Remove 'Bearer ' prefix
-        // }
-
-        // Temporarily skip token check - only use session
-        // if (args?.token) {
-        //     return authnCtr.checkToken(context, { token: args.token });
-        // }
+        // If token is provided, use token-based authentication
+        if (args?.token) {
+            return authnCtr.checkToken(context, { token: args.token });
+        }
 
         if (!context?.req?.session?.user) {
             return {

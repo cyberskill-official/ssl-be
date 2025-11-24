@@ -3,13 +3,13 @@ import type { I_Input_CreateOne, I_Input_UpdateOne } from '@cyberskill/shared/no
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_ApproveAgeVerify, I_Input_ForgotPasswordRequest, I_Input_GuardianLogin, I_Input_Login, I_Input_Register, I_Input_Register_Membership, I_Input_Register_PersonalInfo, I_Input_Register_Preferences, I_Input_Register_SendVerifyEmail, I_Input_Register_VerifyEmail, I_Input_RejectAgeVerify, I_Input_ResetPassword, I_Input_SendOTPEmailForAdminStaff } from './authn.type.js';
+import type { I_Input_ApproveAgeVerify, I_Input_CheckAuth, I_Input_ForgotPasswordRequest, I_Input_GuardianLogin, I_Input_Login, I_Input_Register, I_Input_Register_Membership, I_Input_Register_PersonalInfo, I_Input_Register_Preferences, I_Input_Register_SendVerifyEmail, I_Input_Register_VerifyEmail, I_Input_RejectAgeVerify, I_Input_ResetPassword, I_Input_SendOTPEmailForAdminStaff } from './authn.type.js';
 
 import { authnCtr } from './authn.controller.js';
 
 const authResolver = {
     Query: {
-        checkAuth: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.checkAuth(context),
+        checkAuth: (_parent: unknown, args: I_Input_CheckAuth, context: I_Context) => authnCtr.checkAuth(context, args),
     },
     Mutation: {
         register: (_parent: unknown, args: I_Input_CreateOne<I_Input_Register>, context: I_Context) => authnCtr.register(context, args),
