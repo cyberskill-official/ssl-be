@@ -17,3 +17,5 @@ export const AWS_BUCKET_REGION = 'eu-central-1';
 export const AWS_BUCKET_NAME = 'ssl-moderation-video';
 export const BUNNY_OPTIMIZER_BLUR_CLASS = 'blur';
 export const SESSION_INACTIVITY_MINUTES = 240;
+export const USER_APP_URL = 'https://localhost:8001';
+export const PAYMENT_REDIRECT_URL = 'https://localhost:8001/payment';

@@ -20,6 +20,7 @@ import {
     MONGO_BACKUP_FOLDER,
     MONGO_HOST,
     MONGO_PORT,
+    PAYMENT_REDIRECT_URL,
     PORT,
     REDIS_HOST,
     REDIS_PORT,
@@ -86,6 +87,8 @@ export function getEnv(): I_Environment {
         NETVALVE_SITE_ID: str({ default: '' }),
         NETVALVE_MID_EUR: str({ default: '' }),
         NETVALVE_MID_USD: str({ default: '' }),
+        USER_APP_URL: str({ default: PAYMENT_REDIRECT_URL }),
+        PAYMENT_REDIRECT_URL: str({ default: '' }),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;

@@ -2,9 +2,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
-import process from 'node:process';
 
-import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
@@ -16,7 +14,7 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { userCtr } from '#modules/user/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
@@ -24,31 +22,23 @@ import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const toStr = (value: unknown): string | undefined => typeof value === 'string' ? value.trim() : undefined;
 
-function resolveLocationCountryId(location?: { countryId?: string | null; country?: { id?: string | null } | null } | null): string | undefined {
-    if (!location) {
-        return undefined;
-    }
-    return location.countryId ?? location.country?.id ?? undefined;
-}
+// Get payment redirect URLs from environment variables
+// USER_APP_URL: giữ nguyên, không cần thay đổi
+// PAYMENT_REDIRECT_URL: chỉ set khi muốn URL khác (optional)
+//   - Nếu set: dùng PAYMENT_REDIRECT_URL và tự động thêm ?status=...
+//   - Nếu không set: fallback về USER_APP_URL + /payment?status=...
+function getPaymentUrls() {
+    const env = getEnv();
+    const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
+    const redirectBase = env.PAYMENT_REDIRECT_URL || `${baseUrl}/payment`;
 
-function resolveUserCountryId(user?: I_User | null): string | undefined {
-    if (!user) {
-        return undefined;
-    }
-    return (
-        resolveLocationCountryId(user.settings?.temporaryLocation?.location)
-        ?? resolveLocationCountryId(user.partner1?.location)
-        ?? resolveLocationCountryId(user.partner2?.location)
-        ?? undefined
-    );
+    return {
+        successUrl: `${redirectBase}?status=SUCCESS`,
+        cancelUrl: `${redirectBase}?status=CANCEL`,
+        failedUrl: `${redirectBase}?status=FAILED`,
+        pendingUrl: `${redirectBase}?status=PENDING`,
+    };
 }
-
-const USER_APP_BASE_URL = (process.env['USER_APP_URL']?.trim() || 'https://secretswingerlust.com').replace(/\/+$/, '');
-// All payment redirects go to /payment with status query param
-const PAYMENT_SUCCESS_URL = process.env['PAYMENT_SUCCESS_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=SUCCESS`;
-const PAYMENT_CANCEL_URL = process.env['PAYMENT_CANCEL_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=CANCEL`;
-const PAYMENT_FAILED_URL = process.env['PAYMENT_FAILED_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=FAILED`;
-const PAYMENT_PENDING_URL = process.env['PAYMENT_PENDING_URL']?.trim() || `${USER_APP_BASE_URL}/payment?status=PENDING`;
 
 export const paymentController = {
     /**
@@ -60,14 +50,8 @@ export const paymentController = {
         if (!currentUser) {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
-        const userDetails = await userCtr.getUser(context, {
-            filter: { id: currentUser.id },
-            populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
-        }).catch(() => null);
 
-        const userCountryId = userDetails && userDetails.success ? resolveUserCountryId(userDetails.result) : undefined;
-
-        // FE only needs to pass: pricingId
+        // FE only needs to pass: pricingId (no country validation)
         const pricingId = toStr(input.pricingId); // Required from FE
 
         const errors: string[] = [];
@@ -87,9 +71,6 @@ export const paymentController = {
         }
         const pricing = pricingRes.result;
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
-        if (userCountryId && pricing.countryId && pricing.countryId !== userCountryId) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Pricing is not available for your country' });
-        }
 
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
         const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
@@ -170,14 +151,15 @@ export const paymentController = {
         // TODO: Add customerPhone when available in user model or input
         // customerDetails['customerPhone'] = '+1234567890'; // Format: +countrycode-phonenumber
 
+        const paymentUrls = getPaymentUrls();
         const hppPayload: Record<string, unknown> = {
             amount: resolvedAmount,
             currency: currencyCode,
             clientOrderId,
-            successUrl: PAYMENT_SUCCESS_URL,
-            cancelUrl: PAYMENT_CANCEL_URL,
-            failedUrl: PAYMENT_FAILED_URL,
-            pendingUrl: PAYMENT_PENDING_URL,
+            successUrl: paymentUrls.successUrl,
+            cancelUrl: paymentUrls.cancelUrl,
+            failedUrl: paymentUrls.failedUrl,
+            pendingUrl: paymentUrls.pendingUrl,
         };
         // Always include customerDetails if we have at least email (required for 3DS)
         if (customerDetails['customerEmail'] || Object.keys(customerDetails).length > 0) {
