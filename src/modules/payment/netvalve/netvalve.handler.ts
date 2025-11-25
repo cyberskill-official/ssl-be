@@ -121,7 +121,22 @@ export async function postNetvalveHppRequest<T_Response extends Record<string, u
     action: string,
     overrideBaseUrl?: string,
 ): Promise<I_Return<T_Response>> {
-    const url = `${overrideBaseUrl ?? credentials.baseUrl}${endpoint}`;
+    // HPP requests should use hppBaseUrl, not baseUrl
+    const baseUrl = overrideBaseUrl ?? credentials.hppBaseUrl ?? credentials.baseUrl;
+    // Ensure endpoint starts with / if baseUrl doesn't end with /
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const url = `${normalizedBaseUrl}${normalizedEndpoint}`;
+
+    log.info('[Netvalve HPP] Request URL:', {
+        baseUrl,
+        hppBaseUrl: credentials.hppBaseUrl,
+        endpoint,
+        normalizedBaseUrl,
+        normalizedEndpoint,
+        finalUrl: url,
+        action,
+    });
 
     return fetchNetvalve<T_Response>(url, {
         method: 'POST',

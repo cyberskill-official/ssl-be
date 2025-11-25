@@ -1,6 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -58,7 +59,7 @@ import {
     NETVALVE_SALE_ENDPOINT,
     NETVALVE_TOKEN_CREATE_ENDPOINT,
 } from './netvalve.constant.js';
-import { applyHppMerchantRouting, applyMerchantRouting, ensureCredentials, postNetvalveGetRequest, postNetvalveRequest, recordNetvalveTransaction } from './netvalve.handler.js';
+import { applyHppMerchantRouting, applyMerchantRouting, ensureCredentials, postNetvalveGetRequest, postNetvalveHppRequest, postNetvalveRequest, recordNetvalveTransaction } from './netvalve.handler.js';
 
 export const netvalveCtr = {
     createOrder: async (
@@ -76,7 +77,17 @@ export const netvalveCtr = {
         }
 
         const body = applyHppMerchantRouting(payload, credentials);
-        const response = await postNetvalveRequest<I_NetvalveHppOrderResponse>(
+
+        log.info('[Netvalve] Creating HPP order:', {
+            hppBaseUrl: credentials.hppBaseUrl,
+            baseUrl: credentials.baseUrl,
+            endpoint: NETVALVE_HPP_ORDER_ENDPOINT,
+            clientId: credentials.clientId,
+            hasApiKey: !!credentials.apiKey,
+            body: JSON.stringify(body),
+        });
+
+        const response = await postNetvalveHppRequest<I_NetvalveHppOrderResponse>(
             credentials,
             NETVALVE_HPP_ORDER_ENDPOINT,
             body,

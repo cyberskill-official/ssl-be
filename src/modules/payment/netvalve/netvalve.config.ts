@@ -39,7 +39,10 @@ export function getNetvalveCredentials(): I_NetvalveCredentials {
     }
 
     const resolvedBaseUrl = normalizeUrl(baseUrl)!;
-    const resolvedHppBaseUrl = (resolvedBaseUrl.includes('/hpp') ? resolvedBaseUrl : normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL));
+    // HPP base URL: use baseUrl if it contains '/hpp', otherwise use default HPP URL
+    const resolvedHppBaseUrl = resolvedBaseUrl.includes('/hpp')
+        ? resolvedBaseUrl
+        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://hpp-api.uat.sandbox-netvalve.com');
 
     return {
         baseUrl: resolvedBaseUrl,
