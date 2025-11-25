@@ -47,9 +47,13 @@ mainRouter.get('/payment', async (req, res, next) => {
             : typeof query['transactionID'] === 'number'
                 ? String(query['transactionID'])
                 : '';
-        const statusParam = typeof query['status'] === 'string' ? query['status'].toUpperCase() : '';
+        const statusParam = typeof query['status'] === 'string' ? query['status'].toUpperCase().trim() : '';
 
-        log.info('[Payment Handler] Processing payment callback:', { transactionID, statusParam });
+        log.info('[Payment Handler] Processing payment callback:', {
+            transactionID,
+            statusParam,
+            query: JSON.stringify(query),
+        });
 
         if (!transactionID) {
             log.warn('[Payment Handler] Missing transactionID');
@@ -243,16 +247,26 @@ mainRouter.get('/payment', async (req, res, next) => {
         const finalTransactionID = netvalveTransactionID || transactionID;
 
         // Determine payment status from query param, Netvalve responseCode, or orderState
-        // Priority: query param status > responseCode (GTW_1000 = success) > orderState
+        // Priority: query param status (from Netvalve redirect) > responseCode (GTW_1000 = success) > orderState
+        // IMPORTANT: When Netvalve redirects to successUrl, it means payment is SUCCESS, regardless of orderState
         let paymentStatus: 'SUCCESS' | 'FAILED' | 'PENDING' | 'CANCEL' | null = null;
 
         if (statusParam === 'SUCCESS' || statusParam === 'FAILED' || statusParam === 'PENDING' || statusParam === 'CANCEL') {
+            // Trust the status from Netvalve redirect URL - this is the most reliable source
+            // When Netvalve redirects to successUrl, payment is definitely SUCCESS
             paymentStatus = statusParam as 'SUCCESS' | 'FAILED' | 'PENDING' | 'CANCEL';
+            log.info('[Payment Handler] Using status from query param (Netvalve redirect):', {
+                statusParam,
+                paymentStatus,
+                note: 'Netvalve redirect URL is the most reliable source of payment status',
+            });
         }
         else if (netvalveResponseCode) {
             // Use responseCode for more accurate status (GTW_1000 = success)
             if (netvalveResponseCode === 'GTW_1000') {
-                // GTW_1000 means success, but check orderState to determine if PAID or PENDING
+                // GTW_1000 means transaction approved, but check orderState to determine final status
+                // Note: orderState "CREATED" means order is created but payment may still be processing
+                // We should query Netvalve API to get latest orderState if statusParam is not available
                 if (netvalveOrderStatus === 'PAID' || netvalveOrderStatus === 'SUCCESS') {
                     paymentStatus = 'SUCCESS';
                 }
@@ -260,7 +274,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                     paymentStatus = 'PENDING';
                 }
                 else {
-                    paymentStatus = 'SUCCESS'; // Default to SUCCESS for GTW_1000
+                    paymentStatus = 'SUCCESS'; // Default to SUCCESS for GTW_1000 if orderState is unknown
                 }
             }
             else {
@@ -290,6 +304,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                 orderId: order.id,
                 statusParam,
                 netvalveOrderStatus,
+                netvalveResponseCode,
             });
             paymentStatus = 'FAILED';
         }
