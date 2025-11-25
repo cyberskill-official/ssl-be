@@ -1,37 +1,26 @@
 type T_PaymentRequest {
     id: String!
-    order: T_Order
-    orderId: String
-    clientOrderId: String
-    amount: Float
-    currency: T_Currency
-    currencyId: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     gateway: String
     status: String
     paymentUrl: String
     externalOrderId: String
     gatewayResponse: JSON
-    attempts: Int
-    expiresAt: String
     meta: JSON
 }
 
-input Input_CreatePaymentRequest {
-    orderId: String
-    clientOrderId: String
-    amount: Float
-    currencyId: String
+input Input_QueryPaymentRequest {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
     gateway: String
-    meta: JSON
-}
-
-input Input_UpdatePaymentRequest {
     status: String
-    paymentUrl: String
     externalOrderId: String
     gatewayResponse: JSON
-    attempts: Int
-    expiresAt: String
+    meta: JSON
 }
 
 type T_Response_PaymentRequest {
@@ -39,13 +28,33 @@ type T_Response_PaymentRequest {
     message: String
     result: T_PaymentRequest
 }
+type T_PaymentRequests {
+    docs: [T_PaymentRequest]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PaymentRequests {
+    success: Boolean!
+    message: String
+    result: T_PaymentRequests
+}
 
 extend type Query {
-    getPaymentRequest(filter: JSON!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
-    getPaymentRequests(filter: JSON!, options: JSON): JSON!
+    getPaymentRequest(filter: Input_QueryPaymentRequest!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
+    getPaymentRequests(filter:  Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequests!
 }
 
 extend type Mutation {
-    createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
-    updatePaymentRequest(filter: JSON!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
+    # PaymentRequest mutations are intentionally omitted to make PaymentRequest read-only
+    # Creation and updates should be performed by internal payment handlers only.
 }

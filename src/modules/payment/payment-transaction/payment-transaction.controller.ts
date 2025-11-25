@@ -40,12 +40,11 @@ export const paymentCtr = {
         payload: I_Input_RecordPaymentTransaction,
     ): Promise<I_Return<I_PaymentTransaction>> => {
         const transactionId = payload.transactionId?.trim();
-        const orderId = payload.orderId?.trim();
 
-        if (!transactionId && !orderId) {
+        if (!transactionId) {
             return {
                 success: false,
-                message: 'transactionId or orderId is required to record payment transaction',
+                message: 'transactionId is required to record payment transaction',
                 code: RESPONSE_STATUS.BAD_REQUEST.CODE,
             };
         }
@@ -53,21 +52,11 @@ export const paymentCtr = {
         const filter: Record<string, unknown> = {
             provider: payload.provider,
             operation: payload.operation,
+            transactionId,
         };
-
-        if (transactionId) {
-            filter['transactionId'] = transactionId;
-        }
-
-        if (!transactionId && orderId) {
-            filter['orderId'] = orderId;
-        }
 
         const setPayload = pruneUndefined<Record<string, unknown>>({
             transactionId,
-            orderId,
-            amount: payload.amount,
-            currencyId: payload.currencyId,
             status: payload.status,
             success: payload.success,
             errorCode: payload.errorCode,

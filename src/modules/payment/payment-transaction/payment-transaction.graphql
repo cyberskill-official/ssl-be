@@ -28,11 +28,6 @@ type T_PaymentTransaction {
     provider: E_PaymentProvider
     operation: E_PaymentGatewayOperation
     transactionId: String
-    currencyId: String
-    currency: T_Currency
-    order: T_Order
-    orderId: String
-    amount: Float
     status: E_PaymentStatus
     success: Boolean
     errorCode: String
@@ -46,11 +41,10 @@ input Input_QueryPaymentTransaction {
     provider: E_PaymentProvider
     operation: E_PaymentGatewayOperation
     transactionId: String
-    orderId: String
     status: E_PaymentStatus
     success: Boolean
-    currencyId: String
-    amount: Float
+    errorCode: String
+    errorMessage: String
     createdAt: DateTime
     updatedAt: DateTime
     performedAt: DateTime
@@ -60,9 +54,6 @@ input Input_RecordPaymentTransaction {
     provider: E_PaymentProvider!
     operation: E_PaymentGatewayOperation!
     transactionId: String
-    orderId: String
-    amount: Float
-    currencyId: String
     status: E_PaymentStatus
     success: Boolean!
     errorCode: String

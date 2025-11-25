@@ -35,9 +35,6 @@ export interface I_PaymentTransaction extends I_GenericDocument {
     provider?: E_PaymentProvider;
     operation?: E_PaymentGatewayOperation;
     transactionId?: string;
-    orderId?: string;
-    amount?: number;
-    currencyId?: string;
     status?: E_PaymentStatus;
     success: boolean;
     errorCode?: string;
@@ -52,17 +49,5 @@ export interface I_Input_CreatePaymentTransaction extends Omit<I_PaymentTransact
 
 export interface I_Input_UpdatePaymentTransaction extends Omit<I_PaymentTransaction, T_Omit_Update> {}
 
-export interface I_Input_RecordPaymentTransaction {
-    provider: E_PaymentProvider;
-    operation?: E_PaymentGatewayOperation;
-    transactionId?: string;
-    orderId?: string;
-    amount?: number;
-    currencyId?: string;
-    status?: E_PaymentStatus;
-    success: boolean;
-    errorCode?: string;
-    errorMessage?: string;
-    responsePayload?: Record<string, unknown> | null;
-    performedAt?: Date;
+export interface I_Input_RecordPaymentTransaction extends Omit<I_PaymentTransaction, 'id' | 'createdAt' | 'updatedAt' | 'isDel'> {
 }

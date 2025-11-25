@@ -5,7 +5,7 @@ import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { asNumber, asString } from '#shared/util/index.js';
+import { asString } from '#shared/util/index.js';
 
 import type { E_PaymentGatewayOperation } from '../payment-transaction/index.js';
 import type { I_Netvalve3DSProviderResponse, I_NetvalveCredentials, I_NetvalveErrorResponse, I_NetvalveHppOrderPayload, I_NetvalveRoutingPayload } from './index.js';
@@ -247,15 +247,6 @@ function extractTransactionId(source: Record<string, unknown>): string | undefin
     );
 }
 
-function extractOrderId(source: Record<string, unknown>): string | undefined {
-    return asString(
-        source['orderId']
-        ?? source['clientOrderId']
-        ?? source['orderID']
-        ?? source['id'],
-    );
-}
-
 export async function recordNetvalveTransaction(
     context: I_Context,
     operation: E_PaymentGatewayOperation,
@@ -268,14 +259,11 @@ export async function recordNetvalveTransaction(
         : null;
 
     const transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
-    const orderId = extractOrderId({ ...requestPayload, ...(resultPayload ?? {}) });
 
-    if (!transactionId && !orderId) {
+    if (!transactionId) {
+        log.warn('Cannot record Netvalve transaction: missing transactionId', { operation, requestPayload, resultPayload });
         return;
     }
-
-    const amount = asNumber(requestPayload['amount'] ?? resultPayload?.['amount']);
-    const currencySource = asString(requestPayload['currency']) ?? asString(resultPayload?.['currency']);
 
     const statusString = asString(resultPayload?.['status'])
         ?? asString(resultPayload?.['responseCode'])
@@ -293,17 +281,18 @@ export async function recordNetvalveTransaction(
 
     try {
         await paymentCtr.recordGatewayTransaction(context, {
+            // cspell:ignore NETVALVE
             provider: E_PaymentProvider.NETVALVE,
             operation,
             transactionId,
-            orderId,
-            amount,
-            currencyId: currencySource?.toUpperCase(),
             status,
             success: response.success,
-            errorCode: errorCode ?? undefined,
+            errorCode,
             errorMessage,
-            responsePayload: resultPayload ?? null,
+            responsePayload: {
+                request: requestPayload,
+                response: resultPayload,
+            },
             performedAt: new Date(),
         });
     }
@@ -312,7 +301,6 @@ export async function recordNetvalveTransaction(
             error,
             operation,
             transactionId,
-            orderId,
         });
     }
 }

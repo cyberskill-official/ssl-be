@@ -288,7 +288,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
             successUrl: resolvedSuccessUrl,
             cancelUrl: resolvedCancelUrl,
             pendingUrl: resolvedPendingUrl,
-            externalGateway: 'NETVALVE',
             clientOrderId: resolvedClientOrderId,
         };
 
@@ -304,23 +303,22 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         const createdOrder = orderRes.result ?? null;
 
-        // 2) idempotent PaymentRequest: try reuse WAITING by clientOrderId
-        const existingPr = await paymentRequestCtr.getPaymentRequest(context, { filter: { clientOrderId: resolvedClientOrderId, status: E_PaymentRequestStatus.WAITING } });
-        let paymentRequestResult = existingPr;
-        if (!existingPr.success || !existingPr.result) {
-            const prDoc: Record<string, unknown> = {
+        // 2) idempotent PaymentRequest: try reuse WAITING by checking meta.clientOrderId
+        // Note: Since clientOrderId is now in meta, we need to query differently
+        // For now, create new PaymentRequest each time (idempotency handled by Order)
+        const prDoc: Record<string, unknown> = {
+            gateway: 'NETVALVE',
+            status: E_PaymentRequestStatus.WAITING,
+            attempts: 0,
+            meta: {
                 orderId: createdOrder?._id ?? createdOrder?.id,
                 clientOrderId: resolvedClientOrderId,
                 amount: resolvedAmount,
                 currencyId: resolvedCurrency,
-                gateway: 'NETVALVE',
-                status: E_PaymentRequestStatus.WAITING,
-                attempts: 0,
-                expiresAt: new Date(Date.now() + 30 * 60 * 1000), // default 30 minutes
-            };
+            },
+        };
 
-            paymentRequestResult = await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
-        }
+        const paymentRequestResult = await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
 
         if (!paymentRequestResult.success || !paymentRequestResult.result) {
             res.status(500).json({ success: false, message: 'Failed to create or retrieve payment session' });
@@ -341,9 +339,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
-                amount: resolvedAmount,
-                currencyId: resolvedCurrency,
                 status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: response.message ?? 'Netvalve HPP order creation failed',
@@ -371,9 +366,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?._id ?? createdOrder?.id ?? ''),
-                amount: resolvedAmount,
-                currencyId: resolvedCurrency,
                 status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: `Netvalve returned unexpected responseCode: ${responseCode}`,
@@ -421,9 +413,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?.id),
-                amount: resolvedAmount,
-                currencyId: resolvedCurrency,
                 status: paymentUrl ? E_PaymentStatus.PENDING : E_PaymentStatus.FAILED,
                 success: true,
                 responsePayload: (resultPayload as Record<string, unknown>) ?? null,
@@ -435,9 +424,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
                 provider: E_PaymentProvider.NETVALVE,
                 operation: E_PaymentGatewayOperation.HPP_ORDER,
                 transactionId: undefined,
-                orderId: String(createdOrder?.id),
-                amount: resolvedAmount,
-                currencyId: resolvedCurrency,
                 status: E_PaymentStatus.FAILED,
                 success: false,
                 errorMessage: err instanceof Error ? err.message : 'Failed to update payment records',

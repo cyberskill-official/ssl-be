@@ -3,6 +3,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 
+import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
 import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -75,13 +76,10 @@ export const paymentController = {
 
         // Create order first - clientOrderId will be set to order.id after creation
         // userId is automatically set from currentUser (BE), not from FE input
-        const orderDoc: Record<string, unknown> = {
+        const orderDoc: I_Input_CreateOrder = {
             userId: currentUser.id, // BE automatically sets userId from session
             amount: resolvedAmount,
-            currencyId: pricing.currencyId,
-            externalGateway: E_PaymentProvider.NETVALVE,
             pricingId, // From FE input
-            pricingType,
         };
 
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
@@ -109,15 +107,14 @@ export const paymentController = {
         });
 
         const prDoc = {
-            orderId: createdOrder.id,
-            clientOrderId,
-            amount: resolvedAmount,
-            currencyId: pricing.currencyId,
             gateway: E_PaymentProvider.NETVALVE,
             status: E_PaymentRequestStatus.WAITING,
             attempts: 0,
-            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
             meta: {
+                orderId: createdOrder.id,
+                clientOrderId,
+                amount: resolvedAmount,
+                currencyId: pricing.currencyId,
                 pricingId,
                 pricingType,
             },

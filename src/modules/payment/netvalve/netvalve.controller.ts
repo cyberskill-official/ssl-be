@@ -58,14 +58,9 @@ import {
     NETVALVE_SALE_ENDPOINT,
     NETVALVE_TOKEN_CREATE_ENDPOINT,
 } from './netvalve.constant.js';
-import { applyHppMerchantRouting, applyMerchantRouting, ensureCredentials, postNetvalveGetRequest, postNetvalveHppRequest, postNetvalveRequest, recordNetvalveTransaction } from './netvalve.handler.js';
+import { applyHppMerchantRouting, applyMerchantRouting, ensureCredentials, postNetvalveGetRequest, postNetvalveRequest, recordNetvalveTransaction } from './netvalve.handler.js';
 
 export const netvalveCtr = {
-    /**
-     * Create HPP order - uses hppBaseUrl (NETVALVE_HPP_BASE_URL or default).
-     * This is the ONLY method that uses the HPP base URL.
-     * All other operations use the regular baseUrl (NETVALVE_API_BASE_URL).
-     */
     createOrder: async (
         _context: I_Context,
         payload: I_NetvalveHppOrderPayload,
@@ -81,23 +76,11 @@ export const netvalveCtr = {
         }
 
         const body = applyHppMerchantRouting(payload, credentials);
-
-        // Validate that netvalveMidId is set (required for HPP order)
-        const currency = typeof body.currency === 'string' ? body.currency.toUpperCase() : '';
-        if (!body.netvalveMidId) {
-            return {
-                success: false,
-                message: `netvalveMidId is required for HPP order. No MID found for currency: ${currency || 'unknown'}. Please set NETVALVE_MID_${currency} environment variable.`,
-                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
-            };
-        }
-
-        const response = await postNetvalveHppRequest<I_NetvalveHppOrderResponse>(
+        const response = await postNetvalveRequest<I_NetvalveHppOrderResponse>(
             credentials,
             NETVALVE_HPP_ORDER_ENDPOINT,
             body,
             'hpp-order',
-            credentials.hppBaseUrl ?? credentials.baseUrl,
         );
 
         await recordNetvalveTransaction(_context, E_PaymentGatewayOperation.HPP_ORDER, body, response as I_Return<Record<string, unknown>>);
@@ -197,12 +180,7 @@ export const netvalveCtr = {
         }
 
         const body = applyMerchantRouting(payload, credentials);
-        const response = await postNetvalveRequest<I_NetvalveSaleResponse>(
-            credentials,
-            NETVALVE_SALE_ENDPOINT,
-            body,
-            'sale',
-        );
+        const response = await postNetvalveRequest<I_NetvalveSaleResponse>(credentials, NETVALVE_SALE_ENDPOINT, body, 'sale');
 
         await recordNetvalveTransaction(_context, E_PaymentGatewayOperation.SALE, body, response as I_Return<Record<string, unknown>>);
 

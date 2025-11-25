@@ -1,7 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Currency } from '#modules/location/currency/currency.type.js';
-import type { E_PricingType } from '#modules/pricing/pricing.type.js';
+import type { I_PaymentTransaction } from '#modules/payment/index.js';
 
 export enum E_OrderStatus {
     CREATED = 'CREATED',
@@ -14,21 +13,17 @@ export enum E_OrderStatus {
 export interface I_Order extends I_GenericDocument {
     userId?: string;
     amount?: number;
-    currency?: I_Currency;
-    currencyId?: string;
     status?: E_OrderStatus;
-    externalGateway?: string; // e.g. NETVALVE
-    externalOrderId?: string; // gateway order id
-    gatewayMidId?: string;
+    paymentTransactionId?: string;
+    paymentTransaction?: I_PaymentTransaction;
     clientOrderId?: string; // client's idempotency id
-    customerDetails?: Record<string, unknown> | null;
-    meta?: Record<string, unknown> | null;
+    customerDetails?: Record<string, unknown>;
+    meta?: Record<string, unknown>;
     pricingId?: string;
-    pricingType?: E_PricingType;
 }
 
-export interface I_Input_QueryOrder extends Partial<I_Order> {}
-export interface I_Input_CreateOrder extends Omit<I_Order, T_Omit_Create> {}
-export interface I_Input_UpdateOrder extends Omit<I_Order, T_Omit_Update> {}
+export type T_Order_Populate = 'user' | 'pricing' | 'paymentTransaction';
 
-export type T_Order_Populate = 'user' | 'currency';
+export interface I_Input_QueryOrder extends Omit<I_Order, T_Order_Populate> { }
+export interface I_Input_CreateOrder extends Omit<I_Order, T_Omit_Create | T_Order_Populate> {}
+export interface I_Input_UpdateOrder extends Omit<I_Order, T_Omit_Update | T_Order_Populate> {}

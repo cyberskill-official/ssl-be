@@ -71,6 +71,7 @@ type T_Notification {
     id: String
     createdAt: DateTime
     updatedAt: DateTime
+    isDel: Boolean
     type: [E_NotificationType]
     actorId: String
     targetId: String
@@ -161,6 +162,7 @@ input Input_QueryNotification {
     id: String
     createdAt: DateTime
     updatedAt: DateTime
+    isDel: Boolean
     type: [E_NotificationType]
     actorId: String
     targetId: String

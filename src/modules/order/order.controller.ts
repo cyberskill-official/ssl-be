@@ -7,7 +7,9 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { paymentCtr } from '#modules/payment/index.js';
 import { getNetvalveCredentials } from '#modules/payment/netvalve/index.js';
+import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 
 import type { I_Input_CreateOrder, I_Input_QueryOrder, I_Input_UpdateOrder, I_Order } from './order.type.js';
 
@@ -24,28 +26,54 @@ export const orderCtr = {
         return mongooseCtr.findPaging(filter, options);
     },
 
-    async createOrder(_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
-        // Gateway-specific validation: currently only NETVALVE supported for HPP
-        const externalGateway = (doc.externalGateway ?? 'NETVALVE') as string;
-        if (externalGateway.toUpperCase() === 'NETVALVE') {
-            let credentials;
-            try {
-                credentials = getNetvalveCredentials();
-            }
-            catch {
-                throwError({ message: 'Netvalve is not configured on server', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+    async createOrder(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
+        // If paymentTransactionId is provided, validate that it exists and is NETVALVE
+        if (doc.paymentTransactionId) {
+            const paymentTransactionRes = await paymentCtr.getPaymentTransaction(context, {
+                filter: { id: doc.paymentTransactionId },
+            });
+
+            if (!paymentTransactionRes.success) {
+                throwError({
+                    message: 'Payment transaction not found',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                });
             }
 
-            // If a gatewayMidId is provided, ensure it's one of configured MIDs
-            const midValues = Object.values(credentials.midByCurrency ?? {});
-            if (doc.gatewayMidId) {
-                if (!midValues.includes(doc.gatewayMidId)) {
-                    throwError({ message: 'gatewayMidId is not configured for Netvalve', status: RESPONSE_STATUS.BAD_REQUEST });
-                }
+            const paymentTransaction = paymentTransactionRes.result;
+            if (paymentTransaction.provider !== E_PaymentProvider.NETVALVE) {
+                throwError({
+                    message: 'Payment transaction provider must be NETVALVE',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            // Validate Netvalve credentials are configured for NETVALVE transactions
+            try {
+                getNetvalveCredentials();
+            }
+            catch (error) {
+                throwError({
+                    message: error instanceof Error ? error.message : 'Netvalve is not configured on server',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+        }
+        else {
+            // If no paymentTransactionId, still validate Netvalve credentials are configured
+            // This ensures payment gateway is properly set up before creating orders
+            try {
+                getNetvalveCredentials();
+            }
+            catch (error) {
+                throwError({
+                    message: error instanceof Error ? error.message : 'Netvalve is not configured on server',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
             }
         }
 
-        return mongooseCtr.createOne(doc as unknown as any);
+        return mongooseCtr.createOne(doc);
     },
 
     async updateOrder(context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateOrder>): Promise<I_Return<I_Order>> {

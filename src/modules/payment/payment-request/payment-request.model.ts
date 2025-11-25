@@ -8,37 +8,26 @@ export const PaymentRequestModel = mongo.createModel<I_PaymentRequest>({
     name: 'PaymentRequest',
     pagination: true,
     schema: {
-        orderId: { type: String },
-        clientOrderId: { type: String, index: true },
-        amount: { type: Number },
-        currencyId: { type: String },
         gateway: { type: String },
         status: { type: String },
         paymentUrl: { type: String },
-        externalOrderId: { type: String },
+        externalOrderId: { type: String, index: true },
         gatewayResponse: { type: mongoose.Schema.Types.Mixed },
         attempts: { type: Number, default: 0 },
-        expiresAt: { type: Date, default: null, index: true },
         meta: { type: mongoose.Schema.Types.Mixed, default: {} },
     },
-    virtuals: [
-        {
-            name: 'order',
-            options: {
-                ref: 'Order',
-                localField: 'orderId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-        {
-            name: 'currency',
-            options: {
-                ref: 'Currency',
-                localField: 'currencyId',
-                foreignField: 'id',
-                justOne: true,
-            },
-        },
-    ],
 });
+
+// Create index for meta.orderId to enable efficient queries from Order to PaymentRequest
+// This allows querying PaymentRequest by orderId stored in meta: { orderId: "..." }
+try {
+    PaymentRequestModel.collection.createIndex(
+        { 'meta.orderId': 1 },
+        { name: 'idx_meta_orderId', sparse: true },
+    );
+}
+catch (err) {
+    // Best-effort index creation; log but do not crash startup
+
+    console.warn('payment-request: failed to create meta.orderId index', err);
+}

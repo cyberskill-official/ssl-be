@@ -1,5 +1,5 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { addMonths } from 'date-fns';
 
 import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js';
@@ -8,6 +8,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { eventCtr } from '#modules/event/index.js';
+import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 
@@ -23,6 +24,7 @@ interface I_OrderPaidEffectsResult {
 async function ensurePaidRole(context: I_Context, user: { rolesIds?: string[] }): Promise<string | null> {
     const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
     if (!paidRole.success) {
+        log.warn('[Order Effect] PAID_MEMBER role not found');
         return null;
     }
     const paidRoleId = paidRole.result.id;
@@ -37,6 +39,8 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     if (!order.userId) {
         throwError({ message: 'Missing userId on order when extending membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
     }
+
+    log.info('[Order Effect] Extending membership for user:', { userId: order.userId, orderId: order.id });
 
     const userFound = await userCtr.getUser(context, { filter: { id: order.userId } });
 
@@ -54,21 +58,32 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const baseDate = currentExpiry && currentExpiry > now ? currentExpiry : now;
     const newExpiry = addMonths(baseDate, 1);
 
-    const currentFreeEventCount = typeof userFound.result.freeEventCount === 'number' ? userFound.result.freeEventCount : 0;
+    const paidRoleId = await ensurePaidRole(context, userFound.result);
 
+    // Use MongoDB atomic operators to ensure safe concurrent updates
+    // MEMBERSHIP flow: +1 tháng membership và +1 freeEventCount
     const updatePayload: Record<string, unknown> = {
-        membershipExpiresAt: newExpiry,
-        // Mỗi tháng membership = +1 số lần tạo event miễn phí (mỗi tháng được 1 tin miễn phí)
-        freeEventCount: currentFreeEventCount + 1,
+        $set: {
+            membershipExpiresAt: newExpiry, // Cộng +1 tháng vào membership
+        },
+        $inc: {
+            freeEventCount: 1, // Cộng +1 vào freeEventCount
+        },
     };
 
-    const paidRoleId = await ensurePaidRole(context, userFound.result);
+    // Add paid role using $addToSet to avoid duplicates and preserve existing roles
     if (paidRoleId) {
-        const roles = userFound.result.rolesIds ?? [];
-        if (!roles.includes(paidRoleId)) {
-            updatePayload['rolesIds'] = [...roles, paidRoleId];
-        }
+        updatePayload['$addToSet'] = {
+            rolesIds: paidRoleId,
+        };
     }
+
+    log.info('[Order Effect] Updating user with payload:', {
+        userId: order.userId,
+        newExpiry,
+        paidRoleId,
+        updatePayload,
+    });
 
     const updateResult = await userCtr.updateUser(context, {
         filter: { id: order.userId },
@@ -76,17 +91,33 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     });
 
     if (!updateResult.success) {
+        log.error('[Order Effect] Failed to update user:', {
+            userId: order.userId,
+            error: updateResult.message,
+        });
         throwError({ message: updateResult.message ?? 'Failed to extend membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
     }
 
-    if (context.req?.session?.user?.id === order.userId) {
+    log.success('[Order Effect] User updated successfully:', {
+        userId: order.userId,
+        newExpiry,
+    });
+
+    // Reload user to get updated values for session
+    const updatedUserRes = await userCtr.getUser(context, { filter: { id: order.userId } });
+    if (updatedUserRes.success && context.req?.session?.user?.id === order.userId) {
         context.req.session.user.membershipExpiresAt = newExpiry;
-        if (updatePayload['rolesIds'] && Array.isArray(updatePayload['rolesIds'])) {
-            context.req.session.user.rolesIds = updatePayload['rolesIds'] as string[];
+        if (updatedUserRes.result.rolesIds) {
+            context.req.session.user.rolesIds = updatedUserRes.result.rolesIds;
         }
-        if (typeof updatePayload['freeEventCount'] === 'number') {
-            context.req.session.user.freeEventCount = updatePayload['freeEventCount'];
+        if (typeof updatedUserRes.result.freeEventCount === 'number') {
+            context.req.session.user.freeEventCount = updatedUserRes.result.freeEventCount;
         }
+        log.info('[Order Effect] Session updated:', {
+            userId: order.userId,
+            rolesIds: updatedUserRes.result.rolesIds,
+            freeEventCount: updatedUserRes.result.freeEventCount,
+        });
     }
 
     return newExpiry;
@@ -147,15 +178,62 @@ async function createEventFromOrder(context: I_Context, order: I_Order): Promise
 export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
     const result: I_OrderPaidEffectsResult = {};
     if (!order || order.status !== E_OrderStatus.PAID) {
+        log.warn('[Order Effect] Skipping applyOrderPaidEffects:', {
+            hasOrder: !!order,
+            orderStatus: order?.status,
+            expectedStatus: E_OrderStatus.PAID,
+        });
         return result;
     }
 
-    if (order.pricingType === E_PricingType.ANNOUNCEMENT) {
+    // Get pricingType from pricingId
+    let pricingType: E_PricingType | undefined;
+    if (order.pricingId) {
+        const pricingRes = await pricingCtr.getPricing(context, {
+            filter: { id: order.pricingId },
+        });
+        if (pricingRes.success && pricingRes.result) {
+            pricingType = pricingRes.result.type;
+        }
+    }
+
+    log.info('[Order Effect] Applying paid effects:', {
+        orderId: order.id,
+        userId: order.userId,
+        pricingId: order.pricingId,
+        pricingType,
+    });
+
+    if (!pricingType) {
+        log.warn('[Order Effect] Pricing type not found:', {
+            orderId: order.id,
+            pricingId: order.pricingId,
+        });
+        return result;
+    }
+
+    if (pricingType === E_PricingType.ANNOUNCEMENT) {
         // Create event from event object in order.meta
         result.event = await createEventFromOrder(context, order);
     }
-    else if (order.pricingType === E_PricingType.MEMBERSHIP) {
+    else if (pricingType === E_PricingType.MEMBERSHIP) {
+        // MEMBERSHIP: +1 tháng membership và +1 freeEventCount
+        log.info('[Order Effect] Processing MEMBERSHIP order:', {
+            orderId: order.id,
+            userId: order.userId,
+        });
         result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
+        log.success('[Order Effect] MEMBERSHIP order processed successfully:', {
+            orderId: order.id,
+            userId: order.userId,
+            membershipExpiresAt: result.membershipExpiresAt,
+        });
+    }
+    else {
+        log.warn('[Order Effect] Unknown pricing type:', {
+            orderId: order.id,
+            pricingType,
+        });
     }
 
     return result;
