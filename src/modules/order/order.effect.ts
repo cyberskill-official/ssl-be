@@ -85,6 +85,14 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const paidRoleId = await ensurePaidRole(context, user);
     const freeMemberRoleId = await getFreeMemberRoleId(context);
 
+    if (!paidRoleId) {
+        log.error('[Order Effect] PAID_MEMBER role ID not found, cannot update user roles');
+        throwError({
+            message: 'PAID_MEMBER role not found in system.',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    }
+
     // Use MongoDB atomic operators to ensure safe concurrent updates
     // MEMBERSHIP flow: +1 tháng membership (không cộng freeEventCount)
     const updatePayload: Record<string, unknown> = {
@@ -101,11 +109,9 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     }
 
     // Add paid role using $addToSet to avoid duplicates and preserve existing roles
-    if (paidRoleId) {
-        updatePayload['$addToSet'] = {
-            rolesIds: paidRoleId,
-        };
-    }
+    updatePayload['$addToSet'] = {
+        rolesIds: paidRoleId,
+    };
 
     const updateResult = await userCtr.updateUser(context, {
         filter: { id: order.userId },
@@ -125,13 +131,32 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     // Reload user to verify the update
     const updatedUserRes = await userCtr.getUser(context, { filter: { id: order.userId } });
 
+    if (!updatedUserRes.success || !updatedUserRes.result) {
+        log.error('[Order Effect] Failed to reload user after update:', {
+            userId: order.userId,
+            orderId: order.id,
+        });
+    }
+    else {
+        // Verify that PAID_MEMBER role was added
+        const updatedRoles = updatedUserRes.result.rolesIds ?? [];
+        if (!updatedRoles.includes(paidRoleId)) {
+            log.error('[Order Effect] PAID_MEMBER role was not added to user:', {
+                userId: order.userId,
+                orderId: order.id,
+                paidRoleId,
+                currentRoles: updatedRoles,
+            });
+        }
+    }
+
     // Update session if user is logged in
     if (context.req?.session?.user?.id === order.userId) {
         context.req.session.user.membershipExpiresAt = newExpiry;
-        if (updatedUserRes.success && updatedUserRes.result.rolesIds) {
+        if (updatedUserRes.success && updatedUserRes.result?.rolesIds) {
             context.req.session.user.rolesIds = updatedUserRes.result.rolesIds;
         }
-        if (updatedUserRes.success && typeof updatedUserRes.result.freeEventCount === 'number') {
+        if (updatedUserRes.success && typeof updatedUserRes.result?.freeEventCount === 'number') {
             context.req.session.user.freeEventCount = updatedUserRes.result.freeEventCount;
         }
     }
