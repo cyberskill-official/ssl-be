@@ -1,6 +1,7 @@
 enum E_PaymentProvider {
     NETVALVE
 }
+
 enum E_PaymentGatewayOperation {
     THREE_DS_INITIALIZATION
     THREE_DS_AUTHENTICATION

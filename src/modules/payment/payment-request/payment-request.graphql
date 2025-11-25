@@ -54,7 +54,3 @@ extend type Query {
     getPaymentRequests(filter:  Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequests!
 }
 
-extend type Mutation {
-    # PaymentRequest mutations are intentionally omitted to make PaymentRequest read-only
-    # Creation and updates should be performed by internal payment handlers only.
-}
