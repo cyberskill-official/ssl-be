@@ -280,13 +280,51 @@ export async function recordNetvalveTransaction(
         return;
     }
 
-    const statusString = asString(resultPayload?.['status'])
-        ?? asString(resultPayload?.['responseCode'])
-        ?? asString(resultPayload?.['orderState']);
+    // Extract status from responsePayload
+    // Priority: orderState > responseCode mapping
+    // GTW_1000 with orderState PAID/SUCCESS = SUCCESS
+    // GTW_1000 with orderState CREATED/PENDING = PENDING
+    // Other responseCode = FAILED
+    const responseCode = asString(resultPayload?.['responseCode']);
+    const orderState = asString(resultPayload?.['orderState']);
 
-    const status = statusString && Object.values(E_PaymentStatus).includes(statusString as E_PaymentStatus)
-        ? statusString as E_PaymentStatus
-        : undefined;
+    let status: E_PaymentStatus | undefined;
+
+    if (responseCode === 'GTW_1000') {
+        // GTW_1000 means transaction approved, check orderState for final status
+        if (orderState === 'PAID' || orderState === 'SUCCESS') {
+            status = E_PaymentStatus.SUCCESS;
+        }
+        else if (orderState === 'CREATED' || orderState === 'PENDING') {
+            status = E_PaymentStatus.PENDING;
+        }
+        else {
+            // Default to SUCCESS for GTW_1000 if orderState is unknown
+            status = E_PaymentStatus.SUCCESS;
+        }
+    }
+    else if (orderState) {
+        // Map orderState directly if responseCode is not GTW_1000
+        if (orderState === 'PAID' || orderState === 'SUCCESS') {
+            status = E_PaymentStatus.SUCCESS;
+        }
+        else if (orderState === 'FAILED') {
+            status = E_PaymentStatus.FAILED;
+        }
+        else if (orderState === 'CREATED' || orderState === 'PENDING') {
+            status = E_PaymentStatus.PENDING;
+        }
+        else if (orderState === 'CANCELLED' || orderState === 'CANCELED') {
+            status = E_PaymentStatus.CANCELED;
+        }
+    }
+    else {
+        // Fallback: try to map status string directly
+        const statusString = asString(resultPayload?.['status']);
+        if (statusString && Object.values(E_PaymentStatus).includes(statusString as E_PaymentStatus)) {
+            status = statusString as E_PaymentStatus;
+        }
+    }
 
     const errorCode = response.success
         ? undefined
