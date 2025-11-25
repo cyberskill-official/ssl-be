@@ -14,7 +14,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isAfter, startOfDay } from 'date-fns';
 
@@ -313,6 +313,15 @@ export const eventCtr = {
             }
         }
 
+        // Check freeEventCount - user must have at least 1 free event count to create an event
+        const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
+        if (freeEventCount <= 0) {
+            throwError({
+                message: 'You have no free event count remaining. Please purchase a membership to create events.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
         // required type
         if (!type) {
             throwError({ message: 'Event type is required.', status: RESPONSE_STATUS.BAD_REQUEST });
@@ -533,6 +542,31 @@ export const eventCtr = {
                 filter: { id: eventCreated.result.createdById },
                 update: { hasUpcomingEvent: true },
             });
+        }
+
+        // Decrease freeEventCount by 1 after successful event creation and all related operations
+        // This is done last to ensure event creation is fully complete before deducting the count
+        try {
+            await userCtr.updateUser(context, {
+                filter: { id: currentUser.id },
+                update: {
+                    $inc: {
+                        freeEventCount: -1, // Decrease freeEventCount by 1
+                    },
+                },
+            });
+            log.info('[Event Controller] Decreased freeEventCount for user:', {
+                userId: currentUser.id,
+                previousCount: freeEventCount,
+                newCount: freeEventCount - 1,
+            });
+        }
+        catch (error) {
+            log.error('[Event Controller] Failed to decrease freeEventCount:', {
+                userId: currentUser.id,
+                error,
+            });
+            // Don't fail event creation if freeEventCount update fails, but log the error
         }
 
         // --- NEW: determine temporaryLocation and partner1 location fallback ---

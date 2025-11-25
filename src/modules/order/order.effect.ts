@@ -35,6 +35,15 @@ async function ensurePaidRole(context: I_Context, user: { rolesIds?: string[] })
     return paidRoleId;
 }
 
+async function getFreeMemberRoleId(context: I_Context): Promise<string | null> {
+    const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+    if (!freeRole.success) {
+        log.warn('[Order Effect] FREE_MEMBER role not found');
+        return null;
+    }
+    return freeRole.result.id;
+}
+
 async function extendMembershipByOneMonth(context: I_Context, order: I_Order): Promise<Date | null> {
     if (!order.userId) {
         throwError({ message: 'Missing userId on order when extending membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -59,6 +68,7 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const newExpiry = addMonths(baseDate, 1);
 
     const paidRoleId = await ensurePaidRole(context, userFound.result);
+    const freeMemberRoleId = await getFreeMemberRoleId(context);
 
     // Use MongoDB atomic operators to ensure safe concurrent updates
     // MEMBERSHIP flow: +1 tháng membership và +1 freeEventCount
@@ -71,6 +81,13 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         },
     };
 
+    // Remove FREE_MEMBER role if exists (PAID_MEMBER replaces FREE_MEMBER)
+    if (freeMemberRoleId) {
+        updatePayload['$pull'] = {
+            rolesIds: freeMemberRoleId,
+        };
+    }
+
     // Add paid role using $addToSet to avoid duplicates and preserve existing roles
     if (paidRoleId) {
         updatePayload['$addToSet'] = {
@@ -82,6 +99,7 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         userId: order.userId,
         newExpiry,
         paidRoleId,
+        freeMemberRoleId,
         updatePayload,
     });
 
