@@ -38,6 +38,6 @@ type T_Response_MakePayment {
     result: T_Payment
 }
 
-extend type Mutation {
+type Mutation {
     makePayment(input: Input_QueryMakePayment!): T_Response_MakePayment!
 }

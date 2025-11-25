@@ -90,7 +90,7 @@ type T_Response_PaymentTransactions {
     result: T_PaymentTransactions
 }
 
-extend type Query {
+type Query {
     getPaymentTransaction(
         filter: Input_QueryPaymentTransaction!
         projection: JSON
@@ -103,7 +103,7 @@ extend type Query {
     ): T_Response_PaymentTransactions!
 }
 
-extend type Mutation {
+type Mutation {
     recordPaymentTransaction(
         doc: Input_RecordPaymentTransaction!
     ): T_Response_PaymentTransaction!
