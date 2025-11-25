@@ -438,28 +438,17 @@ mainRouter.get('/payment', async (req, res, next) => {
             // Reload order to get updated status
             const updatedOrderRes = await orderCtr.getOrder(context, { filter: { id: order.id } });
             if (updatedOrderRes.success && updatedOrderRes.result) {
-                log.info('[Payment Handler] Applying order paid effects:', {
-                    orderId: updatedOrderRes.result.id,
-                    pricingId: updatedOrderRes.result.pricingId,
-                });
-
                 // Apply order paid effects (membership extension or event creation)
                 try {
                     await applyOrderPaidEffects(context, updatedOrderRes.result);
-                    log.success('[Payment Handler] Order paid effects applied successfully:', {
-                        orderId: updatedOrderRes.result.id,
-                    });
                 }
                 catch (error) {
                     log.error('[Payment Handler] Error applying order paid effects:', {
                         orderId: updatedOrderRes.result.id,
-                        error,
+                        error: error instanceof Error ? error.message : String(error),
                     });
                     // Still return success to user, but log the error
                 }
-            }
-            else {
-                log.error('[Payment Handler] Failed to reload order after update:', { orderId: order.id });
             }
         }
 

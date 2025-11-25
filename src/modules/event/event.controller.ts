@@ -299,27 +299,24 @@ export const eventCtr = {
         if ('location' in doc)
             delete (doc as Partial<I_Input_CreateEvent>).location;
 
-        // membership check
+        // membership / paid / freeEventCount logic
         const membershipExpiresAt = currentUser.membershipExpiresAt;
         const isClubVisit = type === E_EventType.CLUB_VISIT;
+        const isPaidMember = Array.isArray(currentUser.roles)
+            && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
 
-        // If not a CLUB_VISIT, require an active membership
-        if (!isClubVisit) {
-            if (!membershipExpiresAt || new Date(membershipExpiresAt) < new Date()) {
+        // Paid members can create events freely (no membership expiry or freeEventCount checks)
+        if (!isClubVisit && !isPaidMember) {
+            // Non-paid users must either have an active membership or have at least one freeEventCount
+            const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
+            const hasActiveMembership = Boolean(membershipExpiresAt && new Date(membershipExpiresAt) >= new Date());
+
+            if (!hasActiveMembership && freeEventCount <= 0) {
                 throwError({
-                    message: 'Your membership has expired. Please renew your membership to create an event.',
+                    message: 'You have no active membership or free event allowance. Please purchase a membership to create events.',
                     status: RESPONSE_STATUS.FORBIDDEN,
                 });
             }
-        }
-
-        // Check freeEventCount - user must have at least 1 free event count to create an event
-        const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
-        if (freeEventCount <= 0) {
-            throwError({
-                message: 'You have no free event count remaining. Please purchase a membership to create events.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
         }
 
         // required type
@@ -545,21 +542,27 @@ export const eventCtr = {
         }
 
         // Decrease freeEventCount by 1 after successful event creation and all related operations
-        // This is done last to ensure event creation is fully complete before deducting the count
+        // Only decrement for non-paid members (paid members have unlimited event creation)
         try {
-            await userCtr.updateUser(context, {
-                filter: { id: currentUser.id },
-                update: {
-                    $inc: {
-                        freeEventCount: -1, // Decrease freeEventCount by 1
+            const isPaidMember = Array.isArray(currentUser.roles)
+                && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
+
+            if (!isPaidMember) {
+                const prevCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : undefined;
+                await userCtr.updateUser(context, {
+                    filter: { id: currentUser.id },
+                    update: {
+                        $inc: {
+                            freeEventCount: -1, // Decrease freeEventCount by 1
+                        },
                     },
-                },
-            });
-            log.info('[Event Controller] Decreased freeEventCount for user:', {
-                userId: currentUser.id,
-                previousCount: freeEventCount,
-                newCount: freeEventCount - 1,
-            });
+                });
+                log.info('[Event Controller] Decreased freeEventCount for user:', {
+                    userId: currentUser.id,
+                    previousCount: prevCount,
+                    newCount: prevCount !== undefined ? prevCount - 1 : undefined,
+                });
+            }
         }
         catch (error) {
             log.error('[Event Controller] Failed to decrease freeEventCount:', {
