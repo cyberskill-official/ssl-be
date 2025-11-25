@@ -626,7 +626,16 @@ export const conversationCtr = {
 
         const isFreeMember = currentUser.rolesIds?.includes(freeMemberRole.result.id);
 
-        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE].includes(type) && isFreeMember) {
+        // Allow FREE_MEMBER to create GROUP/PRIVATE conversation if they have freeEventCount > 0
+        // (user has paid for ANNOUNCEMENT, so they should be able to create groups for their events)
+        const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
+        const hasFreeEventCount = freeEventCount > 0;
+        const isEventGroup = type === E_ConversationType.GROUP && doc.entityType === E_NotificationEntityType.EVENT;
+
+        // FREE_MEMBER can create GROUP/PRIVATE conversation if:
+        // 1. They have freeEventCount > 0 (paid for ANNOUNCEMENT), OR
+        // 2. It's a GROUP conversation for an EVENT (backward compatibility)
+        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE].includes(type) && isFreeMember && !hasFreeEventCount && !isEventGroup) {
             throwError({
                 message: 'Free users cannot initiate new chats. Please upgrade your membership.',
                 status: RESPONSE_STATUS.FORBIDDEN,

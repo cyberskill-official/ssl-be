@@ -304,12 +304,17 @@ export const eventCtr = {
         const isPaidMember = Array.isArray(currentUser.roles)
             && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
 
-        // Paid members can create events freely (no membership expiry or freeEventCount checks)
+        // Event creation rules:
+        // 1. CLUB_VISIT events: always allowed (no restrictions)
+        // 2. PAID_MEMBER users: can create events freely (no membership expiry or freeEventCount checks)
+        // 3. Non-paid users: must have either:
+        //    - An active membership (membershipExpiresAt >= now), OR
+        //    - At least one freeEventCount (freeEventCount > 0)
         if (!isClubVisit && !isPaidMember) {
-            // Non-paid users must either have an active membership or have at least one freeEventCount
             const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
             const hasActiveMembership = Boolean(membershipExpiresAt && new Date(membershipExpiresAt) >= new Date());
 
+            // User can create event if they have active membership OR freeEventCount > 0
             if (!hasActiveMembership && freeEventCount <= 0) {
                 throwError({
                     message: 'You have no active membership or free event allowance. Please purchase a membership to create events.',
