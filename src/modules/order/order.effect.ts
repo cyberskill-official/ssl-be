@@ -63,7 +63,23 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         ? new Date(user.membershipExpiresAt)
         : null;
 
-    const baseDate = currentExpiry && currentExpiry > now ? currentExpiry : now;
+    // If membership is still active, extend from expiry date
+    // If membership expired less than 12 months ago, extend from expiry date
+    // If membership expired more than 12 months ago, extend from now (don't add to old expiry)
+    let baseDate = now;
+    if (currentExpiry && currentExpiry > now) {
+        // Membership is still active, extend from expiry date
+        baseDate = currentExpiry;
+    }
+    else if (currentExpiry) {
+        // Membership has expired, check if it's been less than 12 months
+        const monthsSinceExpiry = Math.floor((now.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24 * 30));
+        if (monthsSinceExpiry < 12) {
+            // Expired less than 12 months ago, extend from expiry date
+            baseDate = currentExpiry;
+        }
+        // Otherwise (expired more than 12 months ago), extend from now
+    }
     const newExpiry = addMonths(baseDate, 1);
 
     const paidRoleId = await ensurePaidRole(context, user);
