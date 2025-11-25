@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -14,6 +14,7 @@ export const paymentRequestResolver = {
     Mutation: {
         createPaymentRequest: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreatePaymentRequest>, context: I_Context) => paymentRequestCtr.createPaymentRequest(context, args),
         updatePaymentRequest: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdatePaymentRequest>, context: I_Context) => paymentRequestCtr.updatePaymentRequest(context, args),
+        deletePaymentRequest: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryPaymentRequest>, context: I_Context) => paymentRequestCtr.deletePaymentRequest(context, args),
     },
 };
 

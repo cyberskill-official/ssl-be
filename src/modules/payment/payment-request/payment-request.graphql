@@ -75,4 +75,5 @@ type Query {
 type Mutation {
     createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
     updatePaymentRequest(filter: Input_QueryPaymentRequest!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
+    deletePaymentRequest(filter: Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequest!
 }   
