@@ -93,24 +93,28 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         });
     }
 
+    // Process rolesIds: remove FREE_MEMBER and add PAID_MEMBER
+    const currentRoles = user.rolesIds ?? [];
+    const updatedRoles = [...currentRoles];
+
+    // Remove FREE_MEMBER role if exists (PAID_MEMBER replaces FREE_MEMBER)
+    if (freeMemberRoleId && updatedRoles.includes(freeMemberRoleId)) {
+        const index = updatedRoles.indexOf(freeMemberRoleId);
+        updatedRoles.splice(index, 1);
+    }
+
+    // Add PAID_MEMBER role if not already present
+    if (!updatedRoles.includes(paidRoleId)) {
+        updatedRoles.push(paidRoleId);
+    }
+
     // Use MongoDB atomic operators to ensure safe concurrent updates
     // MEMBERSHIP flow: +1 tháng membership (không cộng freeEventCount)
     const updatePayload: Record<string, unknown> = {
         $set: {
             membershipExpiresAt: newExpiry, // Cộng +1 tháng vào membership
+            rolesIds: updatedRoles, // Update rolesIds with processed array
         },
-    };
-
-    // Remove FREE_MEMBER role if exists (PAID_MEMBER replaces FREE_MEMBER)
-    if (freeMemberRoleId) {
-        updatePayload['$pull'] = {
-            rolesIds: freeMemberRoleId,
-        };
-    }
-
-    // Add paid role using $addToSet to avoid duplicates and preserve existing roles
-    updatePayload['$addToSet'] = {
-        rolesIds: paidRoleId,
     };
 
     const updateResult = await userCtr.updateUser(context, {
