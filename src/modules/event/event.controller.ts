@@ -43,7 +43,6 @@ import {
     E_NotificationType,
     E_RedirectType,
 } from '#modules/notification/notification.type.js';
-import { E_PricingType, pricingCtr } from '#modules/pricing/index.js';
 import { userCtr } from '#modules/user/index.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
@@ -485,21 +484,6 @@ export const eventCtr = {
             if (typeof latitude !== 'number' || typeof longitude !== 'number') {
                 throwError({ message: 'Coordinates must be valid numbers', status: RESPONSE_STATUS.BAD_REQUEST });
             }
-        }
-
-        // Pricing for free member
-        const isFreeMember = currentUser.roles?.some(role => role.name === E_Role_User.FREE_MEMBER);
-        if (type !== E_EventType.CLUB_VISIT && isFreeMember) {
-            const pricingFound = await pricingCtr.getPricing(context, {
-                filter: { 'type': E_PricingType.ANNOUNCEMENT, 'location.countryId': location?.countryId, 'isActive': true },
-            });
-            if (!pricingFound.success || !pricingFound.result) {
-                throwError({ message: 'Cannot find pricing for event', status: RESPONSE_STATUS.NOT_FOUND });
-            }
-            const basePrice = pricingFound.result.price ?? 0;
-            const taxRate = pricingFound.result.taxRate ?? 0;
-            const totalFee = Math.ceil((basePrice + (basePrice * taxRate) / 100) * 100) / 100;
-            doc.fee = totalFee;
         }
 
         // Ensure new announcements are active by default unless explicitly disabled by moderators
