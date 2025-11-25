@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -20,6 +20,8 @@ const orderResolver = {
             orderCtr.updateOrder(context, args),
         deleteOrder: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryOrder>, context: I_Context) =>
             orderCtr.deleteOrder(context, args),
+        deleteOrders: (_parent: unknown, args: I_Input_DeleteMany<I_Input_QueryOrder>, context: I_Context) =>
+            orderCtr.deleteOrders(context, args),
     },
 };
 

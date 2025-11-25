@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_DeleteResult, T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -36,6 +36,10 @@ export const paymentRequestCtr = {
 
     async deletePaymentRequest(_context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryPaymentRequest>): Promise<I_Return<I_PaymentRequest>> {
         return mongooseCtr.deleteOne(filter, options);
+    },
+
+    async deletePaymentRequests(_context: I_Context, { filter, options }: I_Input_DeleteMany<I_Input_QueryPaymentRequest>): Promise<I_Return<T_DeleteResult>> {
+        return mongooseCtr.deleteMany(filter, options);
     },
 };
 
