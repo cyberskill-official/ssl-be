@@ -49,12 +49,30 @@ type T_Response_PaymentRequests {
     result: T_PaymentRequests
 }
 
+input Input_CreatePaymentRequest {
+    gateway: String!
+    status: String!
+    paymentUrl: String!
+    externalOrderId: String!
+    gatewayResponse: JSON
+    meta: JSON
+}
+
+input Input_UpdatePaymentRequest {
+    gateway: String
+    status: String
+    paymentUrl: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    meta: JSON
+}
+
 type Query {
     getPaymentRequest(filter: Input_QueryPaymentRequest!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
     getPaymentRequests(filter:  Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequests!
 }
 
 type Mutation {
-    createPaymentRequest(data: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
-    updatePaymentRequest(id: String!, data: Input_UpdatePaymentRequest!): T_Response_PaymentRequest!
+    createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
+    updatePaymentRequest(filter: Input_QueryPaymentRequest!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
 }   
