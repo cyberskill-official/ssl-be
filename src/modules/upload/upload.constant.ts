@@ -2,7 +2,10 @@ import { createUploadConfig, E_UploadType } from '@cyberskill/shared/node/upload
 
 export const UPLOAD_CONFIG = createUploadConfig({
     [E_UploadType.IMAGE]: {
-        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'],
+        // Support all common image formats including modern formats (HEIC/HEIF, AVIF, etc.)
+        // Frontend will auto-convert these to JPEG before upload, but we allow them here
+        // to avoid validation errors during signup flow
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'tif', 'avif', 'heic', 'heif'],
         sizeLimit: 5 * 1024 * 1024, // 5MB
     },
     [E_UploadType.VIDEO]: {

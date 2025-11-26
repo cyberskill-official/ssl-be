@@ -609,11 +609,27 @@ export const userCtr = {
             doc.settings.temporaryLocation = { ...restTempLocation, location };
         }
 
-        // 3) Tạo user mới
+        // 3) Tạo user mới với default notification settings
+        // Auto-enable email notifications for new messages when creating account
+        // If user doesn't explicitly set receiveMessage, default to true
+        const userSettings = doc.settings || {};
+        const notificationSettings = userSettings.notification || {};
+        const finalSettings = {
+            ...userSettings,
+            notification: {
+                ...notificationSettings,
+                // Only set to true if not explicitly provided (undefined), preserve explicit false
+                receiveMessage: notificationSettings.receiveMessage !== undefined
+                    ? notificationSettings.receiveMessage
+                    : true,
+            },
+        };
+
         const userCreated = await mongooseCtr.createOne({
             ...doc,
             email, // lưu email đã chuẩn hoá
             password: bcrypt.hashSync(password),
+            settings: finalSettings,
         });
         if (!userCreated.success) {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
