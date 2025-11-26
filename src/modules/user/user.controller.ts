@@ -18,6 +18,7 @@ import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
 import path from 'node:path';
 
+import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
@@ -31,7 +32,7 @@ import { eventCtr } from '#modules/event/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { likeCtr } from '#modules/like/index.js';
-import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
+import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
@@ -73,9 +74,23 @@ async function createLocationForUser(
     userId: string,
     payload: T_LocationPayload,
 ): Promise<string> {
+    // Determine pinStyle based on user's account type if not already set in payload
+    let pinStyle: E_User_PinStyle | undefined = payload['pinStyle'] as E_User_PinStyle | undefined;
+    if (!pinStyle) {
+        const userFound = await mongooseCtr.findOne(
+            { id: userId },
+            { accountType: 1, partner1: 1, partner2: 1 },
+            { populate: ['partner1.location', 'partner2.location'] },
+        );
+        if (userFound.success && userFound.result) {
+            pinStyle = resolveUserPinStyle(userFound.result as I_User);
+        }
+    }
+
     const locationCreated = await locationCtr.createLocation(context, {
         doc: {
             ...payload,
+            pinStyle,
             entityType: E_LocationEntityType.USER,
             entityId: userId,
             map: (payload.map && typeof payload.map.latitude === 'number' && typeof payload.map.longitude === 'number')

@@ -47,7 +47,7 @@ const USER_PIN_STYLE_VALUES = new Set<E_User_PinStyle>(
     Object.values(E_User_PinStyle) as E_User_PinStyle[],
 );
 
-function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
+export function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
     if (!user) {
         return E_User_PinStyle.COUPLE;
     }
