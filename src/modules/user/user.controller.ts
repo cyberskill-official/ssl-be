@@ -142,9 +142,19 @@ export const userCtr = {
             effectiveFilter = filter || {};
         }
         else {
-            // User thường chỉ xem được user không bị admin block và không bị delete
-            const baseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-            effectiveFilter = { $and: [...baseConds, (filter || {})] };
+            // Normalize isDel filter: convert isDel: false to isDel: { $ne: true }
+            // This ensures we properly exclude deleted users including those with isDel: null/undefined
+            const normalizedFilter = { ...(filter || {}) } as Record<string, unknown>;
+            if (normalizedFilter['isDel'] === false) {
+                normalizedFilter['isDel'] = { $ne: true };
+            }
+
+            const baseConds: Array<Record<string, unknown>> = [{ isAdminBlocked: { $ne: true } }];
+            // Add isDel filter if not already present
+            if (normalizedFilter['isDel'] === undefined) {
+                baseConds.push({ isDel: { $ne: true } });
+            }
+            effectiveFilter = { $and: [...baseConds, normalizedFilter] };
         }
 
         const effectivePopulate = isAdmin ? ensurePopulateIncludes(populate, ['notes.createdBy']) : populate;
@@ -181,8 +191,19 @@ export const userCtr = {
             effectiveFilter = computedFilter as Record<string, unknown>;
         }
         else {
-            const userBaseConds = [{ isAdminBlocked: { $ne: true } }, { isDel: { $ne: true } }];
-            effectiveFilter = { $and: [...userBaseConds, computedFilter as Record<string, unknown>] };
+            // Normalize isDel filter: convert isDel: false to isDel: { $ne: true }
+            // This ensures we properly exclude deleted users including those with isDel: null/undefined
+            const normalizedFilter = { ...computedFilter } as Record<string, unknown>;
+            if (normalizedFilter['isDel'] === false) {
+                normalizedFilter['isDel'] = { $ne: true };
+            }
+
+            const userBaseConds: Array<Record<string, unknown>> = [{ isAdminBlocked: { $ne: true } }];
+            // Add isDel filter if not already present
+            if (normalizedFilter['isDel'] === undefined) {
+                userBaseConds.push({ isDel: { $ne: true } });
+            }
+            effectiveFilter = { $and: [...userBaseConds, normalizedFilter] };
         }
 
         const effectiveOptions = { ...(options ?? {}) } as any;
