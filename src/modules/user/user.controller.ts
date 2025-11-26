@@ -117,9 +117,29 @@ async function upsertLocationForUser(
     try {
         const existing = await locationCtr.getLocation(context, { filter: { id: existingLocationId } });
         if (existing.success && existing.result) {
+            // Preserve existing pinStyle if not provided in payload, or determine from user if needed
+            let pinStyle = payload['pinStyle'] as E_User_PinStyle | undefined;
+            if (!pinStyle) {
+                pinStyle = existing.result.pinStyle as E_User_PinStyle | undefined;
+                if (!pinStyle) {
+                    // If no pinStyle in existing location, determine from user
+                    const userFound = await mongooseCtr.findOne(
+                        { id: userId },
+                        { accountType: 1, partner1: 1, partner2: 1 },
+                        { populate: ['partner1.location', 'partner2.location'] },
+                    );
+                    if (userFound.success && userFound.result) {
+                        pinStyle = resolveUserPinStyle(userFound.result as I_User);
+                    }
+                }
+            }
+
             const updated = await locationCtr.updateLocation(context, {
                 filter: { id: existingLocationId },
-                update: { ...payload },
+                update: {
+                    ...payload,
+                    ...(pinStyle ? { pinStyle } : {}),
+                },
             });
             if (updated.success) {
                 return existingLocationId;
