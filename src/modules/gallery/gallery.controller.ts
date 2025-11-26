@@ -23,7 +23,6 @@ import { userCtr } from '#modules/user/index.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
-import { E_UploadEntity } from '#shared/typescript/index.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
@@ -195,24 +194,15 @@ export const galleryCtr = {
 
         const mongoFilter: Record<string, unknown> = { ...(modifiedFilter as Record<string, unknown>) };
 
-        const hasExplicitUploaderFilter
-            = Boolean(filter?.uploadedById)
-                || (Array.isArray(filter?.uploadedByIds) && filter.uploadedByIds.length > 0);
-
         if (!isStaff && !isAdmin && !isOwner) {
+            const hasExplicitStatus = filter?.status !== undefined;
             if (mongoFilter['status'] === undefined) {
                 mongoFilter['status'] = { $in: [E_ModerationMediaStatus.APPROVED, null] };
             }
-            if (mongoFilter['isPublished'] === undefined) {
+            // Only add isPublished filter when user hasn't explicitly provided status filter
+            // This allows logged-in users to query by status without being restricted by isPublished
+            if (!hasExplicitStatus && mongoFilter['isPublished'] === undefined) {
                 mongoFilter['isPublished'] = { $ne: false };
-            }
-            // Default public feed (e.g. "New Photos") to only show user-uploaded galleries.
-            // This prevents galleries created for other entities (catalogue, blog, etc.)
-            // from appearing in the global photos feed unless explicitly requested.
-            // However, when the request explicitly targets certain uploaders (e.g. profile page),
-            // we shouldn't force the entity filter, otherwise their media tied to events won't show.
-            if (!hasExplicitUploaderFilter && mongoFilter['entity'] === undefined) {
-                mongoFilter['entity'] = E_UploadEntity.USER;
             }
         }
 
