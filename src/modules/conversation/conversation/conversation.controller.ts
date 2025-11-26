@@ -452,6 +452,7 @@ export const conversationCtr = {
                 targetId: currentUser.id,
                 type: [E_NotificationType.GROUP_JOIN_REQUEST, E_NotificationType.CONVERSATION_INVITATION],
                 dismissedAt: null,
+                readAt: null,
             },
             options: { pagination: false },
         });

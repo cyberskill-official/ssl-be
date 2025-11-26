@@ -499,7 +499,9 @@ export const destinationCtr = {
             }
         }
 
-        if (update.nearbyHotels && update.nearbyHotels.length > 0) {
+        // Handle nearbyHotels update: delete old hotels and create new ones
+        if (update.nearbyHotels !== undefined) {
+            // Delete all old hotel locations first
             if (destinationFound.result.nearbyHotels && destinationFound.result.nearbyHotels.length > 0) {
                 for (const hotel of destinationFound.result.nearbyHotels) {
                     if (hotel.locationId) {
@@ -512,25 +514,28 @@ export const destinationCtr = {
                 }
             }
 
-            for (const hotel of update.nearbyHotels) {
-                if (!hotel.location) {
-                    continue;
+            // Create new hotel locations if any are provided
+            if (update.nearbyHotels && update.nearbyHotels.length > 0) {
+                for (const hotel of update.nearbyHotels) {
+                    if (!hotel.location) {
+                        continue;
+                    }
+
+                    const locationCreated = await locationCtr.createLocation(context, {
+                        doc: {
+                            ...hotel.location,
+                            pinStyle: E_Destination_PinStyle.HOTEL,
+                            entityType: E_LocationEntityType.DESTINATION,
+                            entityId: destinationFound.result.id,
+                        },
+                    });
+
+                    if (!locationCreated.success) {
+                        return locationCreated;
+                    }
+
+                    hotel.locationId = locationCreated.result.id;
                 }
-
-                const locationCreated = await locationCtr.createLocation(context, {
-                    doc: {
-                        ...hotel.location,
-                        pinStyle: E_Destination_PinStyle.HOTEL,
-                        entityType: E_LocationEntityType.DESTINATION,
-                        entityId: destinationFound.result.id,
-                    },
-                });
-
-                if (!locationCreated.success) {
-                    return locationCreated;
-                }
-
-                hotel.locationId = locationCreated.result.id;
             }
         }
 

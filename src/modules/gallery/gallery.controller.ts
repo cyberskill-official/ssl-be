@@ -138,6 +138,20 @@ export const galleryCtr = {
             galleryFound.result.url = applyThumbnailPolicy(galleryFound.result.url) ?? galleryFound.result.url;
         }
 
+        // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
+        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.VIDEO) {
+            const canViewVideo = isOwner || isStaff || isAdmin || (viewerAgeVerified && !isFreeMember);
+            if (!canViewVideo) {
+                // Remove video URL for unauthorized users
+                galleryFound.result.url = undefined;
+            }
+            else {
+                galleryFound.result.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                    fullUrl: galleryFound.result.url,
+                });
+            }
+        }
+
         if (galleryFound.result.thumbnailUrl) {
             galleryFound.result.thumbnailUrl = applyThumbnailPolicy(galleryFound.result.thumbnailUrl) ?? galleryFound.result.thumbnailUrl;
         }
@@ -293,10 +307,19 @@ export const galleryCtr = {
             if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
                 galleryResult.url = transformMediaUrl(galleryResult.url) ?? galleryResult.url;
             }
+            // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
-                galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
-                    fullUrl: galleryResult.url,
-                });
+                const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
+                const canViewVideo = isOwner || isStaff || isAdmin || (viewerAgeVerified && !isFreeMember);
+                if (!canViewVideo) {
+                    // Remove video URL for unauthorized users
+                    galleryResult.url = undefined;
+                }
+                else {
+                    galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                        fullUrl: galleryResult.url,
+                    });
+                }
             }
             if (galleryResult.thumbnailUrl) {
                 galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? galleryResult.thumbnailUrl;
