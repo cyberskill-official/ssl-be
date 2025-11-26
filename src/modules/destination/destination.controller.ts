@@ -501,14 +501,25 @@ export const destinationCtr = {
 
         // Handle nearbyHotels update: delete old hotels and create new ones
         if (update.nearbyHotels !== undefined) {
-            // Delete all old hotel locations first
-            if (destinationFound.result.nearbyHotels && destinationFound.result.nearbyHotels.length > 0) {
-                for (const hotel of destinationFound.result.nearbyHotels) {
-                    if (hotel.locationId) {
-                        const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: hotel.locationId } });
+            // Delete ALL hotel locations for this destination (including orphaned ones)
+            // Query all locations with entityType=DESTINATION, entityId=destinationId, pinStyle=HOTEL
+            const existingHotelLocations = await locationCtr.getLocations(context, {
+                filter: {
+                    entityType: E_LocationEntityType.DESTINATION,
+                    entityId: destinationFound.result.id,
+                    pinStyle: E_Destination_PinStyle.HOTEL,
+                    isDel: { $ne: true },
+                },
+                options: { pagination: false },
+            });
 
+            if (existingHotelLocations.success && existingHotelLocations.result?.docs) {
+                for (const location of existingHotelLocations.result.docs) {
+                    if (location.id) {
+                        const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: location.id } });
                         if (!locationDeleted.success) {
-                            return locationDeleted;
+                            // Log but continue - don't block if one deletion fails
+                            console.warn(`[DESTINATION] Failed to delete hotel location ${location.id}:`, locationDeleted.message);
                         }
                     }
                 }

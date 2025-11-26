@@ -36,6 +36,7 @@ import { NotificationModel } from './notification.model.js';
 import {
     E_NOTIFICATION_EVENTS,
     E_NotificationChannel,
+    E_NotificationEntityType,
     E_NotificationStatus,
     E_NotificationType,
     OTHER_TYPES,
@@ -218,6 +219,49 @@ export const notificationCtr = {
         };
 
         const res = await mongooseCtr.findPaging(f, opts);
+
+        // Check if entities still exist and auto-dismiss notifications for deleted entities
+        if (res.success && res.result && Array.isArray(res.result.docs)) {
+            const notificationsToDismiss: string[] = [];
+
+            for (const n of res.result.docs) {
+                // Skip if already dismissed
+                if (n.dismissedAt || n.status === E_NotificationStatus.DISMISSED) {
+                    continue;
+                }
+
+                // Check if entity (especially USER) still exists
+                if (n.entityType === E_NotificationEntityType.USER && n.entityId) {
+                    try {
+                        const entityUser = await userCtr.getUser(_context, { filter: { id: n.entityId } });
+                        // If user doesn't exist or is deleted, dismiss notification
+                        if (!entityUser.success || entityUser.result.isDel === true) {
+                            notificationsToDismiss.push(n.id!);
+                        }
+                    }
+                    catch {
+                        // If check fails, dismiss to be safe
+                        notificationsToDismiss.push(n.id!);
+                    }
+                }
+            }
+
+            // Auto-dismiss notifications for deleted entities
+            if (notificationsToDismiss.length > 0) {
+                try {
+                    await mongooseCtr.updateMany(
+                        { id: { $in: notificationsToDismiss } },
+                        { status: E_NotificationStatus.DISMISSED, dismissedAt: new Date() },
+                    );
+                    // Remove dismissed notifications from result
+                    res.result.docs = res.result.docs.filter(n => !notificationsToDismiss.includes(n.id!));
+                    res.result.totalDocs = res.result.docs.length;
+                }
+                catch {
+                    // non-fatal: if dismiss fails, continue with original result
+                }
+            }
+        }
 
         // Enrich presentation media (avatar, thumbnails) according to viewer age verification
         try {

@@ -571,6 +571,16 @@ export const userCtr = {
             throwError({ message: 'User already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        // 3) Chặn nếu trùng username/email với hồ sơ BỊ SUSPEND (isDel: true nhưng vẫn còn trong DB)
+        // Nếu user muốn delete (hard delete), data sẽ bị xóa khỏi DB nên không check được
+        // Nếu user muốn suspend (soft delete), data vẫn còn trong DB với isDel: true
+        const suspended = await mongooseCtr.findOne(
+            { $or: [{ username }, { email }], isDel: true },
+        );
+        if (suspended.success) {
+            throwError({ message: 'This account is suspended. You cannot create a new profile with this email or username.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
         if (doc.partner1?.dateOfBirth && !isAdultDateOfBirth(doc.partner1.dateOfBirth)) {
             throwError({
                 message: 'Users must be at least 18 years old.',
@@ -866,35 +876,37 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const userFound = await userCtr.getUser(context, { filter });
+        // Delete: hard delete, removes data completely from DB, allows new account creation
+        const userToDelete = await userCtr.getUser(context, { filter });
 
-        if (!userFound.success) {
+        if (!userToDelete.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        if (userFound.result.partner1?.locationId) {
-            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userFound.result.partner1?.locationId } });
-            if (!locationDeleted.success) {
-                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-            }
-        }
-
-        if (userFound.result.settings?.temporaryLocation?.locationId) {
-            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userFound.result.settings?.temporaryLocation?.locationId } });
-            if (!locationDeleted.success) {
-                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-            }
-        }
-
-        if (userFound.result.email) {
-            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userFound.result.email);
+        if (userToDelete.result.email && userToDelete.result.isDel !== true) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userToDelete.result.email);
             if (!emailResponse.success) {
                 console.error('[USER] Failed to queue account deleted email:', emailResponse.message);
             }
         }
 
+        // Hard delete: remove everything
+        if (userToDelete.result.partner1?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userToDelete.result.partner1?.locationId } });
+            if (!locationDeleted.success) {
+                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            }
+        }
+
+        if (userToDelete.result.settings?.temporaryLocation?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userToDelete.result.settings?.temporaryLocation?.locationId } });
+            if (!locationDeleted.success) {
+                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            }
+        }
+
         // Cascade delete resources owned/created by the user
-        const ownerId = userFound.result.id;
+        const ownerId = userToDelete.result.id;
         try {
             // Delete announcements/events created by this user (all, including past)
             try {
@@ -1085,7 +1097,6 @@ export const userCtr = {
 
         return mongooseCtr.deleteOne(filter, options);
     },
-
     softDeleteUser: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
@@ -1096,6 +1107,7 @@ export const userCtr = {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
+        // Suspend: soft delete (isDel: true), keeps data in DB, prevents new account creation
         if (userFound.result.email && userFound.result.isDel !== true) {
             const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, userFound.result.email);
             if (!emailResponse.success) {
@@ -1116,6 +1128,7 @@ export const userCtr = {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
+        // Recover: clear isDel flag
         return mongooseCtr.updateOne(filter, { isDel: false }, options);
     },
 
