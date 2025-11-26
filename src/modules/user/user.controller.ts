@@ -136,15 +136,21 @@ export const userCtr = {
         const sessionUser = context?.req?.session?.user as I_User | undefined;
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
+        // Apply regex search filters for username (similar to getUsers)
+        const computedFilter = applyNameFilters(
+            { ...(filter || {}) },
+            [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
+        );
+
         let effectiveFilter;
         if (isAdmin) {
             // Admin có thể xem tất cả user (kể cả admin blocked và deleted)
-            effectiveFilter = filter || {};
+            effectiveFilter = computedFilter as Record<string, unknown>;
         }
         else {
             // Normalize isDel filter: convert isDel: false to isDel: { $ne: true }
             // This ensures we properly exclude deleted users including those with isDel: null/undefined
-            const normalizedFilter = { ...(filter || {}) } as Record<string, unknown>;
+            const normalizedFilter = { ...computedFilter } as Record<string, unknown>;
             if (normalizedFilter['isDel'] === false) {
                 normalizedFilter['isDel'] = { $ne: true };
             }
