@@ -35,7 +35,7 @@ import type {
 
 import { GalleryModel } from './gallery.model.js';
 import { E_GalleryType } from './gallery.type.js';
-import { assertCanUploadVideo, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
+import { assertCanUploadVideo, isUploaderAgeVerified, notifyGalleryFollowersOnPublish, shouldSendPublishNotification } from './gallery.validate.js';
 
 const env = getEnv();
 
@@ -116,6 +116,17 @@ export const galleryCtr = {
             });
         }
 
+        // Hide galleries from non-age-verified uploaders (except owner viewing their own)
+        if (!isOwner && !isStaff && !isAdmin) {
+            const isUploaderVerified = await isUploaderAgeVerified(context, galleryFound.result);
+            if (!isUploaderVerified) {
+                throwError({
+                    message: 'Gallery not found',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                });
+            }
+        }
+
         const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin);
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
@@ -139,13 +150,18 @@ export const galleryCtr = {
         }
 
         // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
-        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.VIDEO) {
+        // Hide video completely for unauthorized users
+        if (galleryFound.result.type === E_GalleryType.VIDEO) {
             const canViewVideo = isOwner || isStaff || isAdmin || (viewerAgeVerified && !isFreeMember);
             if (!canViewVideo) {
-                // Remove video URL for unauthorized users
-                galleryFound.result.url = undefined;
+                // Hide video completely - return not found
+                throwError({
+                    message: 'Gallery not found',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                });
             }
-            else {
+            // Generate embed URL for authorized users
+            if (galleryFound.result.url) {
                 galleryFound.result.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
                     fullUrl: galleryFound.result.url,
                 });
@@ -244,19 +260,45 @@ export const galleryCtr = {
             return galleries;
         }
 
-        const galleryDocs = galleries.result.docs.filter((gallery) => {
-            if (isStaff || isAdmin) {
-                return true;
-            }
+        // Check uploader age verification status for all galleries
+        const uploaderAgeVerificationCache = new Map<string, boolean>();
 
-            const galleryStatus = gallery.status;
-            const isApproved
-                = galleryStatus === undefined
-                    || galleryStatus === null
-                    || galleryStatus === E_ModerationMediaStatus.APPROVED;
+        const galleryDocs = (await Promise.all(
+            galleries.result.docs.map(async (gallery) => {
+                if (isStaff || isAdmin) {
+                    return { gallery, shouldInclude: true };
+                }
 
-            return isApproved;
-        });
+                const galleryStatus = gallery.status;
+                const isApproved
+                    = galleryStatus === undefined
+                        || galleryStatus === null
+                        || galleryStatus === E_ModerationMediaStatus.APPROVED;
+
+                if (!isApproved) {
+                    return { gallery, shouldInclude: false };
+                }
+
+                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
+                const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
+                if (!isOwner) {
+                    const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
+                    if (!isUploaderVerified) {
+                        return { gallery, shouldInclude: false }; // Hide photos from non-age-verified uploaders
+                    }
+                }
+
+                // Hide videos completely for users who are not age-verified paid members (or owner)
+                if (gallery.type === E_GalleryType.VIDEO) {
+                    const canViewVideo = isOwner || (viewerAgeVerified && !isFreeMember);
+                    if (!canViewVideo) {
+                        return { gallery, shouldInclude: false }; // Filter out video from results
+                    }
+                }
+
+                return { gallery, shouldInclude: true };
+            }),
+        )).filter(({ shouldInclude }) => shouldInclude).map(({ gallery }) => gallery);
         const galleryIds = galleryDocs.map(g => g.id);
 
         // batch like/view
@@ -308,18 +350,11 @@ export const galleryCtr = {
                 galleryResult.url = transformMediaUrl(galleryResult.url) ?? galleryResult.url;
             }
             // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
+            // Videos are already filtered out above, so we only process videos for authorized users here
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
-                const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
-                const canViewVideo = isOwner || isStaff || isAdmin || (viewerAgeVerified && !isFreeMember);
-                if (!canViewVideo) {
-                    // Remove video URL for unauthorized users
-                    galleryResult.url = undefined;
-                }
-                else {
-                    galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
-                        fullUrl: galleryResult.url,
-                    });
-                }
+                galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                    fullUrl: galleryResult.url,
+                });
             }
             if (galleryResult.thumbnailUrl) {
                 galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? galleryResult.thumbnailUrl;
@@ -327,6 +362,13 @@ export const galleryCtr = {
 
             return galleryResult;
         }));
+
+        // Update totalDocs after filtering out videos
+        const currentPage = galleries.result.page || 1;
+        galleries.result.totalDocs = galleryDocs.length;
+        galleries.result.totalPages = Math.ceil(galleryDocs.length / (galleries.result.limit || 1));
+        galleries.result.hasNextPage = currentPage < galleries.result.totalPages;
+        galleries.result.hasPrevPage = currentPage > 1;
 
         return galleries;
     },
