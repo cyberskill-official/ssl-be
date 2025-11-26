@@ -83,6 +83,7 @@ export const cron = {
         cron.cleanupExpiredTemporaryLocations().start();
         cron.disableExpiredAds().start();
         cron.enforceSessionInactivity().start();
+        cron.markInactiveUsersOffline().start();
         cron.downgradeExpiredMemberships().start();
         cron.cleanupInactiveFreeUsers().start();
     },
@@ -318,6 +319,49 @@ export const cron = {
             }
             catch (err) {
                 log.error('[CRON] enforceSessionInactivity failed:', err);
+            }
+        });
+    },
+
+    // Mark users offline if they haven't been active for more than 15 minutes
+    // This ensures isOnline status is accurate even if session cleanup fails
+    markInactiveUsersOffline: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
+            try {
+                const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+                const cutoff = new Date(Date.now() - ONLINE_TIMEOUT_MS);
+
+                const inactiveUsersRes = await userCtr.getUsers({}, {
+                    filter: {
+                        isOnline: true,
+                        lastOnline: { $lt: cutoff },
+                    },
+                    options: { pagination: false },
+                });
+
+                if (!inactiveUsersRes.success || !inactiveUsersRes.result?.docs?.length) {
+                    return;
+                }
+
+                const userIds = inactiveUsersRes.result.docs
+                    .map(u => u.id)
+                    .filter((id): id is string => Boolean(id));
+
+                if (userIds.length === 0) {
+                    return;
+                }
+
+                await userCtr.updateUsers({}, {
+                    filter: { id: { $in: userIds } },
+                    update: {
+                        isOnline: false,
+                    },
+                });
+
+                log.success(`[CRON] Marked ${userIds.length} inactive user(s) as offline`);
+            }
+            catch (err) {
+                log.error('[CRON] markInactiveUsersOffline failed:', err);
             }
         });
     },

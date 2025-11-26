@@ -175,6 +175,22 @@ export const userCtr = {
         if (!userFound.success)
             return userFound;
 
+        // Calculate isOnline dynamically based on lastOnline timestamp
+        // A user is considered online if lastOnline is within the last 15 minutes
+        if (userFound.result.isOnline && userFound.result.lastOnline) {
+            const lastOnlineTime = new Date(userFound.result.lastOnline).getTime();
+            const now = Date.now();
+            const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+            const isActuallyOnline = (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
+            if (!isActuallyOnline) {
+                userFound.result.isOnline = false;
+            }
+        }
+        else if (userFound.result.isOnline && !userFound.result.lastOnline) {
+            // If isOnline is true but lastOnline is missing, mark as offline
+            userFound.result.isOnline = false;
+        }
+
         hydrateUserMedia(userFound.result, viewerMediaOptions);
 
         return userFound;
@@ -221,7 +237,25 @@ export const userCtr = {
         if (!users.success)
             return users;
 
+        // Calculate isOnline dynamically based on lastOnline timestamp for each user
+        // A user is considered online if lastOnline is within the last 15 minutes
+        const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+        const now = Date.now();
+
         users.result.docs = users.result.docs.map((user) => {
+            // Calculate isOnline dynamically based on lastOnline timestamp
+            if (user.isOnline && user.lastOnline) {
+                const lastOnlineTime = new Date(user.lastOnline).getTime();
+                const isActuallyOnline = (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
+                if (!isActuallyOnline) {
+                    user.isOnline = false;
+                }
+            }
+            else if (user.isOnline && !user.lastOnline) {
+                // If isOnline is true but lastOnline is missing, mark as offline
+                user.isOnline = false;
+            }
+
             hydrateUserMedia(user, viewerMediaOptions);
             return user;
         });
