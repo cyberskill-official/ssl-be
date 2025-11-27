@@ -82,19 +82,91 @@ function buildMediaLikedEmailHtml(input: {
 }) {
     const greetingName = input.targetDisplayName?.trim() || 'there';
     const thumbnailBlock = input.thumbnailUrl
-        ? `<div style="margin:16px 0;"><img src="${input.thumbnailUrl}" alt="Liked ${input.mediaKindLabel}" style="max-width:100%;border-radius:8px;" /></div>`
+        ? `<div style="margin:20px 0;text-align:center;"><img src="${input.thumbnailUrl}" alt="Liked ${input.mediaKindLabel}" style="max-width:100%;border-radius:8px;" /></div>`
         : '';
-    return `<div style="max-width:600px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#1f1f1f;">
-        <hr style="border:none;border-top:1px solid #000;margin:0 0 24px;" />
-        <h2 style="font-size:20px;margin:0 0 16px;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
-        <p style="margin:0 0 16px;">Hi ${greetingName},</p>
-        <p style="margin:0 0 16px;"><strong>${input.actorDisplayName}</strong> just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer">SecretSwingerLust.com</a>.</p>
-        ${thumbnailBlock}
-        <p style="margin:0 0 24px;"><a href="${input.mediaLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 24px;background:#b41c33;color:#fff;text-decoration:none;border-radius:999px;">See who liked you</a></p>
-        <p style="margin:0 0 16px;">Yours playfully,<br/>SecretSwingerLust Team</p>
-        <p style="margin:0 0 24px;"><a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer">${USER_APP_BASE_URL.replace(/^https?:\/\//, '')}</a></p>
-        <hr style="border:none;border-top:1px solid #000;margin:24px 0 0;" />
-    </div>`;
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f5f5f5;">
+        <tr>
+            <td align="center" style="padding:20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background-color:#ffffff;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
+                            <div style="color:#ffffff;font-size:32px;font-weight:bold;margin-bottom:5px;">SECRET</div>
+                            <div style="color:#ffffff;font-size:18px;letter-spacing:2px;">SWINGERLUST</div>
+                        </td>
+                    </tr>
+                    <!-- Main Content -->
+                    <tr>
+                        <td style="padding:40px 30px;background-color:#ffffff;">
+                            <h1 style="font-size:28px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Arial,Helvetica,sans-serif;">Hi ${greetingName},</h1>
+                            <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:0 0 16px;text-align:center;font-family:Arial,Helvetica,sans-serif;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
+                            <div style="font-size:16px;color:#000000;margin:0 0 20px;text-align:center;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                                <p style="margin:0 0 16px;color:#000000;"><strong>${input.actorDisplayName}</strong> just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.</p>
+                                ${thumbnailBlock}
+                            </div>
+                            <!-- Button -->
+                            <div style="text-align:center;margin:30px 0;">
+                                <a href="${input.mediaLink}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 40px;background-color:#111313;color:#ffffff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">See who liked you</a>
+                            </div>
+                            <p style="font-size:14px;color:#000000;margin:24px 0;text-align:right;font-family:Arial,Helvetica,sans-serif;">
+                                Yours playfully,<br/>
+                                Secretswingerlust Team
+                            </p>
+                            <!-- Separator -->
+                            <hr style="border:none;border-top:1px solid #e0e0e0;margin:30px 0;" />
+                            <!-- Notification Preferences -->
+                            <div style="margin-top:30px;">
+                                <h2 style="font-size:18px;font-weight:bold;color:#000000;margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;">Want fewer emails?</h2>
+                                <p style="font-size:14px;color:#000000;margin:0 0 16px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                                    You're receiving this email because notifications are enabled on your Secretswingerlust profile.
+                                </p>
+                                <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                                    It's easy to adjust your preferences:
+                                </p>
+                                <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1.8;font-family:Arial,Helvetica,sans-serif;">
+                                    <li style="margin-bottom:8px;">
+                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secretswingerlust.com</a>
+                                    </li>
+                                    <li style="margin-bottom:8px;">Click My Profile (top-right)</li>
+                                    <li style="margin-bottom:8px;">Select Notifications</li>
+                                </ol>
+                                <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                                    Toggle email alerts On/Off for the updates you want
+                                </p>
+                                <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">
+                                    You'll still see in-site notifications when you're logged in — so you never miss something exciting near you. 🔥
+                                </p>
+                                <p style="font-size:14px;color:#000000;margin:0;line-height:1.6;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">
+                                    Stay connected. Stay in control.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color:#631B1C;padding:20px;text-align:center;">
+                            <p style="color:#ffffff;font-size:14px;margin:0 0 10px;">For swingers - Created by swingers</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
+                            <p style="color:#777877;font-size:12px;margin:0;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`;
 }
 
 function sendMediaLikedEmail(input: {
