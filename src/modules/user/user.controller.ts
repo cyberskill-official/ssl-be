@@ -645,17 +645,28 @@ export const userCtr = {
         }
 
         // 3) Tạo user mới với default notification settings
-        // Auto-enable email notifications for new messages when creating account
-        // If user doesn't explicitly set receiveMessage, default to true
+        // All notification settings default to true when creating account
+        // Only set to true if not explicitly provided (undefined), preserve explicit false
         const userSettings = doc.settings || {};
         const notificationSettings = userSettings.notification || {};
         const finalSettings = {
             ...userSettings,
             notification: {
                 ...notificationSettings,
-                // Only set to true if not explicitly provided (undefined), preserve explicit false
+                followingPostAnnouncement: notificationSettings.followingPostAnnouncement !== undefined
+                    ? notificationSettings.followingPostAnnouncement
+                    : true,
+                gainFollower: notificationSettings.gainFollower !== undefined
+                    ? notificationSettings.gainFollower
+                    : true,
                 receiveMessage: notificationSettings.receiveMessage !== undefined
                     ? notificationSettings.receiveMessage
+                    : true,
+                newMemberJoined: notificationSettings.newMemberJoined !== undefined
+                    ? notificationSettings.newMemberJoined
+                    : true,
+                sound: notificationSettings.sound !== undefined
+                    ? notificationSettings.sound
                     : true,
             },
         };
@@ -1384,7 +1395,12 @@ async function broadcastNewMemberInArea(context: I_Context, newUserId: string) {
                         entityId: newUser.id,
                         actorId: newUser.id,
                         presentation: {
-                            redirect: { kind: E_RedirectType.PROFILE, id: newUser.username ?? newUser.id },
+                            // Only set redirect.id to username, not UUID (profile route requires username)
+                            ...(newUser.username
+                                ? {
+                                        redirect: { kind: E_RedirectType.PROFILE, id: newUser.username },
+                                    }
+                                : {}),
                             actor: {
                                 username: newUser.username,
                                 accountType: newUser.accountType,

@@ -422,23 +422,23 @@ export const UserSettingsNotificationSchema = mongo.createSchema<I_UserSettings_
     schema: {
         followingPostAnnouncement: {
             type: Boolean,
-            default: false,
+            default: true,
         },
         gainFollower: {
             type: Boolean,
-            default: false,
+            default: true,
         },
         receiveMessage: {
             type: Boolean,
-            default: false,
+            default: true,
         },
         newMemberJoined: {
             type: Boolean,
-            default: false,
+            default: true,
         },
         sound: {
             type: Boolean,
-            default: false,
+            default: true,
         },
     },
 });

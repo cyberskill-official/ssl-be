@@ -75,7 +75,7 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
             return;
         }
 
-        const uploaderName = uploaderFound.result.username ?? '';
+        const uploaderName = uploaderFound.result.username;
 
         if (followers.success) {
             const thumbnailUrl = buildNotifThumbnail(gallery);
@@ -97,7 +97,12 @@ export async function notifyGalleryFollowersOnPublish(context: I_Context, galler
                         actorId: uploaderId,
                         presentation: ({
                             id: gallery.id,
-                            redirect: { kind: E_RedirectType.PROFILE, id: uploaderName, mediaId: gallery.id },
+                            // Only set redirect if we have a username (profile route requires username)
+                            ...(uploaderName
+                                ? {
+                                        redirect: { kind: E_RedirectType.PROFILE, id: uploaderName, mediaId: gallery.id },
+                                    }
+                                : {}),
                             context: {
                                 profileOwnerId: uploaderId,
                                 profileOwnerUsername: uploaderName,

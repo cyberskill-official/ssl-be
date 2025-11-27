@@ -17,6 +17,7 @@ enum E_NotificationType {
     PAYMENT_ISSUE
     GUESTBOOK_POST
     PROFILE_VISIT
+    AGE_VERIFICATION_APPROVED
 }
 
 enum E_NotificationChannel {

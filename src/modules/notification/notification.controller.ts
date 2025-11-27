@@ -13,7 +13,6 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
-import { messageStatusCtr } from '#modules/conversation/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import { userCtr } from '#modules/user/index.js';
@@ -48,6 +47,7 @@ const mongooseCtr = new MongooseController<I_Notification>(NotificationModel);
 const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
     E_NotificationType.GROUP_JOIN_REQUEST,
     E_NotificationType.GROUP_JOIN_APPROVED,
+    E_NotificationType.AGE_VERIFICATION_APPROVED,
 ]);
 
 const USER_APP_BASE_URL = (() => {
@@ -145,6 +145,18 @@ export const notificationCtr = {
         return res.success ? res.result : 0;
     },
 
+    countConversationUnreadInApp: async (_context: I_Context, userId: string): Promise<number> => {
+        const res = await mongooseCtr.count({
+            targetId: userId,
+            channels: { $in: [E_NotificationChannel.IN_APP] },
+            entityType: E_NotificationEntityType.CONVERSATION,
+            type: E_NotificationType.NEW_MESSAGE,
+            status: { $ne: E_NotificationStatus.READ },
+            dismissedAt: null,
+        });
+        return res.success ? res.result : 0;
+    },
+
     getNotificationCounters: async (context: I_Context) => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const userId = currentUser.id;
@@ -155,7 +167,9 @@ export const notificationCtr = {
 
         const [numberOfOtherUnRead, numberOfConversationUnRead] = await Promise.all([
             notificationCtr.countOtherUnreadInApp(context, userId),
-            messageStatusCtr.countUnreadConversations(context, userId),
+            // Count notifications with entityType CONVERSATION instead of message status
+            // This ensures group chat notifications are included
+            notificationCtr.countConversationUnreadInApp(context, userId),
         ]);
 
         return { numberOfConversationUnRead, numberOfOtherUnRead };
@@ -374,7 +388,8 @@ export const notificationCtr = {
         // optional: skip notifying current session user
         const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
         const currentUserId = currentUser?.id;
-        if (currentUserId && String(currentUserId) === tid) {
+        const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED);
+        if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }
 
@@ -399,11 +414,12 @@ export const notificationCtr = {
         }
 
         const rawSettings = userFound.result.settings?.notification ?? {};
+        // Default to true if not explicitly set (null/undefined means true by default)
         const s = {
-            gainFollower: rawSettings.gainFollower === true,
-            receiveMessage: rawSettings.receiveMessage === true,
-            newMemberJoined: rawSettings.newMemberJoined === true,
-            followingPostAnnouncement: rawSettings.followingPostAnnouncement === true,
+            gainFollower: rawSettings.gainFollower !== false,
+            receiveMessage: rawSettings.receiveMessage !== false,
+            newMemberJoined: rawSettings.newMemberJoined !== false,
+            followingPostAnnouncement: rawSettings.followingPostAnnouncement !== false,
         };
         const has = (t: E_NotificationType) => types.includes(t);
 

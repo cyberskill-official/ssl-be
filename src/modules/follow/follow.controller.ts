@@ -299,7 +299,12 @@ export const followCtr = {
                     entityType: E_NotificationEntityType.USER,
                     entityId: currentUser.id, // profile của người follow
                     presentation: {
-                        redirect: { kind: E_RedirectType.PROFILE, id: currentUser.username ?? currentUser.id },
+                        // Only set redirect.id to username, not UUID (profile route requires username)
+                        ...(currentUser.username
+                            ? {
+                                    redirect: { kind: E_RedirectType.PROFILE, id: currentUser.username },
+                                }
+                            : {}),
                         actor: {
                             username: currentUser.username,
                             accountType: currentUser.accountType,

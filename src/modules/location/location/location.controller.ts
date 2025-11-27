@@ -501,6 +501,29 @@ export const locationCtr = {
         const isEventEntity = (o: unknown): o is I_Event => typeof o === 'object' && o !== null && ('startDate' in o || 'endDate' in o);
         const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
 
+        // Calculate center point and radius from viewport bounds for distance filtering
+        const centerLat = (filter.northEastLatitude + filter.southWestLatitude) / 2;
+        const centerLng = (filter.northEastLongitude + filter.southWestLongitude) / 2;
+        // Calculate maximum radius from center to corner of bounding box
+        const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+            const toRad = (v: number) => (v * Math.PI) / 180;
+            const R = 6371; // Earth radius in km
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+        // Calculate radius as distance from center to northeast corner (farthest point)
+        const maxRadiusKm = haversineKm(
+            centerLat,
+            centerLng,
+            filter.northEastLatitude,
+            filter.northEastLongitude,
+        );
+
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
             const originalDocsById = new Map<string, I_Location>();
             for (const doc of batch ?? []) {
@@ -601,6 +624,22 @@ export const locationCtr = {
                         shouldHideUser = true;
                 }
 
+                // Filter by actual distance from center (not just bounding box)
+                // This ensures users at corners of bounding box are excluded if beyond radius
+                let isBeyondRadius = false;
+                if (d?.map?.latitude != null && d?.map?.longitude != null) {
+                    const distanceKm = haversineKm(
+                        centerLat,
+                        centerLng,
+                        d.map.latitude,
+                        d.map.longitude,
+                    );
+                    // Use a small buffer (5%) to account for rounding errors
+                    if (distanceKm > maxRadiusKm * 1.05) {
+                        isBeyondRadius = true;
+                    }
+                }
+
                 return (
                     hasKey
                     && !entityDeleted
@@ -610,6 +649,7 @@ export const locationCtr = {
                     && !isOwnerInactive
                     && !isEventExpired
                     && !shouldHideUser
+                    && !isBeyondRadius
                 );
             });
 

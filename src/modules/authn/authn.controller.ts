@@ -5,7 +5,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
@@ -25,6 +25,13 @@ import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailService } from '#modules/email/email.service.js';
 import { emailCtr } from '#modules/email/index.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import {
+    E_NotificationChannel,
+    E_NotificationEntityType,
+    E_NotificationType,
+    E_RedirectType,
+} from '#modules/notification/notification.type.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
@@ -1560,45 +1567,83 @@ export const authnCtr = {
         }
 
         // Try to send immediately (bypass queue) to ensure OTP delivery even if queue/redis/workers
-        try {
-            const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
-            let subjectText = '[No Subject]';
-            let html: string;
+        let emailSent = false;
+        let lastError: string | undefined;
 
-            if (tpl.success && tpl.result) {
-                const { content, subject: tplSubject } = tpl.result;
-                if (tplSubject) {
-                    subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-                }
-                if (content) {
-                    html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-                }
-                else {
-                    html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-                }
+        // Prepare email template once
+        const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
+        let subjectText = '[No Subject]';
+        let html: string;
+
+        if (tpl.success && tpl.result) {
+            const { content, subject: tplSubject } = tpl.result;
+            if (tplSubject) {
+                subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+            }
+            if (content) {
+                html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
             }
             else {
-                subjectText = '[Reset password]';
                 html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
             }
+        }
+        else {
+            subjectText = '[Reset password]';
+            html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+        }
 
-            const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
-            if (!sendResult.success) {
-                console.error('[AUTHN] Immediate forgot-password email send failed, falling back to queue:', sendResult.error || 'unknown');
-                // fallback to queue-based send
-                await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
+        // Retry immediate send up to 3 times before falling back to queue
+        const maxRetries = 3;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
+                if (sendResult.success) {
+                    emailSent = true;
+                    break;
+                }
+                else {
+                    lastError = sendResult.error || 'Unknown error';
+                    // Wait a bit before retry (exponential backoff: 500ms, 1000ms, 2000ms)
+                    if (attempt < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+                    }
+                }
+            }
+            catch (err) {
+                lastError = err instanceof Error ? err.message : 'Unknown error';
+                // Wait a bit before retry
+                if (attempt < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+                }
+            }
+        }
+
+        // Fallback to queue-based send if immediate send failed
+        if (!emailSent) {
+            try {
+                const queueResult = await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
                     otp,
                     expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
                     email,
                 });
+
+                if (queueResult.success) {
+                    emailSent = true;
+                }
+                else {
+                    lastError = queueResult.message || lastError || 'Queue send failed';
+                }
+            }
+            catch (queueErr) {
+                lastError = queueErr instanceof Error ? queueErr.message : 'Queue send error';
             }
         }
-        catch (err) {
-            console.error('[AUTHN] Error sending forgot-password email immediate path, falling back to queue', err);
-            await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
-                otp,
-                expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
-                email,
+
+        // If both methods failed, throw error to inform the caller
+        if (!emailSent) {
+            throwError({
+                message: `Failed to send forgot password email. ${lastError ? `Error: ${lastError}` : 'Please try again later.'}`,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
     },
@@ -1686,6 +1731,8 @@ export const authnCtr = {
             ageVerifyPayload.dateOfBirth = aiResult.dateOfBirth;
         }
 
+        const wasAgeVerified = currentUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
             update: {
@@ -1696,6 +1743,32 @@ export const authnCtr = {
         // Sync session với ageVerify mới để tránh user phải login lại
         if (userUpdated.success && context.req?.session?.user) {
             context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        if (aiApproved && userUpdated.success && !wasAgeVerified) {
+            try {
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: currentUser.id,
+                        type: [E_NotificationType.AGE_VERIFICATION_APPROVED],
+                        entityType: E_NotificationEntityType.USER,
+                        entityId: currentUser.id,
+                        body: 'You\'re now age-verified. Enjoy full access to the platform.',
+                        channels: [E_NotificationChannel.IN_APP],
+                        presentation: {
+                            headline: 'Age Verification Approved',
+                            redirect: {
+                                kind: E_RedirectType.PROFILE,
+                                id: currentUser.id,
+                            },
+                        },
+                    },
+                });
+            }
+            catch (error) {
+                // Non-fatal: log but don't block the verification result
+                log.error('Failed to send age verification approval notification:', error);
+            }
         }
 
         return userUpdated;
@@ -1768,6 +1841,34 @@ export const authnCtr = {
         // Sync session nếu user đang được approve là chính user đang login
         if (userUpdated.success && context.req?.session?.user?.id === userId) {
             context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        // Create in-app notification for age verification approval
+        if (userUpdated.success) {
+            try {
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: userId,
+                        actorId: currentUser.id,
+                        type: [E_NotificationType.AGE_VERIFICATION_APPROVED],
+                        entityType: E_NotificationEntityType.USER,
+                        entityId: userId,
+                        body: 'You\'re now age-verified. Enjoy full access to the platform.',
+                        channels: [E_NotificationChannel.IN_APP],
+                        presentation: {
+                            headline: 'Age Verification Approved',
+                            redirect: {
+                                kind: E_RedirectType.PROFILE,
+                                id: userId,
+                            },
+                        },
+                    },
+                });
+            }
+            catch (error) {
+                // Non-fatal: log but don't fail the approval
+                log.error('Failed to create age verification approval notification:', error);
+            }
         }
 
         return userUpdated;

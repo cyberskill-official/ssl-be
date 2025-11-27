@@ -498,11 +498,11 @@ export const invitationCtr = {
                         // Notify inviter that the user accepted and joined the group
                         // Load conversation to include group name
                         const conversationFound = await conversationCtr.getConversation(context, { filter: { id: invitation.result.entityId } });
+                        // Only use username for redirect, not UUID (profile route requires username)
                         const profileRedirectId
                             = currentUser.username
                                 ?? invitation.result.user?.username
-                                ?? invitation.result.userId
-                                ?? currentUser.id;
+                                ?? undefined;
 
                         const actorPresentation = {
                             username: currentUser.username,
@@ -523,7 +523,12 @@ export const invitationCtr = {
                                     entityId: invitation.result.entityId,
                                     channels: [E_NotificationChannel.IN_APP],
                                     presentation: {
-                                        redirect: { kind: E_RedirectType.PROFILE, id: profileRedirectId },
+                                        // Only set redirect if we have a username
+                                        ...(profileRedirectId
+                                            ? {
+                                                    redirect: { kind: E_RedirectType.PROFILE, id: profileRedirectId },
+                                                }
+                                            : {}),
                                         context: {
                                             conversationType: E_ConversationType.GROUP,
                                             groupName: conversationFound?.success ? (conversationFound.result?.name || '') : '',

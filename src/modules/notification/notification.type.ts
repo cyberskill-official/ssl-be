@@ -24,6 +24,7 @@ export enum E_NotificationType {
     PAYMENT_ISSUE = 'PAYMENT_ISSUE',
     GUESTBOOK_POST = 'GUESTBOOK_POST',
     PROFILE_VISIT = 'PROFILE_VISIT',
+    AGE_VERIFICATION_APPROVED = 'AGE_VERIFICATION_APPROVED',
 }
 
 export const OTHER_TYPES = [
@@ -44,6 +45,7 @@ export const OTHER_TYPES = [
     E_NotificationType.NEW_PODCAST,
     E_NotificationType.GUESTBOOK_POST,
     E_NotificationType.PROFILE_VISIT,
+    E_NotificationType.AGE_VERIFICATION_APPROVED,
 ];
 
 export enum E_NotificationChannel {
