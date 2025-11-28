@@ -199,7 +199,7 @@ export const emailCtr = {
             .join('');
 
         return `
-    <div style="font-family: Arial, sans-serif; font-size: 16px; color: #333;">
+    <div style="font-family: Myanmar Text; font-size: 16px; color: #333;">
       <table style="border-collapse: collapse; width: 100%;">${rows}</table>
       <p style="margin-top: 20px;">This is an automated email. Do not reply.</p>
     </div>
