@@ -42,6 +42,34 @@ const env = getEnv();
 const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
 
 export const galleryCtr = {
+    /**
+     * Check if gallery exists in database without visibility restrictions
+     * Used for validation purposes (e.g., when creating likes)
+     * Only checks if gallery exists and is not deleted, regardless of status, isPublished, or age verification
+     */
+    galleryExists: async (galleryId: string): Promise<boolean> => {
+        const { isValidObjectId, Types } = await import('mongoose');
+
+        // Try to find by id (UUID) first
+        let result = await mongooseCtr.findOne(
+            { id: galleryId, isDel: { $ne: true } },
+            undefined,
+            undefined,
+            undefined,
+        );
+
+        // If not found and galleryId is a valid ObjectId, try finding by _id
+        if (!result.success && isValidObjectId(galleryId)) {
+            result = await mongooseCtr.findOne(
+                { _id: new Types.ObjectId(galleryId), isDel: { $ne: true } },
+                undefined,
+                undefined,
+                undefined,
+            );
+        }
+
+        return result.success && !!result.result;
+    },
     getGallery: async (
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryGallery>,
