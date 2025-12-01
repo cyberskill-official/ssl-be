@@ -198,7 +198,19 @@ export const userCtr = {
             effectiveFilter = { $and: [...baseConds, normalizedFilter] };
         }
 
-        const effectivePopulate = isAdmin ? ensurePopulateIncludes(populate, ['notes.createdBy']) : populate;
+        // Ensure ageVerify is always populated for blur logic to work correctly
+        const basePopulate = Array.isArray(populate) ? populate : [];
+        const ageVerifyPopulate = { path: 'ageVerify' };
+        const hasAgeVerifyPopulate = basePopulate.some((p: any) =>
+            (typeof p === 'string' && p === 'ageVerify')
+            || (typeof p === 'object' && p.path === 'ageVerify'),
+        );
+        const effectivePopulate = isAdmin
+            ? ensurePopulateIncludes(
+                    hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
+                    ['notes.createdBy'],
+                )
+            : (hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate]);
 
         const userFound = await mongooseCtr.findOne(
             effectiveFilter,

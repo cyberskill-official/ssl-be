@@ -1,14 +1,14 @@
-import type { ModerationLabel } from '@aws-sdk/client-rekognition';
+import type { Label } from '@aws-sdk/client-rekognition';
 
 import {
-    DetectModerationLabelsCommand,
+    DetectLabelsCommand,
     DetectTextCommand,
     GetLabelDetectionCommand,
     RekognitionClient,
     StartLabelDetectionCommand,
 } from '@aws-sdk/client-rekognition';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 
 import type { I_AIModerationConfig, I_ImageThresholdsConfig } from '#modules/setting/setting.type.js';
 
@@ -19,6 +19,7 @@ import type { I_Input_ImageModeration, I_Input_VideoModeration, I_MediaModeratio
 
 import { AI_MODERATION_DEFAULT_CONFIG } from '../ai-moderation.constant.js';
 import { E_RiskLevel } from '../ai-moderation.type.js';
+import { isBloodGoreLabel, isChildrenLabel, isRejectedLabel, isWeaponLabel } from '../word-list.constant.js';
 import { AWSMediaUtils } from './aws-utils.js';
 
 const env = getEnv();
@@ -53,10 +54,10 @@ const LABEL_THRESHOLD_KEYS: Record<string, keyof I_ImageThresholdsConfig> = {
     'tobacco': 'drugs',
 };
 
-function resolveThresholdKey(label: ModerationLabel): keyof I_ImageThresholdsConfig | undefined {
+function resolveThresholdKey(label: Label): keyof I_ImageThresholdsConfig | undefined {
     const name = normaliseLabelName(label.Name);
-    const parent = normaliseLabelName(label.ParentName);
-    return LABEL_THRESHOLD_KEYS[name] ?? LABEL_THRESHOLD_KEYS[parent];
+    const parent = normaliseLabelName(label.Parents?.[0]?.Name);
+    return LABEL_THRESHOLD_KEYS[name] ?? LABEL_THRESHOLD_KEYS[parent || ''];
 }
 
 interface IEvaluatedLabel {
@@ -67,7 +68,7 @@ interface IEvaluatedLabel {
 }
 
 function evaluateLabel(
-    label: ModerationLabel,
+    label: Label,
     thresholds: I_ImageThresholdsConfig,
     fallbackRatio: number,
 ): IEvaluatedLabel | null {
@@ -146,24 +147,40 @@ export class AWSRekognitionProvider {
 
         const reasons: string[] = [];
 
-        // Detect moderation labels
-        let moderationResult = null;
+        // Detect labels using DetectLabelsCommand (general labels, not just moderation)
+        let labelsResult = null;
         const processedLabels: IEvaluatedLabel[] = [];
 
         try {
-            const moderationCommand = new DetectModerationLabelsCommand({
+            const labelsCommand = new DetectLabelsCommand({
                 Image: { Bytes: imageBytes },
                 MinConfidence: minConfidencePercent,
                 ...(this.customAdapterId && { ProjectVersionArn: this.customAdapterId }),
             });
 
-            moderationResult = await this.getClient().send(moderationCommand);
+            labelsResult = await this.getClient().send(labelsCommand);
 
-            // Process moderation labels and determine content suitability
-            if (moderationResult?.ModerationLabels && moderationResult.ModerationLabels.length > 0) {
-                for (const label of moderationResult.ModerationLabels) {
+            // Process labels and determine content suitability
+            // Only process moderation-related labels, ignore harmless labels like "Person", "Clothing", etc.
+            if (labelsResult?.Labels && labelsResult.Labels.length > 0) {
+                for (const label of labelsResult.Labels) {
                     if (!label.Name || label.Confidence === undefined)
                         continue;
+
+                    const labelName = normaliseLabelName(label.Name);
+
+                    // Skip rejected labels (weapons, children, blood/gore) - they will be handled separately
+                    if (isRejectedLabel(labelName)) {
+                        continue;
+                    }
+
+                    // Only process labels that are in LABEL_THRESHOLD_KEYS (moderation-related)
+                    // Skip all other labels (People, Person, Crowd, Concert, Adult, etc.) - they are allowed
+                    const thresholdKey = resolveThresholdKey(label);
+                    if (!thresholdKey) {
+                        // This label is not moderation-related, skip it
+                        continue;
+                    }
 
                     const evaluation = evaluateLabel(label, thresholds, fallbackThresholdRatio);
 
@@ -177,9 +194,18 @@ export class AWSRekognitionProvider {
                 }
             }
         }
-        catch {
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const errorDetails = error instanceof Error ? error.stack : undefined;
+
+            log.error('AWS Rekognition image analysis failed', {
+                error: errorMessage,
+                details: errorDetails,
+                imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl : '[Buffer]',
+            });
+
             throwError({
-                message: 'Failed to analyze image with AWS Rekognition',
+                message: `Failed to analyze image with AWS Rekognition: ${errorMessage}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
@@ -193,11 +219,14 @@ export class AWSRekognitionProvider {
             });
             textResult = await this.getClient().send(textCommand);
         }
-        catch {
-            throwError({
-                message: 'Failed to extract text from image',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        catch (error) {
+            // Text extraction failure is not critical - log and continue
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log.warn('Failed to extract text from image with AWS Rekognition', {
+                error: errorMessage,
+                imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl : '[Buffer]',
             });
+            // Continue without text extraction - moderation can still proceed
         }
 
         // Calculate confidence (only labels >= 80%)
@@ -217,15 +246,75 @@ export class AWSRekognitionProvider {
         }
 
         // Determine decision and risk level based on confidence (aligned with media status)
-        const decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
         let riskLevel = E_RiskLevel.LOW;
 
-        if (topLabel) {
-            const ratio = topLabel.confidence / 100;
-            const thresholdRatio = topLabel.thresholdRatio;
-            const highRiskThreshold = Math.min(0.99, thresholdRatio + 0.05);
+        // Check for rejected content: weapons, children, blood/gore
+        // These should trigger automatic rejection
+        const rejectedLabel = labelsResult?.Labels?.find((label: Label) => {
+            if (!label.Name || label.Confidence === undefined)
+                return false;
+            const labelName = normaliseLabelName(label.Name);
 
-            riskLevel = ratio >= highRiskThreshold ? E_RiskLevel.HIGH : E_RiskLevel.MEDIUM;
+            // For weapons and blood/gore: reject if confidence >= 50%
+            if (isWeaponLabel(labelName) || isBloodGoreLabel(labelName)) {
+                return label.Confidence >= 50;
+            }
+
+            // For children: only reject if confidence >= 90%
+            if (isChildrenLabel(labelName)) {
+                return label.Confidence >= 90;
+            }
+
+            return false;
+        });
+
+        const rejectedInProcessed = processedLabels.find((label) => {
+            const labelName = normaliseLabelName(label.name);
+            // For weapons and blood/gore: always reject if in processed labels
+            if (isWeaponLabel(labelName) || isBloodGoreLabel(labelName)) {
+                return true;
+            }
+            // For children: only reject if confidence >= 90%
+            if (isChildrenLabel(labelName)) {
+                return label.confidence >= 90;
+            }
+            return false;
+        });
+
+        const hasRejectedContent = !!rejectedLabel || !!rejectedInProcessed;
+
+        if (hasRejectedContent) {
+            const rejectedLabelName = rejectedLabel?.Name || rejectedInProcessed?.name || 'Unknown';
+            const rejectedConfidence = rejectedLabel?.Confidence?.toFixed(1) || rejectedInProcessed?.confidence.toFixed(1) || 'N/A';
+
+            // Determine rejection reason
+            const labelName = normaliseLabelName(rejectedLabelName);
+            let rejectionReason = 'Content detected - upload blocked';
+
+            if (isWeaponLabel(labelName)) {
+                rejectionReason = `Weapons detected (${rejectedConfidence}%) - upload blocked`;
+            }
+            else if (isChildrenLabel(labelName)) {
+                rejectionReason = `Children/minors detected (${rejectedConfidence}%) - upload blocked`;
+            }
+            else if (isBloodGoreLabel(labelName)) {
+                rejectionReason = `Blood/gore/violence detected (${rejectedConfidence}%) - upload blocked`;
+            }
+
+            // Rejected content detected - automatically reject upload
+            decision = E_ModerationMediaStatus.REJECTED;
+            riskLevel = E_RiskLevel.CRITICAL;
+            reasons.push(rejectionReason);
+        }
+        else {
+            if (topLabel) {
+                const ratio = topLabel.confidence / 100;
+                const thresholdRatio = topLabel.thresholdRatio;
+                const highRiskThreshold = Math.min(0.99, thresholdRatio + 0.05);
+
+                riskLevel = ratio >= highRiskThreshold ? E_RiskLevel.HIGH : E_RiskLevel.MEDIUM;
+            }
         }
         // else PENDING_REVIEW + LOW (default)
 

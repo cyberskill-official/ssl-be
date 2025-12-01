@@ -1659,10 +1659,25 @@ export const authnCtr = {
             });
         }
 
-        const compareFaceResult = await rekognitionController.compareFaces(args);
+        // Get method from args, default to PASSPORT if not provided
+        const method = args.method || E_AgeVerifyMethod.PASSPORT;
+        const isOtherMethod = method === E_AgeVerifyMethod.OTHER;
 
-        if (!compareFaceResult.success) {
-            return compareFaceResult;
+        // Only run AI comparison for PASSPORT method
+        // For OTHER method, skip AI and go straight to PENDING status
+        let compareFaceResult = null;
+        let aiResult = null;
+        let aiApproved = false;
+
+        if (!isOtherMethod) {
+            compareFaceResult = await rekognitionController.compareFaces(args);
+
+            if (!compareFaceResult.success) {
+                return compareFaceResult;
+            }
+
+            aiResult = compareFaceResult.result;
+            aiApproved = aiResult?.isOver18 === true;
         }
 
         const documentUpload = await uploadCtr.upload(context, {
@@ -1703,31 +1718,40 @@ export const authnCtr = {
             });
         }
 
-        const aiResult = compareFaceResult.result;
-        const aiApproved = aiResult?.isOver18 === true;
+        // For OTHER method: always set to PENDING, no AI approval
+        // For PASSPORT method: use AI result
         const ageVerifyPayload: I_AgeVerify = {
-            status: aiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING,
-            method: E_AgeVerifyMethod.PASSPORT,
+            status: isOtherMethod ? E_AgeVerifyStatus.PENDING : (aiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING),
+            method,
             preApproval: {
                 documentPic: documentUrl,
                 selfiePic: selfieUrl,
-                aiResult: {
-                    documentAge: aiResult.documentAge,
-                    selfieAgeRange: aiResult.selfieAgeRange,
-                    similarity: aiResult.similarity,
-                    isOver18: aiResult.isOver18,
-                    dateOfBirth: aiResult.dateOfBirth,
-                },
+                // Only include AI result for PASSPORT method
+                ...(isOtherMethod
+                    ? {}
+                    : {
+                            aiResult: aiResult
+                                ? {
+                                        documentAge: aiResult.documentAge,
+                                        selfieAgeRange: aiResult.selfieAgeRange,
+                                        similarity: aiResult.similarity,
+                                        isOver18: aiResult.isOver18,
+                                        dateOfBirth: aiResult.dateOfBirth,
+                                    }
+                                : undefined,
+                        }),
             },
         };
 
-        if (aiApproved) {
+        // Only set approved fields if PASSPORT method and AI approved
+        if (!isOtherMethod && aiApproved) {
             ageVerifyPayload.approvedAt = new Date();
             ageVerifyPayload.approvedById = undefined;
             ageVerifyPayload.reason = undefined;
         }
 
-        if (aiResult?.dateOfBirth) {
+        // Only set dateOfBirth if PASSPORT method and AI provided it
+        if (!isOtherMethod && aiResult?.dateOfBirth) {
             ageVerifyPayload.dateOfBirth = aiResult.dateOfBirth;
         }
 
@@ -1745,29 +1769,61 @@ export const authnCtr = {
             context.req.session.user.ageVerify = userUpdated.result.ageVerify;
         }
 
-        if (aiApproved && userUpdated.success && !wasAgeVerified) {
-            try {
-                await notificationCtr.createNotificationWithSettings(context, {
-                    doc: {
-                        targetId: currentUser.id,
-                        type: [E_NotificationType.AGE_VERIFICATION_APPROVED],
-                        entityType: E_NotificationEntityType.USER,
-                        entityId: currentUser.id,
-                        body: 'You\'re now age-verified. Enjoy full access to the platform.',
-                        channels: [E_NotificationChannel.IN_APP],
-                        presentation: {
-                            headline: 'Age Verification Approved',
-                            redirect: {
-                                kind: E_RedirectType.PROFILE,
-                                id: currentUser.id,
+        // Send notification based on verification status
+        if (userUpdated.success) {
+            const finalStatus = userUpdated.result.ageVerify?.status;
+
+            // If approved by AI, send approval notification
+            if (aiApproved && finalStatus === E_AgeVerifyStatus.APPROVED && !wasAgeVerified) {
+                try {
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: currentUser.id,
+                            type: [E_NotificationType.AGE_VERIFICATION_APPROVED],
+                            entityType: E_NotificationEntityType.USER,
+                            entityId: currentUser.id,
+                            body: 'You\'re now age-verified. Enjoy full access to the platform.',
+                            channels: [E_NotificationChannel.IN_APP],
+                            presentation: {
+                                headline: 'Age Verification Approved',
+                                redirect: {
+                                    kind: E_RedirectType.PROFILE,
+                                    id: currentUser.id,
+                                },
                             },
                         },
-                    },
-                });
+                    });
+                }
+                catch (error) {
+                    // Non-fatal: log but don't block the verification result
+                    log.error('Failed to send age verification approval notification:', error);
+                }
             }
-            catch (error) {
-                // Non-fatal: log but don't block the verification result
-                log.error('Failed to send age verification approval notification:', error);
+            // If pending (needs manual review), send submitted notification
+            else if (finalStatus === E_AgeVerifyStatus.PENDING) {
+                try {
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: currentUser.id,
+                            type: [E_NotificationType.AGE_VERIFICATION_SUBMITTED],
+                            entityType: E_NotificationEntityType.USER,
+                            entityId: currentUser.id,
+                            body: 'Your age verification has been submitted and is under review. Approval typically takes 24-48 hours.',
+                            channels: [E_NotificationChannel.IN_APP],
+                            presentation: {
+                                headline: 'Age Verification Submitted',
+                                redirect: {
+                                    kind: E_RedirectType.PROFILE,
+                                    id: currentUser.id,
+                                },
+                            },
+                        },
+                    });
+                }
+                catch (error) {
+                    // Non-fatal: log but don't block the verification result
+                    log.error('Failed to send age verification submitted notification:', error);
+                }
             }
         }
 

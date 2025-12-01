@@ -22,6 +22,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { keywordCtr } from '#modules/keyword/index.js';
 import { aiModerationCtr } from '#modules/moderation/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
+import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
@@ -79,33 +81,27 @@ export const messageCtr = {
             });
         }
 
-        // Keyword hard-block check (active keywords from keyword model)
+        // Keyword check - flag for moderation instead of blocking
+        // This allows admins to review full context before taking action
+        let matchedKeyword: { word?: string; category?: string } | null = null;
         if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
             try {
                 const activeKeywords = await keywordCtr.getActiveKeywords(context);
                 if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
                     const textValue = content.value.trim();
-                    const matchedKeyword = activeKeywords.result.find((keyword) => {
+                    matchedKeyword = activeKeywords.result.find((keyword) => {
                         const word = keyword.word?.trim();
                         if (!word)
                             return false;
                         const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
                         return pattern.test(textValue);
-                    });
-
-                    if (matchedKeyword) {
-                        throwError({
-                            message: 'Message contains prohibited keywords.',
-                            status: RESPONSE_STATUS.BAD_REQUEST,
-                        });
-                    }
+                    }) || null;
                 }
             }
-            catch (keywordError) {
-                throwError({
-                    message: `Keyword validation failed: ${keywordError instanceof Error ? keywordError.message : 'Unknown error'}`,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
+            catch {
+                // Non-fatal: log but don't block message creation
+                // If keyword check fails, we still allow the message to be sent
+                // This ensures the system remains functional even if keyword service is down
             }
         }
 
@@ -138,6 +134,8 @@ export const messageCtr = {
             }
         }
 
+        let createdMessage: I_Message | null = null;
+
         if (recipientId && !conversationId) {
             const result = await conversationCtr.createPrivateConversationWithFirstMessage(
                 context,
@@ -158,14 +156,9 @@ export const messageCtr = {
                 });
             }
 
-            return {
-                success: true,
-                message: result.message,
-                result: lastMessage,
-            };
+            createdMessage = lastMessage;
         }
-
-        if (conversationId) {
+        else if (conversationId) {
             const sendResult = await conversationCtr.sendMessage(
                 context,
                 conversationId,
@@ -174,11 +167,54 @@ export const messageCtr = {
                 parentId,
             );
 
-            return transformMessageResult(context, sendResult);
+            if (!sendResult.success) {
+                return sendResult;
+            }
+
+            const transformedResult = await transformMessageResult(context, sendResult);
+            if (transformedResult.success && transformedResult.result) {
+                createdMessage = transformedResult.result;
+            }
+        }
+        else {
+            const created = await mongooseCtr.createOne({ ...doc, senderId });
+            const transformedResult = await transformMessageResult(context, created);
+            if (transformedResult.success && transformedResult.result) {
+                createdMessage = transformedResult.result;
+            }
         }
 
-        const created = await mongooseCtr.createOne({ ...doc, senderId });
-        return transformMessageResult(context, created);
+        // If message contains keyword, flag it for manual review instead of blocking
+        // This allows admins to see full context before taking action
+        if (matchedKeyword && createdMessage?.id) {
+            try {
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.WARN,
+                        userId: senderId,
+                        messageId: createdMessage.id,
+                        reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: log error but don't block message creation
+                // Moderation log creation failure shouldn't prevent message from being sent
+            }
+        }
+
+        if (createdMessage) {
+            return {
+                success: true,
+                message: 'Message created successfully',
+                result: createdMessage,
+            };
+        }
+
+        throwError({
+            message: 'Failed to create message',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
     },
     updateMessage: async (
         context: I_Context,

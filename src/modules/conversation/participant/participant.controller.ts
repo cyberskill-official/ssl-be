@@ -16,6 +16,9 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { notificationCtr } from '#modules/notification/index.js';
+import { E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
+import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
@@ -255,6 +258,77 @@ export const participantCtr = {
 
         if (!updateTargetResult.success) {
             throwError({ message: 'Failed to grant admin rights to target user', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        // Verify the update actually worked by fetching the updated participant
+        const updatedParticipant = await participantCtr.getParticipant(context, {
+            filter: { conversationId, userId: targetUserId },
+        });
+
+        if (!updatedParticipant.success || !updatedParticipant.result || updatedParticipant.result.role !== E_ParticipantRole.ADMIN) {
+            throwError({
+                message: 'Failed to verify admin role was assigned. Please try again.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        // Get conversation info for notification
+        const conversation = await conversationCtr.getConversation(context, {
+            filter: { id: conversationId },
+        });
+
+        // Publish subscription event so frontend updates
+        pubsub.publish(E_CONVERSATION_EVENTS.PARTICIPANT_ROLE_UPDATED, {
+            participantRoleUpdated: {
+                conversationId,
+                userId: targetUserId,
+                role: E_ParticipantRole.ADMIN,
+            },
+        });
+
+        // Send notification to the user who became admin
+        if (conversation.success && conversation.result) {
+            try {
+                // Get target user info for the notification
+                const targetUser = await userCtr.getUser(context, { filter: { id: targetUserId } });
+                const targetUsername = targetUser.success && targetUser.result ? targetUser.result.username || 'A user' : 'A user';
+
+                // Send notification to the user who became admin
+                // The notification will display "{username} you have become an admin + {group name}" in their notification list
+                const groupName = conversation.result.name || 'group';
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: targetUserId,
+                        actorId: currentUser.id,
+                        type: [E_NotificationType.GROUP_ADMIN_ROLE_GRANTED],
+                        entityType: E_NotificationEntityType.CONVERSATION,
+                        entityId: conversationId,
+                        presentation: {
+                            headline: `${targetUsername} you have become an admin of ${groupName}`,
+                            context: {
+                                conversationType: E_ConversationType.GROUP,
+                                groupName: conversation.result.name ?? undefined,
+                            },
+                            actor: {
+                                username: currentUser.username,
+                                accountType: currentUser.accountType,
+                                avatarUrl: currentUser.partner1?.gallery?.url
+                                    ?? currentUser.partner2?.gallery?.url,
+                                gender: currentUser.partner1?.gender ?? currentUser.partner2?.gender,
+                            },
+                        },
+                    },
+                });
+            }
+            catch (error) {
+                // Non-fatal: log but don't block the operation
+                const log = await import('@cyberskill/shared/node/log');
+                log.log.warn('Failed to send admin role notification', {
+                    conversationId,
+                    targetUserId,
+                    error,
+                });
+            }
         }
 
         return { success: true, message: 'Admin rights granted successfully', result: true };

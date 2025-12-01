@@ -2,7 +2,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import { Buffer } from 'node:buffer';
 import path from 'node:path';
@@ -283,10 +283,14 @@ export const uploadCtr = {
                 }
             }
             catch (error) {
-                throwError({
-                    message: `Failed to create AI moderation log (video): ${(error as Error)?.message || String(error)}`,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                // Do not block upload on AI/log failure - log error but allow upload to succeed
+                log.error('Failed to create AI moderation log (video)', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                    videoUrl: videoUploaded.result,
+                    userId: currentUser.id,
                 });
+                // Continue without throwing - upload should succeed even if AI moderation fails
             }
 
             return {
@@ -300,15 +304,65 @@ export const uploadCtr = {
             };
         }
 
+        // Get file stream for upload
         const fileWebStream = await getFileWebStream(type, await file);
 
         if (!fileWebStream.success) {
             return fileWebStream;
         }
 
+        // Get file stream again for AI moderation (read file twice to avoid stream consumption issues)
+        const moderationFileStream = await getFileWebStream(type, await file);
+
+        if (!moderationFileStream.success) {
+            return moderationFileStream;
+        }
+
+        // Convert Web Stream to buffer for AI moderation (avoid 404 from CDN)
+        // Read from Web Stream using async iterator
+        const bufChunks: Uint8Array[] = [];
+        const reader = moderationFileStream.result.getReader();
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done)
+                    break;
+                if (value)
+                    bufChunks.push(value);
+            }
+        }
+        finally {
+            reader.releaseLock();
+        }
+
+        // Combine all chunks into single buffer
+        const totalLength = bufChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const imageBuffer = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of bufChunks) {
+            imageBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        // Ensure CDN hostname is set
+        if (!env.BUNNY_CDN_HOSTNAME) {
+            throwError({
+                message: 'BUNNY_CDN_HOSTNAME is not configured',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
         const uploadedUrl = env.BUNNY_OPTIMIZER_BLUR_CLASS
             ? `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}?class=${env.BUNNY_OPTIMIZER_BLUR_CLASS}`
             : `${env.BUNNY_CDN_HOSTNAME}/${uploadPath}`;
+
+        // Validate URL was created
+        if (!uploadedUrl || uploadedUrl.trim() === '') {
+            throwError({
+                message: 'Failed to generate upload URL',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
 
         let clientIp: string | undefined;
         try {
@@ -348,25 +402,51 @@ export const uploadCtr = {
             });
         }
 
-        await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
+        try {
+            await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
+        }
+        catch (uploadError) {
+            log.error('Failed to upload file to Bunny CDN', {
+                error: uploadError instanceof Error ? uploadError.message : String(uploadError),
+                stack: uploadError instanceof Error ? uploadError.stack : undefined,
+                uploadPath,
+                userId: currentUser.id,
+            });
+            throwError({
+                message: `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
 
         let finalStatus = moderationCreated.result!.status;
 
         try {
-            const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: uploadedUrl });
+            // Use image buffer directly for AI moderation to avoid CDN 404 issues
+            const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: imageBuffer });
 
             if (moderateImage.success && moderationCreated.success && moderationCreated.result?.id) {
                 const moderationId = moderationCreated.result.id;
                 const autoRejected = await applyAiModerationDecision(context, moderationId, moderateImage.result);
 
-                await moderationLogCtr.createModerationLog(context, {
-                    doc: {
-                        action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                // Always create moderation log regardless of rejection status
+                try {
+                    await moderationLogCtr.createModerationLog(context, {
+                        doc: {
+                            action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                            userId: currentUser.id,
+                            moderationMediaId: moderationId,
+                            aiResult: moderateImage.result,
+                        },
+                    });
+                }
+                catch (logError) {
+                    // Log error but don't block - moderation log creation failure shouldn't prevent response
+                    log.error('Failed to create moderation log', {
+                        error: logError instanceof Error ? logError.message : String(logError),
+                        moderationId,
                         userId: currentUser.id,
-                        moderationMediaId: moderationId,
-                        aiResult: moderateImage.result,
-                    },
-                });
+                    });
+                }
 
                 // Fetch updated status after AI moderation decision
                 const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
@@ -378,11 +458,14 @@ export const uploadCtr = {
             }
         }
         catch (error) {
-        // Do not block upload on AI/log failure
-            throwError({
-                message: `Failed to create AI moderation log on upload: ${(error as Error)?.message || String(error)}`,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            // Do not block upload on AI/log failure - log error but allow upload to succeed
+            log.error('Failed to create AI moderation log on upload', {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                uploadedUrl,
+                userId: currentUser.id,
             });
+            // Continue without throwing - upload should succeed even if AI moderation fails
         }
 
         return {

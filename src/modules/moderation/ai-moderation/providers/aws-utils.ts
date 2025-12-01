@@ -69,7 +69,23 @@ export class AWSMediaUtils {
             const maxSize = isVideo ? 100 * 1024 * 1024 : 5 * 1024 * 1024; // 100MB for video, 5MB for image (AWS limit)
             const timeout = isVideo ? 30000 : 15000; // 30s for video, 15s for image
 
-            const response = await axios.get(url, {
+            // Remove blur/optimization parameters from URL to get the original image
+            // CDN blur parameters can cause issues with AWS Rekognition
+            let cleanUrl = url;
+            try {
+                const urlObj = new URL(url);
+                // Remove class parameter and other optimization parameters that might cause issues
+                urlObj.searchParams.delete('class');
+                urlObj.searchParams.delete('blur');
+                urlObj.searchParams.delete('optimize');
+                cleanUrl = urlObj.toString();
+            }
+            catch {
+                // If URL parsing fails, use original URL
+                cleanUrl = url;
+            }
+
+            const response = await axios.get(cleanUrl, {
                 responseType: 'arraybuffer',
                 timeout,
                 maxContentLength: maxSize,
@@ -80,6 +96,17 @@ export class AWSMediaUtils {
                 // Additional timeout settings
                 validateStatus: status => status < 500, // Don't throw on 4xx errors
             });
+
+            // Check response status
+            if (response.status >= 400) {
+                throw new Error(`HTTP ${response.status}: Failed to download media from ${cleanUrl}`);
+            }
+
+            // Check content type
+            const contentType = response.headers['content-type'] || '';
+            if (!isVideo && !contentType.startsWith('image/')) {
+                log.warn(`Unexpected content type for image: ${contentType}, URL: ${cleanUrl}`);
+            }
 
             const arrayBuffer = response.data;
             const size = arrayBuffer.byteLength;
@@ -96,6 +123,19 @@ export class AWSMediaUtils {
             if (!isVideo) {
                 const bytes = new Uint8Array(arrayBuffer);
 
+                // Check for HTML/error pages (common indicators)
+                // HTML typically starts with <html>, <HTML>, <!DOCTYPE, etc.
+                const isHTML = (bytes[0] === 0x3C && (bytes[1] === 0x68 || bytes[1] === 0x48) // <h or <H
+                    && (bytes[2] === 0x74 || bytes[2] === 0x54) // t or T
+                    && (bytes[3] === 0x6D || bytes[3] === 0x4D)) // m or M
+                    || (bytes[0] === 0x3C && bytes[1] === 0x21 && bytes[2] === 0x44 && bytes[3] === 0x4F); // <!DO
+
+                if (isHTML) {
+                    // Try to extract error message from HTML if possible
+                    const htmlText = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 500));
+                    throw new Error(`Received HTML instead of image. This usually means the image URL is invalid or the CDN returned an error page. URL: ${cleanUrl}. First 200 chars: ${htmlText.substring(0, 200)}`);
+                }
+
                 // Check for common image format signatures
                 const isJPEG = bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
                 const isPNG = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
@@ -107,9 +147,8 @@ export class AWSMediaUtils {
                     || (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A);
 
                 if (!isJPEG && !isPNG && !isGIF && !isBMP && !isWebP && !isTIFF) {
-                    log.warn(`Unsupported image format detected. First 12 bytes: ${Array.from(bytes.slice(0, 12)).map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
-                    // Don't throw error, just log warning and continue
-                    // AWS Rekognition might still be able to process it
+                    const firstBytes = Array.from(bytes.slice(0, 12)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    throw new Error(`Unsupported image format detected. First 12 bytes: ${firstBytes}. URL: ${cleanUrl}`);
                 }
             }
 

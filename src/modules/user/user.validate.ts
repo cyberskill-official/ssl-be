@@ -12,16 +12,21 @@ export interface I_HydrateUserMediaOptions {
 }
 
 function shouldBlurProfile(
-    _user?: I_User | null,
+    user?: I_User | null,
     options: I_HydrateUserMediaOptions = {},
 ): boolean {
-    const viewerAgeVerified = options.viewerAgeVerified ?? false;
+    // Check if the profile owner (user) is age-verified
+    // If ageVerify is null/undefined or status is not APPROVED, profile is not verified
+    const profileOwnerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+    // Staff and admin can always see unblurred profile pictures
     const viewerIsStaff = options.viewerIsStaff ?? false;
     const viewerIsAdmin = options.viewerIsAdmin ?? false;
-
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-    return !viewerAgeVerified && !viewerExempt;
+    // Blur profile picture if the profile owner is not age-verified (unless viewer is staff/admin)
+    // For couple accounts, both partner1 and partner2 images use the same user's age verification status
+    return !profileOwnerAgeVerified && !viewerExempt;
 }
 
 function signProfileImage(
@@ -52,16 +57,21 @@ export function hydrateUserMedia(
         }
 
         const rawGalleryUrl = partner.gallery?.url;
+        if (!rawGalleryUrl) {
+            return;
+        }
 
-        const signedGallery = rawGalleryUrl
-            ? signProfileImage(rawGalleryUrl, user, options)
-            : undefined;
+        // For couple profiles, use the same user's age verification status for both partners
+        // Both partner1 and partner2 images should be unblurred if the user (profile owner) is age-verified
+        const signedGallery = signProfileImage(rawGalleryUrl, user, options);
 
-        if (signedGallery && partner.gallery) {
+        if (partner.gallery) {
             partner.gallery.url = signedGallery;
         }
     };
 
+    // Apply blur/unblur logic to both partner images
+    // Both images use the same user's age verification status
     applyProfileMedia(user.partner1);
     applyProfileMedia(user.partner2);
 

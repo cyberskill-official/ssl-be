@@ -157,4 +157,5 @@ export const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
     E_NotificationType.GROUP_JOIN_REQUEST,
     E_NotificationType.GROUP_JOIN_APPROVED,
     E_NotificationType.AGE_VERIFICATION_APPROVED,
+    E_NotificationType.AGE_VERIFICATION_SUBMITTED,
 ]);

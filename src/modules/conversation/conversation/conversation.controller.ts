@@ -19,7 +19,6 @@ import type { I_Notification } from '#modules/notification/notification.type.js'
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
@@ -452,7 +451,7 @@ export const conversationCtr = {
                 targetId: currentUser.id,
                 type: [E_NotificationType.GROUP_JOIN_REQUEST, E_NotificationType.CONVERSATION_INVITATION],
                 dismissedAt: null,
-                readAt: null,
+                // Don't filter by readAt - show all pending requests regardless of read status
             },
             options: { pagination: false },
         });
@@ -920,7 +919,11 @@ export const conversationCtr = {
         let eventContext: I_Event | null = null;
         if (eventId) {
             try {
-                const eventRes = await eventCtr.getEvent(context, { filter: { id: eventId } });
+                // Populate destination to get all images
+                const eventRes = await eventCtr.getEvent(context, {
+                    filter: { id: eventId },
+                    populate: ['destination'],
+                });
                 if (eventRes.success && eventRes.result) {
                     eventContext = eventRes.result;
                 }
@@ -959,109 +962,6 @@ export const conversationCtr = {
 
         const conversationId = conversation.id;
 
-        const sendConversationTextMessage = async (raw?: string): Promise<boolean> => {
-            const normalized = typeof raw === 'string' ? raw.trim() : '';
-            if (!normalized)
-                return false;
-
-            try {
-                const directSend = await messageCtr.createMessage(context, {
-                    doc: {
-                        conversationId,
-                        content: {
-                            type: E_MessageType.TEXT,
-                            value: normalized,
-                        },
-                    },
-                });
-
-                if (directSend.success)
-                    return true;
-            }
-            catch (error) {
-                log.warn('Falling back to manual event message insert', {
-                    conversationId,
-                    error,
-                });
-            }
-
-            try {
-                const senderCandidate = conversation.createdById ?? currentUser.id;
-                let senderId = senderCandidate ?? currentUser.id;
-
-                if (senderId && senderId !== currentUser.id) {
-                    const senderParticipant = await participantCtr.getParticipant(context, {
-                        filter: { conversationId, userId: senderId },
-                    });
-
-                    if (!senderParticipant.success || !senderParticipant.result) {
-                        senderId = currentUser.id;
-                    }
-                }
-
-                const manualResult = await messageCtr.createMessageOnly(context, {
-                    doc: {
-                        conversationId,
-                        senderId,
-                        content: {
-                            type: E_MessageType.TEXT,
-                            value: normalized,
-                        },
-                    },
-                });
-
-                if (!manualResult.success || !manualResult.result)
-                    return false;
-
-                await conversationCtr._updateLastMessageId(conversationId, manualResult.result.id).catch(() => {});
-
-                try {
-                    const participantsRes = await participantCtr.getParticipants(context, {
-                        filter: { conversationId },
-                        options: { pagination: false, projection: 'userId' },
-                    });
-
-                    if (participantsRes.success) {
-                        const seen = new Set<string>();
-                        const statusDocs: Array<{ messageId: string; userId: string }> = [];
-
-                        for (const participant of participantsRes.result.docs ?? []) {
-                            const participantId = participant?.userId;
-                            if (!participantId || participantId === senderId)
-                                continue;
-
-                            if (seen.has(participantId))
-                                continue;
-
-                            seen.add(participantId);
-                            statusDocs.push({ messageId: manualResult.result.id, userId: participantId });
-                        }
-
-                        if (statusDocs.length > 0) {
-                            await messageStatusCtr.createMultipleMessageStatuses(statusDocs);
-                        }
-                    }
-                }
-                catch (statusError) {
-                    log.warn('Failed to prime message statuses for event message', {
-                        conversationId,
-                        error: statusError,
-                    });
-                }
-
-                await participantCtr.updateLastReadMessage(conversationId, senderId, manualResult.result.id).catch(() => {});
-
-                return true;
-            }
-            catch (fallbackError) {
-                log.error('Failed to send conversation message via fallback path', {
-                    conversationId,
-                    error: fallbackError,
-                });
-                return false;
-            }
-        };
-
         const existingParticipant = await participantCtr.getParticipant(context, {
             filter: { conversationId, userId: effectiveRequesterId },
         });
@@ -1099,7 +999,6 @@ export const conversationCtr = {
             });
         }
 
-        const pushMessageBody = (eventContext?.pushMessage ?? '').trim();
         const eventRedirect = eventContext
             ? {
                     kind: E_RedirectType.EVENT,
@@ -1109,6 +1008,7 @@ export const conversationCtr = {
             : undefined;
 
         // Notify the requester that they were approved
+        // Note: Full Event Details (push message) is sent as a message in inbox, not in notification
         await notificationCtr.createNotificationWithSettings(context, {
             doc: {
                 targetId: effectiveRequesterId,
@@ -1116,7 +1016,6 @@ export const conversationCtr = {
                 entityType: E_NotificationEntityType.CONVERSATION,
                 entityId: conversationId,
                 actorId: currentUser.id,
-                ...(pushMessageBody ? { body: pushMessageBody } : {}),
                 presentation: {
                     headline: conversation.name
                         ? `Your request to join ${conversation.name} was approved`
@@ -1137,104 +1036,14 @@ export const conversationCtr = {
             },
         });
 
-        // If this group is tied to an event, send event participation accepted notification
-        if (eventContext && eventRedirect) {
-            try {
-                await notificationCtr.createNotificationWithSettings(context, {
-                    doc: {
-                        targetId: effectiveRequesterId,
-                        actorId: currentUser.id,
-                        type: [E_NotificationType.EVENT_PARTICIPATION_ACCEPTED],
-                        entityType: E_NotificationEntityType.EVENT,
-                        entityId: eventId as string,
-                        ...(pushMessageBody ? { body: pushMessageBody } : {}),
-                        presentation: {
-                            headline: pushMessageBody || 'You were accepted to an event',
-                            ...(pushMessageBody ? { body: pushMessageBody } : {}),
-                            redirect: eventRedirect,
-                            context: {
-                                groupName: conversation.name ?? eventContext.title ?? '',
-                            },
-                        },
-                    },
-                });
-            }
-            catch {
-                // best-effort; do not block approval
-            }
-        }
+        // Note: New member join notification is now displayed as a panel in the UI above the message input area
+        // for all group members, not sent as a notification. This keeps the chat clean while informing members.
 
-        // Notify the group creator/admin that someone joined
-        const requesterUser = requester.result;
-        const requesterAvatar = requesterUser.partner1?.gallery?.url
-            ?? requesterUser.partner2?.gallery?.url
-            ?? undefined;
+        // Note: Full Event Details (pushMessage) is now displayed in the UI under the group name,
+        // not sent as a message. This ensures all group members can see it without cluttering the chat.
 
-        // Chỉ gửi thông báo nếu profile đã hoàn chỉnh
-        const isProfileComplete
-            = requesterUser.registerStep === E_RegisterStep.COMPLETE
-                && requesterUser.isEmailVerified === true
-                && requesterUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-
-        if (isProfileComplete) {
-            await notificationCtr.createNotificationWithSettings(context, {
-                doc: {
-                    targetId: currentUser.id,
-                    type: [E_NotificationType.GROUP_MEMBER_JOINED],
-                    entityType: E_NotificationEntityType.CONVERSATION,
-                    entityId: conversationId,
-                    actorId: effectiveRequesterId,
-                    presentation: {
-                        headline: conversation.name
-                            ? `${requesterUser.username ?? 'A user'} joined ${conversation.name}`
-                            : `${requesterUser.username ?? 'A user'} joined your group`,
-                        context: {
-                            conversationType: E_ConversationType.GROUP,
-                            groupName: conversation.name ?? undefined,
-                        },
-                        actor: {
-                            username: requesterUser.username,
-                            accountType: requesterUser.accountType,
-                            avatarUrl: requesterAvatar,
-                            gender: requesterUser.partner1?.gender ?? requesterUser.partner2?.gender,
-                        },
-                    },
-                },
-            });
-        }
-
-        // Send event's push message as a normal message if event exists
-        let messageSent = false;
-        if (conversation.entityType === E_NotificationEntityType.EVENT) {
-            const pushMsg = (eventContext?.pushMessage ?? '').trim();
-            if (pushMsg) {
-                try {
-                    messageSent = await sendConversationTextMessage(pushMsg);
-                }
-                catch (error) {
-                    // Non-fatal: log and continue if push message fails
-                    log.error('Failed to send event push message:', error);
-                }
-            }
-        }
-
-        if (!messageSent && conversation.entityType === E_NotificationEntityType.EVENT) {
-            const fallbackMessage = conversation.name
-                ? `You've been added to ${conversation.name}. Welcome!`
-                : 'You have been added to the event group. Welcome!';
-
-            messageSent = await sendConversationTextMessage(fallbackMessage);
-        }
-
-        // If no message was sent and the conversation has never had one, send a basic welcome
-        // so brand new groups still surface an unread indicator for the new member.
-        if (!messageSent && !conversation.lastMessageId) {
-            const welcomeMessage = conversation.name
-                ? `Welcome to ${conversation.name}!`
-                : 'Welcome to the group!';
-
-            await sendConversationTextMessage(welcomeMessage);
-        }
+        // Note: Welcome message is now displayed in the UI above the message input area,
+        // not sent as a message. This keeps the chat clean while still welcoming new members.
 
         return { success: true, message: 'Join request approved.', result: true };
     },
@@ -1753,7 +1562,6 @@ export const conversationCtr = {
                         targetConversationId = dm.conversationId;
                     }
                     else {
-                    // create new private conv and add participants (admin + recipient)
                         const newConv = await conversationCtr.createConversationInternal(context, {
                             doc: {
                                 type: E_ConversationType.PRIVATE,

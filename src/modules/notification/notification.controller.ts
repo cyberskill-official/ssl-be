@@ -11,6 +11,7 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
 import { followCtr } from '#modules/follow/index.js';
@@ -194,36 +195,78 @@ export const notificationCtr = {
             }
         }
 
-        // Enrich presentation media (avatar, thumbnails) according to viewer age verification
+        // Enrich presentation media (avatar, thumbnails) according to actor's age verification status
         try {
-            let isViewerVerified = false;
+            let viewerIsStaff = false;
+            let viewerIsAdmin = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(_context);
-                isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+                viewerIsAdmin = roles.some(role =>
+                    role.name === E_Role_Staff.ADMIN
+                    || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role_Staff.ADMIN)),
+                );
+                viewerIsStaff = roles.some(role =>
+                    role.name === E_Role.STAFF
+                    || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
+                );
             }
             catch {
-                isViewerVerified = false;
+                // Viewer not authenticated or error getting viewer
             }
 
+            const viewerExempt = viewerIsStaff || viewerIsAdmin;
+
             if (res.success && res.result && Array.isArray(res.result.docs)) {
+                // Collect unique actorIds
+                const actorIds = new Set<string>();
+                for (const n of res.result.docs) {
+                    if (n.actorId && isValidObjectId(n.actorId)) {
+                        actorIds.add(n.actorId);
+                    }
+                }
+
+                // Batch fetch actors' age verification status
+                const actorAgeVerifyMap = new Map<string, boolean>();
+                if (actorIds.size > 0) {
+                    const actorsResult = await userCtr.getUsers(_context, {
+                        filter: { id: { $in: Array.from(actorIds) } },
+                        options: { pagination: false },
+                    });
+
+                    if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
+                        for (const actor of actorsResult.result.docs) {
+                            if (actor.id) {
+                                const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
+                            }
+                        }
+                    }
+                }
+
+                // Apply blurring based on actor's age verification status
                 for (const n of res.result.docs) {
                     const pres = n.presentation as I_NotificationPresentation;
                     if (!pres)
                         continue;
 
+                    // Check if actor is age-verified
+                    const isActorAgeVerified = n.actorId ? (actorAgeVerifyMap.get(n.actorId) ?? false) : false;
+                    const shouldBlur = !isActorAgeVerified && !viewerExempt;
+
                     // actor avatar
                     const actor = pres.actor;
                     if (actor?.avatarUrl) {
-                        actor.avatarUrl = isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } });
+                        actor.avatarUrl = shouldBlur
+                            ? bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } })
+                            : bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
                     }
 
                     // thumbnail / gallery (note: presentation.thumbnailUrl is a string)
                     if (typeof pres.thumbnailUrl === 'string' && pres.thumbnailUrl) {
-                        pres.thumbnailUrl = isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
+                        pres.thumbnailUrl = shouldBlur
+                            ? bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } })
+                            : bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                     }
                 }
             }
@@ -305,7 +348,8 @@ export const notificationCtr = {
         // optional: skip notifying current session user
         const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
         const currentUserId = currentUser?.id;
-        const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED);
+        const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED);
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }

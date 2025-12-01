@@ -1,5 +1,6 @@
 import type { E_UploadType } from '@cyberskill/shared/node/upload';
 
+import type { E_AgeVerifyMethod } from '#modules/authn/authn.type.js';
 import type { E_UploadEntity } from '#shared/typescript/index.js';
 
 export interface I_UploadedFile {
@@ -20,6 +21,7 @@ export interface I_GraphQLUpload {
 
 export interface I_Input_UploadMany {
     files: T_UploadedFilePromise[];
+    method?: E_AgeVerifyMethod; // Optional: only used for age verification, doesn't affect regular uploads
 }
 export interface I_Input_Upload {
     type: E_UploadType;

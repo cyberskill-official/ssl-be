@@ -119,6 +119,7 @@ export enum E_AgeVerifyStatus {
 
 export enum E_AgeVerifyMethod {
     PASSPORT = 'PASSPORT',
+    OTHER = 'OTHER',
 }
 
 export interface I_AgeRange {

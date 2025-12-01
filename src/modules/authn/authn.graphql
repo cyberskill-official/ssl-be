@@ -66,6 +66,11 @@ enum E_MembershipType {
     PROMO
 }
 
+enum E_AgeVerifyMethod {
+    PASSPORT
+    OTHER
+}
+
 type T_Auth {
     user: T_User
     token: String
@@ -99,7 +104,7 @@ type Mutation {
     logout: T_Response_Auth!
     forgotPasswordRequest(email: String!): T_Response_Auth!
     resetPassword(email: String!, otp: String!, newPassword: String!): T_Response_Auth!
-    verifyAge(files: [Upload]!): T_Response_VerifyAge!
+    verifyAge(files: [Upload]!, method: E_AgeVerifyMethod): T_Response_VerifyAge!
     approveAgeVerify(userId: String!): T_Response_VerifyAge!
     rejectAgeVerify(userId: String!, reason: String!): T_Response_VerifyAge!
     createGuardianVisitToken: T_Response_Auth!
