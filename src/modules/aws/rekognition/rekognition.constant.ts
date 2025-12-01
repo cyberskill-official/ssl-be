@@ -15,4 +15,4 @@ export const IMAGE_QUALITY_THRESHOLDS = {
 // - Below 50: Low confidence (too lenient, security risk)
 // 57 provides a good balance: reduces false rejections while still ensuring reasonable match confidence
 // Fraudulent cases would be caught by payment provider verification and manual review
-export const FACE_SIMILARITY_THRESHOLD = 57;
+export const FACE_SIMILARITY_THRESHOLD = 80;
