@@ -12,21 +12,21 @@ export interface I_HydrateUserMediaOptions {
 }
 
 function shouldBlurProfile(
-    user?: I_User | null,
+    _user?: I_User | null,
     options: I_HydrateUserMediaOptions = {},
 ): boolean {
-    // Check if the profile owner (user) is age-verified
-    // If ageVerify is null/undefined or status is not APPROVED, profile is not verified
-    const profileOwnerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+    // Check if the viewer (person viewing the profile) is age-verified
+    // Blur profile pictures if the viewer is not age-verified
+    const viewerAgeVerified = options.viewerAgeVerified ?? false;
 
     // Staff and admin can always see unblurred profile pictures
     const viewerIsStaff = options.viewerIsStaff ?? false;
     const viewerIsAdmin = options.viewerIsAdmin ?? false;
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-    // Blur profile picture if the profile owner is not age-verified (unless viewer is staff/admin)
-    // For couple accounts, both partner1 and partner2 images use the same user's age verification status
-    return !profileOwnerAgeVerified && !viewerExempt;
+    // Blur profile picture if the viewer is not age-verified (unless viewer is staff/admin)
+    // This applies to both partner1 and partner2 gallery images
+    return !viewerAgeVerified && !viewerExempt;
 }
 
 function signProfileImage(
@@ -61,8 +61,8 @@ export function hydrateUserMedia(
             return;
         }
 
-        // For couple profiles, use the same user's age verification status for both partners
-        // Both partner1 and partner2 images should be unblurred if the user (profile owner) is age-verified
+        // Blur/unblur based on viewer's age verification status
+        // Both partner1 and partner2 images are blurred if the viewer is not age-verified
         const signedGallery = signProfileImage(rawGalleryUrl, user, options);
 
         if (partner.gallery) {
@@ -70,8 +70,8 @@ export function hydrateUserMedia(
         }
     };
 
-    // Apply blur/unblur logic to both partner images
-    // Both images use the same user's age verification status
+    // Apply blur/unblur logic to both partner images based on viewer's age verification status
+    // Both partner1 and partner2 gallery images are blurred if the viewer is not age-verified
     applyProfileMedia(user.partner1);
     applyProfileMedia(user.partner2);
 

@@ -199,6 +199,7 @@ export const notificationCtr = {
         try {
             let viewerIsStaff = false;
             let viewerIsAdmin = false;
+            let isViewerAgeVerified = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(_context);
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
@@ -210,6 +211,8 @@ export const notificationCtr = {
                     role.name === E_Role.STAFF
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
                 );
+                // Check viewer's age verification status
+                isViewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
             }
             catch {
                 // Viewer not authenticated or error getting viewer
@@ -244,15 +247,15 @@ export const notificationCtr = {
                     }
                 }
 
-                // Apply blurring based on actor's age verification status
+                // Apply blurring based on viewer's age verification status
+                // Blur if viewer is not age-verified (regardless of actor's verification status)
                 for (const n of res.result.docs) {
                     const pres = n.presentation as I_NotificationPresentation;
                     if (!pres)
                         continue;
 
-                    // Check if actor is age-verified
-                    const isActorAgeVerified = n.actorId ? (actorAgeVerifyMap.get(n.actorId) ?? false) : false;
-                    const shouldBlur = !isActorAgeVerified && !viewerExempt;
+                    // Blur if viewer is not age-verified (unless viewer is staff/admin)
+                    const shouldBlur = !isViewerAgeVerified && !viewerExempt;
 
                     // actor avatar
                     const actor = pres.actor;
