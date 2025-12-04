@@ -138,9 +138,10 @@ export function isOpenPublicThread(c: I_Conversation): boolean {
             || nameIsBlog(c?.name)
             || Boolean((c as Partial<I_Conversation> & { blogId?: string }).blogId);
 
-    const isGroupOpen
-        = c?.type === E_ConversationType.GROUP
-            && (((c?.participants?.length ?? 0) <= 1) || nameIsProfile(c?.name) || nameIsBlog(c?.name));
+    // GROUP conversations should NOT be treated as public threads
+    // Only treat as public if it's actually a profile/blog comment thread (by name)
+    // Normal GROUP conversations should use NEW_MESSAGE notifications, not GUESTBOOK_POST
+    const isGroupOpen = false; // Always false - GROUP conversations are private and should use NEW_MESSAGE
 
     const isDestinationOpen
         = c?.type === E_ConversationType.DESTINATION_COMMENT

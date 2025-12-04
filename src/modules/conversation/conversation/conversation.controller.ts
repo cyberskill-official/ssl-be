@@ -2537,6 +2537,14 @@ export const conversationCtr = {
                     // For profile/blog guestbook posts, use default text (frontend will format it)
                     headline = undefined; // Frontend will use fallbackNotificationText
                 }
+                else if (notifType === E_NotificationType.NEW_MESSAGE && populatedConversation.type === E_ConversationType.GROUP) {
+                    // For GROUP messages, include group name if available
+                    const groupName = populatedConversation.name;
+                    if (groupName && actorView?.username) {
+                        headline = `${actorView.username} has sent a message to ${groupName}.`;
+                    }
+                    // If no group name, leave undefined (frontend will use fallback)
+                }
 
                 for (const targetId of recipients) {
                     try {
@@ -2559,6 +2567,10 @@ export const conversationCtr = {
                                         // Provide the specific message id to enable direct navigation to the comment in UI
                                         parentMessageId: messageResult.result?.id,
                                         participantCount: memberCount,
+                                        // Include groupName for GROUP conversations
+                                        ...(populatedConversation.type === E_ConversationType.GROUP && populatedConversation.name
+                                            ? { groupName: populatedConversation.name }
+                                            : {}),
                                         // Only include profileOwnerId for non-gallery comments
                                         ...(populatedConversation.type !== E_ConversationType.GALLERY_COMMENT && profileOwnerId
                                             ? { profileOwnerId }
