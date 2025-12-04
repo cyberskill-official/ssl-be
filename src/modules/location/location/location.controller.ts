@@ -558,6 +558,16 @@ export const locationCtr = {
                     }
                 }
 
+                // Check if destination is inactive (isActive === false)
+                let isDestinationInactive = false;
+                if (d.entityType === E_LocationEntityType.DESTINATION) {
+                    const destination = e as I_Destination;
+                    // Hide destination if isActive is explicitly false
+                    if (destination?.isActive === false) {
+                        isDestinationInactive = true;
+                    }
+                }
+
                 // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
                 let isEventExpired = false;
                 let shouldHideTravelEvent = false;
@@ -614,6 +624,7 @@ export const locationCtr = {
                     && !isBlockedUser
                     && !isOwnerInactive
                     && !isEventExpired
+                    && !isDestinationInactive
                     && !shouldHideUser
                 );
             });

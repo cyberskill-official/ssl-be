@@ -3,6 +3,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 import type { E_Role_User } from '#modules/authz/role/index.js';
 import type { I_Blog } from '#modules/blog/index.js';
 import type { I_Destination } from '#modules/destination/index.js';
+import type { I_Gallery } from '#modules/gallery/index.js';
 import type { E_NotificationEntityType } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 
@@ -76,6 +77,7 @@ export enum E_ConversationType {
     PROFILE_COMMENT = 'PROFILE_COMMENT',
     BLOG_COMMENT = 'BLOG_COMMENT',
     DESTINATION_COMMENT = 'DESTINATION_COMMENT',
+    GALLERY_COMMENT = 'GALLERY_COMMENT',
     ADMIN_BROADCAST = 'ADMIN_BROADCAST',
 }
 
@@ -133,7 +135,7 @@ export interface I_Conversation extends I_GenericDocument {
     lastMessageId?: string;
     lastMessage?: I_Message;
     entityId?: string;
-    entity?: I_Blog | I_Destination | I_User;
+    entity?: I_Blog | I_Destination | I_Gallery | I_User;
     participants?: I_Participant[];
     retentionDays?: number;
     lastMessageAt?: Date;

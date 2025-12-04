@@ -1,3 +1,4 @@
+import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
@@ -145,7 +146,11 @@ export function isOpenPublicThread(c: I_Conversation): boolean {
         = c?.type === E_ConversationType.DESTINATION_COMMENT
             || (typeof c?.name === 'string' && c.name.startsWith('destination:'));
 
-    return isProfileOpen || isBlogOpen || isGroupOpen || isDestinationOpen;
+    const isGalleryOpen
+        = c?.type === E_ConversationType.GALLERY_COMMENT
+            || (typeof c?.name === 'string' && c.name.startsWith('gallery:'));
+
+    return isProfileOpen || isBlogOpen || isGroupOpen || isDestinationOpen || isGalleryOpen;
 }
 /**
  * Xác định type cho topic admin contact
@@ -208,7 +213,8 @@ export function classifyConversation(c: I_Conversation): {
     const destinationOwnerId = meta.destinationOwnerId;
 
     const isDestinationContext = c?.type === E_ConversationType.DESTINATION_COMMENT || Boolean(destinationId);
-    const isPublic = isOpenPublicThread(c) || isDestinationContext;
+    const isGalleryContext = c?.type === E_ConversationType.GALLERY_COMMENT;
+    const isPublic = isOpenPublicThread(c) || isDestinationContext || isGalleryContext;
 
     const profileFromName = nameIsProfile(c?.name)
         ? String(c.name).slice('profile:'.length)
@@ -233,10 +239,25 @@ export function classifyConversation(c: I_Conversation): {
             || Boolean(blogId)
             || Boolean(blogFromName);
 
-    // Redirect cho public (blog hoặc profile)
+    // Ngữ cảnh gallery - lấy gallery owner (uploadedById) từ entity
+    const galleryId: string | undefined = isGalleryContext ? c.entityId : undefined;
+    let galleryOwnerId: string | undefined;
+    if (isGalleryContext && c.entity) {
+        // Check if entity is I_Gallery (has uploadedById)
+        const galleryEntity = c.entity as I_Gallery;
+        if (galleryEntity && 'uploadedById' in galleryEntity) {
+            galleryOwnerId = galleryEntity.uploadedById;
+        }
+    }
+
+    // Redirect cho public (blog, gallery, destination hoặc profile)
     let redirectKindPublic: E_RedirectType;
     if (isDestinationContext) {
         redirectKindPublic = E_RedirectType.DESTINATION;
+    }
+    else if (isGalleryContext) {
+        // Use MEDIA redirect type for gallery comments
+        redirectKindPublic = E_RedirectType.MEDIA;
     }
     else if (isBlogContext) {
         redirectKindPublic = (E_RedirectType as Record<string, E_RedirectType>)['BLOG']
@@ -251,13 +272,14 @@ export function classifyConversation(c: I_Conversation): {
         ? redirectKindPublic
         : E_RedirectType.CONVERSATION;
 
-    // Đích public: blogId (blog) hoặc profileOwnerId (profile)
+    // Đích public: galleryOwnerId (gallery owner), blogId (blog), destinationId (destination) hoặc profileOwnerId (profile)
+    // Với gallery, publicTargetId là gallery owner (uploadedById) để gửi notification
     const publicTargetId = isDestinationContext
         ? (destinationOwnerId ?? destinationId)
-        : (isBlogContext ? blogId : profileOwnerId);
+        : (isGalleryContext ? (galleryOwnerId ?? galleryId) : (isBlogContext ? blogId : profileOwnerId));
 
     const notifType: E_NotificationType = isPublic
-        ? E_NotificationType.GUESTBOOK_POST
+        ? (isGalleryContext ? E_NotificationType.GALLERY_COMMENT : E_NotificationType.GUESTBOOK_POST)
         : E_NotificationType.NEW_MESSAGE;
 
     const resolvedProfileOwnerId = isDestinationContext

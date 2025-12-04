@@ -15,6 +15,7 @@ import ejs from 'ejs';
 import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Event } from '#modules/event/index.js';
+import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Notification } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
@@ -26,6 +27,7 @@ import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';
 import { eventCtr } from '#modules/event/index.js';
+import { E_GalleryType } from '#modules/gallery/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -1998,6 +2000,14 @@ export const conversationCtr = {
                         return participants.some(p => p.userId === userId)
                             || conversation.createdById === userId;
                     }
+                    case E_ConversationType.PROFILE_COMMENT:
+                    case E_ConversationType.BLOG_COMMENT:
+                    case E_ConversationType.DESTINATION_COMMENT:
+                    case E_ConversationType.GALLERY_COMMENT: {
+                        // Public comment threads - anyone can subscribe
+                        const isOpen = isOpenPublicThread(conversation as I_Conversation);
+                        return isOpen;
+                    }
                     default:
                         return false;
                 }
@@ -2366,9 +2376,67 @@ export const conversationCtr = {
                 : content;
             const preview = buildMessagePreview(previewSource);
 
+            // 8.5) Load gallery owner and type if needed for GALLERY_COMMENT
+            let galleryType: string | undefined;
+            if (populatedConversation.type === E_ConversationType.GALLERY_COMMENT && populatedConversation.entityId) {
+                // If entity is not populated or doesn't have uploadedById/type, load gallery separately
+                const galleryEntity = populatedConversation.entity as I_Gallery | undefined;
+                if (!galleryEntity || !galleryEntity.uploadedById || !galleryEntity.type) {
+                    const { galleryCtr } = await import('#modules/gallery/index.js');
+                    const galleryResult = await galleryCtr.getGallery(context, {
+                        filter: { id: populatedConversation.entityId },
+                        projection: 'id uploadedById type',
+                    });
+                    if (galleryResult.success && galleryResult.result) {
+                        // Attach uploadedById and type to entity for classifyConversation to use
+                        if (!populatedConversation.entity) {
+                            populatedConversation.entity = {} as I_Gallery;
+                        }
+                        (populatedConversation.entity as I_Gallery).uploadedById = galleryResult.result.uploadedById;
+                        (populatedConversation.entity as I_Gallery).type = galleryResult.result.type;
+                        galleryType = galleryResult.result.type;
+                    }
+                    else {
+                        // Log warning if gallery not found or doesn't have uploadedById
+                        log.warn('Failed to load gallery for GALLERY_COMMENT notification', {
+                            conversationId: populatedConversation.id,
+                            galleryId: populatedConversation.entityId,
+                            success: galleryResult.success,
+                        });
+                    }
+                }
+                else {
+                    // Use type from populated entity
+                    // galleryType = galleryEntity.type; // Removed unused assignment
+                }
+            }
+
             // 9) Classify (PUBLIC/BLOG/PROFILE/GROUP) & derive
-            const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId, redirectKind }
+            const { isPublic, notifType, memberCount, profileOwnerId, publicTargetId: classifiedPublicTargetId, redirectKind }
                 = classifyConversation(populatedConversation);
+
+            // 9.5) Ensure publicTargetId is correct for gallery comments
+            // If publicTargetId is galleryId (not user ID), try to load gallery owner again
+            let publicTargetId = classifiedPublicTargetId;
+            if (populatedConversation.type === E_ConversationType.GALLERY_COMMENT && publicTargetId) {
+                // Check if publicTargetId is actually a gallery ID (should be user ID)
+                // If entity has uploadedById, use it; otherwise try to load gallery
+                const galleryEntity = populatedConversation.entity as I_Gallery | undefined;
+                if (galleryEntity?.uploadedById) {
+                    publicTargetId = galleryEntity.uploadedById;
+                }
+                else if (publicTargetId === populatedConversation.entityId) {
+                    // publicTargetId is galleryId, need to load gallery owner
+                    const { galleryCtr } = await import('#modules/gallery/index.js');
+                    const galleryResult = await galleryCtr.getGallery(context, {
+                        filter: { id: populatedConversation.entityId },
+                        projection: 'id uploadedById',
+                    });
+                    if (galleryResult.success && galleryResult.result?.uploadedById) {
+                        publicTargetId = galleryResult.result.uploadedById;
+                    }
+                }
+            }
 
             // 10) Parent sender (only when public)
             let parentSenderId: string | undefined;
@@ -2407,7 +2475,21 @@ export const conversationCtr = {
 
                 // Prepare profile owner username for guestbook redirects (if available)
                 let profileOwnerUsername: string | undefined;
-                if (profileOwnerId) {
+                let galleryOwnerUsername: string | undefined;
+
+                // For gallery comments, get gallery owner username
+                if (populatedConversation.type === E_ConversationType.GALLERY_COMMENT && publicTargetId) {
+                    try {
+                        const galleryOwnerRes = await userCtr.getUser(context, { filter: { id: publicTargetId }, projection: 'username' });
+                        if (galleryOwnerRes.success && galleryOwnerRes.result?.username) {
+                            galleryOwnerUsername = galleryOwnerRes.result.username;
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+
+                // For profile/blog comments, get profile owner username
+                if (profileOwnerId && populatedConversation.type !== E_ConversationType.GALLERY_COMMENT) {
                     try {
                         const ownerRes = await userCtr.getUser(context, { filter: { id: profileOwnerId }, projection: 'username' });
                         if (ownerRes.success && ownerRes.result?.username) {
@@ -2418,8 +2500,16 @@ export const conversationCtr = {
                 }
 
                 const makeRedirect = (targetId: string) => {
-                    // For guestbook comments, redirect to the profile page (not conversation)
-                    // Include commentId for direct navigation to the specific comment
+                    // For gallery comments, redirect to MEDIA with galleryId
+                    if (notifType === E_NotificationType.GALLERY_COMMENT && populatedConversation.entityId) {
+                        return {
+                            kind: E_RedirectType.MEDIA,
+                            id: publicTargetId ?? targetId, // gallery owner userId
+                            entityId: populatedConversation.entityId, // galleryId
+                            commentId: messageResult.result?.id, // Direct link to the specific comment
+                        } as const;
+                    }
+                    // For guestbook comments (profile/blog), redirect to profile
                     if (notifType === E_NotificationType.GUESTBOOK_POST) {
                         // Prefer username of the profile owner when available (frontend routes by username)
                         return {
@@ -2432,6 +2522,21 @@ export const conversationCtr = {
                         ? ({ kind: redirectKind, id: publicTargetId ?? targetId } as const)
                         : ({ kind: E_RedirectType.CONVERSATION, id: populatedConversation.id } as const);
                 };
+
+                // Prepare headline based on notification type
+                let headline: string | undefined;
+                if (notifType === E_NotificationType.GALLERY_COMMENT) {
+                    // Use gallery type to show appropriate text
+                    const isVideo = galleryType === E_GalleryType.VIDEO;
+                    const mediaType = isVideo ? 'video' : 'picture';
+                    headline = actorView?.username
+                        ? `${actorView.username} commented on your ${mediaType}.`
+                        : `Someone commented on your ${mediaType}.`;
+                }
+                else if (notifType === E_NotificationType.GUESTBOOK_POST) {
+                    // For profile/blog guestbook posts, use default text (frontend will format it)
+                    headline = undefined; // Frontend will use fallbackNotificationText
+                }
 
                 for (const targetId of recipients) {
                     try {
@@ -2447,13 +2552,26 @@ export const conversationCtr = {
                                 presentation: {
                                     redirect: makeRedirect(targetId),
                                     actor: actorView,
+                                    headline,
                                     context: {
                                         conversationType: populatedConversation.type,
                                         isOpenComment: isPublic,
                                         // Provide the specific message id to enable direct navigation to the comment in UI
                                         parentMessageId: messageResult.result?.id,
                                         participantCount: memberCount,
-                                        profileOwnerId,
+                                        // Only include profileOwnerId for non-gallery comments
+                                        ...(populatedConversation.type !== E_ConversationType.GALLERY_COMMENT && profileOwnerId
+                                            ? { profileOwnerId }
+                                            : {}),
+                                        // For gallery comments, include galleryId, galleryType, and gallery owner username
+                                        ...(populatedConversation.type === E_ConversationType.GALLERY_COMMENT && populatedConversation.entityId
+                                            ? {
+                                                    mediaId: populatedConversation.entityId,
+                                                    galleryType: galleryType || undefined,
+                                                    isVideo: galleryType === 'VIDEO' || undefined,
+                                                    ...(galleryOwnerUsername ? { profileOwnerUsername: galleryOwnerUsername } : {}),
+                                                }
+                                            : {}),
                                     },
                                 },
                             },

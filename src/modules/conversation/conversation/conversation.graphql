@@ -4,6 +4,7 @@ enum E_ConversationType {
     PROFILE_COMMENT
     BLOG_COMMENT
     DESTINATION_COMMENT
+    GALLERY_COMMENT
     ADMIN_BROADCAST
 }
 
@@ -56,7 +57,7 @@ enum E_Device {
     TABLET
 }
 
-union U_ConversationEntity = T_User | T_Blog | T_Destination
+union U_ConversationEntity = T_User | T_Blog | T_Destination | T_Gallery
 
 type T_Conversation {
     id: String
