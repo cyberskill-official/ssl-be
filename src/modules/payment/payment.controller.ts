@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
 import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
@@ -66,6 +66,8 @@ export const paymentController = {
         const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
         const currencyCode = pricing.currency?.code;
+
+        log.warn('currencyCode', currencyCode);
 
         if (!currencyCode) {
             throwError({
