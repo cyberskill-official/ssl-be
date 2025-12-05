@@ -10,6 +10,7 @@ import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
@@ -21,7 +22,7 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { userCtr } from '#modules/user/user.controller.js';
+import { extractClientIp } from '#shared/util/ip.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
@@ -64,87 +65,82 @@ export const paymentController = {
     /**
      * Make payment - BE automatically gets userId from session and finds pricing based on user location
      */
-    async makePayment(context: I_Context, { input: _input }: { input: I_Input_MakePayment }): Promise<I_Return<I_MakePaymentResult>> {
+    async makePayment(context: I_Context, { input }: { input: I_Input_MakePayment }): Promise<I_Return<I_MakePaymentResult>> {
         // BE automatically gets userId from session (not from FE input)
         const currentUser = await authnCtr.getUserFromSession(context);
         if (!currentUser) {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
 
-        let latitude: number | undefined;
-        let longitude: number | undefined;
-        let countryId: string | undefined;
+        let latitude: number | undefined = input.latitude;
+        let longitude: number | undefined = input.longitude;
+        let countryId: string | undefined = input.countryId;
         let stateId: string | undefined;
 
-        // Get location info from user (temporaryLocation or partner1.location)
-        if (currentUser?.id) {
-            try {
-                const userFound = await userCtr.getUser(context, {
-                    filter: { id: currentUser.id },
-                    populate: ['settings.temporaryLocation.location', 'partner1.location'],
-                });
-
-                if (userFound.success && userFound.result) {
-                    const user = userFound.result;
-
-                    // Priority 1: Check temporaryLocation
-                    const tempLocation = user.settings?.temporaryLocation?.location;
-                    if (tempLocation) {
-                        // Use stateId/countryId directly from location if available
-                        if (tempLocation.stateId) {
-                            stateId = tempLocation.stateId;
-                        }
-                        if (tempLocation.countryId) {
-                            countryId = tempLocation.countryId;
-                        }
-                        // If no stateId but have coordinates, use coordinates to find state
-                        if (!stateId && tempLocation.map) {
-                            const tempMap = tempLocation.map;
-                            if (
-                                typeof tempMap.latitude === 'number'
-                                && typeof tempMap.longitude === 'number'
-                                && Number.isFinite(tempMap.latitude)
-                                && Number.isFinite(tempMap.longitude)
-                            ) {
-                                latitude = tempMap.latitude;
-                                longitude = tempMap.longitude;
-                            }
-                        }
-                    }
-
-                    // Priority 2: Fallback to partner1.location
-                    if (!stateId && !countryId && user.partner1?.location) {
-                        const partnerLocation = user.partner1.location;
-                        // Use stateId/countryId directly from location if available
-                        if (partnerLocation.stateId) {
-                            stateId = partnerLocation.stateId;
-                        }
-                        if (partnerLocation.countryId) {
-                            countryId = partnerLocation.countryId;
-                        }
-                        // If no stateId but have coordinates, use coordinates to find state
-                        if (!stateId && partnerLocation.map) {
-                            const partnerMap = partnerLocation.map;
-                            if (
-                                typeof partnerMap.latitude === 'number'
-                                && typeof partnerMap.longitude === 'number'
-                                && Number.isFinite(partnerMap.latitude)
-                                && Number.isFinite(partnerMap.longitude)
-                            ) {
-                                latitude = partnerMap.latitude;
-                                longitude = partnerMap.longitude;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (error) {
-                log.warn('Failed to get user location:', error);
+        // If FE provided countryCode but not countryId, find countryId from countryCode
+        if (!countryId && input.countryCode) {
+            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: input.countryCode } });
+            if (countryFound.success && countryFound.result.docs?.[0]) {
+                countryId = countryFound.result.docs[0].id;
             }
         }
 
-        // Find state by coordinates if lat/long available and stateId not found yet
-        if (!stateId && latitude != null && longitude != null && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
+        // If FE didn't provide geolocation, get from IP (current login location)
+        if (!countryId && (!latitude || !longitude)) {
+            const clientIp = extractClientIp(context?.req, true);
+
+            if (clientIp) {
+                try {
+                    // Get geolocation from IP (current login location)
+                    const ipInfo = await ipInfoCtr.getIpInfo(clientIp);
+                    if (ipInfo.success && ipInfo.result) {
+                        const result = ipInfo.result as any;
+                        const countryCode = result.country || result.country_code;
+
+                        // Parse lat/long from "lat,long" format
+                        if (!latitude || !longitude) {
+                            if (result.loc && typeof result.loc === 'string') {
+                                const [latStr, longStr] = result.loc.split(',');
+                                if (latStr && longStr) {
+                                    latitude = Number.parseFloat(latStr.trim());
+                                    longitude = Number.parseFloat(longStr.trim());
+                                }
+                            }
+                        }
+
+                        // Find country by country code if not already found
+                        if (!countryId && countryCode) {
+                            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: countryCode } });
+                            if (countryFound.success && countryFound.result.docs?.[0]) {
+                                countryId = countryFound.result.docs[0].id;
+                            }
+                        }
+
+                        log.warn('[Payment] IP geolocation (fallback):', {
+                            ip: clientIp,
+                            countryCode,
+                            countryId,
+                            latitude,
+                            longitude,
+                        });
+                    }
+                }
+                catch (error) {
+                    log.warn('Failed to get IP geolocation:', error);
+                }
+            }
+        }
+        else {
+            log.warn('[Payment] Using geolocation from FE input:', {
+                countryId: input.countryId,
+                countryCode: input.countryCode,
+                latitude: input.latitude,
+                longitude: input.longitude,
+            });
+        }
+
+        // Find state by coordinates if lat/long available
+        if (latitude != null && longitude != null && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
             const stateRes = await stateCtr.getState(context, {
                 filter: {
                     latitude: latitude.toString(),
