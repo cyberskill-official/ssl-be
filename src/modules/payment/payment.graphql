@@ -28,12 +28,10 @@ type T_Payment {
 }
 
 input Input_QueryMakePayment {
-    pricingId: String!
+    pricingId: String
     event: Input_CreateEvent
-    countryId: String
     countryCode: String
-    latitude: Float
-    longitude: Float
+    loc: String
 }
 
 type T_Response_MakePayment {

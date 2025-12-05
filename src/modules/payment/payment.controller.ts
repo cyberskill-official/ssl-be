@@ -10,7 +10,6 @@ import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
@@ -22,7 +21,6 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
-import { extractClientIp } from '#shared/util/ip.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
@@ -30,36 +28,6 @@ import { getPaymentUrls } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const pricingMongooseCtr = new MongooseController<I_Pricing>(PricingModel);
-
-/**
- * Map country currency to supported payment currencies (EUR or USD)
- * Europe, Africa, Middle East -> EUR
- * Americas, Asia-Pacific -> USD (default EUR for others)
- */
-function mapCurrencyToSupported(currencyCode?: string, countryRegion?: string): 'EUR' | 'USD' {
-    if (!currencyCode) {
-        return 'EUR'; // Default
-    }
-
-    const upperCurrency = currencyCode.toUpperCase();
-    const upperRegion = countryRegion?.toLowerCase() || '';
-
-    // If already EUR or USD, return as is
-    if (upperCurrency === 'EUR' || upperCurrency === 'USD') {
-        return upperCurrency;
-    }
-
-    // Map based on region
-    if (upperRegion.includes('europe') || upperRegion.includes('africa') || upperRegion.includes('middle')) {
-        return 'EUR';
-    }
-    if (upperRegion.includes('america') || upperRegion.includes('north') || upperRegion.includes('south')) {
-        return 'USD';
-    }
-
-    // Default to EUR for other regions (Asia, etc.)
-    return 'EUR';
-}
 
 export const paymentController = {
     /**
@@ -72,74 +40,20 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
 
-        let latitude: number | undefined = input.latitude;
-        let longitude: number | undefined = input.longitude;
-        let countryId: string | undefined = input.countryId;
+        // Parse loc (latitude,longitude) from FE geolocation IP
+        let latitude: number | undefined;
+        let longitude: number | undefined;
+        if (input.loc && typeof input.loc === 'string') {
+            const [latStr, longStr] = input.loc.split(',');
+            if (latStr && longStr) {
+                latitude = Number.parseFloat(latStr.trim());
+                longitude = Number.parseFloat(longStr.trim());
+            }
+        }
+
+        // Find state by coordinates (loc) if available
         let stateId: string | undefined;
-
-        // If FE provided countryCode but not countryId, find countryId from countryCode
-        if (!countryId && input.countryCode) {
-            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: input.countryCode } });
-            if (countryFound.success && countryFound.result.docs?.[0]) {
-                countryId = countryFound.result.docs[0].id;
-            }
-        }
-
-        // If FE didn't provide geolocation, get from IP (current login location)
-        if (!countryId && (!latitude || !longitude)) {
-            const clientIp = extractClientIp(context?.req, true);
-
-            if (clientIp) {
-                try {
-                    // Get geolocation from IP (current login location)
-                    const ipInfo = await ipInfoCtr.getIpInfo(clientIp);
-                    if (ipInfo.success && ipInfo.result) {
-                        const result = ipInfo.result as any;
-                        const countryCode = result.country || result.country_code;
-
-                        // Parse lat/long from "lat,long" format
-                        if (!latitude || !longitude) {
-                            if (result.loc && typeof result.loc === 'string') {
-                                const [latStr, longStr] = result.loc.split(',');
-                                if (latStr && longStr) {
-                                    latitude = Number.parseFloat(latStr.trim());
-                                    longitude = Number.parseFloat(longStr.trim());
-                                }
-                            }
-                        }
-
-                        // Find country by country code if not already found
-                        if (!countryId && countryCode) {
-                            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: countryCode } });
-                            if (countryFound.success && countryFound.result.docs?.[0]) {
-                                countryId = countryFound.result.docs[0].id;
-                            }
-                        }
-
-                        log.warn('[Payment] IP geolocation (fallback):', {
-                            ip: clientIp,
-                            countryCode,
-                            countryId,
-                            latitude,
-                            longitude,
-                        });
-                    }
-                }
-                catch (error) {
-                    log.warn('Failed to get IP geolocation:', error);
-                }
-            }
-        }
-        else {
-            log.warn('[Payment] Using geolocation from FE input:', {
-                countryId: input.countryId,
-                countryCode: input.countryCode,
-                latitude: input.latitude,
-                longitude: input.longitude,
-            });
-        }
-
-        // Find state by coordinates if lat/long available
+        let countryId: string | undefined;
         if (latitude != null && longitude != null && !Number.isNaN(latitude) && !Number.isNaN(longitude)) {
             const stateRes = await stateCtr.getState(context, {
                 filter: {
@@ -150,17 +64,30 @@ export const paymentController = {
             });
             if (stateRes.success && stateRes.result) {
                 stateId = stateRes.result.id;
-                // Use countryId from state if not already set (more accurate)
-                if (!countryId && stateRes.result.countryId) {
-                    countryId = stateRes.result.countryId;
-                }
+                countryId = stateRes.result.countryId;
             }
         }
 
-        // Find pricing based on state/country (same logic as getSubscriptionPrice)
+        // Find countryId from countryCode if not found from state
+        if (!countryId && input.countryCode) {
+            const countryFound = await countryCtr.getCountries(context, { filter: { iso2: input.countryCode } });
+            if (countryFound.success && countryFound.result.docs?.[0]) {
+                countryId = countryFound.result.docs[0].id;
+            }
+        }
+
+        log.warn('[Payment] Geolocation from FE:', {
+            countryCode: input.countryCode,
+            loc: input.loc,
+            latitude,
+            longitude,
+            stateId,
+            countryId,
+        });
+
+        // Find pricing - Priority 1: by stateId (most specific)
         let pricing: I_Pricing | undefined;
 
-        // Priority 1: Try to find pricing by stateId (most specific)
         if (stateId) {
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
@@ -178,7 +105,7 @@ export const paymentController = {
             }
         }
 
-        // Priority 2: Try to find pricing by countryId (fallback)
+        // Priority 2: by countryId (fallback)
         if (!pricing && countryId) {
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
@@ -196,7 +123,7 @@ export const paymentController = {
             }
         }
 
-        // Priority 3: Try to find default pricing (no country/state)
+        // Priority 3: default pricing (no country/state)
         if (!pricing) {
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
@@ -274,49 +201,13 @@ export const paymentController = {
             }
         }
 
-        // Get country info for currency mapping
-        let countryRegion: string | undefined;
-        if (pricing.countryId) {
-            const countryRes = await countryCtr.getCountry(context, { filter: { id: pricing.countryId }, populate: ['region'] });
-            if (countryRes.success && 'result' in countryRes && countryRes.result) {
-                const country = countryRes.result;
-                countryRegion = (country.region as any)?.name || undefined;
-                // Fallback: if no currency from pricing, try country currency
-                if (!currencyCode && country.currency) {
-                    currencyCode = country.currency;
-                    log.warn('[Payment] Got currency from country:', currencyCode);
-                }
-            }
-        }
-
-        // Fallback: if still no currency and pricing has country populated, use country.currency
-        if (!currencyCode && (pricing.country as any)?.currency) {
-            currencyCode = (pricing.country as any).currency;
-            countryRegion = (pricing.country as any)?.region?.name || undefined;
-            log.warn('[Payment] Got currency from populated country:', currencyCode);
-        }
-
-        // Map currency to supported payment currencies (EUR or USD)
-        // Only EUR and USD are supported by payment gateway
-        const mappedCurrencyCode = mapCurrencyToSupported(currencyCode, countryRegion);
-
-        log.warn('[Payment] Currency mapping:', {
-            originalCurrency: currencyCode,
-            mappedCurrency: mappedCurrencyCode,
-            countryRegion,
-            pricingId: pricing.id,
-            countryId: pricing.countryId,
-        });
-
-        if (!mappedCurrencyCode) {
+        // Pricing already has currency configured (EUR or USD) - no mapping needed
+        if (!currencyCode) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: 'Pricing currency is missing',
             });
         }
-
-        // Use mapped currency for payment
-        currencyCode = mappedCurrencyCode;
 
         // Create order first - clientOrderId will be set to order.id after creation
         // userId is automatically set from currentUser (BE), not from FE input

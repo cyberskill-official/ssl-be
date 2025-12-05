@@ -17,10 +17,8 @@ export enum E_PaymentMethod {
 export interface I_Input_MakePayment {
     pricingId?: string;
     event?: I_Input_CreateEvent; // Optional: event object for creating event after payment
-    countryId?: string; // Optional: countryId from FE geolocation (if provided, BE will use it instead of IP lookup)
-    countryCode?: string; // Optional: countryCode (iso2) from FE geolocation
-    latitude?: number; // Optional: latitude from FE geolocation
-    longitude?: number; // Optional: longitude from FE geolocation
+    countryCode?: string; // countryCode (iso2) from FE geolocation IP (e.g., "VN", "DK")
+    loc?: string; // Location string "latitude,longitude" from FE geolocation IP (e.g., "10.8230,106.6296")
 }
 
 export interface I_MakePaymentResult {
