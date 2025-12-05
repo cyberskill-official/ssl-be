@@ -8,6 +8,7 @@ import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -41,7 +42,7 @@ export const paymentController = {
 
         const pricingRes = await pricingCtr.getPricing(context, {
             filter: { id: pricingId },
-            populate: ['currency'],
+            populate: ['currency', 'country'],
         });
 
         if (!pricingRes.success || !pricingRes.result) {
@@ -75,7 +76,7 @@ export const paymentController = {
 
         let currencyCode = pricing.currency?.code;
 
-        // Fallback: if currency is not populated, load it manually
+        // Fallback 1: if currency is not populated, load it manually by currencyId
         if (!currencyCode && pricing.currencyId) {
             log.warn('[Payment] Currency not populated, loading manually with currencyId:', pricing.currencyId);
             const currencyRes = await currencyCtr.getCurrency(context, { filter: { id: pricing.currencyId } });
@@ -95,7 +96,27 @@ export const paymentController = {
             }
         }
 
-        log.warn('[Payment] Final currencyCode:', currencyCode, 'currencyId:', pricing.currencyId);
+        // Fallback 2: if still no currency, try to get from country
+        if (!currencyCode && pricing.countryId) {
+            log.warn('[Payment] No currency found, trying to get from country. countryId:', pricing.countryId);
+            const countryRes = await countryCtr.getCountry(context, { filter: { id: pricing.countryId } });
+            if (countryRes.success && 'result' in countryRes && countryRes.result) {
+                const country = countryRes.result;
+                // Country has currency field (e.g., "DKK" for Denmark)
+                if (country.currency) {
+                    currencyCode = country.currency;
+                    log.warn('[Payment] Got currency from country:', currencyCode);
+                }
+            }
+        }
+
+        // Fallback 3: if still no currency and pricing has country populated, use country.currency
+        if (!currencyCode && (pricing.country as any)?.currency) {
+            currencyCode = (pricing.country as any).currency;
+            log.warn('[Payment] Got currency from populated country:', currencyCode);
+        }
+
+        log.warn('[Payment] Final currencyCode:', currencyCode, 'currencyId:', pricing.currencyId, 'countryId:', pricing.countryId);
 
         if (!currencyCode) {
             throwError({
