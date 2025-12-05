@@ -25,6 +25,7 @@ input Input_CreateCurrency {
 }
 
 input Input_UpdateCurrency {
+    id: String
     isDel: Boolean
     name: String
     code: String
