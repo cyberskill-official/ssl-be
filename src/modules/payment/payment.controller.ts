@@ -228,6 +228,10 @@ export const paymentController = {
 
         log.warn('[Payment] Pricing loaded:', {
             pricingId: pricing.id,
+            countryId: pricing.countryId,
+            stateId: pricing.stateId,
+            basePrice: pricing.price,
+            taxRate: pricing.taxRate,
             currencyId: pricing.currencyId,
             hasCurrency: !!pricing.currency,
             currencyCode: pricing.currency?.code,
@@ -244,6 +248,13 @@ export const paymentController = {
         }
         const taxPortion = baseAmount * (taxRate / 100);
         const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
+
+        log.warn('[Payment] Amount calculation:', {
+            baseAmount,
+            taxRate,
+            taxPortion,
+            resolvedAmount,
+        });
 
         let currencyCode = pricing.currency?.code;
 
