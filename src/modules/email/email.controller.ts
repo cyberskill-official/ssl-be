@@ -1,5 +1,6 @@
 import type Bull from 'bull';
 
+import { log } from '@cyberskill/shared/node/log';
 import ejs from 'ejs';
 
 import { emailTemplateCtr } from '#modules/email-template/index.js';
@@ -77,10 +78,16 @@ export const emailCtr = {
                         html = await ejs.render(content, templateData);
                     }
                     else {
+                        log.warn('[Email] Template found but has no content, using basic template:', { templateKey });
                         html = emailCtr.generateBasicTemplate(templateData);
                     }
                 }
                 else {
+                    log.warn('[Email] Template not found in database, using basic template:', {
+                        templateKey,
+                        templateSuccess: template.success,
+                        templateMessage: template.message,
+                    });
                     html = emailCtr.generateBasicTemplate(templateData);
                 }
             }

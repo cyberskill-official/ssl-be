@@ -762,20 +762,19 @@ export const notificationCtr = {
                                             const baseAmount = amount / (1 + taxRate / 100);
                                             const taxAmount = amount - baseAmount;
 
-                                            // Format dates
-                                            const paymentDate = order.updatedAt
-                                                ? new Date(order.updatedAt).toLocaleDateString('en-US', {
-                                                        year: 'numeric',
-                                                        month: 'long',
-                                                        day: 'numeric',
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                    })
-                                                : new Date().toLocaleDateString('en-US', {
-                                                        year: 'numeric',
-                                                        month: 'long',
-                                                        day: 'numeric',
-                                                    });
+                                            // Format dates - match email template format: "December 5, 2025 at 10:01 AM"
+                                            const paymentDateObj = order.updatedAt ? new Date(order.updatedAt) : new Date();
+                                            const dateStr = paymentDateObj.toLocaleDateString('en-US', {
+                                                year: 'numeric',
+                                                month: 'long',
+                                                day: 'numeric',
+                                            });
+                                            const timeStr = paymentDateObj.toLocaleTimeString('en-US', {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                hour12: true,
+                                            });
+                                            const paymentDate = `${dateStr} at ${timeStr}`;
 
                                             // Get item name
                                             const itemName = pricing?.name || pricing?.type || 'Membership';
@@ -836,7 +835,20 @@ export const notificationCtr = {
 
                         if (!sendRes) {
                             if (templateKey) {
+                                log.info('[Notification] Sending PAYMENT_SUCCESS email:', {
+                                    templateKey,
+                                    targetEmail,
+                                    hasTemplateData: Object.keys(templateData).length > 0,
+                                    templateDataKeys: Object.keys(templateData),
+                                });
                                 sendRes = await emailCtr.sendEmail(templateKey, targetEmail, templateData).catch(e => ({ success: false, message: (e as Error).message }));
+                                if (sendRes && !(sendRes as any).success) {
+                                    log.error('[Notification] Failed to send PAYMENT_SUCCESS email:', {
+                                        templateKey,
+                                        targetEmail,
+                                        error: (sendRes as any).message,
+                                    });
+                                }
                             }
                             else {
                                 await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });
