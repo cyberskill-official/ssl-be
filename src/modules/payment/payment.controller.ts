@@ -8,6 +8,7 @@ import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { currencyCtr } from '#modules/location/currency/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
@@ -53,6 +54,13 @@ export const paymentController = {
         const pricing = pricingRes.result;
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
 
+        log.warn('[Payment] Pricing loaded:', {
+            pricingId: pricing.id,
+            currencyId: pricing.currencyId,
+            hasCurrency: !!pricing.currency,
+            currencyCode: pricing.currency?.code,
+        });
+
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
         const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
 
@@ -65,9 +73,29 @@ export const paymentController = {
         const taxPortion = baseAmount * (taxRate / 100);
         const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
-        const currencyCode = pricing.currency?.code;
+        let currencyCode = pricing.currency?.code;
 
-        log.warn('currencyCode', currencyCode);
+        // Fallback: if currency is not populated, load it manually
+        if (!currencyCode && pricing.currencyId) {
+            log.warn('[Payment] Currency not populated, loading manually with currencyId:', pricing.currencyId);
+            const currencyRes = await currencyCtr.getCurrency(context, { filter: { id: pricing.currencyId } });
+            if (currencyRes.success && 'result' in currencyRes && currencyRes.result) {
+                log.warn('[Payment] Currency load result:', {
+                    success: currencyRes.success,
+                    code: currencyRes.result.code,
+                    symbol: currencyRes.result.symbol,
+                });
+                currencyCode = currencyRes.result.code || currencyRes.result.symbol;
+            }
+            else {
+                log.warn('[Payment] Failed to load currency:', {
+                    success: currencyRes.success,
+                    message: 'message' in currencyRes ? currencyRes.message : undefined,
+                });
+            }
+        }
+
+        log.warn('[Payment] Final currencyCode:', currencyCode, 'currencyId:', pricing.currencyId);
 
         if (!currencyCode) {
             throwError({
