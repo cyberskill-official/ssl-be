@@ -184,7 +184,12 @@ export const paymentController = {
         // Fallback 1: if currency is not populated, load it manually by currencyId
         if (!currencyCode && pricing.currencyId) {
             log.warn('[Payment] Currency not populated, loading manually with currencyId:', pricing.currencyId);
-            const currencyRes = await currencyCtr.getCurrency(context, { filter: { id: pricing.currencyId } });
+            const currencyRes = await currencyCtr.getCurrency(context, {
+                filter: {
+                    id: pricing.currencyId,
+                    isDel: false,
+                },
+            });
             if (currencyRes.success && 'result' in currencyRes && currencyRes.result) {
                 log.warn('[Payment] Currency load result:', {
                     success: currencyRes.success,
