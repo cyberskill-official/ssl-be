@@ -351,10 +351,12 @@ export const notificationCtr = {
         }
 
         // optional: skip notifying current session user
+        // Allow self-notify for certain types (age verification, payment success)
         const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
         const currentUserId = currentUser?.id;
         const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
-            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED);
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED)
+            || types.includes(E_NotificationType.PAYMENT_SUCCESS); // Allow payment success notifications to self
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }
@@ -684,7 +686,21 @@ export const notificationCtr = {
                     notification: result.result,
                     presentation: result.result.presentation,
                 };
+                log.info('[Notification] Publishing in-app notification:', {
+                    notificationId: result.result.id,
+                    targetId: result.result.targetId,
+                    type: result.result.type,
+                    channels: result.result.channels,
+                });
                 pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
+            }
+            else {
+                log.warn('[Notification] Notification created but not published (no IN_APP channel):', {
+                    notificationId: result.result.id,
+                    targetId: result.result.targetId,
+                    type: result.result.type,
+                    channels: result.result.channels,
+                });
             }
 
             // If EMAIL channel is requested, send email immediately (no cron)

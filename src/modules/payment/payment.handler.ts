@@ -454,7 +454,11 @@ mainRouter.get('/payment', async (req, res, next) => {
                 // Create payment success notification (both in-app and email with receipt)
                 if (order.userId) {
                     try {
-                        await notificationCtr.createNotificationWithSettings(context, {
+                        log.info('[Payment Handler] Creating payment success notification:', {
+                            orderId: order.id,
+                            userId: order.userId,
+                        });
+                        const notificationResult = await notificationCtr.createNotificationWithSettings(context, {
                             doc: {
                                 targetId: order.userId,
                                 type: [E_NotificationType.PAYMENT_SUCCESS],
@@ -470,15 +474,37 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 },
                             },
                         });
+                        if (notificationResult.success && 'result' in notificationResult) {
+                            log.info('[Payment Handler] Payment success notification created:', {
+                                orderId: order.id,
+                                userId: order.userId,
+                                notificationId: notificationResult.result?.id,
+                                channels: notificationResult.result?.channels,
+                            });
+                        }
+                        else {
+                            log.warn('[Payment Handler] Payment success notification creation returned no result:', {
+                                orderId: order.id,
+                                userId: order.userId,
+                                success: notificationResult.success,
+                                message: 'message' in notificationResult ? notificationResult.message : undefined,
+                            });
+                        }
                     }
                     catch (error) {
                         log.error('[Payment Handler] Error creating payment success notification:', {
                             orderId: order.id,
                             userId: order.userId,
                             error: error instanceof Error ? error.message : String(error),
+                            stack: error instanceof Error ? error.stack : undefined,
                         });
                         // Non-blocking: payment still succeeds even if notification fails
                     }
+                }
+                else {
+                    log.warn('[Payment Handler] Cannot create notification: order.userId is missing', {
+                        orderId: order.id,
+                    });
                 }
             }
         }
