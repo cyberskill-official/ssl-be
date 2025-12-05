@@ -625,31 +625,42 @@ export const notificationCtr = {
         }
 
         // channels
-        const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
+        // If channels are explicitly provided in doc, use them (e.g., PAYMENT_SUCCESS with both IN_APP and EMAIL)
+        // Otherwise, build channels based on notification type and user settings
+        let channels: E_NotificationChannel[];
+        if (doc.channels && Array.isArray(doc.channels) && doc.channels.length > 0) {
+            // Use explicitly provided channels
+            channels = doc.channels as E_NotificationChannel[];
+        }
+        else {
+            // Build channels based on notification type and settings
+            const channelSet = new Set<E_NotificationChannel>([E_NotificationChannel.IN_APP]);
 
-        if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower) {
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
-        if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage) {
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
-        if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined) {
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
-        if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement) {
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
-        if (has(E_NotificationType.MEDIA_LIKED)) {
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
+            if (has(E_NotificationType.NEW_FOLLOWER) && s.gainFollower) {
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
+            if (has(E_NotificationType.NEW_MESSAGE) && s.receiveMessage) {
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
+            if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST) && s.newMemberJoined) {
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
+            if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED) && s.followingPostAnnouncement) {
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
+            if (has(E_NotificationType.MEDIA_LIKED)) {
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
 
-        // force email-only for receipts/payment issues
-        if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE) || has(E_NotificationType.PAYMENT_SUCCESS)) {
-            channelSet.clear();
-            channelSet.add(E_NotificationChannel.EMAIL);
-        }
+            // force email-only for receipts/payment issues (but allow PAYMENT_SUCCESS to have both channels)
+            if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE)) {
+                channelSet.clear();
+                channelSet.add(E_NotificationChannel.EMAIL);
+            }
+            // PAYMENT_SUCCESS can have both IN_APP and EMAIL channels (set explicitly in payment.handler.ts)
 
-        const channels = Array.from(channelSet);
+            channels = Array.from(channelSet);
+        }
         const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
 
         const result = await mongooseCtr.createOne({

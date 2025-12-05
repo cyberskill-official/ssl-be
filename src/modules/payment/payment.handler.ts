@@ -451,7 +451,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                     // Still return success to user, but log the error
                 }
 
-                // Create payment success notification (email-only, will include receipt)
+                // Create payment success notification (both in-app and email with receipt)
                 if (order.userId) {
                     try {
                         await notificationCtr.createNotificationWithSettings(context, {
@@ -460,7 +460,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 type: [E_NotificationType.PAYMENT_SUCCESS],
                                 entityType: E_NotificationEntityType.PAYMENT,
                                 entityId: order.id,
-                                channels: [E_NotificationChannel.EMAIL], // Email-only for receipt
+                                channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL], // Both in-app notification and email with receipt
                                 presentation: {
                                     redirect: {
                                         kind: E_RedirectType.PAYMENT,
