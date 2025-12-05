@@ -3,6 +3,7 @@ import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
+import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType, notificationCtr } from '#modules/notification/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -448,6 +449,36 @@ mainRouter.get('/payment', async (req, res, next) => {
                         error: error instanceof Error ? error.message : String(error),
                     });
                     // Still return success to user, but log the error
+                }
+
+                // Create payment success notification (email-only, will include receipt)
+                if (order.userId) {
+                    try {
+                        await notificationCtr.createNotificationWithSettings(context, {
+                            doc: {
+                                targetId: order.userId,
+                                type: [E_NotificationType.PAYMENT_SUCCESS],
+                                entityType: E_NotificationEntityType.PAYMENT,
+                                entityId: order.id,
+                                channels: [E_NotificationChannel.EMAIL], // Email-only for receipt
+                                presentation: {
+                                    redirect: {
+                                        kind: E_RedirectType.PAYMENT,
+                                        id: order.id,
+                                    },
+                                    headline: 'Your payment was successful!',
+                                },
+                            },
+                        });
+                    }
+                    catch (error) {
+                        log.error('[Payment Handler] Error creating payment success notification:', {
+                            orderId: order.id,
+                            userId: order.userId,
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                        // Non-blocking: payment still succeeds even if notification fails
+                    }
                 }
             }
         }

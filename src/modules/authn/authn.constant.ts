@@ -10,6 +10,7 @@ export const ACCOUNT_SUSPENDED = 'account-suspended';
 export const WELCOME_PUSH_NOTIFICATION = 'welcome-push-notification';
 export const MEMBERSHIP_DOWNGRADE = 'membership-downgrade';
 export const PAYMENT_FAILED = 'payment-failed';
+export const PAYMENT_SUCCESS = 'payment-success';
 export const PROFILE_DELETION_30_DAY = 'profile-deletion-30-day';
 export const PROFILE_DELETION_10_DAY = 'profile-deletion-10-day';
 export const TOKEN_EXPIRES = '30d'; // 30 days
