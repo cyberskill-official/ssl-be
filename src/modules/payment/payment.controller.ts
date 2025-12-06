@@ -85,10 +85,46 @@ export const paymentController = {
             countryId,
         });
 
-        // Find pricing - Priority 1: by stateId (most specific)
+        // Find pricing - ensure currency is populated
         let pricing: I_Pricing | undefined;
+        const currencyPopulate = { path: 'currency' };
 
-        if (stateId) {
+        // Priority 0: If pricingId is provided, use that pricing directly
+        if (input.pricingId) {
+            log.warn('[Payment] Looking for pricing by pricingId:', input.pricingId);
+            const pricingRes = await pricingMongooseCtr.findOne(
+                {
+                    id: input.pricingId,
+                    type: E_PricingType.MEMBERSHIP,
+                    isActive: true,
+                    isDel: false,
+                },
+                undefined,
+                undefined,
+                [currencyPopulate],
+            );
+            log.warn('[Payment] Pricing query result (by pricingId):', {
+                success: pricingRes.success,
+                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
+                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
+                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
+            });
+            if (pricingRes.success && pricingRes.result) {
+                pricing = pricingRes.result;
+            }
+            else {
+                throwError({
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                    message: `Pricing with id "${input.pricingId}" not found or is inactive`,
+                });
+            }
+        }
+
+        // Priority 1: by stateId (most specific)
+        if (!pricing && stateId) {
+            log.warn('[Payment] Looking for pricing by stateId:', stateId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -98,8 +134,16 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                ['currency'],
+                [currencyPopulate],
             );
+            log.warn('[Payment] Pricing query result (by stateId):', {
+                success: pricingRes.success,
+                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
+                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
+                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -107,6 +151,7 @@ export const paymentController = {
 
         // Priority 2: by countryId (fallback)
         if (!pricing && countryId) {
+            log.warn('[Payment] Looking for pricing by countryId:', countryId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -116,8 +161,16 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                ['currency'],
+                [currencyPopulate],
             );
+            log.warn('[Payment] Pricing query result (by countryId):', {
+                success: pricingRes.success,
+                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
+                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
+                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -125,6 +178,7 @@ export const paymentController = {
 
         // Priority 3: default pricing (no country/state)
         if (!pricing) {
+            log.warn('[Payment] Looking for default pricing (no country/state)');
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -134,8 +188,16 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                ['currency'],
+                [currencyPopulate],
             );
+            log.warn('[Payment] Pricing query result (default):', {
+                success: pricingRes.success,
+                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
+                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
+                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -158,7 +220,30 @@ export const paymentController = {
             currencyId: pricing.currencyId,
             hasCurrency: !!pricing.currency,
             currencyCode: pricing.currency?.code,
+            currencyName: pricing.currency?.name,
+            currencySymbol: pricing.currency?.symbol,
+            currencyObject: pricing.currency
+                ? {
+                        id: pricing.currency.id,
+                        code: pricing.currency.code,
+                        name: pricing.currency.name,
+                        symbol: pricing.currency.symbol,
+                    }
+                : null,
         });
+
+        // Validate that pricing has a valid currencyId
+        if (!pricing.currencyId) {
+            log.error('[Payment] Pricing missing currencyId:', {
+                pricingId: pricing.id,
+                countryId: pricing.countryId,
+                stateId: pricing.stateId,
+            });
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: `Pricing record (${pricing.id}) is missing currencyId. Please contact administrator to fix the pricing configuration.`,
+            });
+        }
 
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
         const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
@@ -179,19 +264,56 @@ export const paymentController = {
             resolvedAmount,
         });
 
+        // Get currency code from pricing - MUST use the exact currency configured in pricing
+        // We do NOT fallback to other currencies (EUR/USD) - must use the exact currencyId in pricing
         let currencyCode = pricing.currency?.code;
 
-        // If currency is not populated, load it manually by currencyId
+        log.warn('[Payment] Currency check:', {
+            hasCurrencyObject: !!pricing.currency,
+            currencyCodeFromPopulate: pricing.currency?.code,
+            currencyId: pricing.currencyId,
+            currencyObjectDetails: pricing.currency
+                ? {
+                        id: pricing.currency.id,
+                        code: pricing.currency.code,
+                        name: pricing.currency.name,
+                        symbol: pricing.currency.symbol,
+                    }
+                : null,
+        });
+
+        // If currency is not populated, load it manually by currencyId from pricing
+        // This ensures we use the exact currency configured in the pricing record
         if (!currencyCode && pricing.currencyId) {
-            log.warn('[Payment] Currency not populated, loading manually with currencyId:', pricing.currencyId);
+            log.warn('[Payment] Currency not populated from query, attempting manual load:', {
+                pricingId: pricing.id,
+                currencyId: pricing.currencyId,
+                reason: 'Currency object was not populated in pricing query result',
+            });
+
             const currencyRes = await currencyCtr.getCurrency(context, {
                 filter: {
-                    id: pricing.currencyId,
+                    id: pricing.currencyId, // Use exact currencyId from pricing
                     isDel: false,
                 },
             });
+
+            log.warn('[Payment] Manual currency load result:', {
+                success: currencyRes.success,
+                found: 'result' in currencyRes && !!currencyRes.result,
+                currencyId: 'result' in currencyRes && currencyRes.result ? currencyRes.result.id : null,
+                currencyCode: 'result' in currencyRes && currencyRes.result ? currencyRes.result.code : null,
+                currencyName: 'result' in currencyRes && currencyRes.result ? currencyRes.result.name : null,
+                errorMessage: !currencyRes.success && 'message' in currencyRes ? currencyRes.message : null,
+            });
+
             if (currencyRes.success && 'result' in currencyRes && currencyRes.result) {
                 currencyCode = currencyRes.result.code || currencyRes.result.symbol;
+                log.warn('[Payment] Currency loaded successfully:', {
+                    currencyId: currencyRes.result.id,
+                    currencyCode,
+                    currencyName: currencyRes.result.name,
+                });
             }
             else {
                 log.error('[Payment] Failed to load currency for pricing:', {
@@ -199,6 +321,8 @@ export const paymentController = {
                     currencyId: pricing.currencyId,
                     success: currencyRes.success,
                     message: 'message' in currencyRes ? currencyRes.message : undefined,
+                    currencyResType: typeof currencyRes,
+                    currencyResKeys: Object.keys(currencyRes),
                 });
                 throwError({
                     status: RESPONSE_STATUS.BAD_REQUEST,
@@ -207,7 +331,8 @@ export const paymentController = {
             }
         }
 
-        // Currency must be present in pricing
+        // Currency must be present in pricing - no fallback allowed
+        // We MUST use the exact currency configured in pricing, not a default currency
         if (!currencyCode) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
