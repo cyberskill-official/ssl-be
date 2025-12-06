@@ -3,6 +3,8 @@ import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
+import { PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
+import { emailCtr } from '#modules/email/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -10,6 +12,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
 import { netvalveCtr } from './netvalve/netvalve.controller.js';
@@ -436,7 +439,13 @@ mainRouter.get('/payment', async (req, res, next) => {
         // Only apply order paid effects if payment is successful
         if (paymentStatus === 'SUCCESS') {
             // Reload order to get updated status
-            const updatedOrderRes = await orderCtr.getOrder(context, { filter: { id: order.id } });
+            const updatedOrderRes = await orderCtr.getOrder(context, {
+                filter: { id: order.id },
+                populate: [
+                    { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                    { path: 'paymentTransaction' },
+                ],
+            });
             if (updatedOrderRes.success && updatedOrderRes.result) {
                 // Apply order paid effects (membership extension or event creation)
                 try {
@@ -448,6 +457,106 @@ mainRouter.get('/payment', async (req, res, next) => {
                         error: error instanceof Error ? error.message : String(error),
                     });
                     // Still return success to user, but log the error
+                }
+
+                // Send payment success email (no notification)
+                if (order.userId) {
+                    try {
+                        const orderData = updatedOrderRes.result as any;
+                        const pricing = orderData.pricing;
+                        const paymentTransaction = orderData.paymentTransaction;
+
+                        // Load user for email and location info
+                        const userRes = await userCtr.getUser({}, {
+                            filter: { id: order.userId },
+                            populate: [
+                                { path: 'partner1', populate: [{ path: 'location', populate: ['country'] }] },
+                                { path: 'partner2', populate: [{ path: 'location', populate: ['country'] }] },
+                            ],
+                        });
+
+                        if (userRes.success && userRes.result && userRes.result.email) {
+                            const user = userRes.result;
+                            const userEmail = user.email;
+
+                            // Get country from user location or pricing
+                            let country = '';
+                            if (user.partner1?.location?.country?.name) {
+                                country = user.partner1.location.country.name;
+                            }
+                            else if (user.partner2?.location?.country?.name) {
+                                country = user.partner2.location.country.name;
+                            }
+                            else if (pricing?.country?.name) {
+                                country = pricing.country.name;
+                            }
+
+                            // Format amounts
+                            const amount = typeof orderData.amount === 'number' ? orderData.amount : 0;
+                            const currencyCode = pricing?.currency?.code || 'EUR';
+                            const taxRate = typeof pricing?.taxRate === 'number' ? pricing.taxRate : 0;
+                            const baseAmount = amount / (1 + taxRate / 100);
+                            const taxAmount = amount - baseAmount;
+
+                            // Format payment date
+                            const paymentDateObj = orderData.updatedAt ? new Date(orderData.updatedAt) : new Date();
+                            const paymentDate = paymentDateObj.toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                            });
+
+                            // Calculate membership period
+                            let membershipPeriod = '';
+                            if (user.membershipExpiresAt) {
+                                const endDate = new Date(user.membershipExpiresAt);
+                                const startDateStr = paymentDateObj.toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                });
+                                const endDateStr = endDate.toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                });
+                                membershipPeriod = `${startDateStr} - ${endDateStr}`;
+                            }
+
+                            // Get payment method
+                            const paymentMethod = paymentTransaction?.method || 'Card';
+
+                            // Generate short invoice number (4 characters from orderId)
+                            const orderId = orderData.id || order.id;
+                            const invoiceNo = orderId ? orderId.slice(-4).toUpperCase() : 'N/A';
+
+                            // Build template data
+                            const templateData = {
+                                invoiceNo,
+                                paymentDate,
+                                userEmail,
+                                country: country || 'N/A',
+                                subtotal: `${baseAmount.toFixed(2)} ${currencyCode}`,
+                                taxRate: taxRate.toFixed(0),
+                                tax: taxAmount > 0 ? `${taxAmount.toFixed(2)} ${currencyCode}` : `0.00 ${currencyCode}`,
+                                totalAmount: `${amount.toFixed(2)} ${currencyCode}`,
+                                paymentMethod,
+                                transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
+                                membershipPeriod: membershipPeriod || 'N/A',
+                            };
+
+                            // Send email directly (no notification)
+                            await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
+                        }
+                    }
+                    catch (error) {
+                        log.error('[Payment Handler] Error sending payment success email:', {
+                            orderId: order.id,
+                            userId: order.userId,
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                        // Non-blocking: payment still succeeds even if email fails
+                    }
                 }
             }
         }
