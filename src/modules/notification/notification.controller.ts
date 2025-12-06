@@ -9,15 +9,13 @@ import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED, PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
+import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
 import { followCtr } from '#modules/follow/index.js';
-import orderCtr from '#modules/order/order.controller.js';
 import { userCtr } from '#modules/user/index.js';
-import { getEnv } from '#shared/env/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type {
@@ -351,12 +349,11 @@ export const notificationCtr = {
         }
 
         // optional: skip notifying current session user
-        // Allow self-notify for certain types (age verification, payment success)
+        // Allow self-notify for certain types (age verification)
         const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
         const currentUserId = currentUser?.id;
         const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
-            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED)
-            || types.includes(E_NotificationType.PAYMENT_SUCCESS); // Allow payment success notifications to self
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED);
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }
@@ -627,7 +624,7 @@ export const notificationCtr = {
         }
 
         // channels
-        // If channels are explicitly provided in doc, use them (e.g., PAYMENT_SUCCESS with both IN_APP and EMAIL)
+        // If channels are explicitly provided in doc, use them
         // Otherwise, build channels based on notification type and user settings
         let channels: E_NotificationChannel[];
         if (doc.channels && Array.isArray(doc.channels) && doc.channels.length > 0) {
@@ -654,12 +651,11 @@ export const notificationCtr = {
                 channelSet.add(E_NotificationChannel.EMAIL);
             }
 
-            // force email-only for receipts/payment issues (but allow PAYMENT_SUCCESS to have both channels)
+            // force email-only for receipts/payment issues
             if (has(E_NotificationType.RECEIPT_EMAIL_ONLY) || has(E_NotificationType.PAYMENT_ISSUE)) {
                 channelSet.clear();
                 channelSet.add(E_NotificationChannel.EMAIL);
             }
-            // PAYMENT_SUCCESS can have both IN_APP and EMAIL channels (set explicitly in payment.handler.ts)
 
             channels = Array.from(channelSet);
         }
@@ -722,7 +718,7 @@ export const notificationCtr = {
                         const tRaw = Array.isArray(result.result.type) ? result.result.type[0] : result.result.type;
                         const t = tRaw as E_NotificationType;
                         let templateKey: string | '';
-                        let templateData: Record<string, any> = {};
+                        const templateData: Record<string, any> = {};
                         let sendRes;
                         switch (t) {
                             case E_NotificationType.NEW_FOLLOWER:
@@ -740,76 +736,6 @@ export const notificationCtr = {
                             case E_NotificationType.PAYMENT_ISSUE:
                                 templateKey = PAYMENT_FAILED;
                                 break;
-                            case E_NotificationType.PAYMENT_SUCCESS: {
-                                templateKey = PAYMENT_SUCCESS;
-                                // Get order details for receipt
-                                const orderId = result.result.entityId ?? doc.entityId;
-                                if (orderId) {
-                                    try {
-                                        const orderRes = await orderCtr.getOrder({}, {
-                                            filter: { id: orderId },
-                                            populate: ['pricing', 'paymentTransaction'],
-                                        });
-                                        if (orderRes.success && orderRes.result) {
-                                            const order = orderRes.result as any;
-                                            const pricing = order.pricing;
-                                            const paymentTransaction = order.paymentTransaction;
-
-                                            // Format amounts
-                                            const amount = typeof order.amount === 'number' ? order.amount : 0;
-                                            const currencyCode = pricing?.currency?.code || 'EUR';
-                                            const taxRate = typeof pricing?.taxRate === 'number' ? pricing.taxRate : 0;
-                                            const baseAmount = amount / (1 + taxRate / 100);
-                                            const taxAmount = amount - baseAmount;
-
-                                            // Format dates - match email template format: "December 5, 2025 at 10:01 AM"
-                                            const paymentDateObj = order.updatedAt ? new Date(order.updatedAt) : new Date();
-                                            const dateStr = paymentDateObj.toLocaleDateString('en-US', {
-                                                year: 'numeric',
-                                                month: 'long',
-                                                day: 'numeric',
-                                            });
-                                            const timeStr = paymentDateObj.toLocaleTimeString('en-US', {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                hour12: true,
-                                            });
-                                            const paymentDate = `${dateStr} at ${timeStr}`;
-
-                                            // Get item name
-                                            const itemName = pricing?.name || pricing?.type || 'Membership';
-
-                                            // Get payment method
-                                            const paymentMethod = paymentTransaction?.method || 'Card';
-
-                                            // Build payment page URL
-                                            const env = getEnv();
-                                            const baseUrl = env.USER_APP_URL?.replace(/\/+$/, '') || 'https://development.secretswingerlust.com';
-                                            const paymentPageUrl = `${baseUrl}/payment?orderId=${orderId}`;
-
-                                            // Build template data
-                                            templateData = {
-                                                orderId: order.id || orderId,
-                                                transactionId: paymentTransaction?.transactionId || order.paymentTransactionId || 'N/A',
-                                                paymentDate,
-                                                itemName,
-                                                paymentMethod,
-                                                subtotal: `${baseAmount.toFixed(2)} ${currencyCode}`,
-                                                tax: taxAmount > 0 ? `${taxAmount.toFixed(2)} ${currencyCode}` : '0.00',
-                                                totalAmount: `${amount.toFixed(2)} ${currencyCode}`,
-                                                paymentPageUrl,
-                                            };
-                                        }
-                                    }
-                                    catch (error) {
-                                        log.error('[Notification] Failed to load order for PAYMENT_SUCCESS email:', {
-                                            orderId,
-                                            error: error instanceof Error ? error.message : String(error),
-                                        });
-                                    }
-                                }
-                                break;
-                            }
                             case E_NotificationType.MEDIA_LIKED: {
                                 templateKey = '';
                                 const presentation = (result.result.presentation ?? doc.presentation) as I_NotificationPresentation | undefined;

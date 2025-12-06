@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
@@ -19,6 +19,7 @@ import { netvalveCtr } from '#modules/payment/netvalve/index.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { pricingCtr } from '#modules/pricing/pricing.controller.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 
@@ -76,22 +77,12 @@ export const paymentController = {
             }
         }
 
-        log.warn('[Payment] Geolocation from FE:', {
-            countryCode: input.countryCode,
-            loc: input.loc,
-            latitude,
-            longitude,
-            stateId,
-            countryId,
-        });
-
         // Find pricing - ensure currency is populated
         // Use string format 'currency' to match how it's used elsewhere in the system
         let pricing: I_Pricing | undefined;
 
         // Priority 0: If pricingId is provided, use that pricing directly
         if (input.pricingId) {
-            log.warn('[Payment] Looking for pricing by pricingId:', input.pricingId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     id: input.pricingId,
@@ -103,14 +94,6 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
-            log.warn('[Payment] Pricing query result (by pricingId):', {
-                success: pricingRes.success,
-                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
-                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
-                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
-                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
-                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
-            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -124,7 +107,6 @@ export const paymentController = {
 
         // Priority 1: by stateId (most specific)
         if (!pricing && stateId) {
-            log.warn('[Payment] Looking for pricing by stateId:', stateId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -136,14 +118,6 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
-            log.warn('[Payment] Pricing query result (by stateId):', {
-                success: pricingRes.success,
-                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
-                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
-                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
-                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
-                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
-            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -151,7 +125,6 @@ export const paymentController = {
 
         // Priority 2: by countryId (fallback)
         if (!pricing && countryId) {
-            log.warn('[Payment] Looking for pricing by countryId:', countryId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -163,14 +136,6 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
-            log.warn('[Payment] Pricing query result (by countryId):', {
-                success: pricingRes.success,
-                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
-                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
-                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
-                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
-                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
-            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -178,7 +143,6 @@ export const paymentController = {
 
         // Priority 3: default pricing (no country/state)
         if (!pricing) {
-            log.warn('[Payment] Looking for default pricing (no country/state)');
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -190,14 +154,6 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
-            log.warn('[Payment] Pricing query result (default):', {
-                success: pricingRes.success,
-                found: pricingRes.success && 'result' in pricingRes && !!pricingRes.result,
-                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : null,
-                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : null,
-                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
-                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : null,
-            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
             }
@@ -211,34 +167,8 @@ export const paymentController = {
         }
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
 
-        log.warn('[Payment] Pricing loaded:', {
-            pricingId: pricing.id,
-            countryId: pricing.countryId,
-            stateId: pricing.stateId,
-            basePrice: pricing.price,
-            taxRate: pricing.taxRate,
-            currencyId: pricing.currencyId,
-            hasCurrency: !!pricing.currency,
-            currencyCode: pricing.currency?.code,
-            currencyName: pricing.currency?.name,
-            currencySymbol: pricing.currency?.symbol,
-            currencyObject: pricing.currency
-                ? {
-                        id: pricing.currency.id,
-                        code: pricing.currency.code,
-                        name: pricing.currency.name,
-                        symbol: pricing.currency.symbol,
-                    }
-                : null,
-        });
-
         // Validate that pricing has a valid currencyId
         if (!pricing.currencyId) {
-            log.error('[Payment] Pricing missing currencyId:', {
-                pricingId: pricing.id,
-                countryId: pricing.countryId,
-                stateId: pricing.stateId,
-            });
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: `Pricing record (${pricing.id}) is missing currencyId. Please contact administrator to fix the pricing configuration.`,
@@ -257,105 +187,27 @@ export const paymentController = {
         const taxPortion = baseAmount * (taxRate / 100);
         const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
-        log.warn('[Payment] Amount calculation:', {
-            baseAmount,
-            taxRate,
-            taxPortion,
-            resolvedAmount,
-        });
-
         // Get currency code from pricing - MUST use the exact currency configured in pricing
         // We do NOT fallback to other currencies (EUR/USD) - must use the exact currencyId in pricing
         let currencyCode = pricing.currency?.code;
 
-        log.warn('[Payment] Currency check:', {
-            hasCurrencyObject: !!pricing.currency,
-            currencyCodeFromPopulate: pricing.currency?.code,
-            currencyId: pricing.currencyId,
-            currencyObjectDetails: pricing.currency
-                ? {
-                        id: pricing.currency.id,
-                        code: pricing.currency.code,
-                        name: pricing.currency.name,
-                        symbol: pricing.currency.symbol,
-                    }
-                : null,
-        });
-
         // If currency is not populated, load it manually by currencyId from pricing
         // This ensures we use the exact currency configured in the pricing record
         if (!currencyCode && pricing.currencyId) {
-            log.warn('[Payment] Currency not populated from query, attempting manual load:', {
-                pricingId: pricing.id,
-                currencyId: pricing.currencyId,
-                reason: 'Currency object was not populated in pricing query result',
-            });
-
-            // First, check if currency exists (including deleted ones) to understand the issue
-            const allCurrenciesRes = await currencyCtr.getCurrencies(context, {
-                filter: {},
-            });
-            log.warn('[Payment] All available currencies in database:', {
-                totalCurrencies: allCurrenciesRes.success && 'result' in allCurrenciesRes ? allCurrenciesRes.result?.totalDocs : 0,
-                currencyIds: allCurrenciesRes.success && 'result' in allCurrenciesRes && allCurrenciesRes.result?.docs
-                    ? allCurrenciesRes.result.docs.map(c => ({ id: c.id, code: c.code, name: c.name, isDel: c.isDel }))
-                    : [],
-            });
-
-            // Try to find currency without isDel filter first to see if it exists but is deleted
-            const currencyResWithoutFilter = await currencyCtr.getCurrency(context, {
-                filter: {
-                    id: pricing.currencyId,
-                },
-            });
-            log.warn('[Payment] Currency lookup (without isDel filter):', {
-                success: currencyResWithoutFilter.success,
-                found: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && !!currencyResWithoutFilter.result,
-                isDel: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && currencyResWithoutFilter.result
-                    ? currencyResWithoutFilter.result.isDel
-                    : null,
-            });
-
-            // Now try with isDel filter
             const currencyRes = await currencyCtr.getCurrency(context, {
                 filter: {
-                    id: pricing.currencyId, // Use exact currencyId from pricing
+                    id: pricing.currencyId,
                     isDel: false,
                 },
             });
 
-            log.warn('[Payment] Manual currency load result:', {
-                success: currencyRes.success,
-                found: 'result' in currencyRes && !!currencyRes.result,
-                currencyId: 'result' in currencyRes && currencyRes.result ? currencyRes.result.id : null,
-                currencyCode: 'result' in currencyRes && currencyRes.result ? currencyRes.result.code : null,
-                currencyName: 'result' in currencyRes && currencyRes.result ? currencyRes.result.name : null,
-                errorMessage: !currencyRes.success && 'message' in currencyRes ? currencyRes.message : null,
-            });
-
             if (currencyRes.success && 'result' in currencyRes && currencyRes.result) {
                 currencyCode = currencyRes.result.code || currencyRes.result.symbol;
-                log.warn('[Payment] Currency loaded successfully:', {
-                    currencyId: currencyRes.result.id,
-                    currencyCode,
-                    currencyName: currencyRes.result.name,
-                });
             }
             else {
-                log.error('[Payment] Failed to load currency for pricing:', {
-                    pricingId: pricing.id,
-                    currencyId: pricing.currencyId,
-                    success: currencyRes.success,
-                    message: 'message' in currencyRes ? currencyRes.message : undefined,
-                    currencyExistsButDeleted: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && currencyResWithoutFilter.result?.isDel === true,
-                    currencyResType: typeof currencyRes,
-                    currencyResKeys: Object.keys(currencyRes),
-                });
-
                 // Try to auto-fix: find a valid currency (prefer EUR, fallback to USD, or first available)
-                log.warn('[Payment] Attempting to auto-fix pricing with invalid currencyId:', {
-                    pricingId: pricing.id,
-                    invalidCurrencyId: pricing.currencyId,
+                const allCurrenciesRes = await currencyCtr.getCurrencies(context, {
+                    filter: {},
                 });
 
                 let fixedCurrencyId: string | null = null;
@@ -373,16 +225,8 @@ export const paymentController = {
                         fixedCurrencyId = selectedCurrency.id;
                         fixedCurrencyCode = selectedCurrency.code || selectedCurrency.symbol || null;
 
-                        log.warn('[Payment] Auto-fixing pricing currency:', {
-                            pricingId: pricing.id,
-                            oldCurrencyId: pricing.currencyId,
-                            newCurrencyId: fixedCurrencyId,
-                            newCurrencyCode: fixedCurrencyCode,
-                        });
-
                         // Update pricing record with valid currencyId
                         try {
-                            const { pricingCtr } = await import('#modules/pricing/index.js');
                             const updateResult = await pricingCtr.updatePricing(context, {
                                 filter: { id: pricing.id },
                                 update: {
@@ -391,27 +235,13 @@ export const paymentController = {
                             });
 
                             if (updateResult.success) {
-                                log.warn('[Payment] Pricing currency auto-fixed successfully:', {
-                                    pricingId: pricing.id,
-                                    oldCurrencyId: pricing.currencyId,
-                                    newCurrencyId: fixedCurrencyId,
-                                });
                                 // Update local pricing object
                                 pricing.currencyId = fixedCurrencyId;
                                 currencyCode = fixedCurrencyCode || undefined;
                             }
-                            else {
-                                log.error('[Payment] Failed to auto-fix pricing currency:', {
-                                    pricingId: pricing.id,
-                                    updateResult,
-                                });
-                            }
                         }
-                        catch (updateError) {
-                            log.error('[Payment] Error auto-fixing pricing currency:', {
-                                pricingId: pricing.id,
-                                error: updateError instanceof Error ? updateError.message : String(updateError),
-                            });
+                        catch {
+                            // Silent fail - will throw error below
                         }
                     }
                 }

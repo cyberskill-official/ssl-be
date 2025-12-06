@@ -3,7 +3,6 @@ import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType, notificationCtr } from '#modules/notification/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -449,62 +448,6 @@ mainRouter.get('/payment', async (req, res, next) => {
                         error: error instanceof Error ? error.message : String(error),
                     });
                     // Still return success to user, but log the error
-                }
-
-                // Send payment success email (no in-app notification)
-                if (order.userId) {
-                    try {
-                        log.info('[Payment Handler] Sending payment success email:', {
-                            orderId: order.id,
-                            userId: order.userId,
-                        });
-                        const notificationResult = await notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId: order.userId,
-                                type: [E_NotificationType.PAYMENT_SUCCESS],
-                                entityType: E_NotificationEntityType.PAYMENT,
-                                entityId: order.id,
-                                channels: [E_NotificationChannel.EMAIL], // Only email with receipt, no in-app notification
-                                presentation: {
-                                    redirect: {
-                                        kind: E_RedirectType.PAYMENT,
-                                        id: order.id,
-                                    },
-                                    headline: 'Your payment was successful!',
-                                },
-                            },
-                        });
-                        if (notificationResult.success && 'result' in notificationResult) {
-                            log.info('[Payment Handler] Payment success notification created:', {
-                                orderId: order.id,
-                                userId: order.userId,
-                                notificationId: notificationResult.result?.id,
-                                channels: notificationResult.result?.channels,
-                            });
-                        }
-                        else {
-                            log.warn('[Payment Handler] Payment success notification creation returned no result:', {
-                                orderId: order.id,
-                                userId: order.userId,
-                                success: notificationResult.success,
-                                message: 'message' in notificationResult ? notificationResult.message : undefined,
-                            });
-                        }
-                    }
-                    catch (error) {
-                        log.error('[Payment Handler] Error creating payment success notification:', {
-                            orderId: order.id,
-                            userId: order.userId,
-                            error: error instanceof Error ? error.message : String(error),
-                            stack: error instanceof Error ? error.stack : undefined,
-                        });
-                        // Non-blocking: payment still succeeds even if notification fails
-                    }
-                }
-                else {
-                    log.warn('[Payment Handler] Cannot create notification: order.userId is missing', {
-                        orderId: order.id,
-                    });
                 }
             }
         }
