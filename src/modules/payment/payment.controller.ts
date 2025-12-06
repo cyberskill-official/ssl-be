@@ -181,7 +181,7 @@ export const paymentController = {
 
         let currencyCode = pricing.currency?.code;
 
-        // Fallback 1: if currency is not populated, load it manually by currencyId
+        // If currency is not populated, load it manually by currencyId
         if (!currencyCode && pricing.currencyId) {
             log.warn('[Payment] Currency not populated, loading manually with currencyId:', pricing.currencyId);
             const currencyRes = await currencyCtr.getCurrency(context, {
@@ -191,26 +191,27 @@ export const paymentController = {
                 },
             });
             if (currencyRes.success && 'result' in currencyRes && currencyRes.result) {
-                log.warn('[Payment] Currency load result:', {
-                    success: currencyRes.success,
-                    code: currencyRes.result.code,
-                    symbol: currencyRes.result.symbol,
-                });
                 currencyCode = currencyRes.result.code || currencyRes.result.symbol;
             }
             else {
-                log.warn('[Payment] Failed to load currency:', {
+                log.error('[Payment] Failed to load currency for pricing:', {
+                    pricingId: pricing.id,
+                    currencyId: pricing.currencyId,
                     success: currencyRes.success,
                     message: 'message' in currencyRes ? currencyRes.message : undefined,
+                });
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: `Pricing record has invalid currencyId (${pricing.currencyId}). Please contact administrator to fix the pricing configuration.`,
                 });
             }
         }
 
-        // Pricing already has currency configured (EUR or USD) - no mapping needed
+        // Currency must be present in pricing
         if (!currencyCode) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'Pricing currency is missing',
+                message: `Pricing record (${pricing.id}) is missing currency configuration. Please contact administrator to fix the pricing.`,
             });
         }
 

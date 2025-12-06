@@ -38,7 +38,22 @@ export const pricingCtr = {
     async getPricings(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryPricing>): Promise<I_Return<T_PaginateResult<I_Pricing>>> {
         return mongooseCtr.findPaging(filter, options);
     },
-    async createPricing(_context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePricing>): Promise<I_Return<I_Pricing>> {
+    async createPricing(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePricing>): Promise<I_Return<I_Pricing>> {
+        // Validate currencyId exists if provided
+        if (doc.currencyId) {
+            const currencyRes = await currencyCtr.getCurrency(context, {
+                filter: {
+                    id: doc.currencyId,
+                    isDel: false,
+                },
+            });
+            if (!currencyRes.success || !currencyRes.result) {
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: `Currency with id "${doc.currencyId}" does not exist. Please select a valid currency.`,
+                });
+            }
+        }
         return mongooseCtr.createOne(doc);
     },
     async updatePricing(context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePricing>): Promise<I_Return<I_Pricing>> {
@@ -49,6 +64,22 @@ export const pricingCtr = {
                 message: 'Pricing not found',
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
+        }
+
+        // Validate currencyId exists if being updated
+        if (update.currencyId) {
+            const currencyRes = await currencyCtr.getCurrency(context, {
+                filter: {
+                    id: update.currencyId,
+                    isDel: false,
+                },
+            });
+            if (!currencyRes.success || !currencyRes.result) {
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: `Currency with id "${update.currencyId}" does not exist. Please select a valid currency.`,
+                });
+            }
         }
 
         return mongooseCtr.updateOne(filter, update, options);
