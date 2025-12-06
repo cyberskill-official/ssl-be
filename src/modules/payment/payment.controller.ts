@@ -351,10 +351,78 @@ export const paymentController = {
                     currencyResType: typeof currencyRes,
                     currencyResKeys: Object.keys(currencyRes),
                 });
-                throwError({
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                    message: `Pricing record has invalid currencyId (${pricing.currencyId}). The currency does not exist or has been deleted. Please contact administrator to fix the pricing configuration.`,
+
+                // Try to auto-fix: find a valid currency (prefer EUR, fallback to USD, or first available)
+                log.warn('[Payment] Attempting to auto-fix pricing with invalid currencyId:', {
+                    pricingId: pricing.id,
+                    invalidCurrencyId: pricing.currencyId,
                 });
+
+                let fixedCurrencyId: string | null = null;
+                let fixedCurrencyCode: string | null = null;
+
+                if (allCurrenciesRes.success && 'result' in allCurrenciesRes && allCurrenciesRes.result?.docs) {
+                    // Prefer EUR, then USD, then first available
+                    const eurCurrency = allCurrenciesRes.result.docs.find(c => c.code === 'EUR' && !c.isDel);
+                    const usdCurrency = allCurrenciesRes.result.docs.find(c => c.code === 'USD' && !c.isDel);
+                    const firstAvailableCurrency = allCurrenciesRes.result.docs.find(c => !c.isDel);
+
+                    const selectedCurrency = eurCurrency || usdCurrency || firstAvailableCurrency;
+
+                    if (selectedCurrency) {
+                        fixedCurrencyId = selectedCurrency.id;
+                        fixedCurrencyCode = selectedCurrency.code || selectedCurrency.symbol || null;
+
+                        log.warn('[Payment] Auto-fixing pricing currency:', {
+                            pricingId: pricing.id,
+                            oldCurrencyId: pricing.currencyId,
+                            newCurrencyId: fixedCurrencyId,
+                            newCurrencyCode: fixedCurrencyCode,
+                        });
+
+                        // Update pricing record with valid currencyId
+                        try {
+                            const { pricingCtr } = await import('#modules/pricing/index.js');
+                            const updateResult = await pricingCtr.updatePricing(context, {
+                                filter: { id: pricing.id },
+                                update: {
+                                    currencyId: fixedCurrencyId,
+                                },
+                            });
+
+                            if (updateResult.success) {
+                                log.warn('[Payment] Pricing currency auto-fixed successfully:', {
+                                    pricingId: pricing.id,
+                                    oldCurrencyId: pricing.currencyId,
+                                    newCurrencyId: fixedCurrencyId,
+                                });
+                                // Update local pricing object
+                                pricing.currencyId = fixedCurrencyId;
+                                currencyCode = fixedCurrencyCode || undefined;
+                            }
+                            else {
+                                log.error('[Payment] Failed to auto-fix pricing currency:', {
+                                    pricingId: pricing.id,
+                                    updateResult,
+                                });
+                            }
+                        }
+                        catch (updateError) {
+                            log.error('[Payment] Error auto-fixing pricing currency:', {
+                                pricingId: pricing.id,
+                                error: updateError instanceof Error ? updateError.message : String(updateError),
+                            });
+                        }
+                    }
+                }
+
+                // If auto-fix failed or no valid currency found, throw error
+                if (!currencyCode) {
+                    throwError({
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                        message: `Pricing record has invalid currencyId (${pricing.currencyId}). The currency does not exist. Please contact administrator to fix the pricing configuration.`,
+                    });
+                }
             }
         }
 
