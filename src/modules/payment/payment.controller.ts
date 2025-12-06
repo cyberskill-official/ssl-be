@@ -86,8 +86,8 @@ export const paymentController = {
         });
 
         // Find pricing - ensure currency is populated
+        // Use string format 'currency' to match how it's used elsewhere in the system
         let pricing: I_Pricing | undefined;
-        const currencyPopulate = { path: 'currency' };
 
         // Priority 0: If pricingId is provided, use that pricing directly
         if (input.pricingId) {
@@ -101,7 +101,7 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                [currencyPopulate],
+                'currency',
             );
             log.warn('[Payment] Pricing query result (by pricingId):', {
                 success: pricingRes.success,
@@ -134,7 +134,7 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                [currencyPopulate],
+                'currency',
             );
             log.warn('[Payment] Pricing query result (by stateId):', {
                 success: pricingRes.success,
@@ -161,7 +161,7 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                [currencyPopulate],
+                'currency',
             );
             log.warn('[Payment] Pricing query result (by countryId):', {
                 success: pricingRes.success,
@@ -188,7 +188,7 @@ export const paymentController = {
                 },
                 undefined,
                 undefined,
-                [currencyPopulate],
+                'currency',
             );
             log.warn('[Payment] Pricing query result (default):', {
                 success: pricingRes.success,
@@ -291,6 +291,32 @@ export const paymentController = {
                 reason: 'Currency object was not populated in pricing query result',
             });
 
+            // First, check if currency exists (including deleted ones) to understand the issue
+            const allCurrenciesRes = await currencyCtr.getCurrencies(context, {
+                filter: {},
+            });
+            log.warn('[Payment] All available currencies in database:', {
+                totalCurrencies: allCurrenciesRes.success && 'result' in allCurrenciesRes ? allCurrenciesRes.result?.totalDocs : 0,
+                currencyIds: allCurrenciesRes.success && 'result' in allCurrenciesRes && allCurrenciesRes.result?.docs
+                    ? allCurrenciesRes.result.docs.map(c => ({ id: c.id, code: c.code, name: c.name, isDel: c.isDel }))
+                    : [],
+            });
+
+            // Try to find currency without isDel filter first to see if it exists but is deleted
+            const currencyResWithoutFilter = await currencyCtr.getCurrency(context, {
+                filter: {
+                    id: pricing.currencyId,
+                },
+            });
+            log.warn('[Payment] Currency lookup (without isDel filter):', {
+                success: currencyResWithoutFilter.success,
+                found: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && !!currencyResWithoutFilter.result,
+                isDel: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && currencyResWithoutFilter.result
+                    ? currencyResWithoutFilter.result.isDel
+                    : null,
+            });
+
+            // Now try with isDel filter
             const currencyRes = await currencyCtr.getCurrency(context, {
                 filter: {
                     id: pricing.currencyId, // Use exact currencyId from pricing
@@ -321,12 +347,13 @@ export const paymentController = {
                     currencyId: pricing.currencyId,
                     success: currencyRes.success,
                     message: 'message' in currencyRes ? currencyRes.message : undefined,
+                    currencyExistsButDeleted: currencyResWithoutFilter.success && 'result' in currencyResWithoutFilter && currencyResWithoutFilter.result?.isDel === true,
                     currencyResType: typeof currencyRes,
                     currencyResKeys: Object.keys(currencyRes),
                 });
                 throwError({
                     status: RESPONSE_STATUS.BAD_REQUEST,
-                    message: `Pricing record has invalid currencyId (${pricing.currencyId}). Please contact administrator to fix the pricing configuration.`,
+                    message: `Pricing record has invalid currencyId (${pricing.currencyId}). The currency does not exist or has been deleted. Please contact administrator to fix the pricing configuration.`,
                 });
             }
         }
