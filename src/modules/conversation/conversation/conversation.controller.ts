@@ -22,7 +22,7 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
-import { E_Role_Staff, E_Role_User } from '#modules/authz/role/index.js';
+import { E_Role_Staff } from '#modules/authz/role/index.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';
@@ -579,6 +579,7 @@ export const conversationCtr = {
                         path: 'sender',
                         select: 'id username email accountType partner1 partner2',
                         populate: [
+                            { path: 'ageVerify' }, // Add ageVerify for media hydration
                             { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
                             { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
                         ],
@@ -593,6 +594,7 @@ export const conversationCtr = {
                         path: 'user',
                         select: 'id username accountType partner1 partner2',
                         populate: [
+                            { path: 'ageVerify' }, // Add ageVerify for media hydration
                             { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
                             { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
                         ],
@@ -615,29 +617,11 @@ export const conversationCtr = {
             throwError({ message: 'Type of conversation is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const freeMemberRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_User.FREE_MEMBER },
-        });
+        // Check if user is effectively a free member (includes expired memberships)
+        const isFreeMember = await authnCtr.isFreeMember(context);
 
-        if (!freeMemberRole.success) {
-            throwError({
-                message: 'Free member role not found in system',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const isFreeMember = currentUser.rolesIds?.includes(freeMemberRole.result.id);
-
-        // Allow FREE_MEMBER to create GROUP/PRIVATE conversation if they have freeEventCount > 0
-        // (user has paid for ANNOUNCEMENT, so they should be able to create groups for their events)
-        const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
-        const hasFreeEventCount = freeEventCount > 0;
-        const isEventGroup = type === E_ConversationType.GROUP && doc.entityType === E_NotificationEntityType.EVENT;
-
-        // FREE_MEMBER can create GROUP/PRIVATE conversation if:
-        // 1. They have freeEventCount > 0 (paid for ANNOUNCEMENT), OR
-        // 2. It's a GROUP conversation for an EVENT (backward compatibility)
-        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE].includes(type) && isFreeMember && !hasFreeEventCount && !isEventGroup) {
+        // FREE_MEMBER cannot create any new conversations (GROUP or PRIVATE)
+        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE].includes(type) && isFreeMember) {
             throwError({
                 message: 'Free users cannot initiate new chats. Please upgrade your membership.',
                 status: RESPONSE_STATUS.FORBIDDEN,
@@ -2254,10 +2238,13 @@ export const conversationCtr = {
             }
             const conversation = conversationResult.result;
 
-            // 2) Permission
+            // 2) Permission check first
+            let isParticipant = false;
+            let isOwner = false;
             if (conversation.type === E_ConversationType.PRIVATE) {
                 const participants = conversation.participants || [];
-                if (!isPrivateConversationParticipant(participants, senderId)) {
+                isParticipant = isPrivateConversationParticipant(participants, senderId);
+                if (!isParticipant) {
                     throwError({
                         message: 'You are not a participant in this private conversation',
                         status: RESPONSE_STATUS.FORBIDDEN,
@@ -2265,14 +2252,14 @@ export const conversationCtr = {
                 }
             }
             else if (conversation.type === E_ConversationType.ADMIN_BROADCAST) {
-                const isParticipant = conversation.participants?.some(p => p.userId === senderId);
-                const isOwner = conversation.createdById === senderId;
+                isParticipant = conversation.participants?.some(p => p.userId === senderId) ?? false;
+                isOwner = conversation.createdById === senderId;
                 if (!isParticipant && !isOwner) {
                     throwError({ message: 'Cannot send to admin broadcast', status: RESPONSE_STATUS.FORBIDDEN });
                 }
             }
             else {
-                const isParticipant = conversation.participants?.some(p => p.userId === senderId);
+                isParticipant = conversation.participants?.some(p => p.userId === senderId) ?? false;
                 const isPublicThread = isOpenPublicThread(conversation); // đã nhận diện BLOG/PROFILE/GROUP mở
                 if (!isParticipant && !isPublicThread) {
                     throwError({
@@ -2282,7 +2269,27 @@ export const conversationCtr = {
                 }
             }
 
-            // 2.5) Block check - prevent messaging blocked users (bidirectional)
+            // 3) Check if sender is FREE_MEMBER - block only if they are NOT a participant or owner
+            // FREE_MEMBER can reply if they are already a participant (someone messaged them first)
+            // FREE_MEMBER can also comment on public threads (PROFILE_COMMENT, BLOG_COMMENT, etc.)
+            // Only check if senderId matches the current session user (not admin sending on behalf)
+            const currentUser = await authnCtr.getUserFromSession(context);
+            if (currentUser.id === senderId) {
+                const isFreeMember = await authnCtr.isFreeMember(context);
+                const isPublicThread = isOpenPublicThread(conversation);
+                // Block FREE_MEMBER from sending messages only if:
+                // - They are NOT a participant or owner
+                // - AND it's NOT a public thread (PROFILE_COMMENT, BLOG_COMMENT, etc.)
+                // This allows them to reply if someone messaged them first, and to comment on public threads
+                if (isFreeMember && !isParticipant && !isOwner && !isPublicThread) {
+                    throwError({
+                        message: 'Free users cannot initiate new conversations. Please upgrade your membership.',
+                        status: RESPONSE_STATUS.FORBIDDEN,
+                    });
+                }
+            }
+
+            // 3.5) Block check - prevent messaging blocked users (bidirectional)
             const blockedUserIds = await getBlockedUserIds(context);
             if (blockedUserIds.size > 0) {
                 // For PRIVATE conversations, check if the other participant is blocked
@@ -2300,7 +2307,7 @@ export const conversationCtr = {
                 // in getMessages for blocked users (they won't see each other's messages)
             }
 
-            // 3) Create message
+            // 4) Create message
             const messageResult = await messageCtr.createMessageOnly(context, {
                 doc: {
                     conversationId,
@@ -2317,13 +2324,13 @@ export const conversationCtr = {
                 throwError({ message: 'Failed to create message', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            // 4) Update last message on conversation
+            // 5) Update last message on conversation
             const updateResult = await conversationCtr._updateLastMessageId(conversationId, messageResult.result.id);
             if (!updateResult.success) {
                 throwError({ message: 'Failed to update conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
 
-            // 5) Update lastRead (only if sender is participant, or PRIVATE)
+            // 6) Update lastRead (only if sender is participant, or PRIVATE)
             const isParticipantInGroup = conversation.participants?.some(p => p.userId === senderId) ?? false;
             if (
                 conversation.type === E_ConversationType.PRIVATE
@@ -2332,7 +2339,7 @@ export const conversationCtr = {
                 await participantCtr.updateLastReadMessage(conversationId, senderId, messageResult.result.id);
             }
 
-            // 6) Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
+            // 7) Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
             const populatedConversationResult = await conversationCtr._populateConversationWithParticipants(conversation.id);
             if (!populatedConversationResult.success) {
                 throwError({

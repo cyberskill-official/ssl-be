@@ -10,7 +10,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PipelineStage } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -322,8 +322,7 @@ export const participantCtr = {
             }
             catch (error) {
                 // Non-fatal: log but don't block the operation
-                const log = await import('@cyberskill/shared/node/log');
-                log.log.warn('Failed to send admin role notification', {
+                log.warn('Failed to send admin role notification', {
                     conversationId,
                     targetUserId,
                     error,

@@ -153,11 +153,20 @@ async function upsertLocationForUser(
     return createLocationForUser(context, userId, payload);
 }
 
-function ensurePopulateIncludes(populate: any, paths: string[]): any {
+function ensurePopulateIncludes(populate: any, paths: (string | Record<string, any>)[]): any {
     const arr = Array.isArray(populate) ? [...populate] : (populate ? [populate] : []);
     for (const p of paths) {
-        if (!arr.some(entry => (typeof entry === 'string' ? entry === p : entry?.path === p))) {
-            arr.push(p);
+        if (typeof p === 'string') {
+            if (!arr.some(entry => (typeof entry === 'string' ? entry === p : entry?.path === p))) {
+                arr.push(p);
+            }
+        }
+        else {
+            // For object paths, check by path property
+            const pathValue = p?.['path'];
+            if (pathValue && !arr.some(entry => (typeof entry === 'string' ? entry === pathValue : entry?.path === pathValue))) {
+                arr.push(p);
+            }
         }
     }
     return arr;
@@ -168,7 +177,43 @@ export const userCtr = {
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        // Get session user from session directly to avoid circular dependency
+        // We'll populate roles and ageVerify separately if needed, but only if not fetching the same user
+        const sessionUserId = context?.req?.session?.user?.id;
+        const isFetchingSessionUser = filter?.id === sessionUserId;
+        let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
+
+        // If we need full user data for blur logic and we're not fetching the session user itself,
+        // we can safely fetch it. But to avoid circular dependency, we'll use a direct query
+        if (sessionUser && !isFetchingSessionUser && (!sessionUser.roles || !sessionUser.ageVerify)) {
+            try {
+                // Direct query to avoid circular dependency with getUserFromSession/checkAuth
+                const sessionUserPopulated = await mongooseCtr.findOne(
+                    { id: sessionUserId },
+                    undefined,
+                    undefined,
+                    [
+                        { path: 'roles' },
+                        { path: 'ageVerify' },
+                        {
+                            path: 'partner1',
+                            populate: [{ path: 'gallery' }],
+                        },
+                        {
+                            path: 'partner2',
+                            populate: [{ path: 'gallery' }],
+                        },
+                    ],
+                );
+                if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                    sessionUser = sessionUserPopulated.result;
+                }
+            }
+            catch {
+                // Query failed, use session user as is
+            }
+        }
+
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
         // Apply regex search filters for username (similar to getUsers)
@@ -252,7 +297,40 @@ export const userCtr = {
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
 
-        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        // Get session user from session directly to avoid circular dependency
+        let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
+        const sessionUserId = sessionUser?.id;
+
+        // If session user exists but doesn't have roles/ageVerify populated, fetch it directly
+        if (sessionUser && sessionUserId && (!sessionUser.roles || !sessionUser.ageVerify)) {
+            try {
+                // Direct query to avoid circular dependency with getUserFromSession/checkAuth
+                const sessionUserPopulated = await mongooseCtr.findOne(
+                    { id: sessionUserId },
+                    undefined,
+                    undefined,
+                    [
+                        { path: 'roles' },
+                        { path: 'ageVerify' },
+                        {
+                            path: 'partner1',
+                            populate: [{ path: 'gallery' }],
+                        },
+                        {
+                            path: 'partner2',
+                            populate: [{ path: 'gallery' }],
+                        },
+                    ],
+                );
+                if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                    sessionUser = sessionUserPopulated.result;
+                }
+            }
+            catch {
+                // Query failed, use session user as is
+            }
+        }
+
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
         let effectiveFilter: Record<string, unknown> | undefined;
@@ -279,6 +357,13 @@ export const userCtr = {
         if (isAdmin) {
             effectiveOptions.populate = ensurePopulateIncludes(effectiveOptions.populate, ['notes.createdBy']);
         }
+
+        // Always populate ageVerify and galleries for media hydration
+        effectiveOptions.populate = ensurePopulateIncludes(effectiveOptions.populate, [
+            'ageVerify',
+            { path: 'partner1', populate: [{ path: 'gallery' }] },
+            { path: 'partner2', populate: [{ path: 'gallery' }] },
+        ]);
 
         const users = await mongooseCtr.findPaging(effectiveFilter as unknown as never, effectiveOptions);
         if (!users.success)

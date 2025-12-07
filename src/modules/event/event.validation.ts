@@ -137,13 +137,82 @@ export function validateTimeBasedEvent(
     };
 }
 
-export function shouldBlurForContext(context?: I_Context): boolean {
+export function shouldBlurForContext(context?: I_Context, eventCreatedById?: string): boolean {
     const viewer = context?.req?.session?.user;
-    return !viewer || viewer.ageVerify?.status !== E_AgeVerifyStatus.APPROVED;
+    if (!viewer) {
+        return true; // Not logged in, blur
+    }
+
+    // Check if viewer is the owner of the event
+    const isOwner = eventCreatedById && viewer.id && eventCreatedById === viewer.id;
+    if (isOwner) {
+        return false; // Owner can always see their own event images clearly
+    }
+
+    // Check if viewer is staff/admin
+    const viewerRoles = Array.isArray(viewer.roles) ? viewer.roles : [];
+    const isStaff = viewerRoles.some(role => role.name === 'STAFF');
+    const isAdmin = viewerRoles.some(role => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
+    if (isStaff || isAdmin) {
+        return false; // Staff/admin can always see clearly
+    }
+
+    // Check if viewer is FREE_MEMBER - FREE_MEMBER blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+    const isFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER' || role.name === 'FREE_MEM');
+    if (isFreeMember) {
+        return true; // FREE_MEMBER should see blurred event images of others
+    }
+
+    // Check if viewer is age-verified
+    const viewerAgeVerified = viewer.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+    if (!viewerAgeVerified) {
+        return true; // Not age-verified, blur
+    }
+
+    return false; // Age-verified paid member, show clearly
 }
 
-export function signEventImage(fullUrl: string, context?: I_Context): string {
-    if (shouldBlurForContext(context)) {
+export async function signEventImage(fullUrl: string, context?: I_Context, eventCreatedById?: string): Promise<string | null> {
+    const viewer = context?.req?.session?.user;
+    const viewerId = viewer?.id;
+    const isOwner = eventCreatedById && viewerId && eventCreatedById === viewerId;
+
+    // Check if viewer is staff/admin
+    const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+    const isStaff = viewerRoles.some(role => role.name === 'STAFF');
+    const isAdmin = viewerRoles.some(role => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
+    const viewerExempt = isStaff || isAdmin;
+
+    // Check if event creator (owner) is age-verified
+    let isCreatorAgeVerified = false;
+    if (eventCreatedById && !isOwner && !viewerExempt) {
+        try {
+            const { userCtr } = await import('#modules/user/index.js');
+            const creatorResult = await userCtr.getUser(context!, {
+                filter: { id: eventCreatedById },
+                projection: { ageVerify: 1 },
+            });
+            if (creatorResult.success && creatorResult.result) {
+                isCreatorAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            }
+        }
+        catch {
+            // If fetch fails, assume verified to avoid blocking
+            isCreatorAgeVerified = true;
+        }
+    }
+    else {
+        // If owner or exempt, assume verified (or don't need to check)
+        isCreatorAgeVerified = true;
+    }
+
+    // If creator is not age-verified and viewer is not owner/staff/admin, return null (will show default image)
+    if (!isCreatorAgeVerified && !isOwner && !viewerExempt) {
+        return null;
+    }
+
+    // Apply blur/sign logic based on viewer's context
+    if (shouldBlurForContext(context, eventCreatedById)) {
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
     return bunnyCtr.generateSignedUrl({

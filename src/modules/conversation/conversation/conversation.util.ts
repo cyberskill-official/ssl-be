@@ -1,9 +1,9 @@
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Conversation, I_ConversationMeta } from './index.js';
@@ -312,56 +312,100 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
     // Transform lastMessage (includes sender avatar blur)
     const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage) ?? plainConversation.lastMessage;
 
-    // Check viewer's age verification status for participant avatars
-    let isViewerVerified = false;
+    // Get viewer context for media hydration
+    let sessionUser: any;
     try {
         const viewer = await authnCtr.getUserFromSession(context);
-        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        if (viewer?.id) {
+            // Fetch full user data with roles and ageVerify to avoid circular dependency
+            const { MongooseController } = await import('@cyberskill/shared/node/mongo');
+            const { UserModel } = await import('#modules/user/user.model.js');
+            const mongooseCtr = new MongooseController(UserModel);
+            const sessionUserPopulated = await mongooseCtr.findOne(
+                { id: viewer.id },
+                undefined,
+                undefined,
+                [
+                    { path: 'roles' },
+                    { path: 'ageVerify' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+            if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                sessionUser = sessionUserPopulated.result;
+            }
+            else {
+                sessionUser = viewer;
+            }
+        }
     }
     catch {
-        isViewerVerified = false;
+        sessionUser = undefined;
     }
 
-    // Transform participant avatars based on age verification
+    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+    // Transform participant avatars using hydrateUserMedia
     let transformedParticipants = plainConversation.participants;
     if (transformedParticipants && Array.isArray(transformedParticipants)) {
-        transformedParticipants = transformedParticipants.map((participant: any) => {
+        transformedParticipants = await Promise.all(transformedParticipants.map(async (participant: any) => {
             if (!participant?.user)
                 return participant;
 
-            const user = { ...participant.user };
+            let user = { ...participant.user };
 
-            // Blur partner1 avatar
-            if (user.partner1?.gallery?.url) {
-                user.partner1 = {
-                    ...user.partner1,
-                    gallery: {
-                        ...user.partner1.gallery,
-                        url: isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: user.partner1.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: user.partner1.gallery.url, extraQueryParams: { class: 'blur' } }),
-                    },
-                };
+            // Ensure ageVerify is populated for hydrateUserMedia to work correctly
+            if (!user.ageVerify && user.id) {
+                try {
+                    const { MongooseController } = await import('@cyberskill/shared/node/mongo');
+                    const { UserModel } = await import('#modules/user/user.model.js');
+                    const mongooseCtr = new MongooseController(UserModel);
+                    const userPopulated = await mongooseCtr.findOne(
+                        { id: user.id },
+                        undefined,
+                        undefined,
+                        [
+                            { path: 'ageVerify' },
+                            {
+                                path: 'partner1',
+                                populate: [{ path: 'gallery' }],
+                            },
+                            {
+                                path: 'partner2',
+                                populate: [{ path: 'gallery' }],
+                            },
+                        ],
+                    );
+                    if (userPopulated.success && userPopulated.result) {
+                        // Merge ageVerify and galleries into user
+                        user = {
+                            ...user,
+                            ageVerify: userPopulated.result.ageVerify,
+                            partner1: userPopulated.result.partner1 || user.partner1,
+                            partner2: userPopulated.result.partner2 || user.partner2,
+                        };
+                    }
+                }
+                catch {
+                    // If fetch fails, continue with existing user data
+                }
             }
 
-            // Blur partner2 avatar
-            if (user.partner2?.gallery?.url) {
-                user.partner2 = {
-                    ...user.partner2,
-                    gallery: {
-                        ...user.partner2.gallery,
-                        url: isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: user.partner2.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: user.partner2.gallery.url, extraQueryParams: { class: 'blur' } }),
-                    },
-                };
-            }
+            // Use hydrateUserMedia to apply proper blur/default image logic
+            hydrateUserMedia(user, viewerMediaOptions);
 
             return {
                 ...participant,
                 user,
             };
-        });
+        }));
     }
 
     return {

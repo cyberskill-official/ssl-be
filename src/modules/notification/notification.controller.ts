@@ -195,13 +195,15 @@ export const notificationCtr = {
             }
         }
 
-        // Enrich presentation media (avatar, thumbnails) according to actor's age verification status
+        // Enrich presentation media (avatar, thumbnails) according to actor's and owner's age verification status
         try {
             let viewerIsStaff = false;
             let viewerIsAdmin = false;
-            let isViewerAgeVerified = false;
+            let viewerId: string | undefined;
+            let viewerIsFreeMember = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(_context);
+                viewerId = viewer?.id;
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
                 viewerIsAdmin = roles.some(role =>
                     role.name === E_Role_Staff.ADMIN
@@ -211,8 +213,14 @@ export const notificationCtr = {
                     role.name === E_Role.STAFF
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
                 );
-                // Check viewer's age verification status
-                isViewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+                // Check viewer membership status
+                if (viewer) {
+                    const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER') ?? false;
+                    const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER') ?? false;
+                    const isMembershipActive = authnCtr.isMembershipActive(viewer);
+                    viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+                }
             }
             catch {
                 // Viewer not authenticated or error getting viewer
@@ -247,29 +255,218 @@ export const notificationCtr = {
                     }
                 }
 
-                // Apply blurring based on viewer's age verification status
-                // Blur if viewer is not age-verified (regardless of actor's verification status)
+                // Collect entityIds (galleryIds and eventIds) for thumbnail owner check
+                const galleryEntityIds = new Set<string>();
+                const eventEntityIds = new Set<string>();
+                for (const n of res.result.docs) {
+                    // Check if notification has thumbnail
+                    const pres = n.presentation as I_NotificationPresentation;
+                    if (n.entityId && pres?.thumbnailUrl) {
+                        if (n.entityType === E_NotificationEntityType.MEDIA) {
+                            galleryEntityIds.add(n.entityId);
+                        }
+                        else if (n.entityType === E_NotificationEntityType.EVENT) {
+                            eventEntityIds.add(n.entityId);
+                        }
+                    }
+                }
+
+                // Batch fetch gallery owners' age verification status
+                const galleryOwnerAgeVerifyMap = new Map<string, boolean>();
+                if (galleryEntityIds.size > 0) {
+                    const { galleryCtr } = await import('#modules/gallery/index.js');
+                    const galleriesResult = await galleryCtr.getGalleries(_context, {
+                        filter: { id: { $in: Array.from(galleryEntityIds) } },
+                        options: { pagination: false },
+                    });
+
+                    if (galleriesResult.success && Array.isArray(galleriesResult.result?.docs)) {
+                        for (const gallery of galleriesResult.result.docs) {
+                            if (gallery.id && gallery.uploadedById) {
+                                const ownerResult = await userCtr.getUser(_context, {
+                                    filter: { id: gallery.uploadedById },
+                                    projection: { ageVerify: 1 },
+                                });
+                                if (ownerResult.success && ownerResult.result) {
+                                    const isOwnerAgeVerified = ownerResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                    galleryOwnerAgeVerifyMap.set(gallery.id, isOwnerAgeVerified);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Batch fetch event creators' age verification status
+                const eventCreatorAgeVerifyMap = new Map<string, boolean>();
+                if (eventEntityIds.size > 0) {
+                    const { eventCtr } = await import('#modules/event/index.js');
+                    const eventsResult = await eventCtr.getEvents(_context, {
+                        filter: { id: { $in: Array.from(eventEntityIds) } },
+                        options: { pagination: false },
+                    });
+
+                    if (eventsResult.success && Array.isArray(eventsResult.result?.docs)) {
+                        for (const event of eventsResult.result.docs) {
+                            if (event.id && event.createdById) {
+                                const creatorResult = await userCtr.getUser(_context, {
+                                    filter: { id: event.createdById },
+                                    projection: { ageVerify: 1 },
+                                });
+                                if (creatorResult.success && creatorResult.result) {
+                                    const isCreatorAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                    eventCreatorAgeVerifyMap.set(event.id, isCreatorAgeVerified);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Apply blurring/default image based on actor's and owner's age verification status
                 for (const n of res.result.docs) {
                     const pres = n.presentation as I_NotificationPresentation;
                     if (!pres)
                         continue;
 
-                    // Blur if viewer is not age-verified (unless viewer is staff/admin)
-                    const shouldBlur = !isViewerAgeVerified && !viewerExempt;
+                    const actorId = n.actorId;
+                    const isActorAgeVerified = actorId ? (actorAgeVerifyMap.get(actorId) ?? false) : false;
+                    const isActorOwner = viewerId && actorId && viewerId === actorId;
 
                     // actor avatar
                     const actor = pres.actor;
                     if (actor?.avatarUrl) {
-                        actor.avatarUrl = shouldBlur
-                            ? bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } })
-                            : bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
+                        // If actor is not age-verified and viewer is not actor/staff/admin, set to null (will show default image)
+                        if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
+                            actor.avatarUrl = null as any; // Set to null to show default image
+                        }
+                        else {
+                            // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                            // Only blur if: viewer is free member AND not owner AND not exempt
+                            const shouldBlur = !isActorOwner && !viewerExempt && viewerIsFreeMember;
+                            actor.avatarUrl = shouldBlur
+                                ? bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } })
+                                : bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
+                        }
                     }
 
-                    // thumbnail / gallery (note: presentation.thumbnailUrl is a string)
+                    // thumbnail / gallery / event (note: presentation.thumbnailUrl is a string)
                     if (typeof pres.thumbnailUrl === 'string' && pres.thumbnailUrl) {
-                        pres.thumbnailUrl = shouldBlur
-                            ? bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } })
-                            : bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
+                        const entityId = n.entityId;
+                        let isThumbnailOwnerAgeVerified = true; // Default to true if we can't determine
+                        let isThumbnailOwner = false;
+
+                        // For MEDIA entity type (gallery), check gallery owner age verification
+                        if (entityId && n.entityType === E_NotificationEntityType.MEDIA) {
+                            // Check from batch-fetched map first
+                            const cachedAgeVerified = galleryOwnerAgeVerifyMap.get(entityId);
+                            if (cachedAgeVerified !== undefined) {
+                                isThumbnailOwnerAgeVerified = cachedAgeVerified;
+                            }
+                            else {
+                                // If not in cache, fetch it now
+                                try {
+                                    const { galleryCtr } = await import('#modules/gallery/index.js');
+                                    const galleryResult = await galleryCtr.getGallery(_context, {
+                                        filter: { id: entityId },
+                                    });
+                                    if (galleryResult.success && galleryResult.result?.uploadedById) {
+                                        const ownerResult = await userCtr.getUser(_context, {
+                                            filter: { id: galleryResult.result.uploadedById },
+                                            projection: { ageVerify: 1 },
+                                        });
+                                        if (ownerResult.success && ownerResult.result) {
+                                            isThumbnailOwnerAgeVerified = ownerResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                        }
+
+                                        // Check if viewer is the owner
+                                        if (viewerId && galleryResult.result.uploadedById === viewerId) {
+                                            isThumbnailOwner = true;
+                                        }
+                                    }
+                                }
+                                catch {
+                                    // If fetch fails, assume verified to avoid blocking
+                                }
+                            }
+
+                            // Check if viewer is the owner (if not already checked above)
+                            if (!isThumbnailOwner && viewerId) {
+                                try {
+                                    const { galleryCtr } = await import('#modules/gallery/index.js');
+                                    const galleryResult = await galleryCtr.getGallery(_context, {
+                                        filter: { id: entityId },
+                                    });
+                                    if (galleryResult.success && galleryResult.result?.uploadedById === viewerId) {
+                                        isThumbnailOwner = true;
+                                    }
+                                }
+                                catch {
+                                    // If fetch fails, assume not owner
+                                }
+                            }
+                        }
+                        // For EVENT entity type (announcement), check event creator age verification
+                        else if (entityId && n.entityType === E_NotificationEntityType.EVENT) {
+                            // Check from batch-fetched map first
+                            const cachedAgeVerified = eventCreatorAgeVerifyMap.get(entityId);
+                            if (cachedAgeVerified !== undefined) {
+                                isThumbnailOwnerAgeVerified = cachedAgeVerified;
+                            }
+                            else {
+                                // If not in cache, fetch it now
+                                try {
+                                    const { eventCtr } = await import('#modules/event/index.js');
+                                    const eventResult = await eventCtr.getEvent(_context, {
+                                        filter: { id: entityId },
+                                    });
+                                    if (eventResult.success && eventResult.result?.createdById) {
+                                        const creatorResult = await userCtr.getUser(_context, {
+                                            filter: { id: eventResult.result.createdById },
+                                            projection: { ageVerify: 1 },
+                                        });
+                                        if (creatorResult.success && creatorResult.result) {
+                                            isThumbnailOwnerAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                        }
+
+                                        // Check if viewer is the creator
+                                        if (viewerId && eventResult.result.createdById === viewerId) {
+                                            isThumbnailOwner = true;
+                                        }
+                                    }
+                                }
+                                catch {
+                                    // If fetch fails, assume verified to avoid blocking
+                                }
+                            }
+
+                            // Check if viewer is the creator (if not already checked above)
+                            if (!isThumbnailOwner && viewerId) {
+                                try {
+                                    const { eventCtr } = await import('#modules/event/index.js');
+                                    const eventResult = await eventCtr.getEvent(_context, {
+                                        filter: { id: entityId },
+                                    });
+                                    if (eventResult.success && eventResult.result?.createdById === viewerId) {
+                                        isThumbnailOwner = true;
+                                    }
+                                }
+                                catch {
+                                    // If fetch fails, assume not owner
+                                }
+                            }
+                        }
+
+                        // If thumbnail owner is not age-verified and viewer is not owner/staff/admin, set to null (will show default image)
+                        if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
+                            pres.thumbnailUrl = null as any; // Set to null to show default image
+                        }
+                        else {
+                            // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                            // Only blur if: viewer is free member AND not owner AND not exempt
+                            const shouldBlur = !isThumbnailOwner && !viewerExempt && viewerIsFreeMember;
+                            pres.thumbnailUrl = shouldBlur
+                                ? bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } })
+                                : bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
+                        }
                     }
                 }
             }

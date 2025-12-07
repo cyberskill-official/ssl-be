@@ -117,10 +117,12 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            eventFound.result.image = signEventImage(eventFound.result.image, context);
+            const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
+            // If signEventImage returns null, set to undefined to show default image
+            eventFound.result.image = signedImage ?? undefined;
 
-            if (!shouldBlurForContext(context))
-                eventFound.result.image = normalizeBlurredMedia(eventFound.result.image);
+            if (signedImage && !shouldBlurForContext(context, eventFound.result.createdById))
+                eventFound.result.image = normalizeBlurredMedia(signedImage);
         }
 
         // Blur creator avatar/gallery based on viewer and creator age verification
@@ -232,11 +234,13 @@ export const eventCtr = {
             isViewerVerified = false;
         }
 
-        filteredDocs = filteredDocs.map((event) => {
+        filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
             if (event.image) {
-                event.image = signEventImage(event.image, context);
-                if (!shouldBlurForContext(context))
-                    event.image = normalizeBlurredMedia(event.image);
+                const signedImage = await signEventImage(event.image, context, event.createdById);
+                // If signEventImage returns null, set to undefined to show default image
+                event.image = signedImage ?? undefined;
+                if (signedImage && !shouldBlurForContext(context, event.createdById))
+                    event.image = normalizeBlurredMedia(signedImage);
             }
             try {
                 const creator = (event).createdBy;
@@ -267,7 +271,7 @@ export const eventCtr = {
                 // ignore per-event creator processing errors
             }
             return event;
-        });
+        }));
 
         // Update result with filtered docs
         events.result.docs = filteredDocs;
@@ -298,29 +302,21 @@ export const eventCtr = {
         if ('location' in doc)
             delete (doc as Partial<I_Input_CreateEvent>).location;
 
-        // membership / paid / freeEventCount logic
-        const membershipExpiresAt = currentUser.membershipExpiresAt;
+        // membership / paid logic
         const isClubVisit = type === E_EventType.CLUB_VISIT;
-        const isPaidMember = Array.isArray(currentUser.roles)
-            && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
+        // Use authnCtr.isPaidMember to check if user has active paid membership
+        // This ensures users with expired memberships are treated as free members
+        const isPaidMember = await authnCtr.isPaidMember(context);
 
         // Event creation rules:
         // 1. CLUB_VISIT events: always allowed (no restrictions)
-        // 2. PAID_MEMBER users: can create events freely (no membership expiry or freeEventCount checks)
-        // 3. Non-paid users: must have either:
-        //    - An active membership (membershipExpiresAt >= now), OR
-        //    - At least one freeEventCount (freeEventCount > 0)
+        // 2. PAID_MEMBER users (with active membership): can create events freely
+        // 3. FREE_MEMBER users: cannot create any events (except CLUB_VISIT)
         if (!isClubVisit && !isPaidMember) {
-            const freeEventCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : 0;
-            const hasActiveMembership = Boolean(membershipExpiresAt && new Date(membershipExpiresAt) >= new Date());
-
-            // User can create event if they have active membership OR freeEventCount > 0
-            if (!hasActiveMembership && freeEventCount <= 0) {
-                throwError({
-                    message: 'You have no active membership or free event allowance. Please purchase a membership to create events.',
-                    status: RESPONSE_STATUS.FORBIDDEN,
-                });
-            }
+            throwError({
+                message: 'Free users cannot create events. Please upgrade your membership.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
         }
 
         // required type

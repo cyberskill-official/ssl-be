@@ -337,6 +337,7 @@ export const authnCtr = {
             },
             populate: [
                 { path: 'roles' },
+                { path: 'ageVerify' },
                 {
                     path: 'partner1',
                     populate: [
@@ -547,10 +548,18 @@ export const authnCtr = {
 
         const paidMemberRoleId = paidMemberRole.result.id;
 
-        return !!currentUser.roles?.some(role =>
+        const hasPaidRole = !!currentUser.roles?.some(role =>
             (role.id === paidMemberRoleId)
             || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
         );
+
+        // Even if user has PAID_MEMBER role, check if membership has expired
+        // If expired, treat as free member
+        if (hasPaidRole) {
+            return authnCtr.isMembershipActive(currentUser);
+        }
+
+        return false;
     },
 
     isUser: async (context: I_Context): Promise<boolean> => {
@@ -590,10 +599,36 @@ export const authnCtr = {
 
         const freeMemberRoleId = freeMemberRole.result.id;
 
-        return !!currentUser.roles?.some(role =>
+        const hasFreeRole = !!currentUser.roles?.some(role =>
             (role.id === freeMemberRoleId)
             || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
         );
+
+        // If user has FREE_MEMBER role, they are free
+        if (hasFreeRole) {
+            return true;
+        }
+
+        // Check if user has PAID_MEMBER role
+        const paidMemberRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_User.PAID_MEMBER },
+        });
+
+        if (paidMemberRole.success) {
+            const paidMemberRoleId = paidMemberRole.result.id;
+            const hasPaidRole = !!currentUser.roles?.some(role =>
+                (role.id === paidMemberRoleId)
+                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
+            );
+
+            // If user has PAID_MEMBER role but membership expired, treat as free
+            if (hasPaidRole && !authnCtr.isMembershipActive(currentUser)) {
+                return true;
+            }
+        }
+
+        // If no free role and no expired paid membership, user is not free
+        return false;
     },
     register: async (
         context: I_Context,
@@ -2006,12 +2041,13 @@ export const authnCtr = {
         return userUpdated;
     },
     isMembershipActive: (user: I_User): boolean => {
-        // If user has no membership expiration date, they have a lifetime membership
+        // If user has no membership expiration date, they have no active membership
         if (!user.membershipExpiresAt) {
-            return true;
+            return false;
         }
 
         // Check if membership has expired
-        return new Date() < new Date(user.membershipExpiresAt);
+        // Return true only if expiration date is in the future
+        return new Date(user.membershipExpiresAt) > new Date();
     },
 };

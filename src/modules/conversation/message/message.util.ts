@@ -9,6 +9,7 @@ import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Message } from './message.type.js';
@@ -91,14 +92,48 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     // Get viewer once for use in multiple checks
     let viewer = null;
     let isViewerVerified = false;
+    let sessionUser: any = null;
     try {
         viewer = await authnCtr.getUserFromSession(context);
         isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+        // Fetch full session user data with roles and ageVerify for media hydration
+        if (viewer?.id) {
+            const { MongooseController } = await import('@cyberskill/shared/node/mongo');
+            const { UserModel } = await import('#modules/user/user.model.js');
+            const mongooseCtr = new MongooseController(UserModel);
+            const sessionUserPopulated = await mongooseCtr.findOne(
+                { id: viewer.id },
+                undefined,
+                undefined,
+                [
+                    { path: 'roles' },
+                    { path: 'ageVerify' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+            if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                sessionUser = sessionUserPopulated.result;
+            }
+            else {
+                sessionUser = viewer;
+            }
+        }
     }
     catch {
         viewer = null;
         isViewerVerified = false;
+        sessionUser = null;
     }
+
+    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
@@ -147,9 +182,35 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     }
     else if (content?.type === E_MessageType.IMAGE) {
         if (typeof content.value === 'string' && content.value) {
-            content.value = isViewerVerified
-                ? bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } })
-                : bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+            // Check if sender (owner of the image) is age-verified
+            const sender = plainMessage.sender;
+            const senderAgeVerified = sender?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            const viewerId = viewer?.id;
+            const senderId = plainMessage.senderId;
+            const isOwner = viewerId && senderId && viewerId === senderId;
+
+            // Check if viewer is staff/admin
+            const viewerIsStaff = viewer?.roles?.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF'))) ?? false;
+            const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
+            const viewerExempt = viewerIsStaff || viewerIsAdmin;
+
+            // If sender is not age-verified and viewer is not owner/staff/admin, set to null (will show default image)
+            if (!senderAgeVerified && !isOwner && !viewerExempt) {
+                content.value = null as any; // Set to null to show default image
+            }
+            else {
+                // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                // Apply blur/sign logic based on viewer's membership
+                const viewerIsFreeMember = viewerMediaOptions.viewerIsFreeMember ?? false;
+                const shouldBlur = !isOwner && !viewerExempt && viewerIsFreeMember;
+
+                if (shouldBlur) {
+                    content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+                }
+                else {
+                    content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
+                }
+            }
         }
     }
 
@@ -220,38 +281,54 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         content = normalizeBlurMarkers(content);
     }
 
-    // Transform sender avatar based on viewer's age verification status
+    // Transform sender avatar using hydrateUserMedia
     // Handle both Mongoose Document and plain object
     let sender = plainMessage.sender;
     if (sender) {
         try {
             // Transform sender avatars (partner1 and partner2)
             const plainSender = (sender as any).toObject ? (sender as any).toObject() : sender;
-            const transformedSender = { ...plainSender };
+            let transformedSender = { ...plainSender };
 
-            if (transformedSender.partner1?.gallery?.url) {
-                transformedSender.partner1 = {
-                    ...transformedSender.partner1,
-                    gallery: {
-                        ...transformedSender.partner1.gallery,
-                        url: isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: transformedSender.partner1.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: transformedSender.partner1.gallery.url, extraQueryParams: { class: 'blur' } }),
-                    },
-                };
+            // Ensure ageVerify is populated for hydrateUserMedia to work correctly
+            if (!transformedSender.ageVerify && transformedSender.id) {
+                try {
+                    const { MongooseController } = await import('@cyberskill/shared/node/mongo');
+                    const { UserModel } = await import('#modules/user/user.model.js');
+                    const mongooseCtr = new MongooseController(UserModel);
+                    const senderPopulated = await mongooseCtr.findOne(
+                        { id: transformedSender.id },
+                        undefined,
+                        undefined,
+                        [
+                            { path: 'ageVerify' },
+                            {
+                                path: 'partner1',
+                                populate: [{ path: 'gallery' }],
+                            },
+                            {
+                                path: 'partner2',
+                                populate: [{ path: 'gallery' }],
+                            },
+                        ],
+                    );
+                    if (senderPopulated.success && senderPopulated.result) {
+                        // Merge ageVerify and galleries into sender
+                        transformedSender = {
+                            ...transformedSender,
+                            ageVerify: senderPopulated.result.ageVerify,
+                            partner1: senderPopulated.result.partner1 || transformedSender.partner1,
+                            partner2: senderPopulated.result.partner2 || transformedSender.partner2,
+                        };
+                    }
+                }
+                catch {
+                    // If fetch fails, continue with existing sender data
+                }
             }
 
-            if (transformedSender.partner2?.gallery?.url) {
-                transformedSender.partner2 = {
-                    ...transformedSender.partner2,
-                    gallery: {
-                        ...transformedSender.partner2.gallery,
-                        url: isViewerVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: transformedSender.partner2.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: transformedSender.partner2.gallery.url, extraQueryParams: { class: 'blur' } }),
-                    },
-                };
-            }
+            // Use hydrateUserMedia to apply proper blur/default image logic
+            hydrateUserMedia(transformedSender, viewerMediaOptions);
 
             sender = transformedSender as typeof sender;
         }

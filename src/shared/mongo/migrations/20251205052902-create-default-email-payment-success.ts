@@ -52,43 +52,43 @@ const paymentSuccessTemplate: I_EmailTemplateRaw = {
                             
                             <!-- Membership Plan Heading -->
                             <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:30px 0 20px;font-family:Arial, sans-serif;">Your Membership Plan:</h2>
-                            
+                                
                             <!-- Membership Plan Summary Table -->
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-bottom:30px;border-collapse:collapse;">
                                 <tr style="border-bottom:1px solid #000000;">
                                     <td style="padding:10px 0;font-size:14px;font-weight:bold;color:#000000;font-family:Arial, sans-serif;width:60%;">Description</td>
                                     <td style="padding:10px 0;font-size:14px;font-weight:bold;color:#000000;font-family:Arial, sans-serif;text-align:right;width:40%;">Amount</td>
-                                </tr>
-                                <tr>
+                                    </tr>
+                                    <tr>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">Membership – 1 month</td>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;text-align:right;"></td>
-                                </tr>
-                                <tr>
+                                    </tr>
+                                    <tr>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">Price (excl. VAT)</td>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;text-align:right;"><%= subtotal %></td>
-                                </tr>
-                                <tr>
+                                    </tr>
+                                    <tr>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">VAT <%= taxRate %>%</td>
                                     <td style="padding:10px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;text-align:right;"><%= tax %></td>
-                                </tr>
+                                    </tr>
                                 <tr style="border-top:1px solid #000000;">
                                     <td style="padding:15px 0 10px;font-size:16px;font-weight:bold;color:#000000;font-family:Arial, sans-serif;">Total</td>
                                     <td style="padding:15px 0 10px;font-size:16px;font-weight:bold;color:#000000;font-family:Arial, sans-serif;text-align:right;"><%= totalAmount %></td>
-                                </tr>
-                            </table>
-                            
+                                    </tr>
+                                </table>
+                                
                             <!-- Payment and Membership Period Details -->
                             <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top:30px;padding-top:20px;border-top:1px solid #e0e0e0;">
-                                <tr>
+                                        <tr>
                                     <td style="padding:5px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">Payment: <%= paymentMethod %></td>
-                                </tr>
-                                <tr>
+                                        </tr>
+                                        <tr>
                                     <td style="padding:5px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">Transaction ID: <%= transactionId %></td>
-                                </tr>
+                                        </tr>
                                 <tr>
                                     <td style="padding:5px 0;font-size:14px;color:#000000;font-family:Arial, sans-serif;">Membership period: <%= membershipPeriod %></td>
-                                </tr>
-                            </table>
+                                        </tr>
+                                    </table>
                         </td>
                     </tr>
                     <!-- Footer -->

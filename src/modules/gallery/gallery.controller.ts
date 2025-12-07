@@ -76,6 +76,7 @@ export const galleryCtr = {
     ): Promise<I_Return<I_Gallery>> => {
         const isLoggedIn = !!context?.req?.session?.user;
         let isFreeMember = false;
+        let isPaidMember = false;
 
         if (isLoggedIn) {
             try {
@@ -83,6 +84,13 @@ export const galleryCtr = {
             }
             catch {
                 isFreeMember = true;
+            }
+
+            try {
+                isPaidMember = await authnCtr.isPaidMember(context);
+            }
+            catch {
+                isPaidMember = false;
             }
         }
 
@@ -144,23 +152,34 @@ export const galleryCtr = {
             });
         }
 
-        // Hide galleries from non-age-verified uploaders (except owner viewing their own)
-        if (!isOwner && !isStaff && !isAdmin) {
-            const isUploaderVerified = await isUploaderAgeVerified(context, galleryFound.result);
-            if (!isUploaderVerified) {
-                throwError({
-                    message: 'Gallery not found',
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                });
+        // Check if uploader is age-verified
+        // If uploader is not age-verified and viewer is not owner/staff/admin, show default image (null)
+        const isUploaderVerified = await isUploaderAgeVerified(context, galleryFound.result);
+        const shouldShowDefaultImage = !isUploaderVerified && !isOwner && !isStaff && !isAdmin;
+
+        // Free members: blur all galleries of others (not their own)
+        // Paid members (membership active) can see clearly even if not age-verified
+        // Note: Free members always see blurred galleries of others, regardless of age verification
+        let shouldBlur = false;
+        if (!isOwner && !shouldShowDefaultImage) {
+            if (isFreeMember) {
+                // Free members always see blurred galleries of others
+                shouldBlur = true;
+            }
+            else if (!viewerAgeVerified && !isPaidMember && !isStaff && !isAdmin) {
+                // Non-verified non-paid members see blurred galleries
+                shouldBlur = true;
             }
         }
-
-        const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin);
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
 
         const applyThumbnailPolicy = (url?: string | null) => {
             if (!url)
                 return url;
+            // If uploader is not age-verified, return null to show default image
+            if (shouldShowDefaultImage) {
+                return null;
+            }
             if (shouldBlur) {
                 return bunnyCtr.generateBlurredUrl({
                     fullUrl: url,
@@ -173,14 +192,21 @@ export const galleryCtr = {
             });
         };
 
-        if (galleryFound.result.url && galleryFound.result.type === E_GalleryType.IMAGE) {
-            galleryFound.result.url = applyThumbnailPolicy(galleryFound.result.url) ?? galleryFound.result.url;
+        // Transform image URL: set to null/undefined if uploader is not age-verified (to show default image)
+        if (galleryFound.result.type === E_GalleryType.IMAGE) {
+            if (galleryFound.result.url) {
+                galleryFound.result.url = applyThumbnailPolicy(galleryFound.result.url) ?? undefined;
+            }
+            // If shouldShowDefaultImage is true, explicitly set url to undefined even if it exists
+            if (shouldShowDefaultImage) {
+                galleryFound.result.url = undefined;
+            }
         }
 
-        // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
+        // Video access control: paid members (membership active) can view videos even if not age-verified
         // Hide video completely for unauthorized users
         if (galleryFound.result.type === E_GalleryType.VIDEO) {
-            const canViewVideo = isOwner || isStaff || isAdmin || (viewerAgeVerified && !isFreeMember);
+            const canViewVideo = isOwner || isStaff || isAdmin || (isPaidMember && !isFreeMember) || (viewerAgeVerified && !isFreeMember);
             if (!canViewVideo) {
                 // Hide video completely - return not found
                 throwError({
@@ -215,6 +241,7 @@ export const galleryCtr = {
         const isOwner = ownerFromSingle || ownerFromMultiple;
 
         let isFreeMember = false;
+        let isPaidMember = false;
         let isStaff = false;
         let isAdmin = false;
         if (isLoggedIn) {
@@ -223,6 +250,13 @@ export const galleryCtr = {
             }
             catch {
                 isFreeMember = true;
+            }
+
+            try {
+                isPaidMember = await authnCtr.isPaidMember(context);
+            }
+            catch {
+                isPaidMember = false;
             }
 
             try {
@@ -280,6 +314,10 @@ export const galleryCtr = {
             populate: [
                 {
                     path: 'uploadedBy',
+                    populate: [
+                        { path: 'ageVerify' },
+                        { path: 'roles' },
+                    ],
                 },
             ],
         });
@@ -310,15 +348,20 @@ export const galleryCtr = {
                 // Hide galleries from non-age-verified uploaders (except owner viewing their own)
                 const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
                 if (!isOwner) {
-                    const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
-                    if (!isUploaderVerified) {
-                        return { gallery, shouldInclude: false }; // Hide photos from non-age-verified uploaders
+                    // Free members (membership expired) can see galleries but they will be blurred or show default image
+                    // Don't filter out galleries - they will show default image (null URL) or be blurred in the transform step
+                    // Paid members (membership active) can see galleries even if not age-verified
+                    // Non-verified viewers who are not paid members cannot see galleries of others
+                    if (!viewerAgeVerified && !isPaidMember && !isFreeMember) {
+                        return { gallery, shouldInclude: false }; // Hide all galleries from non-verified non-paid viewers (not free members)
                     }
+                    // Don't filter out galleries from non-age-verified uploaders - they will show default image (null URL) in transform step
                 }
 
                 // Hide videos completely for users who are not age-verified paid members (or owner)
+                // Paid members (membership active) can view videos even if not age-verified
                 if (gallery.type === E_GalleryType.VIDEO) {
-                    const canViewVideo = isOwner || (viewerAgeVerified && !isFreeMember);
+                    const canViewVideo = isOwner || (isPaidMember && !isFreeMember) || (viewerAgeVerified && !isFreeMember);
                     if (!canViewVideo) {
                         return { gallery, shouldInclude: false }; // Filter out video from results
                     }
@@ -355,13 +398,37 @@ export const galleryCtr = {
 
             const galleryResult = { ...gallery, isLike, likeCount, viewCount };
 
-            const membershipClass = (sessionUserId && gallery.uploadedById === sessionUserId)
+            const isGalleryOwner = sessionUserId && gallery.uploadedById === sessionUserId;
+            const membershipClass = isGalleryOwner
                 ? 'normal'
                 : (isFreeMember ? 'free' : 'premium');
-            const shouldBlur = (!viewerAgeVerified && !isStaff && !isAdmin);
+
+            // Check if uploader is age-verified
+            // If uploader is not age-verified and viewer is not owner/staff/admin, show default image (null)
+            const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
+            const shouldShowDefaultImage = !isUploaderVerified && !isGalleryOwner && !isStaff && !isAdmin;
+
+            // Free members: blur all galleries of others (not their own)
+            // Paid members (membership active) can see clearly even if not age-verified
+            // Note: Free members always see blurred galleries of others, regardless of age verification
+            let shouldBlur = false;
+            if (!isGalleryOwner && !shouldShowDefaultImage) {
+                if (isFreeMember) {
+                    // Free members always see blurred galleries of others
+                    shouldBlur = true;
+                }
+                else if (!viewerAgeVerified && !isPaidMember && !isStaff && !isAdmin) {
+                    // Non-verified non-paid members see blurred galleries
+                    shouldBlur = true;
+                }
+            }
             const transformMediaUrl = (url?: string | null) => {
                 if (!url)
                     return url;
+                // If uploader is not age-verified, return null to show default image
+                if (shouldShowDefaultImage) {
+                    return null;
+                }
                 if (shouldBlur) {
                     return bunnyCtr.generateBlurredUrl({
                         fullUrl: url,
@@ -374,8 +441,15 @@ export const galleryCtr = {
                 });
             };
 
-            if (galleryResult.url && gallery.type === E_GalleryType.IMAGE) {
-                galleryResult.url = transformMediaUrl(galleryResult.url) ?? galleryResult.url;
+            // Transform image URL: set to null/undefined if uploader is not age-verified (to show default image)
+            if (gallery.type === E_GalleryType.IMAGE) {
+                if (galleryResult.url) {
+                    galleryResult.url = transformMediaUrl(galleryResult.url) ?? undefined;
+                }
+                // If shouldShowDefaultImage is true, explicitly set url to undefined even if it exists
+                if (shouldShowDefaultImage) {
+                    galleryResult.url = undefined;
+                }
             }
             // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
             // Videos are already filtered out above, so we only process videos for authorized users here
@@ -385,7 +459,7 @@ export const galleryCtr = {
                 });
             }
             if (galleryResult.thumbnailUrl) {
-                galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? galleryResult.thumbnailUrl;
+                galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? undefined;
             }
 
             return galleryResult;

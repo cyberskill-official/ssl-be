@@ -21,12 +21,13 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { blockCtr } from '#modules/block/block.controller.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
 import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
 
@@ -289,6 +290,7 @@ export const locationCtr = {
         ];
 
         const userPopulate: PopulateOptions[] = [
+            { path: 'ageVerify' }, // Add ageVerify for media hydration
             {
                 path: 'partner1',
                 populate: [
@@ -1237,14 +1239,42 @@ export const locationCtr = {
         }
 
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
-        let viewerAgeVerified = false;
+        // Get viewer context for media hydration
+        let sessionUser: I_User | undefined;
         try {
             const viewer = await authnCtr.getUserFromSession(context);
-            viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            if (viewer?.id) {
+                // Fetch full user data with roles and ageVerify to avoid circular dependency
+                const sessionUserPopulated = await mongooseCtr.findOne(
+                    { id: viewer.id },
+                    undefined,
+                    undefined,
+                    [
+                        { path: 'roles' },
+                        { path: 'ageVerify' },
+                        {
+                            path: 'partner1',
+                            populate: [{ path: 'gallery' }],
+                        },
+                        {
+                            path: 'partner2',
+                            populate: [{ path: 'gallery' }],
+                        },
+                    ],
+                );
+                if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                    sessionUser = sessionUserPopulated.result;
+                }
+                else {
+                    sessionUser = viewer;
+                }
+            }
         }
         catch {
-            viewerAgeVerified = false;
+            sessionUser = undefined;
         }
+
+        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
         docs = docs.map((d) => {
             try {
@@ -1252,21 +1282,10 @@ export const locationCtr = {
                 if (!e)
                     return d;
 
-                // USER entity: blur partner galleries
+                // USER entity: hydrate user media (blur/sign/default based on age verification)
                 if (d.entityType === E_LocationEntityType.USER) {
                     const user = e as I_User;
-                    const p1 = user.partner1;
-                    const p2 = user.partner2;
-                    if (p1?.gallery?.url) {
-                        p1.gallery.url = viewerAgeVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
-                    if (p2?.gallery?.url) {
-                        p2.gallery.url = viewerAgeVerified
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
+                    hydrateUserMedia(user, viewerMediaOptions);
                 }
 
                 // EVENT entity: blur event image
@@ -1274,7 +1293,7 @@ export const locationCtr = {
                     const ev = e as I_Event;
 
                     // Blur nếu viewer chưa age verify
-                    const shouldBlur = !viewerAgeVerified;
+                    const shouldBlur = !viewerMediaOptions.viewerAgeVerified;
 
                     if (ev?.image) {
                         ev.image = shouldBlur
@@ -1308,12 +1327,12 @@ export const locationCtr = {
                 if (d.entityType === E_LocationEntityType.DESTINATION) {
                     const dest = e as I_Destination;
                     if (Array.isArray(dest.images)) {
-                        dest.images = dest.images.map(u => viewerAgeVerified
+                        dest.images = dest.images.map(u => viewerMediaOptions.viewerAgeVerified
                             ? bunnyCtr.generateSignedUrl({ fullUrl: u, extraQueryParams: { class: 'normal' } })
                             : bunnyCtr.generateBlurredUrl({ fullUrl: u, extraQueryParams: { class: 'blur' } }));
                     }
                     if (dest.logo) {
-                        dest.logo = viewerAgeVerified
+                        dest.logo = viewerMediaOptions.viewerAgeVerified
                             ? bunnyCtr.generateSignedUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'normal' } })
                             : bunnyCtr.generateBlurredUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'blur' } });
                     }
