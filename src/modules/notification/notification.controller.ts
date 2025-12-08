@@ -361,32 +361,48 @@ export const notificationCtr = {
                     // actor avatar - logic based on ACTOR's age verification and VIEWER's membership status
                     const actor = pres.actor;
                     if (actor) { // Check if actor is defined
-                        // Get actor's gallery URL from map (prioritize map, then presentation, then null)
+                        // Get actor's gallery URL from map
                         const actorGalleryUrlFromMap = actorId ? actorAvatarUrlMap.get(actorId) : null;
-                        const actorGalleryUrl = actorGalleryUrlFromMap ?? actor?.avatarUrl ?? null;
+                        // Get existing avatarUrl from presentation (might already have URL from notification creation)
+                        const existingAvatarUrl = actor?.avatarUrl ?? null;
 
-                        // Only process if we have a gallery URL
-                        if (actorGalleryUrl) {
-                            // Case 1: Actor is not age-verified → show default image (null)
-                            // Khi actor chưa ageVerify thì viewer khác sẽ thấy ảnh actor là null
-                            if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
+                        // Get the URL to use (prioritize gallery URL from map, then existing avatarUrl in presentation)
+                        const urlToUse = actorGalleryUrlFromMap ?? existingAvatarUrl;
+
+                        // Only process if we have a URL to use
+                        if (urlToUse) {
+                            // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
+                            // (kể cả khi actor chưa age-verified, FREE_MEMBER vẫn thấy blur, KHÔNG BAO GIỜ thấy null)
+                            if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
+                                actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'blur' } });
+                            }
+                            // Case 2: Actor is not age-verified → show default image (null)
+                            // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
+                            else if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
                                 actor.avatarUrl = null as any; // Set to null to show default image
                             }
+                            // Case 3: Viewer is PAID_MEMBER và actor đã age-verified → thấy ảnh bình thường
                             else {
-                                // Case 2: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-                                if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
-                                    actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'blur' } });
-                                }
-                                // Case 3: Viewer is PAID_MEMBER (MEMBERSHIP) → thấy ảnh bình thường
-                                else {
-                                    actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'normal' } });
-                                }
+                                actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
                             }
                         }
-                        // If no gallery URL and no existing avatarUrl in presentation, set to null
-                        // But don't override if presentation already has an avatarUrl (might be from notification creation)
-                        else if (!actor.avatarUrl) {
-                            actor.avatarUrl = null as any;
+                        // If no URL at all:
+                        // - FREE_MEMBER: nếu có existingAvatarUrl thì blur nó (không set null)
+                        // - PAID_MEMBER: set null nếu không có URL
+                        else {
+                            // Nếu viewer là FREE_MEMBER và có existingAvatarUrl, blur nó (không set null)
+                            if (viewerIsFreeMember && !isActorOwner && !viewerExempt && existingAvatarUrl) {
+                                actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: existingAvatarUrl, extraQueryParams: { class: 'blur' } });
+                            }
+                            // Nếu không có URL và không có existingAvatarUrl, set null
+                            else if (!existingAvatarUrl) {
+                                actor.avatarUrl = null as any;
+                            }
+                            // Nếu có existingAvatarUrl nhưng viewer là PAID_MEMBER và actor không age-verified, set null
+                            else if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
+                                actor.avatarUrl = null as any;
+                            }
+                            // Các trường hợp khác, giữ nguyên existingAvatarUrl
                         }
                     }
 

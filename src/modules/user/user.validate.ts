@@ -37,22 +37,25 @@ function signProfileImage(
     // FREE_MEMBER check
     const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
 
-    // Case 1: Owner is not age-verified → show default (null)
+    // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
+    // (kể cả khi owner chưa age-verified, FREE_MEMBER vẫn thấy blur, KHÔNG BAO GIỜ thấy null)
+    if (viewerIsFreeMember && !isOwner && !viewerExempt) {
+        return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
+    }
+
+    // Case 2: Owner is not age-verified → show default (null)
+    // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
     if (!ownerAgeVerified && !isOwner && !viewerExempt) {
         return null; // Return null to show default image
     }
 
-    // Case 2: Viewer is not age-verified → show default (null)
+    // Case 3: Viewer is not age-verified → show default (null)
+    // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
     if (!viewerAgeVerified && !isOwner && !viewerExempt) {
         return null; // Viewer not verified, show default
     }
 
-    // Case 3: FREE_MEMBER (age-verified) → show blur
-    if (!isOwner && !viewerExempt && viewerIsFreeMember) {
-        return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
-    }
-
-    // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
+    // Case 4: PAID_MEMBER (age-verified) và owner đã age-verified → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
         extraQueryParams: { class: 'normal' },

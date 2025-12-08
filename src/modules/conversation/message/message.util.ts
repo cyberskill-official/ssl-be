@@ -218,28 +218,30 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // Check sender's membership status (not viewer's)
-            const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
-            const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-            let senderMembershipActive = false;
+            // Check viewer's membership status (not sender's)
+            const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+            const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            let viewerMembershipActive = false;
             try {
-                senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
+                viewerMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
             }
             catch {
-                senderMembershipActive = false;
+                viewerMembershipActive = false;
             }
-            const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
+            const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
 
-            // Case 1: Sender is not age-verified → show default image
-            if (!senderAgeVerified && !isOwner && !viewerExempt) {
-                content.value = null as any; // Set to null to show default image
-            }
-            // Case 2: Sender is FREE_MEMBER (age-verified) → show blur
-            else if (isSenderFreeMember && !isOwner && !viewerExempt) {
+            // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
+            // (kể cả khi sender chưa age-verified, FREE_MEMBER vẫn thấy blur, KHÔNG BAO GIỜ thấy null)
+            if (viewerIsFreeMember && !isOwner && !viewerExempt) {
                 content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
             }
-            // Case 3: Sender is PAID_MEMBER (age-verified) or owner/admin → show normal
+            // Case 2: Sender is not age-verified → show default image (null)
+            // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
+            else if (!senderAgeVerified && !isOwner && !viewerExempt) {
+                content.value = null as any; // Set to null to show default image
+            }
+            // Case 3: Sender đã age-verified và viewer là PAID_MEMBER → show normal
             else {
                 content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
             }
