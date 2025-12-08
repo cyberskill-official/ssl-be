@@ -285,6 +285,7 @@ export const notificationCtr = {
                                     hasPartner2Gallery: !!actor.partner2?.gallery?.url,
                                     galleryUrl: !!galleryUrl,
                                     hasAgeVerify: !!actor.ageVerify,
+                                    ageVerifyObject: actor.ageVerify ? JSON.stringify(actor.ageVerify) : 'null',
                                     ageVerifyStatus: actor.ageVerify?.status,
                                     isActorAgeVerified,
                                 });
