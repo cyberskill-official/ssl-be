@@ -157,19 +157,13 @@ export function shouldBlurForContext(context?: I_Context, eventCreatedById?: str
         return false; // Staff/admin can always see clearly
     }
 
-    // Check if viewer is FREE_MEMBER - FREE_MEMBER blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+    // Check if viewer is FREE_MEMBER - chỉ FREE_MEMBER mới bị blur ảnh người khác
     const isFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER' || role.name === 'FREE_MEM');
     if (isFreeMember) {
         return true; // FREE_MEMBER should see blurred event images of others
     }
 
-    // Check if viewer is age-verified
-    const viewerAgeVerified = viewer.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-    if (!viewerAgeVerified) {
-        return true; // Not age-verified, blur
-    }
-
-    return false; // Age-verified paid member, show clearly
+    return false; // MEMBERSHIP hoặc owner/staff/admin → show clearly
 }
 
 export async function signEventImage(fullUrl: string, context?: I_Context, eventCreatedById?: string): Promise<string | null> {

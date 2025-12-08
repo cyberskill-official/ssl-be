@@ -5,7 +5,7 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
-import { isValidObjectId, Types } from 'mongoose';
+import mongoose, { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
@@ -311,42 +311,94 @@ export const notificationCtr = {
                         }
 
                         // Second pass: query ageVerify for actors that don't have it
-                        // Use userCtr.getUser (safe, goes through controller) instead of direct query
+                        // Query directly from MongoDB collection (safe, only reading ageVerify field)
                         if (actorsWithoutAgeVerify.size > 0) {
                             log.warn('[getNotifications] Querying ageVerify for actors without it:', {
                                 count: actorsWithoutAgeVerify.size,
                                 actorIds: Array.from(actorsWithoutAgeVerify),
                             });
-                            const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+
+                            // Query ageVerify directly from MongoDB collection
+                            if (mongoose.connection.db) {
                                 try {
-                                    const userResult = await userCtr.getUser(_context, {
-                                        filter: { id: actorId },
-                                        projection: { ageVerify: 1 }, // Only get ageVerify
-                                    });
-                                    if (userResult.success && userResult.result) {
-                                        const ageVerify = userResult.result.ageVerify;
-                                        const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                                        actorAgeVerifyMap.set(actorId, isActorAgeVerified);
-                                        log.warn('[getNotifications] ageVerify query result:', {
-                                            actorId,
-                                            hasAgeVerify: !!ageVerify,
-                                            ageVerifyStatus: ageVerify?.status,
-                                            isActorAgeVerified,
-                                        });
+                                    const usersCollection = mongoose.connection.db.collection('users');
+                                    const ageVerifyDocs = await usersCollection.find(
+                                        { id: { $in: Array.from(actorsWithoutAgeVerify) } },
+                                        { projection: { id: 1, ageVerify: 1 } },
+                                    ).toArray();
+
+                                    for (const doc of ageVerifyDocs) {
+                                        const actorId = doc['id'] as string | undefined;
+                                        const ageVerify = doc['ageVerify'] as { status?: string } | undefined;
+                                        if (actorId) {
+                                            const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                            actorAgeVerifyMap.set(actorId, isActorAgeVerified);
+                                            log.warn('[getNotifications] ageVerify query result (direct MongoDB):', {
+                                                actorId,
+                                                hasAgeVerify: !!ageVerify,
+                                                ageVerifyStatus: ageVerify?.status,
+                                                isActorAgeVerified,
+                                            });
+                                        }
                                     }
-                                    else {
-                                        // If query fails, default to false
-                                        log.warn('[getNotifications] ageVerify query failed (no result):', { actorId });
-                                        actorAgeVerifyMap.set(actorId, false);
+
+                                    // For actors not found in direct query, default to false
+                                    for (const actorId of actorsWithoutAgeVerify) {
+                                        if (!actorAgeVerifyMap.has(actorId)) {
+                                            log.warn('[getNotifications] ageVerify not found in direct MongoDB query:', { actorId });
+                                            actorAgeVerifyMap.set(actorId, false);
+                                        }
                                     }
                                 }
                                 catch (error) {
-                                    log.warn('[getNotifications] Failed to query ageVerify for actor:', { actorId, error });
-                                    // Default to false if query fails
-                                    actorAgeVerifyMap.set(actorId, false);
+                                    log.warn('[getNotifications] Failed to query ageVerify directly from MongoDB:', { error });
+                                    // Fallback to userCtr.getUser for each actor
+                                    const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+                                        try {
+                                            const userResult = await userCtr.getUser(_context, {
+                                                filter: { id: actorId },
+                                                projection: { ageVerify: 1 },
+                                            });
+                                            if (userResult.success && userResult.result) {
+                                                const ageVerify = userResult.result.ageVerify;
+                                                const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                                actorAgeVerifyMap.set(actorId, isActorAgeVerified);
+                                            }
+                                            else {
+                                                actorAgeVerifyMap.set(actorId, false);
+                                            }
+                                        }
+                                        catch {
+                                            actorAgeVerifyMap.set(actorId, false);
+                                        }
+                                    });
+                                    await Promise.all(ageVerifyPromises);
                                 }
-                            });
-                            await Promise.all(ageVerifyPromises);
+                            }
+                            else {
+                                // Fallback to userCtr.getUser if mongoose.connection.db is not available
+                                log.warn('[getNotifications] mongoose.connection.db not available, using userCtr.getUser fallback');
+                                const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+                                    try {
+                                        const userResult = await userCtr.getUser(_context, {
+                                            filter: { id: actorId },
+                                            projection: { ageVerify: 1 },
+                                        });
+                                        if (userResult.success && userResult.result) {
+                                            const ageVerify = userResult.result.ageVerify;
+                                            const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                            actorAgeVerifyMap.set(actorId, isActorAgeVerified);
+                                        }
+                                        else {
+                                            actorAgeVerifyMap.set(actorId, false);
+                                        }
+                                    }
+                                    catch {
+                                        actorAgeVerifyMap.set(actorId, false);
+                                    }
+                                });
+                                await Promise.all(ageVerifyPromises);
+                            }
                         }
 
                         // Log for debugging
@@ -471,26 +523,15 @@ export const notificationCtr = {
 
                         // Only process if we have a URL to use
                         if (urlToUse) {
-                            // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-                            // FREE_MEMBER luôn thấy ảnh bị mờ, không phụ thuộc vào ageVerify của actor
-                            if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
+                            // Case 1: Actor chưa xác thực tuổi → mọi người khác thấy null (owner/staff/admin vẫn thấy rõ)
+                            if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
+                                actor.avatarUrl = null as any;
+                            }
+                            // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
+                            else if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
                                 actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'blur' } });
                             }
-                            // Case 2: Viewer is MEMBERSHIP (PAID_MEMBER với active membership)
-                            // - Nếu actor chưa age-verified → show default image (null)
-                            // - Nếu actor đã age-verified → thấy ảnh rõ (normal)
-                            else if (!isActorOwner && !viewerExempt) {
-                                // Check actor's age verification status
-                                if (!isActorAgeVerified) {
-                                    // Actor chưa age-verified → null (default image)
-                                    actor.avatarUrl = null as any;
-                                }
-                                else {
-                                    // Actor đã age-verified → rõ ảnh (normal)
-                                    actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
-                                }
-                            }
-                            // Case 3: Owner hoặc exempt (staff/admin) → luôn thấy ảnh rõ
+                            // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
                             else {
                                 actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
                             }
@@ -606,26 +647,15 @@ export const notificationCtr = {
                         }
 
                         // Logic based on THUMBNAIL OWNER's age verification and VIEWER's membership status
-                        // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-                        // FREE_MEMBER luôn thấy ảnh bị mờ, không phụ thuộc vào ageVerify của thumbnail owner
-                        if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
+                        // Case 1: Owner chưa xác thực tuổi → người khác thấy null (owner/staff/admin vẫn thấy rõ)
+                        if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
+                            pres.thumbnailUrl = null as any;
+                        }
+                        // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
+                        else if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
                             pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
                         }
-                        // Case 2: Viewer is MEMBERSHIP (PAID_MEMBER với active membership)
-                        // - Nếu thumbnail owner chưa age-verified → show default image (null)
-                        // - Nếu thumbnail owner đã age-verified → thấy ảnh rõ (normal)
-                        else if (!isThumbnailOwner && !viewerExempt) {
-                            // Check thumbnail owner's age verification status
-                            if (!isThumbnailOwnerAgeVerified) {
-                                // Thumbnail owner chưa age-verified → null (default image)
-                                pres.thumbnailUrl = null as any;
-                            }
-                            else {
-                                // Thumbnail owner đã age-verified → rõ ảnh (normal)
-                                pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
-                            }
-                        }
-                        // Case 3: Owner hoặc exempt (staff/admin) → luôn thấy ảnh rõ
+                        // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
                         else {
                             pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                         }

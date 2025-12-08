@@ -214,34 +214,37 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const isOwner = viewerId && senderId && viewerId === senderId;
 
             // Check if viewer is staff/admin
-            const viewerIsStaff = viewer?.roles?.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF'))) ?? false;
-            const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
+            // Use sessionUser instead of viewer because sessionUser has roles populated
+            const rolesForExemptCheck = sessionUser?.roles || viewer?.roles || [];
+            const viewerIsStaff = (Array.isArray(rolesForExemptCheck) && rolesForExemptCheck.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')))) ?? false;
+            const viewerIsAdmin = (Array.isArray(rolesForExemptCheck) && rolesForExemptCheck.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
             // Check viewer's membership status (not sender's)
-            const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+            // Use sessionUser instead of viewer because sessionUser has roles populated
+            const viewerRoles = Array.isArray(sessionUser?.roles) ? sessionUser?.roles : (Array.isArray(viewer?.roles) ? viewer?.roles : []);
             const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
             const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
             let viewerMembershipActive = false;
             try {
-                viewerMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+                // Use sessionUser for membership check if available, otherwise use viewer
+                const userForMembershipCheck = sessionUser || viewer;
+                viewerMembershipActive = userForMembershipCheck ? authnCtr.isMembershipActive(userForMembershipCheck) : false;
             }
             catch {
                 viewerMembershipActive = false;
             }
             const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
 
-            // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-            // (kể cả khi sender chưa age-verified, FREE_MEMBER vẫn thấy blur, KHÔNG BAO GIỜ thấy null)
-            if (viewerIsFreeMember && !isOwner && !viewerExempt) {
+            // Case 1: Sender chưa xác thực tuổi → người khác thấy null (owner/staff/admin vẫn thấy rõ)
+            if (!senderAgeVerified && !isOwner && !viewerExempt) {
+                content.value = null as any; // Show default image for other viewers
+            }
+            // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
+            else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
                 content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
             }
-            // Case 2: Sender is not age-verified → show default image (null)
-            // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
-            else if (!senderAgeVerified && !isOwner && !viewerExempt) {
-                content.value = null as any; // Set to null to show default image
-            }
-            // Case 3: Sender đã age-verified và viewer là PAID_MEMBER → show normal
+            // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
             else {
                 content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
             }
