@@ -202,15 +202,16 @@ export const notificationCtr = {
             let viewerIsStaff = false;
             let viewerIsAdmin = false;
             let viewerId: string | undefined;
+            let sessionViewer: any;
             try {
-                const viewer = await authnCtr.getUserFromSession(_context);
-                viewerId = viewer?.id;
-                const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
-                viewerIsAdmin = roles.some(role =>
+                sessionViewer = await authnCtr.getUserFromSession(_context);
+                viewerId = sessionViewer?.id;
+                const roles = Array.isArray(sessionViewer?.roles) ? sessionViewer?.roles : [];
+                viewerIsAdmin = roles.some((role: any) =>
                     role.name === E_Role_Staff.ADMIN
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role_Staff.ADMIN)),
                 );
-                viewerIsStaff = roles.some(role =>
+                viewerIsStaff = roles.some((role: any) =>
                     role.name === E_Role.STAFF
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
                 );
@@ -249,8 +250,27 @@ export const notificationCtr = {
                     }
                 }
                 catch {
-                    // If fetch fails, assume viewer is not a member
+                    // Fallback handled below
                 }
+            }
+
+            // Fallback: use session viewer roles if DB fetch fails or returns empty
+            if (!viewerIsFreeMember && !viewerIsPaidMember) {
+                const fallbackRoles = Array.isArray(sessionViewer?.roles) ? sessionViewer.roles : [];
+                const hasRole = (names: string[]) => fallbackRoles.some(
+                    (role: any) => typeof role?.name === 'string'
+                        && names.some(n => role.name.toLowerCase() === n.toLowerCase()),
+                );
+                const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM']);
+                const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM']);
+                const viewerMembershipActive = sessionViewer ? authnCtr.isMembershipActive(sessionViewer) : false;
+                viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
+                viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
+            }
+
+            // Safety: if still unknown and not exempt (staff/admin), default to FREE to avoid leaking clear images
+            if (!viewerIsFreeMember && !viewerIsPaidMember && !viewerExempt) {
+                viewerIsFreeMember = true;
             }
 
             if (res.success && res.result && Array.isArray(res.result.docs)) {
