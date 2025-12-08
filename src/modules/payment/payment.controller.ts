@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
@@ -35,6 +35,11 @@ export const paymentController = {
      * Make payment - BE automatically gets userId from session and finds pricing based on user location
      */
     async makePayment(context: I_Context, { input }: { input: I_Input_MakePayment }): Promise<I_Return<I_MakePaymentResult>> {
+        log.warn('[makePayment] Starting makePayment with input:', {
+            pricingId: input.pricingId,
+            countryCode: input.countryCode,
+            loc: input.loc,
+        });
         // BE automatically gets userId from session (not from FE input)
         const currentUser = await authnCtr.getUserFromSession(context);
         if (!currentUser) {
@@ -83,6 +88,7 @@ export const paymentController = {
 
         // Priority 0: If pricingId is provided, use that pricing directly
         if (input.pricingId) {
+            log.warn('[makePayment] Querying pricing by pricingId:', input.pricingId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     id: input.pricingId,
@@ -94,21 +100,40 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
+            log.warn('[makePayment] Pricing query result:', {
+                success: pricingRes.success,
+                hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : undefined,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : undefined,
+                hasCurrency: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result?.currency : false,
+                currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : undefined,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
                 // Ensure currencyId is preserved even after populate
                 // If currencyId is missing, query it directly from database
                 if (!pricing.currencyId && pricing.id) {
+                    log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
                     const pricingRawRes = await pricingMongooseCtr.findOne(
                         { id: pricing.id },
                         { currencyId: 1 }, // Only get currencyId
                     );
-                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                    log.warn('[makePayment] Raw pricing query result:', {
+                        success: pricingRawRes.success,
+                        currencyId: 'result' in pricingRawRes ? pricingRawRes.result?.currencyId : undefined,
+                    });
+                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
                         pricing.currencyId = pricingRawRes.result.currencyId;
+                        log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
                     }
                 }
             }
             else {
+                log.warn('[makePayment] Pricing not found or inactive:', {
+                    pricingId: input.pricingId,
+                    success: pricingRes.success,
+                    message: pricingRes.message,
+                });
                 throwError({
                     status: RESPONSE_STATUS.NOT_FOUND,
                     message: `Pricing with id "${input.pricingId}" not found or is inactive`,
@@ -118,6 +143,7 @@ export const paymentController = {
 
         // Priority 1: by stateId (most specific)
         if (!pricing && stateId) {
+            log.warn('[makePayment] Querying pricing by stateId:', stateId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -129,16 +155,24 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
+            log.warn('[makePayment] Pricing by stateId result:', {
+                success: pricingRes.success,
+                hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : undefined,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : undefined,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
                 // Ensure currencyId is preserved even after populate
                 if (!pricing.currencyId && pricing.id) {
+                    log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
                     const pricingRawRes = await pricingMongooseCtr.findOne(
                         { id: pricing.id },
                         { currencyId: 1 }, // Only get currencyId
                     );
-                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
                         pricing.currencyId = pricingRawRes.result.currencyId;
+                        log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
                     }
                 }
             }
@@ -146,6 +180,7 @@ export const paymentController = {
 
         // Priority 2: by countryId (fallback)
         if (!pricing && countryId) {
+            log.warn('[makePayment] Querying pricing by countryId:', countryId);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -157,16 +192,24 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
+            log.warn('[makePayment] Pricing by countryId result:', {
+                success: pricingRes.success,
+                hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : undefined,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : undefined,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
                 // Ensure currencyId is preserved even after populate
                 if (!pricing.currencyId && pricing.id) {
+                    log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
                     const pricingRawRes = await pricingMongooseCtr.findOne(
                         { id: pricing.id },
                         { currencyId: 1 }, // Only get currencyId
                     );
-                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
                         pricing.currencyId = pricingRawRes.result.currencyId;
+                        log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
                     }
                 }
             }
@@ -174,6 +217,7 @@ export const paymentController = {
 
         // Priority 3: default pricing (no country/state)
         if (!pricing) {
+            log.warn('[makePayment] Querying default pricing (no country/state)');
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     type: E_PricingType.MEMBERSHIP,
@@ -185,22 +229,35 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
+            log.warn('[makePayment] Default pricing result:', {
+                success: pricingRes.success,
+                hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
+                pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : undefined,
+                currencyId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currencyId : undefined,
+            });
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
                 // Ensure currencyId is preserved even after populate
                 if (!pricing.currencyId && pricing.id) {
+                    log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
                     const pricingRawRes = await pricingMongooseCtr.findOne(
                         { id: pricing.id },
                         { currencyId: 1 }, // Only get currencyId
                     );
-                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
                         pricing.currencyId = pricingRawRes.result.currencyId;
+                        log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
                     }
                 }
             }
         }
 
         if (!pricing) {
+            log.warn('[makePayment] No pricing found for location:', {
+                stateId,
+                countryId,
+                pricingId: input.pricingId,
+            });
             throwError({
                 status: RESPONSE_STATUS.NOT_FOUND,
                 message: 'Pricing not found for your location',
@@ -208,8 +265,22 @@ export const paymentController = {
         }
         const pricingType = pricing.type ?? E_PricingType.MEMBERSHIP;
 
+        log.warn('[makePayment] Final pricing before validation:', {
+            pricingId: pricing.id,
+            currencyId: pricing.currencyId,
+            hasCurrency: !!pricing.currency,
+            currencyCode: pricing.currency?.code,
+            price: pricing.price,
+            isActive: pricing.isActive,
+        });
+
         // Validate that pricing has a valid currencyId
         if (!pricing.currencyId) {
+            log.warn('[makePayment] Pricing missing currencyId:', {
+                pricingId: pricing.id,
+                pricingType: pricing.type,
+                price: pricing.price,
+            });
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: `Pricing record (${pricing.id}) is missing currencyId. Please contact administrator to fix the pricing configuration.`,

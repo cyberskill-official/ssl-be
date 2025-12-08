@@ -42,7 +42,7 @@ export const emailCtr = {
 
             subjectText = subject || 'No Subject';
             if (env.IS_DEV || env.IS_STAG) {
-                subjectText = `[TEST] ${subjectText}`;
+                subjectText = `[SECRETWINGERLUST] ${subjectText}`;
             }
 
             if (templateFromCache) {
@@ -52,7 +52,7 @@ export const emailCtr = {
                     const rendered = subject || await ejs.render(templateSubject, templateData);
                     subjectText = rendered || subjectText;
                     if (env.IS_DEV || env.IS_STAG) {
-                        subjectText = `[TEST] ${subjectText}`;
+                        subjectText = `[SECRETWINGERLUST] ${subjectText}`;
                     }
                 }
 
@@ -70,7 +70,7 @@ export const emailCtr = {
                         const rendered = subject || await ejs.render(templateSubject, templateData);
                         subjectText = rendered || subjectText;
                         if (env.IS_DEV || env.IS_STAG) {
-                            subjectText = `[TEST] ${subjectText}`;
+                            subjectText = `[SECRETWINGERLUST] ${subjectText}`;
                         }
                     }
 
@@ -128,7 +128,7 @@ export const emailCtr = {
             const emails = Array.isArray(to) ? to : [to];
             let subjectText = subject || 'No Subject';
             if (env.IS_DEV || env.IS_STAG) {
-                subjectText = `[TEST] ${subjectText}`;
+                subjectText = `[SECRETWINGERLUST] ${subjectText}`;
             }
 
             const emailData: I_EmailJobData = {
