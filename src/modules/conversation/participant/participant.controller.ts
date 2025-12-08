@@ -13,12 +13,15 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { UserModel } from '#modules/user/user.model.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { pubsub } from '#shared/graphql/index.js';
 
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
@@ -30,6 +33,7 @@ import { ParticipantModel } from './participant.model.js';
 import { E_ParticipantRole } from './participant.type.js';
 
 const mongooseCtr = new MongooseController<I_Participant>(ParticipantModel);
+const userMongooseCtr = new MongooseController<I_User>(UserModel);
 
 export const participantCtr = {
     getParticipant: async (
@@ -40,10 +44,104 @@ export const participantCtr = {
     },
 
     getParticipants: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryParticipant>,
     ): Promise<I_Return<T_PaginateResult<I_Participant>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const res = await mongooseCtr.findPaging(filter, options);
+        if (!res.success || !res.result)
+            return res;
+
+        // Build viewer context for proper blur rules
+        let sessionUser: I_User | undefined;
+        try {
+            const viewer = await authnCtr.getUserFromSession(context);
+            if (viewer?.id) {
+                const populated = await userMongooseCtr.findOne(
+                    { id: viewer.id },
+                    {
+                        id: 1,
+                        roles: 1,
+                        rolesIds: 1,
+                        ageVerify: 1,
+                        membershipExpiresAt: 1,
+                        membershipEndDate: 1,
+                        partner1: 1,
+                        partner2: 1,
+                    } as any,
+                    undefined,
+                    [
+                        { path: 'roles' },
+                        { path: 'ageVerify' },
+                        { path: 'partner1', populate: [{ path: 'gallery' }] },
+                        { path: 'partner2', populate: [{ path: 'gallery' }] },
+                    ],
+                );
+                sessionUser = populated.success && populated.result ? populated.result : viewer;
+            }
+        }
+        catch {
+            sessionUser = undefined;
+        }
+
+        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+        const hydratedDocs = await Promise.all((res.result.docs ?? []).map(async (participant) => {
+            const user = participant.user as I_User | undefined;
+            if (!user?.id)
+                return participant;
+
+            let userHydrate = { ...user } as I_User;
+
+            // Ensure we have required fields for blur logic
+            if (!userHydrate.ageVerify || !userHydrate.roles || !userHydrate.rolesIds || userHydrate.membershipExpiresAt === undefined || (userHydrate as any).membershipEndDate === undefined) {
+                try {
+                    const populatedUser = await userMongooseCtr.findOne(
+                        { id: userHydrate.id },
+                        {
+                            id: 1,
+                            roles: 1,
+                            rolesIds: 1,
+                            ageVerify: 1,
+                            membershipExpiresAt: 1,
+                            membershipEndDate: 1,
+                            partner1: 1,
+                            partner2: 1,
+                        } as any,
+                        undefined,
+                        [
+                            { path: 'roles' },
+                            { path: 'ageVerify' },
+                            { path: 'partner1', populate: [{ path: 'gallery' }] },
+                            { path: 'partner2', populate: [{ path: 'gallery' }] },
+                        ],
+                    );
+                    if (populatedUser.success && populatedUser.result) {
+                        userHydrate = {
+                            ...userHydrate,
+                            ...populatedUser.result,
+                        };
+                    }
+                }
+                catch {
+                    // fall back to existing userHydrate
+                }
+            }
+
+            hydrateUserMedia(userHydrate, viewerMediaOptions);
+
+            return {
+                ...participant,
+                user: userHydrate,
+            } as I_Participant;
+        }));
+
+        return {
+            ...res,
+            result: {
+                ...res.result,
+                docs: hydratedDocs,
+            },
+        };
     },
     updateLastReadMessage: async (
         conversationId: string,

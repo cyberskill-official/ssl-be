@@ -323,7 +323,16 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
             const mongooseCtr = new MongooseController(UserModel);
             const sessionUserPopulated = await mongooseCtr.findOne(
                 { id: viewer.id },
-                undefined,
+                {
+                    id: 1,
+                    roles: 1,
+                    rolesIds: 1,
+                    ageVerify: 1,
+                    membershipExpiresAt: 1,
+                    membershipEndDate: 1,
+                    partner1: 1,
+                    partner2: 1,
+                } as any,
                 undefined,
                 [
                     { path: 'roles' },
@@ -362,14 +371,23 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
             let user = { ...participant.user };
 
             // Ensure ageVerify and roles are populated for hydrateUserMedia to work correctly
-            if ((!user.ageVerify || !user.roles) && user.id) {
+            if ((!user.ageVerify || !user.roles || !user.rolesIds || user.membershipExpiresAt === undefined || (user as any).membershipEndDate === undefined) && user.id) {
                 try {
                     const { MongooseController } = await import('@cyberskill/shared/node/mongo');
                     const { UserModel } = await import('#modules/user/user.model.js');
                     const mongooseCtr = new MongooseController(UserModel);
                     const userPopulated = await mongooseCtr.findOne(
                         { id: user.id },
-                        undefined,
+                        {
+                            id: 1,
+                            roles: 1,
+                            rolesIds: 1,
+                            ageVerify: 1,
+                            membershipExpiresAt: 1,
+                            membershipEndDate: 1,
+                            partner1: 1,
+                            partner2: 1,
+                        } as any,
                         undefined,
                         [
                             { path: 'ageVerify' },
