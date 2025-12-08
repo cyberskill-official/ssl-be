@@ -125,44 +125,29 @@ export const eventCtr = {
                 eventFound.result.image = normalizeBlurredMedia(signedImage);
         }
 
-        // Blur creator avatar/gallery based on viewer and creator age verification
+        // Blur creator avatar/gallery based on creator's status (not viewer's)
         try {
-            let isViewerVerified = false;
-            let viewerIsFreeMember = false;
             let viewerId: string | undefined;
+            let viewerExempt = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(context);
                 viewerId = viewer?.id;
 
-                // Check age verification
-                if (viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
-                    isViewerVerified = true;
-                }
-                else if (viewer?.id) {
-                    // Fetch if not populated
-                    const viewerWithAgeVerify = await userCtr.getUser(context, {
-                        filter: { id: viewer.id },
-                        projection: { ageVerify: 1 },
-                    });
-                    if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
-                        isViewerVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                    }
-                }
-
-                // Check membership
+                // Check if viewer is staff/admin
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
-                const hasFreeRole = roles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                const hasPaidRole = roles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                const isMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
-                viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+                const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
+                const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
+                viewerExempt = isAdmin || isStaff;
             }
             catch {
-                isViewerVerified = false;
+                // Viewer not authenticated
             }
 
             const creator = (eventFound.result)?.createdBy;
             const creatorId = eventFound.result?.createdById;
             const isOwner = viewerId && creatorId && viewerId === creatorId;
+
+            // Check creator's age verification
             let isCreatorVerified = false;
             try {
                 isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -171,26 +156,51 @@ export const eventCtr = {
                 isCreatorVerified = false;
             }
 
+            // Fetch creator roles if not populated
+            let creatorRoles = Array.isArray(creator?.roles) ? creator?.roles : [];
+            if (creatorRoles.length === 0 && creatorId) {
+                try {
+                    const creatorPopulated = await userCtr.getUser(context, {
+                        filter: { id: creatorId },
+                    } as any);
+                    if (creatorPopulated.success && creatorPopulated.result?.roles) {
+                        creatorRoles = creatorPopulated.result.roles;
+                        if (creator) {
+                            (creator as any).roles = creatorRoles;
+                            (creator as any).membershipEndDate = (creatorPopulated.result as any).membershipEndDate;
+                        }
+                    }
+                }
+                catch {
+                    // If fetch fails, continue with empty roles
+                }
+            }
+
+            // Check creator's membership status (not viewer's)
+            const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const creatorHasPaidRole = creatorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            let creatorMembershipActive = false;
+            try {
+                creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
+            }
+            catch {
+                creatorMembershipActive = false;
+            }
+            const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+
             if (creator) {
                 const p1 = creator.partner1;
                 const p2 = creator.partner2;
 
                 // Case 1: Creator not verified → show default (null)
-                if (!isCreatorVerified && !isOwner) {
+                if (!isCreatorVerified && !isOwner && !viewerExempt) {
                     if (p1?.gallery?.url)
                         p1.gallery.url = null as any;
                     if (p2?.gallery?.url)
                         p2.gallery.url = null as any;
                 }
-                // Case 2: Viewer not verified → show default (null)
-                else if (!isViewerVerified && !isOwner) {
-                    if (p1?.gallery?.url)
-                        p1.gallery.url = null as any;
-                    if (p2?.gallery?.url)
-                        p2.gallery.url = null as any;
-                }
-                // Case 3: FREE_MEMBER verified → show blur
-                else if (!isOwner && viewerIsFreeMember) {
+                // Case 2: Creator is FREE_MEMBER (age-verified) → show blur
+                else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
                     }
@@ -198,7 +208,7 @@ export const eventCtr = {
                         p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                     }
                 }
-                // Case 4: PAID_MEMBER verified or owner → show normal
+                // Case 3: Creator is PAID_MEMBER verified or owner/admin → show normal
                 else {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -272,37 +282,21 @@ export const eventCtr = {
             return !isOwnerInactive(creator, event.createdById);
         });
 
-        // Blur/signed media according to viewer + creator verification
-        let isViewerVerified = false;
-        let viewerIsFreeMember = false;
+        // Blur/signed media according to creator's status (not viewer's)
         let viewerId: string | undefined;
+        let viewerExempt = false;
         try {
             const viewer = await authnCtr.getUserFromSession(context);
             viewerId = viewer?.id;
 
-            // Check age verification
-            if (viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
-                isViewerVerified = true;
-            }
-            else if (viewer?.id) {
-                const viewerWithAgeVerify = await userCtr.getUser(context, {
-                    filter: { id: viewer.id },
-                    projection: { ageVerify: 1 },
-                });
-                if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
-                    isViewerVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                }
-            }
-
-            // Check membership
+            // Check if viewer is staff/admin
             const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
-            const hasFreeRole = roles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const hasPaidRole = roles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-            const isMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
-            viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+            const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
+            const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
+            viewerExempt = isAdmin || isStaff;
         }
         catch {
-            isViewerVerified = false;
+            // Viewer not authenticated
         }
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
@@ -317,6 +311,8 @@ export const eventCtr = {
                 const creator = (event).createdBy;
                 const creatorId = event.createdById;
                 const isOwner = viewerId && creatorId && viewerId === creatorId;
+
+                // Check creator's age verification
                 let isCreatorVerified = false;
                 try {
                     isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -325,26 +321,51 @@ export const eventCtr = {
                     isCreatorVerified = false;
                 }
 
+                // Fetch creator roles if not populated
+                let creatorRoles = Array.isArray(creator?.roles) ? creator?.roles : [];
+                if (creatorRoles.length === 0 && creatorId) {
+                    try {
+                        const creatorPopulated = await userCtr.getUser(context, {
+                            filter: { id: creatorId },
+                        } as any);
+                        if (creatorPopulated.success && creatorPopulated.result?.roles) {
+                            creatorRoles = creatorPopulated.result.roles;
+                            if (creator) {
+                                (creator as any).roles = creatorRoles;
+                                (creator as any).membershipEndDate = (creatorPopulated.result as any).membershipEndDate;
+                            }
+                        }
+                    }
+                    catch {
+                        // If fetch fails, continue with empty roles
+                    }
+                }
+
+                // Check creator's membership status (not viewer's)
+                const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                const creatorHasPaidRole = creatorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                let creatorMembershipActive = false;
+                try {
+                    creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
+                }
+                catch {
+                    creatorMembershipActive = false;
+                }
+                const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+
                 if (creator) {
                     const p1 = creator.partner1;
                     const p2 = creator.partner2;
 
                     // Case 1: Creator not verified → show default (null)
-                    if (!isCreatorVerified && !isOwner) {
+                    if (!isCreatorVerified && !isOwner && !viewerExempt) {
                         if (p1?.gallery?.url)
                             p1.gallery.url = null as any;
                         if (p2?.gallery?.url)
                             p2.gallery.url = null as any;
                     }
-                    // Case 2: Viewer not verified → show default (null)
-                    else if (!isViewerVerified && !isOwner) {
-                        if (p1?.gallery?.url)
-                            p1.gallery.url = null as any;
-                        if (p2?.gallery?.url)
-                            p2.gallery.url = null as any;
-                    }
-                    // Case 3: FREE_MEMBER verified → show blur
-                    else if (!isOwner && viewerIsFreeMember) {
+                    // Case 2: Creator is FREE_MEMBER (age-verified) → show blur
+                    else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
                         }
@@ -352,7 +373,7 @@ export const eventCtr = {
                             p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                         }
                     }
-                    // Case 4: PAID_MEMBER verified or owner → show normal
+                    // Case 3: Creator is PAID_MEMBER verified or owner/admin → show normal
                     else {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });

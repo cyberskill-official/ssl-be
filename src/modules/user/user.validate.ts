@@ -22,9 +22,6 @@ function signProfileImage(
     // Check if owner (person whose profile is being viewed) is age-verified
     const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
 
-    // Check if viewer (person viewing the profile) is age-verified
-    const viewerAgeVerified = options?.viewerAgeVerified ?? false;
-
     // Check if viewer is the owner (viewing their own profile)
     const viewerId = options?.viewerId;
     const isOwner = viewerId && user?.id && viewerId === user.id;
@@ -34,25 +31,30 @@ function signProfileImage(
     const viewerIsAdmin = options?.viewerIsAdmin ?? false;
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-    // FREE_MEMBER check
-    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
+    // Check owner's membership status (not viewer's)
+    const ownerRoles = Array.isArray((user as any)?.roles) ? (user as any).roles : [];
+    const ownerHasFreeRole = ownerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+    const ownerHasPaidRole = ownerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+    let ownerMembershipActive = false;
+    try {
+        ownerMembershipActive = authnCtr.isMembershipActive(user);
+    }
+    catch {
+        ownerMembershipActive = false;
+    }
+    const isOwnerFreeMember = ownerHasFreeRole || (ownerHasPaidRole && !ownerMembershipActive);
 
     // Case 1: Owner is not age-verified → show default (null)
     if (!ownerAgeVerified && !isOwner && !viewerExempt) {
         return null; // Return null to show default image
     }
 
-    // Case 2: Viewer is not age-verified → show default (null)
-    if (!viewerAgeVerified && !isOwner && !viewerExempt) {
-        return null; // Viewer not verified, show default
-    }
-
-    // Case 3: FREE_MEMBER (age-verified) → show blur
-    if (!isOwner && !viewerExempt && viewerIsFreeMember) {
+    // Case 2: Owner is FREE_MEMBER (age-verified) → show blur
+    if (isOwnerFreeMember && !isOwner && !viewerExempt) {
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
 
-    // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
+    // Case 3: Owner is PAID_MEMBER (age-verified) or owner/admin → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
         extraQueryParams: { class: 'normal' },

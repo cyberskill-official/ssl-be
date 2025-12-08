@@ -237,7 +237,8 @@ export const notificationCtr = {
                     const actorsResult = await userCtr.getUsers(_context, {
                         filter: { id: { $in: Array.from(actorIds) } },
                         options: { pagination: false },
-                    });
+                        populate: [{ path: 'roles' }],
+                    } as any);
 
                     if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
                         for (const actor of actorsResult.result.docs) {
