@@ -185,12 +185,25 @@ export const userCtr = {
 
         // If we need full user data for blur logic and we're not fetching the session user itself,
         // we can safely fetch it. But to avoid circular dependency, we'll use a direct query
-        if (sessionUser && !isFetchingSessionUser && (!sessionUser.roles || !sessionUser.ageVerify)) {
+        const needsSessionRefresh = sessionUser
+            && !isFetchingSessionUser
+            && (!sessionUser.roles || !sessionUser.ageVerify || sessionUser.membershipExpiresAt === undefined);
+
+        if (needsSessionRefresh) {
             try {
                 // Direct query to avoid circular dependency with getUserFromSession/checkAuth
                 const sessionUserPopulated = await mongooseCtr.findOne(
                     { id: sessionUserId },
-                    undefined,
+                    {
+                        id: 1,
+                        roles: 1,
+                        rolesIds: 1,
+                        ageVerify: 1,
+                        membershipExpiresAt: 1,
+                        membershipEndDate: 1,
+                        partner1: 1,
+                        partner2: 1,
+                    } as any,
                     undefined,
                     [
                         { path: 'roles' },
@@ -301,13 +314,25 @@ export const userCtr = {
         let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
         const sessionUserId = sessionUser?.id;
 
-        // If session user exists but doesn't have roles/ageVerify populated, fetch it directly
-        if (sessionUser && sessionUserId && (!sessionUser.roles || !sessionUser.ageVerify)) {
+        // If session user exists but doesn't have roles/ageVerify/membership populated, fetch it directly
+        const needsSessionRefresh = sessionUser && sessionUserId
+            && (!sessionUser.roles || !sessionUser.ageVerify || sessionUser.membershipExpiresAt === undefined);
+
+        if (needsSessionRefresh) {
             try {
                 // Direct query to avoid circular dependency with getUserFromSession/checkAuth
                 const sessionUserPopulated = await mongooseCtr.findOne(
                     { id: sessionUserId },
-                    undefined,
+                    {
+                        id: 1,
+                        roles: 1,
+                        rolesIds: 1,
+                        ageVerify: 1,
+                        membershipExpiresAt: 1,
+                        membershipEndDate: 1,
+                        partner1: 1,
+                        partner2: 1,
+                    } as any,
                     undefined,
                     [
                         { path: 'roles' },

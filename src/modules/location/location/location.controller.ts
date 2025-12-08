@@ -12,7 +12,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/destination.type.js';
@@ -1244,10 +1244,19 @@ export const locationCtr = {
         try {
             const viewer = await authnCtr.getUserFromSession(context);
             if (viewer?.id) {
-                // Fetch full user data with roles and ageVerify to avoid circular dependency
+                // Fetch full user data with roles/ageVerify/membership to avoid circular dependency
                 const sessionUserPopulated = await mongooseCtr.findOne(
                     { id: viewer.id },
-                    undefined,
+                    {
+                        id: 1,
+                        roles: 1,
+                        rolesIds: 1,
+                        ageVerify: 1,
+                        membershipExpiresAt: 1,
+                        membershipEndDate: 1,
+                        partner1: 1,
+                        partner2: 1,
+                    } as any,
                     undefined,
                     [
                         { path: 'roles' },
@@ -1275,6 +1284,18 @@ export const locationCtr = {
         }
 
         const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+        log.warn('[LOCATION][getLocationsInViewport] viewer flags', {
+            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+            membershipExpiresAt: sessionUser?.membershipExpiresAt,
+            membershipEndDate: sessionUser?.membershipEndDate,
+            rolesIds: sessionUser?.rolesIds,
+        });
 
         docs = docs.map((d) => {
             try {
