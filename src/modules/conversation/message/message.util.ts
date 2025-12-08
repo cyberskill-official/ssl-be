@@ -257,30 +257,33 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // Check sender's membership status (not viewer's)
-            const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
-            const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-            let senderMembershipActive = false;
-            try {
-                senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
-            }
-            catch {
-                senderMembershipActive = false;
-            }
-            const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
-
-            // Case 1: Sender is not age-verified → show default image
+            // Case 1: Sender is not age-verified → show default image (null)
+            // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
                 content.value = null as any; // Set to null to show default image
             }
-            // Case 2: Sender is FREE_MEMBER (age-verified) → show blur
-            else if (isSenderFreeMember && !isOwner && !viewerExempt) {
-                content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
-            }
-            // Case 3: Sender is PAID_MEMBER (age-verified) or owner/admin → show normal
             else {
-                content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
+                // Check sender's membership status (not viewer's) để quyết định blur hay normal
+                const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
+                const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                let senderMembershipActive = false;
+                try {
+                    senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
+                }
+                catch {
+                    senderMembershipActive = false;
+                }
+                const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
+
+                // Case 2: Sender is FREE_MEMBER → show blur (không phụ thuộc vào age verified)
+                if (isSenderFreeMember && !isOwner && !viewerExempt) {
+                    content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+                }
+                // Case 3: Sender is PAID_MEMBER (MEMBERSHIP active) or owner/admin → show normal
+                else {
+                    content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
+                }
             }
         }
     }
