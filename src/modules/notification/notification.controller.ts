@@ -296,6 +296,10 @@ export const notificationCtr = {
                         // Second pass: query ageVerify for actors that don't have it
                         // Use userCtr.getUser (safe, goes through controller) instead of direct query
                         if (actorsWithoutAgeVerify.size > 0) {
+                            log.warn('[getNotifications] Querying ageVerify for actors without it:', {
+                                count: actorsWithoutAgeVerify.size,
+                                actorIds: Array.from(actorsWithoutAgeVerify),
+                            });
                             const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
                                 try {
                                     const userResult = await userCtr.getUser(_context, {
@@ -303,11 +307,19 @@ export const notificationCtr = {
                                         projection: { ageVerify: 1 }, // Only get ageVerify
                                     });
                                     if (userResult.success && userResult.result) {
-                                        const isActorAgeVerified = userResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                        const ageVerify = userResult.result.ageVerify;
+                                        const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                         actorAgeVerifyMap.set(actorId, isActorAgeVerified);
+                                        log.warn('[getNotifications] ageVerify query result:', {
+                                            actorId,
+                                            hasAgeVerify: !!ageVerify,
+                                            ageVerifyStatus: ageVerify?.status,
+                                            isActorAgeVerified,
+                                        });
                                     }
                                     else {
                                         // If query fails, default to false
+                                        log.warn('[getNotifications] ageVerify query failed (no result):', { actorId });
                                         actorAgeVerifyMap.set(actorId, false);
                                     }
                                 }
