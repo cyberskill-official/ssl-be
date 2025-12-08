@@ -89,6 +89,24 @@ export const paymentController = {
         // Priority 0: If pricingId is provided, use that pricing directly
         if (input.pricingId) {
             log.warn('[makePayment] Querying pricing by pricingId:', input.pricingId);
+            // First, check if pricing exists at all (without filters) to debug
+            const pricingExistsRes = await pricingMongooseCtr.findOne(
+                { id: input.pricingId },
+                undefined,
+                undefined,
+                'currency',
+            );
+            log.warn('[makePayment] Pricing exists check (no filters):', {
+                success: pricingExistsRes.success,
+                hasResult: pricingExistsRes.success && 'result' in pricingExistsRes ? !!pricingExistsRes.result : false,
+                pricingId: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.id : undefined,
+                type: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.type : undefined,
+                isActive: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isActive : undefined,
+                isDel: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isDel : undefined,
+                currencyId: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.currencyId : undefined,
+            });
+
+            // Then query with filters
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
                     id: input.pricingId,
@@ -100,7 +118,7 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
-            log.warn('[makePayment] Pricing query result:', {
+            log.warn('[makePayment] Pricing query result (with filters):', {
                 success: pricingRes.success,
                 hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
                 pricingId: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.id : undefined,
@@ -133,6 +151,10 @@ export const paymentController = {
                     pricingId: input.pricingId,
                     success: pricingRes.success,
                     message: pricingRes.message,
+                    pricingExists: pricingExistsRes.success && 'result' in pricingExistsRes ? !!pricingExistsRes.result : false,
+                    existingPricingType: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.type : undefined,
+                    existingPricingIsActive: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isActive : undefined,
+                    existingPricingIsDel: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isDel : undefined,
                 });
                 throwError({
                     status: RESPONSE_STATUS.NOT_FOUND,
