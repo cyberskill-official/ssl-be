@@ -234,8 +234,15 @@ export const notificationCtr = {
                     if (viewerResult.success && viewerResult.result?.docs?.[0]) {
                         const viewer = viewerResult.result.docs[0];
                         const viewerRoles = Array.isArray(viewer.roles) ? viewer.roles : [];
-                        const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                        const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+
+                        // Support legacy/variant role names and case-insensitive matching
+                        const hasRole = (names: string[]) => viewerRoles.some(
+                            (role: any) => typeof role?.name === 'string'
+                                && names.some(n => role.name.toLowerCase() === n.toLowerCase()),
+                        );
+
+                        const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM']);
+                        const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM']);
                         const viewerMembershipActive = authnCtr.isMembershipActive(viewer);
                         viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
                         viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
