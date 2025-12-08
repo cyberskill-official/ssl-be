@@ -168,12 +168,12 @@ export function getViewerMediaContext(user?: I_User | null): {
     // Check if user has paid member role (supports legacy name PAID_MEM, case-insensitive)
     const hasPaidRole = roles.some((role) => {
         const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
-        return name === E_Role_User.PAID_MEMBER || name === 'paid_mem';
+        return name === E_Role_User.PAID_MEMBER.toLowerCase() || name === 'paid_mem';
     });
     // Check if user has free member role (supports legacy name FREE_MEM, case-insensitive)
     const hasFreeRole = roles.some((role) => {
         const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
-        return name === E_Role_User.FREE_MEMBER || name === 'free_mem';
+        return name === E_Role_User.FREE_MEMBER.toLowerCase() || name === 'free_mem';
     });
 
     // Import authnCtr to check membership status
