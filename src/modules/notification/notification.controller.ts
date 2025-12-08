@@ -277,6 +277,14 @@ export const notificationCtr = {
                                 // Get actor's gallery URL (from partner1 or partner2)
                                 const galleryUrl = actor.partner1?.gallery?.url || actor.partner2?.gallery?.url || null;
                                 actorAvatarUrlMap.set(actor.id, galleryUrl);
+                                log.warn('[getNotifications] Actor gallery URL:', {
+                                    actorId: actor.id,
+                                    username: actor.username,
+                                    hasPartner1Gallery: !!actor.partner1?.gallery?.url,
+                                    hasPartner2Gallery: !!actor.partner2?.gallery?.url,
+                                    galleryUrl: !!galleryUrl,
+                                    isActorAgeVerified,
+                                });
                             }
                         }
                     }
@@ -369,6 +377,17 @@ export const notificationCtr = {
                         // Get the URL to use (prioritize gallery URL from map, then existing avatarUrl in presentation)
                         const urlToUse = actorGalleryUrlFromMap ?? existingAvatarUrl;
 
+                        log.warn('[getNotifications] Processing actor avatar:', {
+                            actorId,
+                            actorGalleryUrlFromMap: !!actorGalleryUrlFromMap,
+                            existingAvatarUrl: !!existingAvatarUrl,
+                            urlToUse: !!urlToUse,
+                            isActorAgeVerified,
+                            isActorOwner,
+                            viewerIsFreeMember,
+                            viewerExempt,
+                        });
+
                         // Only process if we have a URL to use
                         if (urlToUse) {
                             // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
@@ -387,22 +406,9 @@ export const notificationCtr = {
                             }
                         }
                         // If no URL at all:
-                        // - FREE_MEMBER: nếu có existingAvatarUrl thì blur nó (không set null)
-                        // - PAID_MEMBER: set null nếu không có URL
+                        // - Nếu không có URL, set null (không có ảnh để hiển thị)
                         else {
-                            // Nếu viewer là FREE_MEMBER và có existingAvatarUrl, blur nó (không set null)
-                            if (viewerIsFreeMember && !isActorOwner && !viewerExempt && existingAvatarUrl) {
-                                actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: existingAvatarUrl, extraQueryParams: { class: 'blur' } });
-                            }
-                            // Nếu không có URL và không có existingAvatarUrl, set null
-                            else if (!existingAvatarUrl) {
-                                actor.avatarUrl = null as any;
-                            }
-                            // Nếu có existingAvatarUrl nhưng viewer là PAID_MEMBER và actor không age-verified, set null
-                            else if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
-                                actor.avatarUrl = null as any;
-                            }
-                            // Các trường hợp khác, giữ nguyên existingAvatarUrl
+                            actor.avatarUrl = null as any;
                         }
                     }
 
