@@ -37,26 +37,43 @@ function signProfileImage(
         return null; // Return null to show default image
     }
 
-    // Check owner's membership status (not viewer's) để quyết định blur hay normal
-    const ownerRoles = Array.isArray((user as any)?.roles) ? (user as any).roles : [];
-    const ownerHasFreeRole = ownerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-    const ownerHasPaidRole = ownerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-    let ownerMembershipActive = false;
-    try {
-        ownerMembershipActive = authnCtr.isMembershipActive(user);
-    }
-    catch {
-        ownerMembershipActive = false;
-    }
-    const isOwnerFreeMember = ownerHasFreeRole || (ownerHasPaidRole && !ownerMembershipActive);
+    // Check viewer's membership status để quyết định blur hay normal
+    // FREE_MEMBER nên thấy blur tất cả gallery của người khác
+    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
+    const viewerIsPaidMember = options?.viewerIsPaidMember ?? false;
 
-    // Case 2: Owner is FREE_MEMBER → show blur (không phụ thuộc vào age verified)
-    if (isOwnerFreeMember && !isOwner && !viewerExempt) {
+    // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của owner)
+    if (viewerIsFreeMember && !isOwner && !viewerExempt) {
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
 
-    // Case 3: Owner is PAID_MEMBER (MEMBERSHIP active) or owner/admin → show normal
-    // Nếu không phải FREE_MEMBER và không phải owner/admin, thì là PAID_MEMBER -> normal
+    // Case 3: Viewer is PAID_MEMBER → check owner's role
+    // Nếu owner là FREE_MEMBER → blur, nếu owner là PAID_MEMBER → normal
+    if (viewerIsPaidMember && !isOwner && !viewerExempt) {
+        const ownerRoles = Array.isArray((user as any)?.roles) ? (user as any).roles : [];
+        const ownerHasFreeRole = ownerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+        const ownerHasPaidRole = ownerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+        let ownerMembershipActive = false;
+        try {
+            ownerMembershipActive = authnCtr.isMembershipActive(user);
+        }
+        catch {
+            ownerMembershipActive = false;
+        }
+        const isOwnerFreeMember = ownerHasFreeRole || (ownerHasPaidRole && !ownerMembershipActive);
+
+        // Owner is FREE_MEMBER → blur
+        if (isOwnerFreeMember) {
+            return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
+        }
+        // Owner is PAID_MEMBER → normal
+        return bunnyCtr.generateSignedUrl({
+            fullUrl: url,
+            extraQueryParams: { class: 'normal' },
+        });
+    }
+
+    // Case 4: Owner/admin hoặc không có membership info → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
         extraQueryParams: { class: 'normal' },

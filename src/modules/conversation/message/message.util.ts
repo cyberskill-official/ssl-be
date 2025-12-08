@@ -257,30 +257,54 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
+            // Check viewer's membership status
+            const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+            const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            let viewerMembershipActive = false;
+            try {
+                viewerMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+            }
+            catch {
+                viewerMembershipActive = false;
+            }
+            const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
+            const viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
+
             // Case 1: Sender is not age-verified → show default image (null)
             // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
                 content.value = null as any; // Set to null to show default image
             }
             else {
-                // Check sender's membership status (not viewer's) để quyết định blur hay normal
-                const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
-                const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                let senderMembershipActive = false;
-                try {
-                    senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
-                }
-                catch {
-                    senderMembershipActive = false;
-                }
-                const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
-
-                // Case 2: Sender is FREE_MEMBER → show blur (không phụ thuộc vào age verified)
-                if (isSenderFreeMember && !isOwner && !viewerExempt) {
+                // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác
+                if (viewerIsFreeMember && !isOwner && !viewerExempt) {
                     content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
                 }
-                // Case 3: Sender is PAID_MEMBER (MEMBERSHIP active) or owner/admin → show normal
+                // Case 3: Viewer is PAID_MEMBER → check sender's role
+                else if (viewerIsPaidMember && !isOwner && !viewerExempt) {
+                    const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
+                    const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                    const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                    let senderMembershipActive = false;
+                    try {
+                        senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
+                    }
+                    catch {
+                        senderMembershipActive = false;
+                    }
+                    const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
+
+                    // Sender is FREE_MEMBER → blur
+                    if (isSenderFreeMember) {
+                        content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+                    }
+                    // Sender is PAID_MEMBER → normal
+                    else {
+                        content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
+                    }
+                }
+                // Case 4: Owner/admin hoặc không có membership info → show normal
                 else {
                     content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
                 }
