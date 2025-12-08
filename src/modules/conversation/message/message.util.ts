@@ -199,7 +199,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                 content.value = null as any; // Set to null to show default image
             }
             else {
-                // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                // FREE_MEMBER: blur all images of others (separate from ageVerify check)
                 // Apply blur/sign logic based on viewer's membership
                 const viewerIsFreeMember = viewerMediaOptions.viewerIsFreeMember ?? false;
                 const shouldBlur = !isOwner && !viewerExempt && viewerIsFreeMember;

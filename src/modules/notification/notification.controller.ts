@@ -14,7 +14,9 @@ import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/inde
 import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
+import { eventCtr } from '#modules/event/event.controller.js';
 import { followCtr } from '#modules/follow/index.js';
+import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 
@@ -274,7 +276,6 @@ export const notificationCtr = {
                 // Batch fetch gallery owners' age verification status
                 const galleryOwnerAgeVerifyMap = new Map<string, boolean>();
                 if (galleryEntityIds.size > 0) {
-                    const { galleryCtr } = await import('#modules/gallery/index.js');
                     const galleriesResult = await galleryCtr.getGalleries(_context, {
                         filter: { id: { $in: Array.from(galleryEntityIds) } },
                         options: { pagination: false },
@@ -299,7 +300,6 @@ export const notificationCtr = {
                 // Batch fetch event creators' age verification status
                 const eventCreatorAgeVerifyMap = new Map<string, boolean>();
                 if (eventEntityIds.size > 0) {
-                    const { eventCtr } = await import('#modules/event/index.js');
                     const eventsResult = await eventCtr.getEvents(_context, {
                         filter: { id: { $in: Array.from(eventEntityIds) } },
                         options: { pagination: false },
@@ -339,7 +339,7 @@ export const notificationCtr = {
                             actor.avatarUrl = null as any; // Set to null to show default image
                         }
                         else {
-                            // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                            // FREE_MEMBER: blur all images of others (separate from ageVerify check)
                             // Only blur if: viewer is free member AND not owner AND not exempt
                             const shouldBlur = !isActorOwner && !viewerExempt && viewerIsFreeMember;
                             actor.avatarUrl = shouldBlur
@@ -364,7 +364,6 @@ export const notificationCtr = {
                             else {
                                 // If not in cache, fetch it now
                                 try {
-                                    const { galleryCtr } = await import('#modules/gallery/index.js');
                                     const galleryResult = await galleryCtr.getGallery(_context, {
                                         filter: { id: entityId },
                                     });
@@ -391,7 +390,6 @@ export const notificationCtr = {
                             // Check if viewer is the owner (if not already checked above)
                             if (!isThumbnailOwner && viewerId) {
                                 try {
-                                    const { galleryCtr } = await import('#modules/gallery/index.js');
                                     const galleryResult = await galleryCtr.getGallery(_context, {
                                         filter: { id: entityId },
                                     });
@@ -414,7 +412,6 @@ export const notificationCtr = {
                             else {
                                 // If not in cache, fetch it now
                                 try {
-                                    const { eventCtr } = await import('#modules/event/index.js');
                                     const eventResult = await eventCtr.getEvent(_context, {
                                         filter: { id: entityId },
                                     });
@@ -441,7 +438,6 @@ export const notificationCtr = {
                             // Check if viewer is the creator (if not already checked above)
                             if (!isThumbnailOwner && viewerId) {
                                 try {
-                                    const { eventCtr } = await import('#modules/event/index.js');
                                     const eventResult = await eventCtr.getEvent(_context, {
                                         filter: { id: entityId },
                                     });
@@ -460,7 +456,7 @@ export const notificationCtr = {
                             pres.thumbnailUrl = null as any; // Set to null to show default image
                         }
                         else {
-                            // FREE_MEMBER: blur tất cả ảnh của người khác (không liên quan tới ageVerify)
+                            // FREE_MEMBER: blur all images of others (separate from ageVerify check)
                             // Only blur if: viewer is free member AND not owner AND not exempt
                             const shouldBlur = !isThumbnailOwner && !viewerExempt && viewerIsFreeMember;
                             pres.thumbnailUrl = shouldBlur
