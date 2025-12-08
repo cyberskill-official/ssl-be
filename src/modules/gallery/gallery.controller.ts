@@ -99,7 +99,8 @@ export const galleryCtr = {
                 const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
 
                 isPaidMember = hasPaidRole && membershipActive;
-                isFreeMember = hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole);
+                // Paid trumps free: if membership is active and user has PAID_MEMBER, do not treat as free even if FREE_MEMBER also present
+                isFreeMember = isPaidMember ? false : (hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole));
             }
             catch {
                 // On any failure, treat as free to avoid leaking clear images
@@ -301,7 +302,8 @@ export const galleryCtr = {
                 const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
 
                 isPaidMember = hasPaidRole && membershipActive;
-                isFreeMember = hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole);
+                // Paid trumps free: if membership is active and user has PAID_MEMBER, do not treat as free even if FREE_MEMBER also present
+                isFreeMember = isPaidMember ? false : (hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole));
             }
             catch {
                 // Fallback to free on any error to avoid leaking clear images

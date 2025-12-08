@@ -380,12 +380,19 @@ export const cron = {
                 }
 
                 const paidRoleId = paidRole.result.id;
+                const expirationFilter = {
+                    $or: [
+                        { membershipExpiresAt: { $exists: true, $ne: null, $lte: now } },
+                        { membershipEndDate: { $exists: true, $ne: null, $lte: now } }, // legacy field support
+                    ],
+                };
+
                 const candidatesRes = await userCtr.getUsers({}, {
                     filter: {
                         isDel: { $ne: true },
                         isAdminBlocked: { $ne: true },
                         rolesIds: { $in: [paidRoleId] },
-                        membershipExpiresAt: { $exists: true, $ne: null, $lte: now },
+                        ...expirationFilter,
                     },
                     options: { pagination: false },
                 });
@@ -413,6 +420,7 @@ export const cron = {
                             update: {
                                 rolesIds: nextRoles,
                                 membershipExpiresAt: null,
+                                membershipEndDate: null, // clear legacy field as well
                             },
                         });
 

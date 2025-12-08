@@ -565,9 +565,11 @@ export const authnCtr = {
             // Fallback to session user if refresh fails
         }
 
+        // Check by id (including ancestors) and fallback by name to handle legacy/incomplete role caches
         const hasPaidRole = !!user.roles?.some(role =>
             (role.id === paidMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
+            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId))
+            || (typeof role.name === 'string' && role.name.toUpperCase().includes('PAID_MEMBER')),
         );
 
         // Even if user has PAID_MEMBER role, check if membership has expired
@@ -640,9 +642,11 @@ export const authnCtr = {
             // If refresh fails, fall back to session data
         }
 
+        // Check by id (including ancestors) and fallback by name to handle legacy/incomplete role caches
         const hasFreeRole = !!user.roles?.some(role =>
             (role.id === freeMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
+            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId))
+            || (typeof role.name === 'string' && role.name.toUpperCase().includes('FREE_MEMBER')),
         );
 
         // If user has FREE_MEMBER role, they are free
@@ -654,7 +658,8 @@ export const authnCtr = {
             const paidMemberRoleId = paidMemberRole.result.id;
             const hasPaidRole = !!user.roles?.some(role =>
                 (role.id === paidMemberRoleId)
-                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
+                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId))
+                || (typeof role.name === 'string' && role.name.toUpperCase().includes('PAID_MEMBER')),
             );
 
             // If user has PAID_MEMBER role but membership expired, treat as free
