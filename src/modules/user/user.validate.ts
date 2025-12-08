@@ -1,6 +1,6 @@
 import { authnCtr } from '#modules/authn/authn.controller.js';
 import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
-import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff, E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 
 import type { I_User } from './user.type.js';
@@ -165,10 +165,16 @@ export function getViewerMediaContext(user?: I_User | null): {
         || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
     );
 
-    // Check if user has paid member role
-    const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER');
-    // Check if user has free member role
-    const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER');
+    // Check if user has paid member role (supports legacy name PAID_MEM, case-insensitive)
+    const hasPaidRole = roles.some((role) => {
+        const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
+        return name === E_Role_User.PAID_MEMBER || name === 'paid_mem';
+    });
+    // Check if user has free member role (supports legacy name FREE_MEM, case-insensitive)
+    const hasFreeRole = roles.some((role) => {
+        const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
+        return name === E_Role_User.FREE_MEMBER || name === 'free_mem';
+    });
 
     // Import authnCtr to check membership status
     // We need to check if membership is active for paid members
@@ -185,7 +191,12 @@ export function getViewerMediaContext(user?: I_User | null): {
     }
 
     const viewerIsPaidMember = hasPaidRole && isMembershipActive;
-    const viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+    let viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+
+    // Safety: if we cannot determine roles, default to FREE to avoid leaking clear images
+    if (!viewerIsPaidMember && !viewerIsFreeMember) {
+        viewerIsFreeMember = true;
+    }
 
     return {
         mediaOptions: {
