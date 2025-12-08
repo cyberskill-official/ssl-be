@@ -345,6 +345,7 @@ export const notificationCtr = {
                                     hasAgeVerify: !!actor.ageVerify,
                                     ageVerifyStatus: actor.ageVerify?.status,
                                     isActorAgeVerified,
+                                    actorAgeVerifyMapHasValue: actorAgeVerifyMap.has(actor.id),
                                 });
                             }
                         }
