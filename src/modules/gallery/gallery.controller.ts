@@ -16,6 +16,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
+import { roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
@@ -87,16 +88,33 @@ export const galleryCtr = {
                 const viewerRes = viewerId
                     ? await userCtr.getUser(context, {
                             filter: { id: viewerId },
-                            projection: 'id roles membershipExpiresAt membershipEndDate',
+                            projection: 'id roles rolesIds membershipExpiresAt membershipEndDate',
                             populate: [{ path: 'roles' }],
                         })
                     : null;
 
-                const viewer = viewerRes?.success ? viewerRes.result : context.req?.session?.user;
-                const roles = Array.isArray(viewer?.roles) ? viewer.roles : [];
-                const hasFreeRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('FREE_MEMBER'));
-                const hasPaidRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('PAID_MEMBER'));
-                const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+                const mergedViewer = viewerRes?.success
+                    ? { ...context.req?.session?.user, ...viewerRes.result }
+                    : context.req?.session?.user;
+
+                // Resolve paid/free role ids for robust detection (some sessions may lack populated roles)
+                const paidRole = await roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } });
+                const freeRole = await roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } });
+                const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+                const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
+
+                const roles = Array.isArray(mergedViewer?.roles) ? mergedViewer.roles : [];
+                const roleNames = roles
+                    .map((r: any) => typeof r?.name === 'string' ? r.name.toUpperCase() : '')
+                    .filter(Boolean);
+                const roleIds = Array.isArray(mergedViewer?.rolesIds) ? mergedViewer.rolesIds : [];
+
+                const hasFreeRole = roleNames.some(n => n.includes('FREE_MEMBER'))
+                    || (freeRoleId ? roleIds.includes(freeRoleId) : false);
+                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER'))
+                    || (paidRoleId ? roleIds.includes(paidRoleId) : false);
+
+                const membershipActive = mergedViewer ? authnCtr.isMembershipActive(mergedViewer) : false;
 
                 isPaidMember = hasPaidRole && membershipActive;
                 // Paid trumps free: if membership is active and user has PAID_MEMBER, do not treat as free even if FREE_MEMBER also present
@@ -210,11 +228,10 @@ export const galleryCtr = {
             }
         }
         const membershipClass = isOwner ? 'normal' : (isFreeMember ? 'free' : 'premium');
-
         const applyThumbnailPolicy = (url?: string | null) => {
             if (!url)
                 return url;
-                // If uploader is not age-verified, return null to show default image
+            // If uploader is not age-verified, return null to show default image
             if (shouldShowDefaultImage) {
                 return null;
             }
@@ -303,16 +320,33 @@ export const galleryCtr = {
                 const viewerRes = sessionUserId
                     ? await userCtr.getUser(context, {
                             filter: { id: sessionUserId },
-                            projection: 'id roles membershipExpiresAt membershipEndDate',
+                            projection: 'id roles rolesIds membershipExpiresAt membershipEndDate',
                             populate: [{ path: 'roles' }],
                         })
                     : null;
 
-                const viewer = viewerRes?.success ? viewerRes.result : context.req?.session?.user;
-                const roles = Array.isArray(viewer?.roles) ? viewer.roles : [];
-                const hasFreeRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('FREE_MEMBER'));
-                const hasPaidRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('PAID_MEMBER'));
-                const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+                const mergedViewer = viewerRes?.success
+                    ? { ...context.req?.session?.user, ...viewerRes.result }
+                    : context.req?.session?.user;
+
+                // Resolve paid/free role ids for robust detection (some sessions may lack populated roles)
+                const paidRole = await roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } });
+                const freeRole = await roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } });
+                const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+                const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
+
+                const roles = Array.isArray(mergedViewer?.roles) ? mergedViewer.roles : [];
+                const roleNames = roles
+                    .map((r: any) => typeof r?.name === 'string' ? r.name.toUpperCase() : '')
+                    .filter(Boolean);
+                const roleIds = Array.isArray(mergedViewer?.rolesIds) ? mergedViewer.rolesIds : [];
+
+                const hasFreeRole = roleNames.some(n => n.includes('FREE_MEMBER'))
+                    || (freeRoleId ? roleIds.includes(freeRoleId) : false);
+                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER'))
+                    || (paidRoleId ? roleIds.includes(paidRoleId) : false);
+
+                const membershipActive = mergedViewer ? authnCtr.isMembershipActive(mergedViewer) : false;
 
                 isPaidMember = hasPaidRole && membershipActive;
                 // Paid trumps free: if membership is active and user has PAID_MEMBER, do not treat as free even if FREE_MEMBER also present
