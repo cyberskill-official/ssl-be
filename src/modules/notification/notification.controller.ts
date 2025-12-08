@@ -223,7 +223,6 @@ export const notificationCtr = {
 
             // Check viewer's membership status
             let viewerIsFreeMember = false;
-            let viewerIsPaidMember = false;
             if (viewerId) {
                 try {
                     const viewerResult = await userCtr.getUsers(_context, {
@@ -238,7 +237,6 @@ export const notificationCtr = {
                         const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
                         const viewerMembershipActive = authnCtr.isMembershipActive(viewer);
                         viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
-                        viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
                     }
                 }
                 catch {
@@ -255,9 +253,8 @@ export const notificationCtr = {
                     }
                 }
 
-                // Batch fetch actors' age verification and membership status, and populate gallery for avatarUrl
+                // Batch fetch actors' age verification and populate gallery for avatarUrl
                 const actorAgeVerifyMap = new Map<string, boolean>();
-                const actorIsFreeMemberMap = new Map<string, boolean>(); // Track if actor is FREE_MEMBER
                 const actorAvatarUrlMap = new Map<string, string | null>(); // Track actor's gallery URL
                 if (actorIds.size > 0) {
                     const actorsResult = await userCtr.getUsers(_context, {
@@ -265,6 +262,7 @@ export const notificationCtr = {
                         options: { pagination: false },
                         populate: [
                             { path: 'roles' },
+                            { path: 'ageVerify' },
                             { path: 'partner1', populate: [{ path: 'gallery' }] },
                             { path: 'partner2', populate: [{ path: 'gallery' }] },
                         ],
@@ -275,14 +273,6 @@ export const notificationCtr = {
                             if (actor.id) {
                                 const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                 actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
-
-                                // Check actor's membership status
-                                const actorRoles = Array.isArray(actor.roles) ? actor.roles : [];
-                                const actorHasFreeRole = actorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                                const actorHasPaidRole = actorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                                const actorMembershipActive = authnCtr.isMembershipActive(actor);
-                                const isActorFreeMember = actorHasFreeRole || (actorHasPaidRole && !actorMembershipActive);
-                                actorIsFreeMemberMap.set(actor.id, isActorFreeMember);
 
                                 // Get actor's gallery URL (from partner1 or partner2)
                                 const galleryUrl = actor.partner1?.gallery?.url || actor.partner2?.gallery?.url || null;
@@ -308,9 +298,8 @@ export const notificationCtr = {
                     }
                 }
 
-                // Batch fetch gallery owners' age verification and membership status
+                // Batch fetch gallery owners' age verification
                 const galleryOwnerAgeVerifyMap = new Map<string, boolean>();
-                const galleryOwnerIsFreeMemberMap = new Map<string, boolean>();
                 if (galleryEntityIds.size > 0) {
                     const galleriesResult = await galleryCtr.getGalleries(_context, {
                         filter: { id: { $in: Array.from(galleryEntityIds) } },
@@ -328,23 +317,14 @@ export const notificationCtr = {
                                 if (ownerResult.success && ownerResult.result) {
                                     const isOwnerAgeVerified = ownerResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                     galleryOwnerAgeVerifyMap.set(gallery.id, isOwnerAgeVerified);
-
-                                    // Check owner's membership status
-                                    const ownerRoles = Array.isArray(ownerResult.result.roles) ? ownerResult.result.roles : [];
-                                    const ownerHasFreeRole = ownerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                                    const ownerHasPaidRole = ownerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                                    const ownerMembershipActive = authnCtr.isMembershipActive(ownerResult.result);
-                                    const isOwnerFreeMember = ownerHasFreeRole || (ownerHasPaidRole && !ownerMembershipActive);
-                                    galleryOwnerIsFreeMemberMap.set(gallery.id, isOwnerFreeMember);
                                 }
                             }
                         }
                     }
                 }
 
-                // Batch fetch event creators' age verification and membership status
+                // Batch fetch event creators' age verification
                 const eventCreatorAgeVerifyMap = new Map<string, boolean>();
-                const eventCreatorIsFreeMemberMap = new Map<string, boolean>();
                 if (eventEntityIds.size > 0) {
                     const eventsResult = await eventCtr.getEvents(_context, {
                         filter: { id: { $in: Array.from(eventEntityIds) } },
@@ -362,14 +342,6 @@ export const notificationCtr = {
                                 if (creatorResult.success && creatorResult.result) {
                                     const isCreatorAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                     eventCreatorAgeVerifyMap.set(event.id, isCreatorAgeVerified);
-
-                                    // Check creator's membership status
-                                    const creatorRoles = Array.isArray(creatorResult.result.roles) ? creatorResult.result.roles : [];
-                                    const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                                    const creatorHasPaidRole = creatorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                                    const creatorMembershipActive = authnCtr.isMembershipActive(creatorResult.result);
-                                    const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-                                    eventCreatorIsFreeMemberMap.set(event.id, isCreatorFreeMember);
                                 }
                             }
                         }
@@ -384,45 +356,36 @@ export const notificationCtr = {
 
                     const actorId = n.actorId;
                     const isActorAgeVerified = actorId ? (actorAgeVerifyMap.get(actorId) ?? false) : false;
-                    const isActorFreeMember = actorId ? (actorIsFreeMemberMap.get(actorId) ?? false) : false;
                     const isActorOwner = viewerId && actorId && viewerId === actorId;
 
-                    // actor avatar - logic based on VIEWER's membership status
+                    // actor avatar - logic based on ACTOR's age verification and VIEWER's membership status
                     const actor = pres.actor;
                     if (actor) { // Check if actor is defined
-                        // Get actor's gallery URL from map (if not already set in presentation)
-                        const actorGalleryUrl = actorId ? (actorAvatarUrlMap.get(actorId) ?? actor?.avatarUrl ?? null) : (actor?.avatarUrl ?? null);
+                        // Get actor's gallery URL from map (prioritize map, then presentation, then null)
+                        const actorGalleryUrlFromMap = actorId ? actorAvatarUrlMap.get(actorId) : null;
+                        const actorGalleryUrl = actorGalleryUrlFromMap ?? actor?.avatarUrl ?? null;
 
+                        // Only process if we have a gallery URL
                         if (actorGalleryUrl) {
                             // Case 1: Actor is not age-verified → show default image (null)
-                            // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
+                            // Khi actor chưa ageVerify thì viewer khác sẽ thấy ảnh actor là null
                             if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
                                 actor.avatarUrl = null as any; // Set to null to show default image
                             }
                             else {
-                                // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của actor)
+                                // Case 2: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
                                 if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
                                     actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'blur' } });
                                 }
-                                // Case 3: Viewer is PAID_MEMBER → check actor's role
-                                else if (viewerIsPaidMember && !isActorOwner && !viewerExempt) {
-                                    // Actor is FREE_MEMBER → blur
-                                    if (isActorFreeMember) {
-                                        actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'blur' } });
-                                    }
-                                    // Actor is PAID_MEMBER → normal
-                                    else {
-                                        actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'normal' } });
-                                    }
-                                }
-                                // Case 4: Owner/admin hoặc không có membership info → show normal
+                                // Case 3: Viewer is PAID_MEMBER (MEMBERSHIP) → thấy ảnh bình thường
                                 else {
                                     actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'normal' } });
                                 }
                             }
                         }
-                        else {
-                            // If no gallery URL, set to null
+                        // If no gallery URL and no existing avatarUrl in presentation, set to null
+                        // But don't override if presentation already has an avatarUrl (might be from notification creation)
+                        else if (!actor.avatarUrl) {
                             actor.avatarUrl = null as any;
                         }
                     }
@@ -530,38 +493,18 @@ export const notificationCtr = {
                             }
                         }
 
-                        // Logic based on VIEWER's membership status, not thumbnail owner
-                        // Get thumbnail owner's membership status for PAID_MEMBER viewer check
-                        let isThumbnailOwnerFreeMember = false;
-                        if (entityId && n.entityType === E_NotificationEntityType.MEDIA) {
-                            isThumbnailOwnerFreeMember = galleryOwnerIsFreeMemberMap.get(entityId) ?? false;
-                        }
-                        else if (entityId && n.entityType === E_NotificationEntityType.EVENT) {
-                            isThumbnailOwnerFreeMember = eventCreatorIsFreeMemberMap.get(entityId) ?? false;
-                        }
-
+                        // Logic based on THUMBNAIL OWNER's age verification and VIEWER's membership status
                         // Case 1: Thumbnail owner is not age-verified → show default image (null)
-                        // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
+                        // Khi thumbnail owner chưa ageVerify thì viewer khác sẽ thấy ảnh là null
                         if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
                             pres.thumbnailUrl = null as any; // Set to null to show default image
                         }
                         else {
-                            // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của owner)
+                            // Case 2: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
                             if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
                                 pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
                             }
-                            // Case 3: Viewer is PAID_MEMBER → check thumbnail owner's role
-                            else if (viewerIsPaidMember && !isThumbnailOwner && !viewerExempt) {
-                                // Thumbnail owner is FREE_MEMBER → blur
-                                if (isThumbnailOwnerFreeMember) {
-                                    pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
-                                }
-                                // Thumbnail owner is PAID_MEMBER → normal
-                                else {
-                                    pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
-                                }
-                            }
-                            // Case 4: Owner/admin hoặc không có membership info → show normal
+                            // Case 3: Viewer is PAID_MEMBER (MEMBERSHIP) → thấy ảnh bình thường
                             else {
                                 pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                             }

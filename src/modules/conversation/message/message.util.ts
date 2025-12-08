@@ -1,21 +1,25 @@
 import type { T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
-import mongoose from 'mongoose';
 
-import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { userCtr } from '#modules/user/user.controller.js';
+import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Message } from './message.type.js';
 
 import { E_MessageType } from './message.type.js';
+
+const mongooseCtr = new MongooseController(UserModel);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => Object.prototype.toString.call(value) === '[object Object]';
 
@@ -80,65 +84,6 @@ function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined
     }
 }
 
-async function getUserById(userId: string): Promise<I_User | null> {
-    try {
-        const db = mongoose.connection.db;
-        if (!db) {
-            return null;
-        }
-
-        const user = await db.collection('users').findOne({ id: userId });
-        if (!user) {
-            return null;
-        }
-
-        // Populate roles
-        if (user['rolesIds'] && Array.isArray(user['rolesIds']) && user['rolesIds'].length > 0) {
-            const roles = await db.collection('roles').find({ id: { $in: user['rolesIds'] } }).toArray();
-            (user as any).roles = roles;
-        }
-
-        // Populate ageVerify (stored directly in user document)
-        // ageVerify is already in the user document, no need to populate
-
-        // Populate partner1.gallery
-        if (user['partner1']?.galleryId) {
-            const gallery1 = await db.collection('galleries').findOne({ id: user['partner1'].galleryId });
-            if (gallery1 && user['partner1']) {
-                (user['partner1'] as any).gallery = gallery1;
-            }
-        }
-
-        // Populate partner2.gallery
-        if (user['partner2']?.galleryId) {
-            const gallery2 = await db.collection('galleries').findOne({ id: user['partner2'].galleryId });
-            if (gallery2 && user['partner2']) {
-                (user['partner2'] as any).gallery = gallery2;
-            }
-        }
-
-        return user as unknown as I_User;
-    }
-    catch {
-        return null;
-    }
-}
-
-async function getModerationLogs(filter: Record<string, unknown>): Promise<{ docs: Array<Record<string, unknown>> }> {
-    try {
-        const db = mongoose.connection.db;
-        if (!db) {
-            return { docs: [] };
-        }
-
-        const logs = await db.collection('moderationlogs').find(filter).toArray();
-        return { docs: logs };
-    }
-    catch {
-        return { docs: [] };
-    }
-}
-
 export async function transformMessageMedia(context: I_Context, message: I_Message | null | undefined): Promise<I_Message | null | undefined> {
     if (!message)
         return message;
@@ -151,15 +96,33 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     // Get viewer once for use in multiple checks
     let viewer = null;
+    let isViewerVerified = false;
     let sessionUser: any = null;
     try {
         viewer = await authnCtr.getUserFromSession(context);
+        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
 
         // Fetch full session user data with roles and ageVerify for media hydration
         if (viewer?.id) {
-            const sessionUserPopulated = await getUserById(viewer.id);
-            if (sessionUserPopulated) {
-                sessionUser = sessionUserPopulated;
+            const sessionUserPopulated = await mongooseCtr.findOne(
+                { id: viewer.id },
+                undefined,
+                undefined,
+                [
+                    { path: 'roles' },
+                    { path: 'ageVerify' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+            if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                sessionUser = sessionUserPopulated.result;
             }
             else {
                 sessionUser = viewer;
@@ -168,12 +131,11 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     }
     catch {
         viewer = null;
+        isViewerVerified = false;
         sessionUser = null;
     }
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
-    // Check if viewer is PAID_MEMBER (can see unblurred images)
-    const viewerIsPaidMember = viewerMediaOptions.viewerIsPaidMember ?? false;
 
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
@@ -228,17 +190,17 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             // Populate sender if needed
             if (sender && (!sender.ageVerify || !sender.roles)) {
                 try {
-                    const senderId = sender.id || plainMessage.senderId;
-                    if (senderId) {
-                        const senderPopulated = await getUserById(senderId);
-                        if (senderPopulated) {
-                            sender = {
-                                ...sender,
-                                ageVerify: senderPopulated.ageVerify,
-                                roles: senderPopulated.roles,
-                                membershipEndDate: (senderPopulated as any).membershipEndDate,
-                            } as any;
-                        }
+                    const senderPopulated = await userCtr.getUser(context as any, {
+                        filter: { id: sender.id || plainMessage.senderId },
+                        projection: { ageVerify: 1, roles: 1, membershipEndDate: 1 },
+                    });
+                    if (senderPopulated.success && senderPopulated.result) {
+                        sender = {
+                            ...sender,
+                            ageVerify: senderPopulated.result.ageVerify,
+                            roles: senderPopulated.result.roles,
+                            membershipEndDate: (senderPopulated.result as any).membershipEndDate,
+                        } as any;
                     }
                 }
                 catch {
@@ -256,57 +218,30 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // Check viewer's membership status
-            const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
-            const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-            let viewerMembershipActive = false;
+            // Check sender's membership status (not viewer's)
+            const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
+            const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            let senderMembershipActive = false;
             try {
-                viewerMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+                senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
             }
             catch {
-                viewerMembershipActive = false;
+                senderMembershipActive = false;
             }
-            const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
-            const viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
+            const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
 
-            // Case 1: Sender is not age-verified → show default image (null)
-            // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
+            // Case 1: Sender is not age-verified → show default image
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
                 content.value = null as any; // Set to null to show default image
             }
+            // Case 2: Sender is FREE_MEMBER (age-verified) → show blur
+            else if (isSenderFreeMember && !isOwner && !viewerExempt) {
+                content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+            }
+            // Case 3: Sender is PAID_MEMBER (age-verified) or owner/admin → show normal
             else {
-                // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác
-                if (viewerIsFreeMember && !isOwner && !viewerExempt) {
-                    content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
-                }
-                // Case 3: Viewer is PAID_MEMBER → check sender's role
-                else if (viewerIsPaidMember && !isOwner && !viewerExempt) {
-                    const senderRoles = Array.isArray(sender?.roles) ? sender?.roles : [];
-                    const senderHasFreeRole = senderRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                    const senderHasPaidRole = senderRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-                    let senderMembershipActive = false;
-                    try {
-                        senderMembershipActive = sender ? authnCtr.isMembershipActive(sender) : false;
-                    }
-                    catch {
-                        senderMembershipActive = false;
-                    }
-                    const isSenderFreeMember = senderHasFreeRole || (senderHasPaidRole && !senderMembershipActive);
-
-                    // Sender is FREE_MEMBER → blur
-                    if (isSenderFreeMember) {
-                        content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
-                    }
-                    // Sender is PAID_MEMBER → normal
-                    else {
-                        content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
-                    }
-                }
-                // Case 4: Owner/admin hoặc không có membership info → show normal
-                else {
-                    content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
-                }
+                content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
             }
         }
     }
@@ -331,24 +266,30 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             // Only redact for other users, not the sender
             if (viewerId && viewerId !== plainMessage.senderId) {
                 // Check if message has WARN log (keyword detected) and no APPROVE log
-                const warnLogsResult = await getModerationLogs({
-                    messageId: plainMessage.id,
-                    action: E_ModerationLogAction.WARN,
+                const warnLogs = await moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        messageId: plainMessage.id,
+                        action: E_ModerationLogAction.WARN,
+                    },
+                    options: { pagination: false },
                 });
 
-                if (warnLogsResult.docs && warnLogsResult.docs.length > 0) {
+                if (warnLogs.success && warnLogs.result?.docs && warnLogs.result.docs.length > 0) {
                     // Check if there's an APPROVE log for this message
-                    const approveLogsResult = await getModerationLogs({
-                        messageId: plainMessage.id,
-                        action: E_ModerationLogAction.APPROVE,
+                    const approveLogs = await moderationLogCtr.getModerationLogs(context, {
+                        filter: {
+                            messageId: plainMessage.id,
+                            action: E_ModerationLogAction.APPROVE,
+                        },
+                        options: { pagination: false },
                     });
 
                     // If no APPROVE log exists, message is still pending moderation - redact keyword
-                    if (!approveLogsResult.docs || approveLogsResult.docs.length === 0) {
+                    if (!approveLogs.success || !approveLogs.result?.docs || approveLogs.result.docs.length === 0) {
                         shouldRedactKeywords = true;
                         // Extract keyword from reason field
                         // Format: "Message contains keyword: "xxx" (category: xxx)"
-                        const reason = (warnLogsResult.docs[0] as any)?.reason || '';
+                        const reason = warnLogs.result.docs[0]?.reason || '';
                         const match = reason.match(/keyword: "([^"]+)"/);
                         if (match && match[1]) {
                             keywordToRedact = match[1];
@@ -368,9 +309,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         content.value = content.value.replace(keywordPattern, '***');
     }
 
-    // Only normalize blur markers if viewer is PAID_MEMBER (can see unblurred images)
-    // FREE_MEMBER should see blurred images, so don't normalize
-    if (viewerIsPaidMember && content) {
+    if (isViewerVerified && content) {
         content = normalizeBlurMarkers(content);
     }
 
@@ -384,19 +323,35 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             let transformedSender = { ...plainSender };
 
             // Ensure ageVerify and roles are populated for blur logic to work correctly
-            // Also need roles to check membership status
             if ((!transformedSender.ageVerify || !transformedSender.roles) && transformedSender.id) {
                 try {
-                    const senderPopulated = await getUserById(transformedSender.id);
-                    if (senderPopulated) {
+                    const mongooseCtr = new MongooseController(UserModel);
+                    const senderPopulated = await mongooseCtr.findOne(
+                        { id: transformedSender.id },
+                        undefined,
+                        undefined,
+                        [
+                            { path: 'ageVerify' },
+                            { path: 'roles' },
+                            {
+                                path: 'partner1',
+                                populate: [{ path: 'gallery' }],
+                            },
+                            {
+                                path: 'partner2',
+                                populate: [{ path: 'gallery' }],
+                            },
+                        ],
+                    );
+                    if (senderPopulated.success && senderPopulated.result) {
                         // Merge ageVerify, roles, and galleries into sender
                         transformedSender = {
                             ...transformedSender,
-                            ageVerify: senderPopulated.ageVerify,
-                            roles: senderPopulated.roles || transformedSender.roles,
-                            membershipEndDate: (senderPopulated as any).membershipEndDate,
-                            partner1: senderPopulated.partner1 || transformedSender.partner1,
-                            partner2: senderPopulated.partner2 || transformedSender.partner2,
+                            ageVerify: senderPopulated.result.ageVerify,
+                            roles: senderPopulated.result.roles || transformedSender.roles,
+                            membershipEndDate: (senderPopulated.result as any).membershipEndDate,
+                            partner1: senderPopulated.result.partner1 || transformedSender.partner1,
+                            partner2: senderPopulated.result.partner2 || transformedSender.partner2,
                         };
                     }
                 }
@@ -415,9 +370,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         }
     }
 
-    // Only normalize blur markers if viewer is PAID_MEMBER (can see unblurred images)
-    // FREE_MEMBER should see blurred images, so don't normalize
-    if (viewerIsPaidMember && sender) {
+    if (isViewerVerified && sender) {
         sender = normalizeBlurMarkers(sender);
     }
 

@@ -22,6 +22,9 @@ function signProfileImage(
     // Check if owner (person whose profile is being viewed) is age-verified
     const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
 
+    // Check if viewer (person viewing the profile) is age-verified
+    const viewerAgeVerified = options?.viewerAgeVerified ?? false;
+
     // Check if viewer is the owner (viewing their own profile)
     const viewerId = options?.viewerId;
     const isOwner = viewerId && user?.id && viewerId === user.id;
@@ -31,49 +34,25 @@ function signProfileImage(
     const viewerIsAdmin = options?.viewerIsAdmin ?? false;
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
+    // FREE_MEMBER check
+    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
+
     // Case 1: Owner is not age-verified → show default (null)
-    // Age verified chỉ ảnh hưởng đến việc hiển thị null hay không, không ảnh hưởng đến blur
     if (!ownerAgeVerified && !isOwner && !viewerExempt) {
         return null; // Return null to show default image
     }
 
-    // Check viewer's membership status để quyết định blur hay normal
-    // FREE_MEMBER nên thấy blur tất cả gallery của người khác
-    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
-    const viewerIsPaidMember = options?.viewerIsPaidMember ?? false;
+    // Case 2: Viewer is not age-verified → show default (null)
+    if (!viewerAgeVerified && !isOwner && !viewerExempt) {
+        return null; // Viewer not verified, show default
+    }
 
-    // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của owner)
-    if (viewerIsFreeMember && !isOwner && !viewerExempt) {
+    // Case 3: FREE_MEMBER (age-verified) → show blur
+    if (!isOwner && !viewerExempt && viewerIsFreeMember) {
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
 
-    // Case 3: Viewer is PAID_MEMBER → check owner's role
-    // Nếu owner là FREE_MEMBER → blur, nếu owner là PAID_MEMBER → normal
-    if (viewerIsPaidMember && !isOwner && !viewerExempt) {
-        const ownerRoles = Array.isArray((user as any)?.roles) ? (user as any).roles : [];
-        const ownerHasFreeRole = ownerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-        const ownerHasPaidRole = ownerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
-        let ownerMembershipActive = false;
-        try {
-            ownerMembershipActive = authnCtr.isMembershipActive(user);
-        }
-        catch {
-            ownerMembershipActive = false;
-        }
-        const isOwnerFreeMember = ownerHasFreeRole || (ownerHasPaidRole && !ownerMembershipActive);
-
-        // Owner is FREE_MEMBER → blur
-        if (isOwnerFreeMember) {
-            return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
-        }
-        // Owner is PAID_MEMBER → normal
-        return bunnyCtr.generateSignedUrl({
-            fullUrl: url,
-            extraQueryParams: { class: 'normal' },
-        });
-    }
-
-    // Case 4: Owner/admin hoặc không có membership info → show normal
+    // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
         extraQueryParams: { class: 'normal' },
@@ -95,13 +74,15 @@ export function hydrateUserMedia(
 
         const rawGalleryUrl = partner.gallery?.url;
 
-        // If there's a URL, sign/blur it based on membership status
+        // If there's a URL, sign/blur it based on age verification
         if (rawGalleryUrl) {
-            // Logic:
-            // - Age verified chỉ ảnh hưởng đến việc hiển thị null hay không
-            // - Blur dựa vào role của owner: FREE_MEMBER -> blur, PAID_MEMBER (active) -> normal
-            // - Owner can always see their own profile pictures clearly
+            // Blur/unblur based on owner's and viewer's age verification status
+            // - Owner can always see their own profile pictures clearly (even if not age-verified)
+            // - If viewer is not age-verified: blur all images of other users
+            // - If viewer is age-verified but owner is not: blur
+            // - If both are age-verified: show clearly
             // - Staff/admin can always see unblurred images
+            // - Free members should see blurred profile photos of others
             const signedGallery = signProfileImage(rawGalleryUrl, user, options);
 
             if (partner.gallery) {
@@ -195,9 +176,9 @@ export function getViewerMediaContext(user?: I_User | null): {
     );
 
     // Check if user has paid member role
-    const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER' || role.name === 'PAID_MEM');
+    const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER');
     // Check if user has free member role
-    const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER' || role.name === 'FREE_MEM');
+    const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER');
 
     // Import authnCtr to check membership status
     // We need to check if membership is active for paid members
