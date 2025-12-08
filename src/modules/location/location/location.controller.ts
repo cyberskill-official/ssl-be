@@ -1293,7 +1293,7 @@ export const locationCtr = {
                     const ev = e as I_Event;
 
                     // Blur nếu viewer chưa age verify
-                    const shouldBlur = !viewerMediaOptions.viewerAgeVerified;
+                    const shouldBlur = !(viewerMediaOptions.viewerAgeVerified ?? false);
 
                     if (ev?.image) {
                         ev.image = shouldBlur
@@ -1327,12 +1327,12 @@ export const locationCtr = {
                 if (d.entityType === E_LocationEntityType.DESTINATION) {
                     const dest = e as I_Destination;
                     if (Array.isArray(dest.images)) {
-                        dest.images = dest.images.map(u => viewerMediaOptions.viewerAgeVerified
+                        dest.images = dest.images.map(u => (viewerMediaOptions.viewerAgeVerified ?? false)
                             ? bunnyCtr.generateSignedUrl({ fullUrl: u, extraQueryParams: { class: 'normal' } })
                             : bunnyCtr.generateBlurredUrl({ fullUrl: u, extraQueryParams: { class: 'blur' } }));
                     }
                     if (dest.logo) {
-                        dest.logo = viewerMediaOptions.viewerAgeVerified
+                        dest.logo = (viewerMediaOptions.viewerAgeVerified ?? false)
                             ? bunnyCtr.generateSignedUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'normal' } })
                             : bunnyCtr.generateBlurredUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'blur' } });
                     }
