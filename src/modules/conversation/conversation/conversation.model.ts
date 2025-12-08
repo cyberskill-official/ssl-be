@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import type { I_Conversation } from './conversation.type.js';
 
 import { GROUP_RETENTION_DAYS } from './conversation.constant.js';
-import { E_ConversationType } from './conversation.type.js';
+import { E_ConversationCategory, E_ConversationStatus, E_ConversationType } from './conversation.type.js';
 
 export const ConversationModel = mongo.createModel<I_Conversation>({
     mongoose,
@@ -40,6 +40,29 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
         lastMessageAt: {
             type: Date,
         },
+        // Admin management fields
+        status: {
+            type: String,
+            enum: Object.values(E_ConversationStatus),
+            default: E_ConversationStatus.NEW,
+        },
+        category: {
+            type: String,
+            enum: Object.values(E_ConversationCategory),
+            default: E_ConversationCategory.UNCATEGORIZED,
+        },
+        resolvedAt: {
+            type: Date,
+        },
+        resolvedById: {
+            type: String,
+        },
+        lastReadByAdminAt: {
+            type: Date,
+        },
+        notes: {
+            type: String,
+        },
     },
     virtuals: [
         {
@@ -67,6 +90,15 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
                 localField: 'id',
                 foreignField: 'conversationId',
                 justOne: false,
+            },
+        },
+        {
+            name: 'resolvedBy',
+            options: {
+                ref: 'User',
+                localField: 'resolvedById',
+                foreignField: 'id',
+                justOne: true,
             },
         },
     ],

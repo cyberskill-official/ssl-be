@@ -46,11 +46,15 @@ import type {
     I_Conversation,
     I_ConversationEventPayload,
     I_Input_AdminReplyGuest,
+    I_Input_ArchiveConversation,
     I_Input_CreateConversation,
     I_Input_CreateGroupConversation,
     I_Input_DeleteGroupConversation,
     I_Input_DeletePrivateConversation,
+    I_Input_MarkConversationAsRead,
     I_Input_QueryConversation,
+    I_Input_ResolveConversation,
+    I_Input_UpdateConversationStatus,
     I_MessageReadPayload,
     I_MessageSentPayload,
     I_MessageSubscriptionFilter,
@@ -62,13 +66,36 @@ import { transformMessageMedia } from '../message/message.util.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
 import { ConversationModel } from './conversation.model.js';
 import {
+    E_ContactTopic,
     E_CONVERSATION_EVENTS,
     E_ConversationAction,
+    E_ConversationCategory,
+    E_ConversationStatus,
     E_ConversationType,
 } from './conversation.type.js';
 import { buildMessagePreview, classifyConversation, getOtherParticipantId, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
+
+// Helper function to map contact topic to category
+function mapTopicToCategory(topic: E_ContactTopic): E_ConversationCategory {
+    switch (topic) {
+        case E_ContactTopic.TECHNICAL_ACCOUNT:
+            return E_ConversationCategory.TECHNICAL;
+        case E_ContactTopic.BILLING_MEMBERSHIP:
+            return E_ConversationCategory.BILLING;
+        case E_ContactTopic.CONTENT_MODERATION:
+            return E_ConversationCategory.CONTENT;
+        case E_ContactTopic.CLUB_EVENT:
+            return E_ConversationCategory.CLUB;
+        case E_ContactTopic.LEGAL_COMPLIANCE:
+            return E_ConversationCategory.LEGAL;
+        case E_ContactTopic.GENERAL_FEEDBACK:
+            return E_ConversationCategory.GENERAL;
+        default:
+            return E_ConversationCategory.UNCATEGORIZED;
+    }
+}
 
 // types (add near top of file)
 type T_ContactSource = 'createdBy' | 'lastMessage' | 'participant' | 'guest' | 'admin_fallback' | 'none';
@@ -1137,6 +1164,8 @@ export const conversationCtr = {
                     type: E_ConversationType.ADMIN_BROADCAST,
                     createdById: currentUser.id,
                     contactAdmin: contactTyped,
+                    status: E_ConversationStatus.NEW,
+                    category: mapTopicToCategory(topic),
                 },
             });
 
@@ -1195,6 +1224,8 @@ export const conversationCtr = {
                 type: E_ConversationType.ADMIN_BROADCAST,
                 createdById: null, // guest -> null owner
                 contactAdmin: contactTyped,
+                status: E_ConversationStatus.NEW,
+                category: mapTopicToCategory(topic),
             },
         });
 
@@ -1422,6 +1453,15 @@ export const conversationCtr = {
                             }
 
                             await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => {});
+
+                            // Update conversation status to IN_PROGRESS when admin replies
+                            await mongooseCtr.updateOne(
+                                { id: providedConvId },
+                                {
+                                    status: E_ConversationStatus.IN_PROGRESS,
+                                    lastReadByAdminAt: new Date(),
+                                },
+                            ).catch(() => {});
 
                             // Publish WS event so admin UI updates
                             try {
@@ -2692,6 +2732,124 @@ export const conversationCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
+    },
+
+    /**
+     * Update conversation status, category, and notes (Admin only)
+     */
+    updateConversationStatus: async (
+        context: I_Context,
+        { conversationId, status, category, notes }: I_Input_UpdateConversationStatus,
+    ): Promise<I_Return<I_Conversation>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+
+        if (!isAdmin) {
+            throwError({ message: 'Only admins can update conversation status', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        const updateData: Partial<I_Conversation> = {};
+        if (status !== undefined)
+            updateData.status = status;
+        if (category !== undefined)
+            updateData.category = category;
+        if (notes !== undefined)
+            updateData.notes = notes;
+
+        const result = await mongooseCtr.updateOne({ id: conversationId }, updateData);
+        if (!result.success) {
+            throwError({ message: 'Failed to update conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return result;
+    },
+
+    /**
+     * Mark conversation as read by admin
+     */
+    markConversationAsRead: async (
+        context: I_Context,
+        { conversationId }: I_Input_MarkConversationAsRead,
+    ): Promise<I_Return<I_Conversation>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+
+        if (!isAdmin) {
+            throwError({ message: 'Only admins can mark conversations as read', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        const result = await mongooseCtr.updateOne(
+            { id: conversationId },
+            { lastReadByAdminAt: new Date() },
+        );
+
+        if (!result.success) {
+            throwError({ message: 'Failed to mark conversation as read', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return result;
+    },
+
+    /**
+     * Resolve conversation (mark as resolved with optional notes)
+     */
+    resolveConversation: async (
+        context: I_Context,
+        { conversationId, notes }: I_Input_ResolveConversation,
+    ): Promise<I_Return<I_Conversation>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+
+        if (!isAdmin) {
+            throwError({ message: 'Only admins can resolve conversations', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        const updateData: Partial<I_Conversation> = {
+            status: E_ConversationStatus.RESOLVED,
+            resolvedAt: new Date(),
+            resolvedById: currentUser.id,
+        };
+
+        if (notes !== undefined) {
+            updateData.notes = notes;
+        }
+
+        const result = await mongooseCtr.updateOne({ id: conversationId }, updateData);
+        if (!result.success) {
+            throwError({ message: 'Failed to resolve conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return result;
+    },
+
+    /**
+     * Archive conversation
+     */
+    archiveConversation: async (
+        context: I_Context,
+        { conversationId }: I_Input_ArchiveConversation,
+    ): Promise<I_Return<I_Conversation>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const admins = await getAdminUsers(context);
+        const isAdmin = admins.some(admin => admin.id === currentUser.id);
+
+        if (!isAdmin) {
+            throwError({ message: 'Only admins can archive conversations', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        const result = await mongooseCtr.updateOne(
+            { id: conversationId },
+            { status: E_ConversationStatus.ARCHIVED },
+        );
+
+        if (!result.success) {
+            throwError({ message: 'Failed to archive conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        return result;
     },
 
 };

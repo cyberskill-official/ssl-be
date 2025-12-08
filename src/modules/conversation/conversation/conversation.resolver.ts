@@ -8,12 +8,16 @@ import type {
     I_ContactAdmin,
     I_ConversationEventPayload,
     I_Input_AdminReplyGuest,
+    I_Input_ArchiveConversation,
     I_Input_CreateConversation,
     I_Input_CreateGroupConversation,
     I_Input_DeleteGroupConversation,
     I_Input_DeletePrivateConversation,
     I_Input_MarkAllMessagesAsRead,
+    I_Input_MarkConversationAsRead,
     I_Input_QueryConversation,
+    I_Input_ResolveConversation,
+    I_Input_UpdateConversationStatus,
     I_MessageReadPayload,
     I_MessageSentPayload,
 } from './conversation.type.js';
@@ -66,6 +70,26 @@ const conversationResolver = {
             args: { requesterId: string },
             context: I_Context,
         ) => conversationCtr.approveJoinConversation(context, args),
+        updateConversationStatus: (
+            _parent: unknown,
+            args: { conversationId: string; status?: string; category?: string; notes?: string },
+            context: I_Context,
+        ) => conversationCtr.updateConversationStatus(context, args as I_Input_UpdateConversationStatus),
+        markConversationAsRead: (
+            _parent: unknown,
+            args: I_Input_MarkConversationAsRead,
+            context: I_Context,
+        ) => conversationCtr.markConversationAsRead(context, args),
+        resolveConversation: (
+            _parent: unknown,
+            args: I_Input_ResolveConversation,
+            context: I_Context,
+        ) => conversationCtr.resolveConversation(context, args),
+        archiveConversation: (
+            _parent: unknown,
+            args: I_Input_ArchiveConversation,
+            context: I_Context,
+        ) => conversationCtr.archiveConversation(context, args),
     },
     Subscription: {
         messageSent: {

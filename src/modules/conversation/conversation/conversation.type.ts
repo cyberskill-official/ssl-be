@@ -81,6 +81,23 @@ export enum E_ConversationType {
     ADMIN_BROADCAST = 'ADMIN_BROADCAST',
 }
 
+export enum E_ConversationStatus {
+    NEW = 'NEW',
+    IN_PROGRESS = 'IN_PROGRESS',
+    RESOLVED = 'RESOLVED',
+    ARCHIVED = 'ARCHIVED',
+}
+
+export enum E_ConversationCategory {
+    UNCATEGORIZED = 'UNCATEGORIZED',
+    TECHNICAL = 'TECHNICAL',
+    BILLING = 'BILLING',
+    CONTENT = 'CONTENT',
+    CLUB = 'CLUB',
+    LEGAL = 'LEGAL',
+    GENERAL = 'GENERAL',
+}
+
 // Conversation Subscription Events
 export enum E_CONVERSATION_EVENTS {
     // Message events
@@ -143,6 +160,14 @@ export interface I_Conversation extends I_GenericDocument {
     ownerId?: string;
     meta?: Record<string, unknown>;
     contactAdmin?: I_ContactAdmin;
+    // Admin management fields
+    status?: E_ConversationStatus;
+    category?: E_ConversationCategory;
+    resolvedAt?: Date;
+    resolvedById?: string;
+    resolvedBy?: I_User;
+    lastReadByAdminAt?: Date;
+    notes?: string;
 }
 
 export interface I_BroadcastResult {
@@ -203,6 +228,26 @@ export interface I_Input_AdminReplyGuest {
     topic: E_ContactTopic;
     requestType?: E_ContactTechnicalAccountType | E_ContactBillingMembershipType | E_ContactContentModerationType | E_ContactClubEventType | E_ContactLegalComplianceType | E_ContactGeneralFeedbackType;
     message: string;
+}
+
+export interface I_Input_UpdateConversationStatus {
+    conversationId: string;
+    status?: E_ConversationStatus;
+    category?: E_ConversationCategory;
+    notes?: string;
+}
+
+export interface I_Input_MarkConversationAsRead {
+    conversationId: string;
+}
+
+export interface I_Input_ResolveConversation {
+    conversationId: string;
+    notes?: string;
+}
+
+export interface I_Input_ArchiveConversation {
+    conversationId: string;
 }
 
 export interface I_MessageSentPayload {

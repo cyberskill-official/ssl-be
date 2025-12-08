@@ -8,6 +8,23 @@ enum E_ConversationType {
     ADMIN_BROADCAST
 }
 
+enum E_ConversationStatus {
+    NEW
+    IN_PROGRESS
+    RESOLVED
+    ARCHIVED
+}
+
+enum E_ConversationCategory {
+    UNCATEGORIZED
+    TECHNICAL
+    BILLING
+    CONTENT
+    CLUB
+    LEGAL
+    GENERAL
+}
+
 enum E_ContactTopic {
     TECHNICAL_ACCOUNT
     BILLING_MEMBERSHIP
@@ -74,6 +91,14 @@ type T_Conversation {
     entity: U_ConversationEntity
     participants: [T_Participant]
     meta: JSON
+    # Admin management fields
+    status: E_ConversationStatus
+    category: E_ConversationCategory
+    resolvedAt: DateTime
+    resolvedById: String
+    resolvedBy: T_User
+    lastReadByAdminAt: DateTime
+    notes: String
 }
 
 
@@ -279,6 +304,11 @@ type Mutation {
     adminReplyGuest(input: Input_AdminReplyGuest!): T_Response_Generic!
     requestJoinConversation(eventId: String!): T_Response_Generic!
     approveJoinConversation(requesterId: String!): T_Response_Generic!
+    # New admin management mutations
+    updateConversationStatus(conversationId: String!, status: E_ConversationStatus, category: E_ConversationCategory, notes: String): T_Response_Conversation!
+    markConversationAsRead(conversationId: String!): T_Response_Conversation!
+    resolveConversation(conversationId: String!, notes: String): T_Response_Conversation!
+    archiveConversation(conversationId: String!): T_Response_Conversation!
 }
 
 type Subscription {
