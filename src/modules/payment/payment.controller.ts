@@ -82,6 +82,11 @@ export const paymentController = {
             }
         }
 
+        // Determine pricing type based on input
+        // If event is provided, it's for ANNOUNCEMENT, otherwise MEMBERSHIP
+        const expectedPricingType = input.event ? E_PricingType.ANNOUNCEMENT : E_PricingType.MEMBERSHIP;
+        log.warn('[makePayment] Expected pricing type:', expectedPricingType, 'hasEvent:', !!input.event);
+
         // Find pricing - ensure currency is populated
         // Use string format 'currency' to match how it's used elsewhere in the system
         let pricing: I_Pricing | undefined;
@@ -106,11 +111,12 @@ export const paymentController = {
                 currencyId: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.currencyId : undefined,
             });
 
-            // Then query with filters
-            const pricingRes = await pricingMongooseCtr.findOne(
+            // Then query with filters (use expected type, but also allow any type if pricingId is provided)
+            // First try with expected type
+            let pricingRes = await pricingMongooseCtr.findOne(
                 {
                     id: input.pricingId,
-                    type: E_PricingType.MEMBERSHIP,
+                    type: expectedPricingType,
                     isActive: true,
                     isDel: false,
                 },
@@ -118,6 +124,21 @@ export const paymentController = {
                 undefined,
                 'currency',
             );
+
+            // If not found with expected type, try without type filter (pricingId should be unique)
+            if (!pricingRes.success || !pricingRes.result) {
+                log.warn('[makePayment] Pricing not found with expected type, trying without type filter');
+                pricingRes = await pricingMongooseCtr.findOne(
+                    {
+                        id: input.pricingId,
+                        isActive: true,
+                        isDel: false,
+                    },
+                    undefined,
+                    undefined,
+                    'currency',
+                );
+            }
             log.warn('[makePayment] Pricing query result (with filters):', {
                 success: pricingRes.success,
                 hasResult: pricingRes.success && 'result' in pricingRes ? !!pricingRes.result : false,
@@ -127,27 +148,68 @@ export const paymentController = {
                 currencyCode: pricingRes.success && 'result' in pricingRes ? pricingRes.result?.currency?.code : undefined,
             });
             if (pricingRes.success && pricingRes.result) {
-                pricing = pricingRes.result;
-                // Ensure currencyId is preserved even after populate
-                // If currencyId is missing, query it directly from database
-                if (!pricing.currencyId && pricing.id) {
-                    log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
-                    const pricingRawRes = await pricingMongooseCtr.findOne(
-                        { id: pricing.id },
-                        { currencyId: 1 }, // Only get currencyId
-                    );
-                    log.warn('[makePayment] Raw pricing query result:', {
-                        success: pricingRawRes.success,
-                        currencyId: 'result' in pricingRawRes ? pricingRawRes.result?.currencyId : undefined,
-                    });
-                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
-                        pricing.currencyId = pricingRawRes.result.currencyId;
-                        log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
+                const foundPricing = pricingRes.result;
+                // Validate that pricing matches current location
+                // If pricing has stateId, it must match current stateId
+                // If pricing has countryId (but no stateId), it must match current countryId
+                // If pricing has neither, it's a default pricing and can be used
+                const pricingStateId = foundPricing.stateId;
+                const pricingCountryId = foundPricing.countryId;
+                let pricingMatchesLocation = true;
+
+                if (pricingStateId) {
+                    // Pricing is state-specific, must match current stateId
+                    pricingMatchesLocation = stateId === pricingStateId;
+                }
+                else if (pricingCountryId) {
+                    // Pricing is country-specific, must match current countryId
+                    pricingMatchesLocation = countryId === pricingCountryId;
+                }
+                // If pricing has neither stateId nor countryId, it's default and matches any location
+
+                log.warn('[makePayment] Pricing location validation:', {
+                    pricingId: foundPricing.id,
+                    pricingStateId,
+                    pricingCountryId,
+                    currentStateId: stateId,
+                    currentCountryId: countryId,
+                    pricingMatchesLocation,
+                });
+
+                if (pricingMatchesLocation) {
+                    pricing = foundPricing;
+                    // Ensure currencyId is preserved even after populate
+                    // If currencyId is missing, query it directly from database
+                    if (!pricing.currencyId && pricing.id) {
+                        log.warn('[makePayment] currencyId missing, querying raw pricing for currencyId:', pricing.id);
+                        const pricingRawRes = await pricingMongooseCtr.findOne(
+                            { id: pricing.id },
+                            { currencyId: 1 }, // Only get currencyId
+                        );
+                        log.warn('[makePayment] Raw pricing query result:', {
+                            success: pricingRawRes.success,
+                            currencyId: 'result' in pricingRawRes ? pricingRawRes.result?.currencyId : undefined,
+                        });
+                        if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
+                            pricing.currencyId = pricingRawRes.result.currencyId;
+                            log.warn('[makePayment] Restored currencyId:', pricing.currencyId);
+                        }
                     }
+                }
+                else {
+                    log.warn('[makePayment] Pricing does not match current location, will fallback to location-based pricing:', {
+                        pricingId: foundPricing.id,
+                        pricingStateId,
+                        pricingCountryId,
+                        currentStateId: stateId,
+                        currentCountryId: countryId,
+                    });
+                    // Don't use this pricing, fallback to location-based search below
+                    // pricing will remain undefined
                 }
             }
             else {
-                log.warn('[makePayment] Pricing not found or inactive:', {
+                log.warn('[makePayment] Pricing not found or inactive, will fallback to location-based pricing:', {
                     pricingId: input.pricingId,
                     success: pricingRes.success,
                     message: pricingRes.message,
@@ -155,20 +217,20 @@ export const paymentController = {
                     existingPricingType: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.type : undefined,
                     existingPricingIsActive: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isActive : undefined,
                     existingPricingIsDel: pricingExistsRes.success && 'result' in pricingExistsRes ? pricingExistsRes.result?.isDel : undefined,
+                    stateId,
+                    countryId,
                 });
-                throwError({
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                    message: `Pricing with id "${input.pricingId}" not found or is inactive`,
-                });
+                // Don't throw error, fallback to location-based pricing search below
+                // pricing will remain undefined and we'll search by location
             }
         }
 
         // Priority 1: by stateId (most specific)
         if (!pricing && stateId) {
-            log.warn('[makePayment] Querying pricing by stateId:', stateId);
+            log.warn('[makePayment] Querying pricing by stateId:', stateId, 'type:', expectedPricingType);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
-                    type: E_PricingType.MEMBERSHIP,
+                    type: expectedPricingType,
                     stateId,
                     isActive: true,
                     isDel: false,
@@ -202,10 +264,10 @@ export const paymentController = {
 
         // Priority 2: by countryId (fallback)
         if (!pricing && countryId) {
-            log.warn('[makePayment] Querying pricing by countryId:', countryId);
+            log.warn('[makePayment] Querying pricing by countryId:', countryId, 'type:', expectedPricingType);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
-                    type: E_PricingType.MEMBERSHIP,
+                    type: expectedPricingType,
                     countryId,
                     isActive: true,
                     isDel: false,
@@ -239,10 +301,10 @@ export const paymentController = {
 
         // Priority 3: default pricing (no country/state)
         if (!pricing) {
-            log.warn('[makePayment] Querying default pricing (no country/state)');
+            log.warn('[makePayment] Querying default pricing (no country/state), type:', expectedPricingType);
             const pricingRes = await pricingMongooseCtr.findOne(
                 {
-                    type: E_PricingType.MEMBERSHIP,
+                    type: expectedPricingType,
                     isActive: true,
                     isDel: false,
                     $or: [{ countryId: null }, { countryId: '' }, { countryId: { $exists: false } }],
