@@ -203,6 +203,7 @@ export const notificationCtr = {
             let viewerIsAdmin = false;
             let viewerId: string | undefined;
             let viewerIsFreeMember = false;
+            let viewerIsAgeVerified = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(_context);
                 viewerId = viewer?.id;
@@ -216,12 +217,28 @@ export const notificationCtr = {
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
                 );
 
-                // Check viewer membership status
+                // Check viewer membership status and age verification
                 if (viewer) {
                     const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER') ?? false;
                     const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER') ?? false;
                     const isMembershipActive = authnCtr.isMembershipActive(viewer);
                     viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
+
+                    // Check viewer's age verification status
+                    // If ageVerify is not populated in session, fetch it separately
+                    if (viewer.ageVerify?.status) {
+                        viewerIsAgeVerified = viewer.ageVerify.status === E_AgeVerifyStatus.APPROVED;
+                    }
+                    else if (viewer.id) {
+                        // Fetch viewer's ageVerify status from database
+                        const viewerWithAgeVerify = await userCtr.getUser(_context, {
+                            filter: { id: viewer.id },
+                            projection: { ageVerify: 1 },
+                        });
+                        if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
+                            viewerIsAgeVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                        }
+                    }
                 }
             }
             catch {
@@ -334,17 +351,21 @@ export const notificationCtr = {
                     // actor avatar
                     const actor = pres.actor;
                     if (actor?.avatarUrl) {
-                        // If actor is not age-verified and viewer is not actor/staff/admin, set to null (will show default image)
+                        // Case 1: Actor is not age-verified → show default image
                         if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
                             actor.avatarUrl = null as any; // Set to null to show default image
                         }
+                        // Case 2: Viewer is not age-verified → show default image (applies to FREE and PAID)
+                        else if (!viewerIsAgeVerified && !isActorOwner && !viewerExempt) {
+                            actor.avatarUrl = null as any; // Viewer not verified, show default
+                        }
+                        // Case 3: FREE_MEMBER (age-verified) → show blur
+                        else if (!isActorOwner && !viewerExempt && viewerIsFreeMember) {
+                            actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } });
+                        }
+                        // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
                         else {
-                            // FREE_MEMBER: blur all images of others (separate from ageVerify check)
-                            // Only blur if: viewer is free member AND not owner AND not exempt
-                            const shouldBlur = !isActorOwner && !viewerExempt && viewerIsFreeMember;
-                            actor.avatarUrl = shouldBlur
-                                ? bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } })
-                                : bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
+                            actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
                         }
                     }
 
@@ -451,17 +472,21 @@ export const notificationCtr = {
                             }
                         }
 
-                        // If thumbnail owner is not age-verified and viewer is not owner/staff/admin, set to null (will show default image)
+                        // Case 1: Thumbnail owner is not age-verified → show default image
                         if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
                             pres.thumbnailUrl = null as any; // Set to null to show default image
                         }
+                        // Case 2: Viewer is not age-verified → show default image (applies to FREE and PAID)
+                        else if (!viewerIsAgeVerified && !isThumbnailOwner && !viewerExempt) {
+                            pres.thumbnailUrl = null as any; // Viewer not verified, show default
+                        }
+                        // Case 3: FREE_MEMBER (age-verified) → show blur
+                        else if (!isThumbnailOwner && !viewerExempt && viewerIsFreeMember) {
+                            pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
+                        }
+                        // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
                         else {
-                            // FREE_MEMBER: blur all images of others (separate from ageVerify check)
-                            // Only blur if: viewer is free member AND not owner AND not exempt
-                            const shouldBlur = !isThumbnailOwner && !viewerExempt && viewerIsFreeMember;
-                            pres.thumbnailUrl = shouldBlur
-                                ? bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } })
-                                : bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
+                            pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                         }
                     }
                 }

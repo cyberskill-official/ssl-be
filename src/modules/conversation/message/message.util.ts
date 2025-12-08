@@ -194,22 +194,21 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = viewer?.roles?.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN'))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // If sender is not age-verified and viewer is not owner/staff/admin, set to null (will show default image)
+            // Case 1: Sender is not age-verified → show default image
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
                 content.value = null as any; // Set to null to show default image
             }
+            // Case 2: Viewer is not age-verified → show default image (applies to FREE and PAID)
+            else if (!isViewerVerified && !isOwner && !viewerExempt) {
+                content.value = null as any; // Viewer not verified, show default
+            }
+            // Case 3: FREE_MEMBER (age-verified) → show blur
+            else if (!isOwner && !viewerExempt && (viewerMediaOptions.viewerIsFreeMember ?? false)) {
+                content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+            }
+            // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
             else {
-                // FREE_MEMBER: blur all images of others (separate from ageVerify check)
-                // Apply blur/sign logic based on viewer's membership
-                const viewerIsFreeMember = viewerMediaOptions.viewerIsFreeMember ?? false;
-                const shouldBlur = !isOwner && !viewerExempt && viewerIsFreeMember;
-
-                if (shouldBlur) {
-                    content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
-                }
-                else {
-                    content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
-                }
+                content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
             }
         }
     }

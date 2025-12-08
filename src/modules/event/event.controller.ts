@@ -128,15 +128,41 @@ export const eventCtr = {
         // Blur creator avatar/gallery based on viewer and creator age verification
         try {
             let isViewerVerified = false;
+            let viewerIsFreeMember = false;
+            let viewerId: string | undefined;
             try {
                 const viewer = await authnCtr.getUserFromSession(context);
-                isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                viewerId = viewer?.id;
+
+                // Check age verification
+                if (viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
+                    isViewerVerified = true;
+                }
+                else if (viewer?.id) {
+                    // Fetch if not populated
+                    const viewerWithAgeVerify = await userCtr.getUser(context, {
+                        filter: { id: viewer.id },
+                        projection: { ageVerify: 1 },
+                    });
+                    if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
+                        isViewerVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                    }
+                }
+
+                // Check membership
+                const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+                const hasFreeRole = roles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                const hasPaidRole = roles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                const isMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+                viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
             }
             catch {
                 isViewerVerified = false;
             }
 
             const creator = (eventFound.result)?.createdBy;
+            const creatorId = eventFound.result?.createdById;
+            const isOwner = viewerId && creatorId && viewerId === creatorId;
             let isCreatorVerified = false;
             try {
                 isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -145,19 +171,41 @@ export const eventCtr = {
                 isCreatorVerified = false;
             }
 
-            const shouldBlur = !isViewerVerified || !isCreatorVerified;
             if (creator) {
                 const p1 = creator.partner1;
                 const p2 = creator.partner2;
-                if (p1?.gallery?.url) {
-                    p1.gallery.url = shouldBlur
-                        ? bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } })
-                        : bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+
+                // Case 1: Creator not verified → show default (null)
+                if (!isCreatorVerified && !isOwner) {
+                    if (p1?.gallery?.url)
+                        p1.gallery.url = null as any;
+                    if (p2?.gallery?.url)
+                        p2.gallery.url = null as any;
                 }
-                if (p2?.gallery?.url) {
-                    p2.gallery.url = shouldBlur
-                        ? bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } })
-                        : bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                // Case 2: Viewer not verified → show default (null)
+                else if (!isViewerVerified && !isOwner) {
+                    if (p1?.gallery?.url)
+                        p1.gallery.url = null as any;
+                    if (p2?.gallery?.url)
+                        p2.gallery.url = null as any;
+                }
+                // Case 3: FREE_MEMBER verified → show blur
+                else if (!isOwner && viewerIsFreeMember) {
+                    if (p1?.gallery?.url) {
+                        p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                    if (p2?.gallery?.url) {
+                        p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                }
+                // Case 4: PAID_MEMBER verified or owner → show normal
+                else {
+                    if (p1?.gallery?.url) {
+                        p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+                    }
+                    if (p2?.gallery?.url) {
+                        p2.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                    }
                 }
             }
         }
@@ -226,9 +274,32 @@ export const eventCtr = {
 
         // Blur/signed media according to viewer + creator verification
         let isViewerVerified = false;
+        let viewerIsFreeMember = false;
+        let viewerId: string | undefined;
         try {
             const viewer = await authnCtr.getUserFromSession(context);
-            isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+            viewerId = viewer?.id;
+
+            // Check age verification
+            if (viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED) {
+                isViewerVerified = true;
+            }
+            else if (viewer?.id) {
+                const viewerWithAgeVerify = await userCtr.getUser(context, {
+                    filter: { id: viewer.id },
+                    projection: { ageVerify: 1 },
+                });
+                if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
+                    isViewerVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                }
+            }
+
+            // Check membership
+            const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
+            const hasFreeRole = roles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const hasPaidRole = roles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            const isMembershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+            viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
         }
         catch {
             isViewerVerified = false;
@@ -244,6 +315,8 @@ export const eventCtr = {
             }
             try {
                 const creator = (event).createdBy;
+                const creatorId = event.createdById;
+                const isOwner = viewerId && creatorId && viewerId === creatorId;
                 let isCreatorVerified = false;
                 try {
                     isCreatorVerified = creator?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
@@ -251,19 +324,42 @@ export const eventCtr = {
                 catch {
                     isCreatorVerified = false;
                 }
-                const shouldBlur = !isViewerVerified || !isCreatorVerified;
+
                 if (creator) {
                     const p1 = creator.partner1;
                     const p2 = creator.partner2;
-                    if (p1?.gallery?.url) {
-                        p1.gallery.url = shouldBlur
-                            ? bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } })
-                            : bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+
+                    // Case 1: Creator not verified → show default (null)
+                    if (!isCreatorVerified && !isOwner) {
+                        if (p1?.gallery?.url)
+                            p1.gallery.url = null as any;
+                        if (p2?.gallery?.url)
+                            p2.gallery.url = null as any;
                     }
-                    if (p2?.gallery?.url) {
-                        p2.gallery.url = shouldBlur
-                            ? bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } })
-                            : bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                    // Case 2: Viewer not verified → show default (null)
+                    else if (!isViewerVerified && !isOwner) {
+                        if (p1?.gallery?.url)
+                            p1.gallery.url = null as any;
+                        if (p2?.gallery?.url)
+                            p2.gallery.url = null as any;
+                    }
+                    // Case 3: FREE_MEMBER verified → show blur
+                    else if (!isOwner && viewerIsFreeMember) {
+                        if (p1?.gallery?.url) {
+                            p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
+                        }
+                        if (p2?.gallery?.url) {
+                            p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
+                        }
+                    }
+                    // Case 4: PAID_MEMBER verified or owner → show normal
+                    else {
+                        if (p1?.gallery?.url) {
+                            p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
+                        }
+                        if (p2?.gallery?.url) {
+                            p2.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'normal' } });
+                        }
                     }
                 }
             }
@@ -620,8 +716,8 @@ export const eventCtr = {
         // For non-club events we require coordinates (map) so event shows on map
         if (type !== E_EventType.CLUB_VISIT) {
             if (!sourceWithMap) {
-            // no candidate with map -> error (client must supply coordinates or user/partner/temp/destination must have)
-            // This prevents creating locations without map for non-club events.
+                // no candidate with map -> error (client must supply coordinates or user/partner/temp/destination must have)
+                // This prevents creating locations without map for non-club events.
                 await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
                 throwError({
                     message: 'Location coordinates are required for this event type. Please provide location.map with numeric latitude and longitude.',
@@ -666,7 +762,7 @@ export const eventCtr = {
                     : undefined;
             }
             else {
-            // Always create a new location doc for this event (avoid reusing partner/user location)
+                // Always create a new location doc for this event (avoid reusing partner/user location)
                 const locationPinStyle = mapEventTypeToPinStyle(type);
 
                 const locationDoc = sourceLocation
@@ -794,7 +890,7 @@ export const eventCtr = {
                     }
                     catch { /* swallow */ }
 
-                // email per recipient (respecting their setting) - left commented like original
+                    // email per recipient (respecting their setting) - left commented like original
                 }
             }
 
