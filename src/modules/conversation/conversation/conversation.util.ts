@@ -361,8 +361,8 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
 
             let user = { ...participant.user };
 
-            // Ensure ageVerify is populated for hydrateUserMedia to work correctly
-            if (!user.ageVerify && user.id) {
+            // Ensure ageVerify and roles are populated for hydrateUserMedia to work correctly
+            if ((!user.ageVerify || !user.roles) && user.id) {
                 try {
                     const { MongooseController } = await import('@cyberskill/shared/node/mongo');
                     const { UserModel } = await import('#modules/user/user.model.js');
@@ -373,6 +373,7 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
                         undefined,
                         [
                             { path: 'ageVerify' },
+                            { path: 'roles' },
                             {
                                 path: 'partner1',
                                 populate: [{ path: 'gallery' }],
@@ -384,10 +385,11 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
                         ],
                     );
                     if (userPopulated.success && userPopulated.result) {
-                        // Merge ageVerify and galleries into user
+                        // Merge ageVerify, roles and galleries into user
                         user = {
                             ...user,
                             ageVerify: userPopulated.result.ageVerify,
+                            roles: userPopulated.result.roles || user.roles,
                             partner1: userPopulated.result.partner1 || user.partner1,
                             partner2: userPopulated.result.partner2 || user.partner2,
                         };

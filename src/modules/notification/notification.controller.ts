@@ -221,6 +221,31 @@ export const notificationCtr = {
 
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
+            // Check viewer's membership status
+            let viewerIsFreeMember = false;
+            let viewerIsPaidMember = false;
+            if (viewerId) {
+                try {
+                    const viewerResult = await userCtr.getUsers(_context, {
+                        filter: { id: viewerId },
+                        options: { pagination: false },
+                        populate: [{ path: 'roles' }],
+                    } as any);
+                    if (viewerResult.success && viewerResult.result?.docs?.[0]) {
+                        const viewer = viewerResult.result.docs[0];
+                        const viewerRoles = Array.isArray(viewer.roles) ? viewer.roles : [];
+                        const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                        const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                        const viewerMembershipActive = authnCtr.isMembershipActive(viewer);
+                        viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
+                        viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
+                    }
+                }
+                catch {
+                    // If fetch fails, assume viewer is not a member
+                }
+            }
+
             if (res.success && res.result && Array.isArray(res.result.docs)) {
                 // Collect unique actorIds
                 const actorIds = new Set<string>();
@@ -362,7 +387,7 @@ export const notificationCtr = {
                     const isActorFreeMember = actorId ? (actorIsFreeMemberMap.get(actorId) ?? false) : false;
                     const isActorOwner = viewerId && actorId && viewerId === actorId;
 
-                    // actor avatar - logic based on ACTOR's status, not viewer's
+                    // actor avatar - logic based on VIEWER's membership status
                     const actor = pres.actor;
                     if (actor) { // Check if actor is defined
                         // Get actor's gallery URL from map (if not already set in presentation)
@@ -375,11 +400,22 @@ export const notificationCtr = {
                                 actor.avatarUrl = null as any; // Set to null to show default image
                             }
                             else {
-                                // Case 2: Actor is FREE_MEMBER → show blur (không phụ thuộc vào age verified)
-                                if (isActorFreeMember && !isActorOwner && !viewerExempt) {
+                                // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của actor)
+                                if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
                                     actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'blur' } });
                                 }
-                                // Case 3: Actor is PAID_MEMBER (MEMBERSHIP active) or owner/admin → show normal
+                                // Case 3: Viewer is PAID_MEMBER → check actor's role
+                                else if (viewerIsPaidMember && !isActorOwner && !viewerExempt) {
+                                    // Actor is FREE_MEMBER → blur
+                                    if (isActorFreeMember) {
+                                        actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'blur' } });
+                                    }
+                                    // Actor is PAID_MEMBER → normal
+                                    else {
+                                        actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'normal' } });
+                                    }
+                                }
+                                // Case 4: Owner/admin hoặc không có membership info → show normal
                                 else {
                                     actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actorGalleryUrl, extraQueryParams: { class: 'normal' } });
                                 }
@@ -494,8 +530,8 @@ export const notificationCtr = {
                             }
                         }
 
-                        // Logic based on THUMBNAIL OWNER's status (gallery owner or event creator), not actor
-                        // Get thumbnail owner's membership status
+                        // Logic based on VIEWER's membership status, not thumbnail owner
+                        // Get thumbnail owner's membership status for PAID_MEMBER viewer check
                         let isThumbnailOwnerFreeMember = false;
                         if (entityId && n.entityType === E_NotificationEntityType.MEDIA) {
                             isThumbnailOwnerFreeMember = galleryOwnerIsFreeMemberMap.get(entityId) ?? false;
@@ -510,11 +546,22 @@ export const notificationCtr = {
                             pres.thumbnailUrl = null as any; // Set to null to show default image
                         }
                         else {
-                            // Case 2: Thumbnail owner is FREE_MEMBER → show blur (không phụ thuộc vào age verified)
-                            if (isThumbnailOwnerFreeMember && !isThumbnailOwner && !viewerExempt) {
+                            // Case 2: Viewer is FREE_MEMBER → blur tất cả gallery của người khác (không phụ thuộc vào role của owner)
+                            if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
                                 pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
                             }
-                            // Case 3: Thumbnail owner is PAID_MEMBER (MEMBERSHIP active) or owner/admin → show normal
+                            // Case 3: Viewer is PAID_MEMBER → check thumbnail owner's role
+                            else if (viewerIsPaidMember && !isThumbnailOwner && !viewerExempt) {
+                                // Thumbnail owner is FREE_MEMBER → blur
+                                if (isThumbnailOwnerFreeMember) {
+                                    pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
+                                }
+                                // Thumbnail owner is PAID_MEMBER → normal
+                                else {
+                                    pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
+                                }
+                            }
+                            // Case 4: Owner/admin hoặc không có membership info → show normal
                             else {
                                 pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                             }

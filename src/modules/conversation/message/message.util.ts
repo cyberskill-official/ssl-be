@@ -151,11 +151,9 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     // Get viewer once for use in multiple checks
     let viewer = null;
-    let isViewerVerified = false;
     let sessionUser: any = null;
     try {
         viewer = await authnCtr.getUserFromSession(context);
-        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
 
         // Fetch full session user data with roles and ageVerify for media hydration
         if (viewer?.id) {
@@ -170,11 +168,12 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     }
     catch {
         viewer = null;
-        isViewerVerified = false;
         sessionUser = null;
     }
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+    // Check if viewer is PAID_MEMBER (can see unblurred images)
+    const viewerIsPaidMember = viewerMediaOptions.viewerIsPaidMember ?? false;
 
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
@@ -369,7 +368,9 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         content.value = content.value.replace(keywordPattern, '***');
     }
 
-    if (isViewerVerified && content) {
+    // Only normalize blur markers if viewer is PAID_MEMBER (can see unblurred images)
+    // FREE_MEMBER should see blurred images, so don't normalize
+    if (viewerIsPaidMember && content) {
         content = normalizeBlurMarkers(content);
     }
 
@@ -383,6 +384,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             let transformedSender = { ...plainSender };
 
             // Ensure ageVerify and roles are populated for blur logic to work correctly
+            // Also need roles to check membership status
             if ((!transformedSender.ageVerify || !transformedSender.roles) && transformedSender.id) {
                 try {
                     const senderPopulated = await getUserById(transformedSender.id);
@@ -413,7 +415,9 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         }
     }
 
-    if (isViewerVerified && sender) {
+    // Only normalize blur markers if viewer is PAID_MEMBER (can see unblurred images)
+    // FREE_MEMBER should see blurred images, so don't normalize
+    if (viewerIsPaidMember && sender) {
         sender = normalizeBlurMarkers(sender);
     }
 
