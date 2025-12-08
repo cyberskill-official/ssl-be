@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -125,6 +125,15 @@ export const galleryCtr = {
             }
         }
 
+        // Debug membership resolution to investigate unexpected blurs for paid users
+        log.warn('[GALLERY][getGallery] viewer flags', {
+            viewerId: context.req?.session?.user?.id,
+            isLoggedIn,
+            isPaidMember,
+            isFreeMember,
+            viewerAgeVerified,
+        });
+
         const galleryFound = await mongooseCtr.findOne(filter, projection, options, populate);
 
         if (!galleryFound.success) {
@@ -205,7 +214,7 @@ export const galleryCtr = {
         const applyThumbnailPolicy = (url?: string | null) => {
             if (!url)
                 return url;
-            // If uploader is not age-verified, return null to show default image
+                // If uploader is not age-verified, return null to show default image
             if (shouldShowDefaultImage) {
                 return null;
             }
@@ -351,6 +360,17 @@ export const galleryCtr = {
             }
         }
 
+        // Debug membership resolution to investigate unexpected blurs for paid users
+        log.warn('[GALLERY][getGalleries] viewer flags', {
+            viewerId: sessionUserId,
+            isLoggedIn,
+            isPaidMember,
+            isFreeMember,
+            viewerAgeVerified,
+            isStaff,
+            isAdmin,
+        });
+
         const galleries = await mongooseCtr.findPaging(mongoFilter, {
             ...options,
             populate: [
@@ -471,7 +491,7 @@ export const galleryCtr = {
             const transformMediaUrl = (url?: string | null) => {
                 if (!url)
                     return url;
-                // If uploader is not age-verified, return null to show default image
+                    // If uploader is not age-verified, return null to show default image
                 if (shouldShowDefaultImage) {
                     return null;
                 }
