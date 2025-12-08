@@ -259,6 +259,10 @@ export const notificationCtr = {
                 const actorAgeVerifyMap = new Map<string, boolean>();
                 const actorAvatarUrlMap = new Map<string, string | null>(); // Track actor's gallery URL
                 if (actorIds.size > 0) {
+                    log.warn('[getNotifications] Starting to fetch actors:', {
+                        actorIdsCount: actorIds.size,
+                        actorIds: Array.from(actorIds),
+                    });
                     // Query actors with roles and galleries for avatarUrl
                     const actorsResult = await userCtr.getUsers(_context, {
                         filter: { id: { $in: Array.from(actorIds) } },
@@ -271,6 +275,11 @@ export const notificationCtr = {
                             { path: 'partner2', populate: [{ path: 'gallery' }] },
                         ],
                     } as any);
+
+                    log.warn('[getNotifications] actorsResult:', {
+                        success: actorsResult.success,
+                        docsCount: actorsResult.success && 'result' in actorsResult ? actorsResult.result?.docs?.length ?? 0 : 0,
+                    });
 
                     if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
                         // First pass: check which actors have ageVerify from getUsers
