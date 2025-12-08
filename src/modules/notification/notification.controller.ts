@@ -223,6 +223,7 @@ export const notificationCtr = {
 
             // Check viewer's membership status
             let viewerIsFreeMember = false;
+            let viewerIsPaidMember = false;
             if (viewerId) {
                 try {
                     const viewerResult = await userCtr.getUsers(_context, {
@@ -237,6 +238,7 @@ export const notificationCtr = {
                         const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
                         const viewerMembershipActive = authnCtr.isMembershipActive(viewer);
                         viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
+                        viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
                     }
                 }
                 catch {
@@ -426,13 +428,15 @@ export const notificationCtr = {
 
                         log.warn('[getNotifications] Processing actor avatar:', {
                             actorId,
-                            actorGalleryUrlFromMap: !!actorGalleryUrlFromMap,
-                            existingAvatarUrl: !!existingAvatarUrl,
-                            urlToUse: !!urlToUse,
+                            actorGalleryUrlFromMap: actorGalleryUrlFromMap || null,
+                            existingAvatarUrl: existingAvatarUrl || null,
+                            urlToUse: urlToUse || null,
+                            hasUrlToUse: !!urlToUse,
                             isActorAgeVerified,
                             isActorOwner,
                             viewerIsFreeMember,
                             viewerExempt,
+                            viewerIsPaidMember,
                         });
 
                         // Only process if we have a URL to use
