@@ -257,9 +257,12 @@ export const notificationCtr = {
                 const actorAgeVerifyMap = new Map<string, boolean>();
                 const actorAvatarUrlMap = new Map<string, string | null>(); // Track actor's gallery URL
                 if (actorIds.size > 0) {
+                    // Query actors with roles and galleries for avatarUrl
                     const actorsResult = await userCtr.getUsers(_context, {
                         filter: { id: { $in: Array.from(actorIds) } },
-                        options: { pagination: false },
+                        options: {
+                            pagination: false,
+                        },
                         populate: [
                             { path: 'roles' },
                             { path: 'partner1', populate: [{ path: 'gallery' }] },
@@ -268,24 +271,64 @@ export const notificationCtr = {
                     } as any);
 
                     if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
+                        // First pass: check which actors have ageVerify from getUsers
+                        const actorsWithoutAgeVerify = new Set<string>();
                         for (const actor of actorsResult.result.docs) {
                             if (actor.id) {
-                                // ageVerify is a subdocument in user, no need to populate
-                                // Check if actor has completed age verification (status === APPROVED)
-                                const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                                actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
-
                                 // Get actor's gallery URL (from partner1 or partner2)
                                 const galleryUrl = actor.partner1?.gallery?.url || actor.partner2?.gallery?.url || null;
                                 actorAvatarUrlMap.set(actor.id, galleryUrl);
+
+                                // Check if ageVerify exists in the result
+                                if (actor.ageVerify) {
+                                    const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                    actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
+                                }
+                                else {
+                                    // ageVerify not found, need to query separately
+                                    actorsWithoutAgeVerify.add(actor.id);
+                                }
+                            }
+                        }
+
+                        // Second pass: query ageVerify for actors that don't have it
+                        // Use userCtr.getUser (safe, goes through controller) instead of direct query
+                        if (actorsWithoutAgeVerify.size > 0) {
+                            const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+                                try {
+                                    const userResult = await userCtr.getUser(_context, {
+                                        filter: { id: actorId },
+                                        projection: { ageVerify: 1 }, // Only get ageVerify
+                                    });
+                                    if (userResult.success && userResult.result) {
+                                        const isActorAgeVerified = userResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                                        actorAgeVerifyMap.set(actorId, isActorAgeVerified);
+                                    }
+                                    else {
+                                        // If query fails, default to false
+                                        actorAgeVerifyMap.set(actorId, false);
+                                    }
+                                }
+                                catch (error) {
+                                    log.warn('[getNotifications] Failed to query ageVerify for actor:', { actorId, error });
+                                    // Default to false if query fails
+                                    actorAgeVerifyMap.set(actorId, false);
+                                }
+                            });
+                            await Promise.all(ageVerifyPromises);
+                        }
+
+                        // Log for debugging
+                        for (const actor of actorsResult.result.docs) {
+                            if (actor.id) {
+                                const isActorAgeVerified = actorAgeVerifyMap.get(actor.id) ?? false;
                                 log.warn('[getNotifications] Actor gallery URL:', {
                                     actorId: actor.id,
                                     username: actor.username,
                                     hasPartner1Gallery: !!actor.partner1?.gallery?.url,
                                     hasPartner2Gallery: !!actor.partner2?.gallery?.url,
-                                    galleryUrl: !!galleryUrl,
+                                    galleryUrl: !!actorAvatarUrlMap.get(actor.id),
                                     hasAgeVerify: !!actor.ageVerify,
-                                    ageVerifyObject: actor.ageVerify ? JSON.stringify(actor.ageVerify) : 'null',
                                     ageVerifyStatus: actor.ageVerify?.status,
                                     isActorAgeVerified,
                                 });
