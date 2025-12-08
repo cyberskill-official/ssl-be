@@ -285,9 +285,17 @@ export const notificationCtr = {
                                 if (actor.ageVerify) {
                                     const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                     actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
+                                    log.warn('[getNotifications] Found ageVerify in getUsers result:', {
+                                        actorId: actor.id,
+                                        ageVerifyStatus: actor.ageVerify?.status,
+                                        isActorAgeVerified,
+                                    });
                                 }
                                 else {
                                     // ageVerify not found, need to query separately
+                                    log.warn('[getNotifications] ageVerify not found in getUsers result, will query separately:', {
+                                        actorId: actor.id,
+                                    });
                                     actorsWithoutAgeVerify.add(actor.id);
                                 }
                             }
