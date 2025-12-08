@@ -94,6 +94,11 @@ export const galleryCtr = {
             }
         }
 
+        // Safety: if we cannot determine membership and user is not staff/admin, default to FREE to avoid leaking clear images
+        if (!isPaidMember && !isFreeMember) {
+            isFreeMember = true;
+        }
+
         let viewerAgeVerified = false;
         if (isLoggedIn) {
             try {
@@ -130,6 +135,11 @@ export const galleryCtr = {
             catch {
                 isAdmin = false;
             }
+        }
+
+        // Safety: if membership state is unknown and user is not staff/admin, default to FREE to ensure blur
+        if (!isPaidMember && !isFreeMember && !isStaff && !isAdmin) {
+            isFreeMember = true;
         }
 
         if (!isOwner && !isStaff && !isAdmin && !shouldSendPublishNotification(galleryFound.result)) {
