@@ -250,8 +250,9 @@ export const notificationCtr = {
                 // Collect unique actorIds
                 const actorIds = new Set<string>();
                 for (const n of res.result.docs) {
-                    if (n.actorId && isValidObjectId(n.actorId)) {
-                        actorIds.add(n.actorId);
+                    // Accept UUID/string ids, not only ObjectId; upstream data uses UUID
+                    if (n.actorId) {
+                        actorIds.add(String(n.actorId));
                     }
                 }
 
@@ -271,6 +272,7 @@ export const notificationCtr = {
                         },
                         populate: [
                             { path: 'roles' },
+                            { path: 'ageVerify' },
                             { path: 'partner1', populate: [{ path: 'gallery' }] },
                             { path: 'partner2', populate: [{ path: 'gallery' }] },
                         ],

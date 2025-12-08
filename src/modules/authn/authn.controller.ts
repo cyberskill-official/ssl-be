@@ -2041,13 +2041,16 @@ export const authnCtr = {
         return userUpdated;
     },
     isMembershipActive: (user: I_User): boolean => {
+        // Support legacy field names (membershipEndDate) in addition to membershipExpiresAt
+        const expiresAt = user.membershipExpiresAt ?? (user as any).membershipEndDate;
+
         // If user has no membership expiration date, they have no active membership
-        if (!user.membershipExpiresAt) {
+        if (!expiresAt) {
             return false;
         }
 
         // Check if membership has expired
         // Return true only if expiration date is in the future
-        return new Date(user.membershipExpiresAt) > new Date();
+        return new Date(expiresAt) > new Date();
     },
 };

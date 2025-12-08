@@ -21,41 +21,6 @@ import { E_MessageType } from './message.type.js';
 
 const mongooseCtr = new MongooseController(UserModel);
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => Object.prototype.toString.call(value) === '[object Object]';
-
-function normalizeBlurMarkers<T>(input: T): T {
-    if (Array.isArray(input)) {
-        return input.map(item => normalizeBlurMarkers(item)) as unknown as T;
-    }
-
-    if (isPlainObject(input)) {
-        const clone: Record<string, unknown> = {};
-
-        for (const [key, value] of Object.entries(input)) {
-            if (key === 'class' && typeof value === 'string' && value.toLowerCase() === 'blur') {
-                clone[key] = 'normal';
-                continue;
-            }
-
-            clone[key] = normalizeBlurMarkers(value);
-        }
-
-        return clone as unknown as T;
-    }
-
-    if (typeof input === 'string') {
-        let normalized = input as string;
-
-        normalized = normalized.replace(/([?&]class=)blur(?=&|$)/gi, '$1normal');
-        normalized = normalized.replace(/\bclass=("|')blur\1/gi, (_match, quote: string) => `class=${quote}normal${quote}`);
-        normalized = normalized.replace(/\bclass=blur\b/gi, 'class=normal');
-
-        return normalized as unknown as T;
-    }
-
-    return input;
-}
-
 function toPlain<T>(input: T): T {
     if (hasToObject(input)) {
         try {
@@ -92,15 +57,13 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     if (!plainMessage)
         return plainMessage;
 
-    let content = plainMessage.content ? { ...plainMessage.content } : undefined;
+    const content = plainMessage.content ? { ...plainMessage.content } : undefined;
 
     // Get viewer once for use in multiple checks
     let viewer = null;
-    let isViewerVerified = false;
     let sessionUser: any = null;
     try {
         viewer = await authnCtr.getUserFromSession(context);
-        isViewerVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
 
         // Fetch full session user data with roles and ageVerify for media hydration
         if (viewer?.id) {
@@ -131,7 +94,6 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     }
     catch {
         viewer = null;
-        isViewerVerified = false;
         sessionUser = null;
     }
 
@@ -314,10 +276,6 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         content.value = content.value.replace(keywordPattern, '***');
     }
 
-    if (isViewerVerified && content) {
-        content = normalizeBlurMarkers(content);
-    }
-
     // Transform sender avatar using hydrateUserMedia
     // Handle both Mongoose Document and plain object
     let sender = plainMessage.sender;
@@ -373,10 +331,6 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         catch {
             // Non-fatal: if transformation fails, keep original sender
         }
-    }
-
-    if (isViewerVerified && sender) {
-        sender = normalizeBlurMarkers(sender);
     }
 
     const transformed = {
