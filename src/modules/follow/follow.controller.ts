@@ -150,12 +150,45 @@ export const followCtr = {
 
         const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
 
-        const result = await mongooseCtr.findPaging({ id: { $in: ids } }, options);
+        // Ensure user is populated so we can hydrate media
+        const populateOptions = mergePopulate(options?.populate, [
+            {
+                path: 'user',
+                populate: [
+                    { path: 'roles' },
+                    { path: 'ageVerify' },
+                    { path: 'partner1', populate: [{ path: 'gallery' }] },
+                    { path: 'partner2', populate: [{ path: 'gallery' }] },
+                ],
+            },
+        ]);
+
+        const pagingOptions = options
+            ? { ...options, ...(populateOptions ? { populate: populateOptions } : {}) }
+            : (populateOptions ? { populate: populateOptions } : undefined);
+
+        const result = await mongooseCtr.findPaging({ id: { $in: ids } }, pagingOptions as typeof options);
         if (!result.success || !result.result)
             return result;
 
         // Hydrate follower user avatar with blur/null rules for viewer
-        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        // Refresh viewer from DB to avoid stale membership in session
+        let sessionUser = context?.req?.session?.user as I_User | undefined;
+        if (sessionUser?.id) {
+            try {
+                const viewerRes = await userCtr.getUser(context, {
+                    filter: { id: sessionUser.id },
+                    projection: 'id roles membershipExpiresAt membershipEndDate ageVerify',
+                    populate: [{ path: 'roles' }, { path: 'ageVerify' }],
+                });
+                if (viewerRes.success && viewerRes.result) {
+                    sessionUser = { ...sessionUser, ...viewerRes.result } as any;
+                }
+            }
+            catch {
+                // Use session user if refresh fails
+            }
+        }
         const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
         result.result.docs = result.result.docs.map((followDoc) => {
