@@ -33,7 +33,18 @@ const mongooseCtr = new MongooseController<I_Pricing>(PricingModel);
 
 export const pricingCtr = {
     async getPricing(_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryPricing>): Promise<I_Return<I_Pricing>> {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const result = await mongooseCtr.findOne(filter, projection, options, populate);
+        // Ensure currencyId is always returned, even after populate
+        if (result.success && result.result && !result.result.currencyId && result.result.id) {
+            const pricingRawRes = await mongooseCtr.findOne(
+                { id: result.result.id },
+                { currencyId: 1 }, // Only get currencyId
+            );
+            if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                result.result.currencyId = pricingRawRes.result.currencyId;
+            }
+        }
+        return result;
     },
     async getPricings(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryPricing>): Promise<I_Return<T_PaginateResult<I_Pricing>>> {
         return mongooseCtr.findPaging(filter, options);

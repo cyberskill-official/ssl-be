@@ -96,6 +96,17 @@ export const paymentController = {
             );
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
+                // Ensure currencyId is preserved even after populate
+                // If currencyId is missing, query it directly from database
+                if (!pricing.currencyId && pricing.id) {
+                    const pricingRawRes = await pricingMongooseCtr.findOne(
+                        { id: pricing.id },
+                        { currencyId: 1 }, // Only get currencyId
+                    );
+                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                        pricing.currencyId = pricingRawRes.result.currencyId;
+                    }
+                }
             }
             else {
                 throwError({
@@ -120,6 +131,16 @@ export const paymentController = {
             );
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
+                // Ensure currencyId is preserved even after populate
+                if (!pricing.currencyId && pricing.id) {
+                    const pricingRawRes = await pricingMongooseCtr.findOne(
+                        { id: pricing.id },
+                        { currencyId: 1 }, // Only get currencyId
+                    );
+                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                        pricing.currencyId = pricingRawRes.result.currencyId;
+                    }
+                }
             }
         }
 
@@ -138,6 +159,16 @@ export const paymentController = {
             );
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
+                // Ensure currencyId is preserved even after populate
+                if (!pricing.currencyId && pricing.id) {
+                    const pricingRawRes = await pricingMongooseCtr.findOne(
+                        { id: pricing.id },
+                        { currencyId: 1 }, // Only get currencyId
+                    );
+                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                        pricing.currencyId = pricingRawRes.result.currencyId;
+                    }
+                }
             }
         }
 
@@ -156,6 +187,16 @@ export const paymentController = {
             );
             if (pricingRes.success && pricingRes.result) {
                 pricing = pricingRes.result;
+                // Ensure currencyId is preserved even after populate
+                if (!pricing.currencyId && pricing.id) {
+                    const pricingRawRes = await pricingMongooseCtr.findOne(
+                        { id: pricing.id },
+                        { currencyId: 1 }, // Only get currencyId
+                    );
+                    if (pricingRawRes.success && pricingRawRes.result?.currencyId) {
+                        pricing.currencyId = pricingRawRes.result.currencyId;
+                    }
+                }
             }
         }
 
