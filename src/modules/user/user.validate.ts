@@ -14,68 +14,6 @@ export interface I_HydrateUserMediaOptions {
     viewerIsFreeMember?: boolean;
 }
 
-function shouldBlurProfile(
-    user?: I_User | null,
-    options: I_HydrateUserMediaOptions = {},
-): boolean {
-    // Check if owner (person whose profile is being viewed) is age-verified
-    const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-
-    // Check if viewer (person viewing the profile) is age-verified
-    const viewerAgeVerified = options.viewerAgeVerified ?? false;
-
-    // Check if viewer is the owner (viewing their own profile)
-    const viewerId = options.viewerId;
-    const isOwner = viewerId && user?.id && viewerId === user.id;
-
-    // Staff and admin can always see unblurred profile pictures
-    const viewerIsStaff = options.viewerIsStaff ?? false;
-    const viewerIsAdmin = options.viewerIsAdmin ?? false;
-    const viewerExempt = viewerIsStaff || viewerIsAdmin;
-
-    // Paid members (membership active) can see images clearly even if not age-verified
-    const viewerIsPaidMember = options.viewerIsPaidMember ?? false;
-    // Free members should see blurred profile photos of others (but not their own)
-    const viewerIsFreeMember = options.viewerIsFreeMember ?? false;
-
-    // If viewer is staff/admin, never blur
-    if (viewerExempt) {
-        return false;
-    }
-
-    // Owner can always see their own profile pictures clearly (even if not age-verified)
-    if (isOwner) {
-        return false;
-    }
-
-    // Free members should see blurred profile photos of others
-    if (viewerIsFreeMember) {
-        return true;
-    }
-
-    // Paid members (membership active) can see images clearly even if not age-verified
-    if (viewerIsPaidMember) {
-        // But still blur if owner is not age-verified
-        if (!ownerAgeVerified) {
-            return true;
-        }
-        return false;
-    }
-
-    // If viewer is not age-verified and not a paid member, blur all images of other users
-    if (!viewerAgeVerified) {
-        return true;
-    }
-
-    // If viewer is age-verified but owner is not, blur the image
-    if (viewerAgeVerified && !ownerAgeVerified) {
-        return true;
-    }
-
-    // Both owner and viewer are age-verified - show clearly
-    return false;
-}
-
 function signProfileImage(
     url: string,
     user: I_User,
@@ -83,6 +21,9 @@ function signProfileImage(
 ): string | null {
     // Check if owner (person whose profile is being viewed) is age-verified
     const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+    // Check if viewer (person viewing the profile) is age-verified
+    const viewerAgeVerified = options?.viewerAgeVerified ?? false;
 
     // Check if viewer is the owner (viewing their own profile)
     const viewerId = options?.viewerId;
@@ -93,15 +34,25 @@ function signProfileImage(
     const viewerIsAdmin = options?.viewerIsAdmin ?? false;
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-    // If owner is not age-verified and viewer is not owner/staff/admin, return null (will show default image)
+    // FREE_MEMBER check
+    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
+
+    // Case 1: Owner is not age-verified → show default (null)
     if (!ownerAgeVerified && !isOwner && !viewerExempt) {
         return null; // Return null to show default image
     }
 
-    // For age-verified owners or owner viewing their own image, apply blur logic if needed
-    if (shouldBlurProfile(user, options)) {
+    // Case 2: Viewer is not age-verified → show default (null)
+    if (!viewerAgeVerified && !isOwner && !viewerExempt) {
+        return null; // Viewer not verified, show default
+    }
+
+    // Case 3: FREE_MEMBER (age-verified) → show blur
+    if (!isOwner && !viewerExempt && viewerIsFreeMember) {
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
+
+    // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
         extraQueryParams: { class: 'normal' },

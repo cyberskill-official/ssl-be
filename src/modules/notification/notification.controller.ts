@@ -202,8 +202,6 @@ export const notificationCtr = {
             let viewerIsStaff = false;
             let viewerIsAdmin = false;
             let viewerId: string | undefined;
-            let viewerIsFreeMember = false;
-            let viewerIsAgeVerified = false;
             try {
                 const viewer = await authnCtr.getUserFromSession(_context);
                 viewerId = viewer?.id;
@@ -216,30 +214,6 @@ export const notificationCtr = {
                     role.name === E_Role.STAFF
                     || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(E_Role.STAFF)),
                 );
-
-                // Check viewer membership status and age verification
-                if (viewer) {
-                    const hasFreeRole = roles.some(role => role.name === 'FREE_MEMBER') ?? false;
-                    const hasPaidRole = roles.some(role => role.name === 'PAID_MEMBER') ?? false;
-                    const isMembershipActive = authnCtr.isMembershipActive(viewer);
-                    viewerIsFreeMember = hasFreeRole || (hasPaidRole && !isMembershipActive);
-
-                    // Check viewer's age verification status
-                    // If ageVerify is not populated in session, fetch it separately
-                    if (viewer.ageVerify?.status) {
-                        viewerIsAgeVerified = viewer.ageVerify.status === E_AgeVerifyStatus.APPROVED;
-                    }
-                    else if (viewer.id) {
-                        // Fetch viewer's ageVerify status from database
-                        const viewerWithAgeVerify = await userCtr.getUser(_context, {
-                            filter: { id: viewer.id },
-                            projection: { ageVerify: 1 },
-                        });
-                        if (viewerWithAgeVerify.success && viewerWithAgeVerify.result) {
-                            viewerIsAgeVerified = viewerWithAgeVerify.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                        }
-                    }
-                }
             }
             catch {
                 // Viewer not authenticated or error getting viewer
@@ -256,8 +230,9 @@ export const notificationCtr = {
                     }
                 }
 
-                // Batch fetch actors' age verification status
+                // Batch fetch actors' age verification and membership status
                 const actorAgeVerifyMap = new Map<string, boolean>();
+                const actorIsFreeMemberMap = new Map<string, boolean>(); // Track if actor is FREE_MEMBER
                 if (actorIds.size > 0) {
                     const actorsResult = await userCtr.getUsers(_context, {
                         filter: { id: { $in: Array.from(actorIds) } },
@@ -269,6 +244,14 @@ export const notificationCtr = {
                             if (actor.id) {
                                 const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                 actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
+
+                                // Check actor's membership status
+                                const actorRoles = Array.isArray(actor.roles) ? actor.roles : [];
+                                const actorHasFreeRole = actorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+                                const actorHasPaidRole = actorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                                const actorMembershipActive = authnCtr.isMembershipActive(actor);
+                                const isActorFreeMember = actorHasFreeRole || (actorHasPaidRole && !actorMembershipActive);
+                                actorIsFreeMemberMap.set(actor.id, isActorFreeMember);
                             }
                         }
                     }
@@ -346,24 +329,21 @@ export const notificationCtr = {
 
                     const actorId = n.actorId;
                     const isActorAgeVerified = actorId ? (actorAgeVerifyMap.get(actorId) ?? false) : false;
+                    const isActorFreeMember = actorId ? (actorIsFreeMemberMap.get(actorId) ?? false) : false;
                     const isActorOwner = viewerId && actorId && viewerId === actorId;
 
-                    // actor avatar
+                    // actor avatar - logic based on ACTOR's status, not viewer's
                     const actor = pres.actor;
                     if (actor?.avatarUrl) {
-                        // Case 1: Actor is not age-verified → show default image
+                        // Case 1: Actor is not age-verified → show default image to all (except owner/staff/admin)
                         if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
                             actor.avatarUrl = null as any; // Set to null to show default image
                         }
-                        // Case 2: Viewer is not age-verified → show default image (applies to FREE and PAID)
-                        else if (!viewerIsAgeVerified && !isActorOwner && !viewerExempt) {
-                            actor.avatarUrl = null as any; // Viewer not verified, show default
-                        }
-                        // Case 3: FREE_MEMBER (age-verified) → show blur
-                        else if (!isActorOwner && !viewerExempt && viewerIsFreeMember) {
+                        // Case 2: Actor is FREE_MEMBER (age-verified) → show blur to all (except owner/staff/admin)
+                        else if (isActorFreeMember && !isActorOwner && !viewerExempt) {
                             actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'blur' } });
                         }
-                        // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
+                        // Case 3: Actor is PAID_MEMBER (age-verified) or owner/admin → show normal
                         else {
                             actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: actor.avatarUrl, extraQueryParams: { class: 'normal' } });
                         }
@@ -472,19 +452,16 @@ export const notificationCtr = {
                             }
                         }
 
-                        // Case 1: Thumbnail owner is not age-verified → show default image
+                        // Logic based on ACTOR's status (same as avatar logic)
+                        // Case 1: Thumbnail owner/actor is not age-verified → show default image
                         if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
                             pres.thumbnailUrl = null as any; // Set to null to show default image
                         }
-                        // Case 2: Viewer is not age-verified → show default image (applies to FREE and PAID)
-                        else if (!viewerIsAgeVerified && !isThumbnailOwner && !viewerExempt) {
-                            pres.thumbnailUrl = null as any; // Viewer not verified, show default
-                        }
-                        // Case 3: FREE_MEMBER (age-verified) → show blur
-                        else if (!isThumbnailOwner && !viewerExempt && viewerIsFreeMember) {
+                        // Case 2: Actor is FREE_MEMBER (age-verified) → show blur
+                        else if (isActorFreeMember && !isThumbnailOwner && !viewerExempt) {
                             pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
                         }
-                        // Case 4: PAID_MEMBER (age-verified) or owner/admin → show normal
+                        // Case 3: Actor is PAID_MEMBER (age-verified) or owner/admin → show normal
                         else {
                             pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                         }
