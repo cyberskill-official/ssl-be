@@ -187,7 +187,11 @@ export const galleryCtr = {
         // Note: Free members always see blurred galleries of others, regardless of age verification
         let shouldBlur = false;
         if (!isOwner && !shouldShowDefaultImage) {
-            if (isFreeMember) {
+            if (isPaidMember && !isFreeMember) {
+                // Paid, active members see clear
+                shouldBlur = false;
+            }
+            else if (isFreeMember) {
                 // Free members always see blurred galleries of others
                 shouldBlur = true;
             }
@@ -451,7 +455,11 @@ export const galleryCtr = {
             // Note: Free members always see blurred galleries of others, regardless of age verification
             let shouldBlur = false;
             if (!isGalleryOwner && !shouldShowDefaultImage) {
-                if (isFreeMember) {
+                if (isPaidMember && !isFreeMember) {
+                    // Paid, active members see clear
+                    shouldBlur = false;
+                }
+                else if (isFreeMember) {
                     // Free members always see blurred galleries of others
                     shouldBlur = true;
                 }
