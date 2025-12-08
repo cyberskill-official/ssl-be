@@ -75,21 +75,35 @@ export const galleryCtr = {
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryGallery>,
     ): Promise<I_Return<I_Gallery>> => {
         const isLoggedIn = !!context?.req?.session?.user;
-        let isFreeMember = false;
+
+        // Default to FREE for guests to avoid leaking clear images
+        let isFreeMember = !isLoggedIn;
         let isPaidMember = false;
 
         if (isLoggedIn) {
+            const viewerId = context.req?.session?.user?.id;
             try {
-                isFreeMember = await authnCtr.isFreeMember(context);
-            }
-            catch {
-                isFreeMember = true;
-            }
+                // Fetch fresh user to avoid stale membership in session
+                const viewerRes = viewerId
+                    ? await userCtr.getUser(context, {
+                            filter: { id: viewerId },
+                            projection: 'id roles membershipExpiresAt membershipEndDate',
+                            populate: [{ path: 'roles' }],
+                        })
+                    : null;
 
-            try {
-                isPaidMember = await authnCtr.isPaidMember(context);
+                const viewer = viewerRes?.success ? viewerRes.result : context.req?.session?.user;
+                const roles = Array.isArray(viewer?.roles) ? viewer.roles : [];
+                const hasFreeRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('FREE_MEMBER'));
+                const hasPaidRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('PAID_MEMBER'));
+                const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+
+                isPaidMember = hasPaidRole && membershipActive;
+                isFreeMember = hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole);
             }
             catch {
+                // On any failure, treat as free to avoid leaking clear images
+                isFreeMember = true;
                 isPaidMember = false;
             }
         }
@@ -250,25 +264,12 @@ export const galleryCtr = {
             && filter.uploadedByIds.some(id => id && typeof id === 'string' && id.trim() === sessionUserId);
         const isOwner = ownerFromSingle || ownerFromMultiple;
 
-        let isFreeMember = false;
+        // Default guests to FREE to avoid leaking clear images
+        let isFreeMember = !isLoggedIn;
         let isPaidMember = false;
         let isStaff = false;
         let isAdmin = false;
         if (isLoggedIn) {
-            try {
-                isFreeMember = await authnCtr.isFreeMember(context);
-            }
-            catch {
-                isFreeMember = true;
-            }
-
-            try {
-                isPaidMember = await authnCtr.isPaidMember(context);
-            }
-            catch {
-                isPaidMember = false;
-            }
-
             try {
                 isStaff = await authnCtr.isStaff(context);
             }
@@ -281,6 +282,31 @@ export const galleryCtr = {
             }
             catch {
                 isAdmin = false;
+            }
+
+            try {
+                // Refresh viewer to avoid stale membership in session
+                const viewerRes = sessionUserId
+                    ? await userCtr.getUser(context, {
+                            filter: { id: sessionUserId },
+                            projection: 'id roles membershipExpiresAt membershipEndDate',
+                            populate: [{ path: 'roles' }],
+                        })
+                    : null;
+
+                const viewer = viewerRes?.success ? viewerRes.result : context.req?.session?.user;
+                const roles = Array.isArray(viewer?.roles) ? viewer.roles : [];
+                const hasFreeRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('FREE_MEMBER'));
+                const hasPaidRole = roles.some((r: any) => typeof r?.name === 'string' && r.name.toUpperCase().includes('PAID_MEMBER'));
+                const membershipActive = viewer ? authnCtr.isMembershipActive(viewer) : false;
+
+                isPaidMember = hasPaidRole && membershipActive;
+                isFreeMember = hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole);
+            }
+            catch {
+                // Fallback to free on any error to avoid leaking clear images
+                isFreeMember = true;
+                isPaidMember = false;
             }
         }
 

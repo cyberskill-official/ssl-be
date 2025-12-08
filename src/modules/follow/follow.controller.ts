@@ -150,8 +150,22 @@ export const followCtr = {
 
         const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
 
-        // trả về bằng findPaging (nếu ids rỗng, $in: [] sẽ trả về rỗng)
-        return mongooseCtr.findPaging({ id: { $in: ids } }, options);
+        const result = await mongooseCtr.findPaging({ id: { $in: ids } }, options);
+        if (!result.success || !result.result)
+            return result;
+
+        // Hydrate follower user avatar with blur/null rules for viewer
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
+        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+        result.result.docs = result.result.docs.map((followDoc) => {
+            if (followDoc.user) {
+                hydrateUserMedia(followDoc.user as any, viewerMediaOptions);
+            }
+            return followDoc;
+        });
+
+        return result;
     },
     getFollowings: async (
         context: I_Context,
