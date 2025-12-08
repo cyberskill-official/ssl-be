@@ -262,7 +262,6 @@ export const notificationCtr = {
                         options: { pagination: false },
                         populate: [
                             { path: 'roles' },
-                            { path: 'ageVerify' },
                             { path: 'partner1', populate: [{ path: 'gallery' }] },
                             { path: 'partner2', populate: [{ path: 'gallery' }] },
                         ],
@@ -271,6 +270,8 @@ export const notificationCtr = {
                     if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
                         for (const actor of actorsResult.result.docs) {
                             if (actor.id) {
+                                // ageVerify is a subdocument in user, no need to populate
+                                // Check if actor has completed age verification (status === APPROVED)
                                 const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                 actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
 
@@ -283,6 +284,8 @@ export const notificationCtr = {
                                     hasPartner1Gallery: !!actor.partner1?.gallery?.url,
                                     hasPartner2Gallery: !!actor.partner2?.gallery?.url,
                                     galleryUrl: !!galleryUrl,
+                                    hasAgeVerify: !!actor.ageVerify,
+                                    ageVerifyStatus: actor.ageVerify?.status,
                                     isActorAgeVerified,
                                 });
                             }
@@ -391,16 +394,25 @@ export const notificationCtr = {
                         // Only process if we have a URL to use
                         if (urlToUse) {
                             // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-                            // (kể cả khi actor chưa age-verified, FREE_MEMBER vẫn thấy blur, KHÔNG BAO GIỜ thấy null)
+                            // FREE_MEMBER luôn thấy ảnh bị mờ, không phụ thuộc vào ageVerify của actor
                             if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
                                 actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'blur' } });
                             }
-                            // Case 2: Actor is not age-verified → show default image (null)
-                            // Chỉ áp dụng cho PAID_MEMBER viewer (FREE_MEMBER đã được xử lý ở trên)
-                            else if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
-                                actor.avatarUrl = null as any; // Set to null to show default image
+                            // Case 2: Viewer is MEMBERSHIP (PAID_MEMBER với active membership)
+                            // - Nếu actor chưa age-verified → show default image (null)
+                            // - Nếu actor đã age-verified → thấy ảnh rõ (normal)
+                            else if (!isActorOwner && !viewerExempt) {
+                                // Check actor's age verification status
+                                if (!isActorAgeVerified) {
+                                    // Actor chưa age-verified → null (default image)
+                                    actor.avatarUrl = null as any;
+                                }
+                                else {
+                                    // Actor đã age-verified → rõ ảnh (normal)
+                                    actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
+                                }
                             }
-                            // Case 3: Viewer is PAID_MEMBER và actor đã age-verified → thấy ảnh bình thường
+                            // Case 3: Owner hoặc exempt (staff/admin) → luôn thấy ảnh rõ
                             else {
                                 actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
                             }
@@ -516,20 +528,28 @@ export const notificationCtr = {
                         }
 
                         // Logic based on THUMBNAIL OWNER's age verification and VIEWER's membership status
-                        // Case 1: Thumbnail owner is not age-verified → show default image (null)
-                        // Khi thumbnail owner chưa ageVerify thì viewer khác sẽ thấy ảnh là null
-                        if (!isThumbnailOwnerAgeVerified && !isThumbnailOwner && !viewerExempt) {
-                            pres.thumbnailUrl = null as any; // Set to null to show default image
+                        // Case 1: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
+                        // FREE_MEMBER luôn thấy ảnh bị mờ, không phụ thuộc vào ageVerify của thumbnail owner
+                        if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
+                            pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
                         }
-                        else {
-                            // Case 2: Viewer is FREE_MEMBER → blur tất cả ảnh của người khác
-                            if (viewerIsFreeMember && !isThumbnailOwner && !viewerExempt) {
-                                pres.thumbnailUrl = bunnyCtr.generateBlurredUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'blur' } });
+                        // Case 2: Viewer is MEMBERSHIP (PAID_MEMBER với active membership)
+                        // - Nếu thumbnail owner chưa age-verified → show default image (null)
+                        // - Nếu thumbnail owner đã age-verified → thấy ảnh rõ (normal)
+                        else if (!isThumbnailOwner && !viewerExempt) {
+                            // Check thumbnail owner's age verification status
+                            if (!isThumbnailOwnerAgeVerified) {
+                                // Thumbnail owner chưa age-verified → null (default image)
+                                pres.thumbnailUrl = null as any;
                             }
-                            // Case 3: Viewer is PAID_MEMBER (MEMBERSHIP) → thấy ảnh bình thường
                             else {
+                                // Thumbnail owner đã age-verified → rõ ảnh (normal)
                                 pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                             }
+                        }
+                        // Case 3: Owner hoặc exempt (staff/admin) → luôn thấy ảnh rõ
+                        else {
+                            pres.thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: pres.thumbnailUrl, extraQueryParams: { class: 'normal' } });
                         }
                     }
                 }
