@@ -520,7 +520,33 @@ export const moderationMediaCtr = {
             };
         }
 
-        // Update moderation media status (if not already APPROVED, or if APPROVED but no log exists)
+        // If status is already APPROVED but no log exists, just create the log without updating status
+        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
+        if (currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED) {
+            try {
+                // Create APPROVE log for manual approval tracking
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.APPROVE,
+                        userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                        moderationMediaId: id,
+                        reason: 'Approved by moderator (manual approval after AI auto-approval)',
+                    },
+                });
+            }
+            catch {
+                // Log error but don't block - moderation log creation failure shouldn't prevent response
+            }
+
+            // Return the existing moderation media since it's already approved
+            return {
+                success: true,
+                message: 'ModerationMedia approved (log created for manual approval tracking).',
+                result: currentModerationMedia.result,
+            };
+        }
+
+        // Update moderation media status (status is not APPROVED yet, so this is a new approval)
         const moderationMediaUpdated = await moderationMediaCtr._updateModerationMediaStatus(
             context,
             currentModerationMedia.result,
@@ -529,7 +555,6 @@ export const moderationMediaCtr = {
         );
 
         // Create APPROVE log if it doesn't exist yet
-        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
         if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
             try {
                 // Check again if log was created between the check and the update
