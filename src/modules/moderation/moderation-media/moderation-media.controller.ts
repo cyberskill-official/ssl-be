@@ -192,9 +192,8 @@ export const moderationMediaCtr = {
 
             let initialStatus = E_ModerationMediaStatus.PENDING;
             let reason: string | undefined;
-            // If uploader bypasses AI moderation, auto-approve and publish immediately.
+            // Bypass AI still skips AI call but no longer auto-approves; keep PENDING for manual review
             if (typeof bypassAiModeration !== 'undefined' && bypassAiModeration) {
-                initialStatus = E_ModerationMediaStatus.APPROVED;
                 reason = 'Bypassed AI moderation: uploaded by staff/admin';
             }
 
@@ -233,7 +232,7 @@ export const moderationMediaCtr = {
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: initialStatus === E_ModerationMediaStatus.APPROVED,
+                isPublished: false,
             });
 
             if (!moderationCreated.success) {
