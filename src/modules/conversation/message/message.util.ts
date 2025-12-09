@@ -219,8 +219,12 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             // Check viewer's membership status (not sender's)
             // Use sessionUser instead of viewer because sessionUser has roles populated
             const viewerRoles = Array.isArray(sessionUser?.roles) ? sessionUser?.roles : (Array.isArray(viewer?.roles) ? viewer?.roles : []);
-            const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            const hasRole = (names: string[]) => viewerRoles.some((role: any) => {
+                const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
+                return names.some(n => name === n.toLowerCase());
+            });
+            const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'free_member']);
+            const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'paid_member']);
             let viewerMembershipActive = false;
             try {
                 // Use sessionUser for membership check if available, otherwise use viewer
