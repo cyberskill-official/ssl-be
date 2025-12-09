@@ -1,8 +1,11 @@
+import { MongooseController } from '@cyberskill/shared/node/mongo';
+
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
@@ -318,8 +321,6 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
         const viewer = await authnCtr.getUserFromSession(context);
         if (viewer?.id) {
             // Fetch full user data with roles and ageVerify to avoid circular dependency
-            const { MongooseController } = await import('@cyberskill/shared/node/mongo');
-            const { UserModel } = await import('#modules/user/user.model.js');
             const mongooseCtr = new MongooseController(UserModel);
             const sessionUserPopulated = await mongooseCtr.findOne(
                 { id: viewer.id },
@@ -361,6 +362,25 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
+    // Debug viewer flags to trace blur logic
+    try {
+        const { log } = await import('@cyberskill/shared/node/log');
+        log.warn('[CONVERSATION][transformConversationMedia] viewer flags', {
+            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+            membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
+            membershipEndDate: (sessionUser as any)?.membershipEndDate,
+            rolesIds: (sessionUser as any)?.rolesIds,
+        });
+    }
+    catch {
+        // ignore logging failures
+    }
+
     // Transform participant avatars using hydrateUserMedia
     let transformedParticipants = plainConversation.participants;
     if (transformedParticipants && Array.isArray(transformedParticipants)) {
@@ -373,8 +393,6 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
             // Ensure ageVerify and roles are populated for hydrateUserMedia to work correctly
             if ((!user.ageVerify || !user.roles || !user.rolesIds || user.membershipExpiresAt === undefined || (user as any).membershipEndDate === undefined) && user.id) {
                 try {
-                    const { MongooseController } = await import('@cyberskill/shared/node/mongo');
-                    const { UserModel } = await import('#modules/user/user.model.js');
                     const mongooseCtr = new MongooseController(UserModel);
                     const userPopulated = await mongooseCtr.findOne(
                         { id: user.id },
