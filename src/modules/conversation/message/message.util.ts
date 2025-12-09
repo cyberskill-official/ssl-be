@@ -223,8 +223,8 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                 const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
                 return names.some(n => name === n.toLowerCase());
             });
-            const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'free_member']);
-            const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'paid_member']);
+            const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM', 'free_member', 'free_mem']);
+            const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM', 'paid_member', 'paid_mem']);
             let viewerMembershipActive = false;
             try {
                 // Use sessionUser for membership check if available, otherwise use viewer
