@@ -242,8 +242,8 @@ export const notificationCtr = {
                                 && names.some(n => role.name.toLowerCase() === n.toLowerCase()),
                         );
 
-                        const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM']);
-                        const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM']);
+                        const viewerHasFreeRole = hasRole(['FREE_MEMBER']);
+                        const viewerHasPaidRole = hasRole(['PAID_MEMBER']);
                         const viewerMembershipActive = authnCtr.isMembershipActive(viewer);
                         viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
                         viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;
@@ -261,8 +261,8 @@ export const notificationCtr = {
                     (role: any) => typeof role?.name === 'string'
                         && names.some(n => role.name.toLowerCase() === n.toLowerCase()),
                 );
-                const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM']);
-                const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM']);
+                const viewerHasFreeRole = hasRole(['FREE_MEMBER']);
+                const viewerHasPaidRole = hasRole(['PAID_MEMBER']);
                 const viewerMembershipActive = sessionViewer ? authnCtr.isMembershipActive(sessionViewer) : false;
                 viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
                 viewerIsPaidMember = viewerHasPaidRole && viewerMembershipActive;

@@ -158,9 +158,14 @@ export function shouldBlurForContext(context?: I_Context, eventCreatedById?: str
     }
 
     // Check if viewer is FREE_MEMBER - chỉ FREE_MEMBER mới bị blur ảnh người khác
-    const isFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER' || role.name === 'FREE_MEM');
+    const isFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER');
     if (isFreeMember) {
         return true; // FREE_MEMBER should see blurred event images of others
+    }
+
+    // Safety: if roles are unknown and viewer is not owner/staff/admin, default to blur to avoid leaks
+    if (!isOwner && viewerRoles.length === 0) {
+        return true;
     }
 
     return false; // MEMBERSHIP hoặc owner/staff/admin → show clearly

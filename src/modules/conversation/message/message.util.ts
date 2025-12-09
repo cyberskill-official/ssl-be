@@ -216,25 +216,14 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = (Array.isArray(rolesForExemptCheck) && rolesForExemptCheck.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // Check viewer's membership status (not sender's)
-            // Use sessionUser instead of viewer because sessionUser has roles populated
-            const viewerRoles = Array.isArray(sessionUser?.roles) ? sessionUser?.roles : (Array.isArray(viewer?.roles) ? viewer?.roles : []);
-            const hasRole = (names: string[]) => viewerRoles.some((role: any) => {
-                const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
-                return names.some(n => name === n.toLowerCase());
-            });
-            const viewerHasFreeRole = hasRole(['FREE_MEMBER', 'FREE_MEM', 'free_member', 'free_mem']);
-            const viewerHasPaidRole = hasRole(['PAID_MEMBER', 'PAID_MEM', 'paid_member', 'paid_mem']);
-            let viewerMembershipActive = false;
-            try {
-                // Use sessionUser for membership check if available, otherwise use viewer
-                const userForMembershipCheck = sessionUser || viewer;
-                viewerMembershipActive = userForMembershipCheck ? authnCtr.isMembershipActive(userForMembershipCheck) : false;
+            // Use viewer media context (includes safety default to FREE to avoid leaks)
+            const viewerIsPaidMember = Boolean(viewerMediaOptions.viewerIsPaidMember);
+            let viewerIsFreeMember = Boolean(viewerMediaOptions.viewerIsFreeMember);
+
+            // Safety fallback: if we cannot determine membership and viewer is not exempt, treat as free
+            if (!viewerIsFreeMember && !viewerIsPaidMember && !viewerExempt) {
+                viewerIsFreeMember = true;
             }
-            catch {
-                viewerMembershipActive = false;
-            }
-            const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
 
             // Case 1: Sender chưa xác thực tuổi → người khác thấy null (owner/staff/admin vẫn thấy rõ)
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
