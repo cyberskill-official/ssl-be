@@ -249,6 +249,22 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             }
             // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
             else {
+                try {
+                    const { log } = await import('@cyberskill/shared/node/log');
+                    log.warn('[MESSAGE][transformMessageMedia] image not blurred', {
+                        reason: senderAgeVerified ? 'senderAgeVerified or viewer exempt/owner' : 'unknown',
+                        viewerId: viewerId ?? sessionUser?.id,
+                        senderId,
+                        isOwner,
+                        viewerIsFreeMember,
+                        viewerExempt,
+                        senderAgeVerified,
+                    });
+                }
+                catch {
+                    // ignore logging failures
+                }
+
                 content.value = bunnyCtr.generateSignedUrl({ fullUrl: content.value, extraQueryParams: { class: 'normal' } });
             }
         }

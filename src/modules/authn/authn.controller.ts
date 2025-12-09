@@ -533,8 +533,7 @@ export const authnCtr = {
 
     // add near other role helpers in authnCtr
     isPaidMember: async (context: I_Context): Promise<boolean> => {
-        // Refresh user from DB to honor membership expiration mid-session
-        const sessionUser = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const paidMemberRole = await roleCtr.getRole(context, {
             filter: { name: E_Role_User.PAID_MEMBER },
@@ -549,33 +548,15 @@ export const authnCtr = {
 
         const paidMemberRoleId = paidMemberRole.result.id;
 
-        // Reload user with roles + membership expiration
-        let user = sessionUser;
-        try {
-            const userResult = await userCtr.getUser(context, {
-                filter: { id: sessionUser.id },
-                projection: 'id roles membershipExpiresAt membershipEndDate',
-                populate: [{ path: 'roles' }],
-            });
-            if (userResult.success && userResult.result) {
-                user = { ...sessionUser, ...userResult.result } as typeof sessionUser;
-            }
-        }
-        catch {
-            // Fallback to session user if refresh fails
-        }
-
-        // Check by id (including ancestors) and fallback by name to handle legacy/incomplete role caches
-        const hasPaidRole = !!user.roles?.some(role =>
+        const hasPaidRole = !!currentUser.roles?.some(role =>
             (role.id === paidMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId))
-            || (typeof role.name === 'string' && role.name.toUpperCase().includes('PAID_MEMBER')),
+            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
         );
 
         // Even if user has PAID_MEMBER role, check if membership has expired
         // If expired, treat as free member
         if (hasPaidRole) {
-            return authnCtr.isMembershipActive(user);
+            return authnCtr.isMembershipActive(currentUser);
         }
 
         return false;
@@ -603,8 +584,7 @@ export const authnCtr = {
         );
     },
     isFreeMember: async (context: I_Context): Promise<boolean> => {
-        // Always start from session for speed, but refresh from DB to catch expired memberships mid-session
-        const sessionUser = await authnCtr.getUserFromSession(context);
+        const currentUser = await authnCtr.getUserFromSession(context);
 
         const freeMemberRole = await roleCtr.getRole(context, {
             filter: { name: E_Role_User.FREE_MEMBER },
@@ -619,34 +599,9 @@ export const authnCtr = {
 
         const freeMemberRoleId = freeMemberRole.result.id;
 
-        const paidMemberRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_User.PAID_MEMBER },
-        });
-
-        // Fetch fresh user data to ensure membership expiration is up to date (roles + membershipExpiresAt)
-        let user = sessionUser;
-        try {
-            const userResult = await userCtr.getUser(context, {
-                filter: { id: sessionUser.id },
-                projection: 'id roles membershipExpiresAt membershipEndDate',
-                populate: [{ path: 'roles' }],
-            });
-            if (userResult.success && userResult.result) {
-                user = {
-                    ...sessionUser,
-                    ...userResult.result,
-                } as typeof sessionUser;
-            }
-        }
-        catch {
-            // If refresh fails, fall back to session data
-        }
-
-        // Check by id (including ancestors) and fallback by name to handle legacy/incomplete role caches
-        const hasFreeRole = !!user.roles?.some(role =>
+        const hasFreeRole = !!currentUser.roles?.some(role =>
             (role.id === freeMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId))
-            || (typeof role.name === 'string' && role.name.toUpperCase().includes('FREE_MEMBER')),
+            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
         );
 
         // If user has FREE_MEMBER role, they are free
@@ -654,16 +609,20 @@ export const authnCtr = {
             return true;
         }
 
+        // Check if user has PAID_MEMBER role
+        const paidMemberRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_User.PAID_MEMBER },
+        });
+
         if (paidMemberRole.success) {
             const paidMemberRoleId = paidMemberRole.result.id;
-            const hasPaidRole = !!user.roles?.some(role =>
+            const hasPaidRole = !!currentUser.roles?.some(role =>
                 (role.id === paidMemberRoleId)
-                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId))
-                || (typeof role.name === 'string' && role.name.toUpperCase().includes('PAID_MEMBER')),
+                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
             );
 
             // If user has PAID_MEMBER role but membership expired, treat as free
-            if (hasPaidRole && !authnCtr.isMembershipActive(user)) {
+            if (hasPaidRole && !authnCtr.isMembershipActive(currentUser)) {
                 return true;
             }
         }
@@ -2085,9 +2044,9 @@ export const authnCtr = {
         // Support legacy field names (membershipEndDate) in addition to membershipExpiresAt
         const expiresAt = user.membershipExpiresAt ?? (user as any).membershipEndDate;
 
-        // If user has no membership expiration date, they have no active membership
+        // If missing expiry, assume active to avoid misclassifying paid members with missing data
         if (!expiresAt) {
-            return false;
+            return true;
         }
 
         // Check if membership has expired

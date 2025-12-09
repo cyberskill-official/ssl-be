@@ -176,17 +176,20 @@ export function getViewerMediaContext(user?: I_User | null): {
         return name === E_Role_User.FREE_MEMBER.toLowerCase() || name === 'free_mem';
     });
 
-    // Import authnCtr to check membership status
-    // We need to check if membership is active for paid members
-    // Use dynamic import to avoid circular dependency and ES module issues
+    // Membership active detection (treat missing expiry as active for paid members)
+    const expiresAt = user?.membershipExpiresAt ?? (user as any)?.membershipEndDate ?? null;
     let isMembershipActive = false;
-    if (user) {
-        try {
-            isMembershipActive = authnCtr.isMembershipActive(user);
+    if (hasPaidRole) {
+        if (!expiresAt) {
+            isMembershipActive = true;
         }
-        catch {
-            // If import fails, assume membership is not active
-            isMembershipActive = false;
+        else {
+            try {
+                isMembershipActive = authnCtr.isMembershipActive(user as I_User);
+            }
+            catch {
+                isMembershipActive = new Date(expiresAt) > new Date();
+            }
         }
     }
 
