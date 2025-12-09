@@ -28,13 +28,26 @@ export const moderationLogCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryModerationLog>,
     ): Promise<I_Return<I_ModerationLog>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        const defaultPopulate = [
+            { path: 'user', select: 'id username email' },
+            { path: 'moderationMedia', select: 'id type url status' },
+            { path: 'message', select: 'id content' },
+        ];
+        return mongooseCtr.findOne(filter, projection, options, populate || defaultPopulate);
     },
     getModerationLogs: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryModerationLog>,
     ): Promise<I_Return<T_PaginateResult<I_ModerationLog>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        const populateOptions = {
+            ...options,
+            populate: options?.populate || [
+                { path: 'user', select: 'id username email' },
+                { path: 'moderationMedia', select: 'id type url status' },
+                { path: 'message', select: 'id content' },
+            ],
+        };
+        return mongooseCtr.findPaging(filter, populateOptions);
     },
     createModerationLog: async (
         _context: I_Context,
