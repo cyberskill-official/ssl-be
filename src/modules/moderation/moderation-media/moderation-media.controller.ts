@@ -430,25 +430,65 @@ export const moderationMediaCtr = {
             }
 
             // Red-flag profile when moderation is rejected (manual flow)
+            // Only flag if confidence > 70% or risk level is HIGH/CRITICAL
             if (status === E_ModerationMediaStatus.REJECTED && moderation.uploadedById) {
-                const noteContent = reason?.trim() || 'Media rejected by moderator.';
+                // Get AI result from moderation log to check confidence/risk level
+                let shouldFlag = false;
                 try {
-                    await userCtr.updateUser(context, {
-                        filter: { id: moderation.uploadedById },
-                        update: {
-                            $inc: { flagCount: 1 },
-                            $push: {
-                                notes: {
-                                    type: E_NoteType.AUTOMATED_DETECTION,
-                                    content: noteContent,
-                                    createdAt: new Date(),
-                                },
-                            },
-                        } as any,
+                    const moderationLogs = await moderationLogCtr.getModerationLogs(context, {
+                        filter: {
+                            moderationMediaId: moderation.id,
+                        },
+                        options: { pagination: false, sort: { createdAt: -1 } },
                     });
+
+                    if (moderationLogs.success && moderationLogs.result?.docs) {
+                        // Find the most recent log with AI result
+                        const logWithAiResult = moderationLogs.result.docs.find(
+                            log => log.aiResult && (log.aiResult.confidence !== undefined || log.aiResult.riskLevel),
+                        );
+
+                        if (logWithAiResult?.aiResult) {
+                            const aiResult = logWithAiResult.aiResult;
+                            const confidence = aiResult.confidence;
+                            const riskLevel = aiResult.riskLevel;
+
+                            // Flag only if confidence > 70% or risk level is HIGH/CRITICAL
+                            shouldFlag = (confidence !== undefined && confidence > 0.7)
+                                || riskLevel === E_RiskLevel.HIGH
+                                || riskLevel === E_RiskLevel.CRITICAL;
+                        }
+                        else {
+                            // If no AI result found, don't flag (manual rejection without AI data)
+                            shouldFlag = false;
+                        }
+                    }
                 }
                 catch {
-                    /* best-effort; do not block moderation flow */
+                    // If error getting logs, don't flag to be safe
+                    shouldFlag = false;
+                }
+
+                if (shouldFlag) {
+                    const noteContent = reason?.trim() || 'Media rejected by moderator.';
+                    try {
+                        await userCtr.updateUser(context, {
+                            filter: { id: moderation.uploadedById },
+                            update: {
+                                $inc: { flagCount: 1 },
+                                $push: {
+                                    notes: {
+                                        type: E_NoteType.AUTOMATED_DETECTION,
+                                        content: noteContent,
+                                        createdAt: new Date(),
+                                    },
+                                },
+                            } as any,
+                        });
+                    }
+                    catch {
+                        /* best-effort; do not block moderation flow */
+                    }
                 }
             }
 

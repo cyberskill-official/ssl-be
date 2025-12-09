@@ -170,23 +170,32 @@ export async function applyAiModerationDecision(
             });
 
             // Red-flag the profile and attach an automated note when AI removes media
-            try {
-                await userCtr.updateUser(context, {
-                    filter: { id: ownerId },
-                    update: {
-                        $inc: { flagCount: 1 },
-                        $push: {
-                            notes: {
-                                type: E_NoteType.AUTOMATED_DETECTION,
-                                content: reasonText,
-                                createdAt: new Date(),
+            // Only flag if confidence > 70% or risk level is HIGH/CRITICAL
+            const confidence = aiResult.confidence;
+            const riskLevel = aiResult.riskLevel;
+            const shouldFlag = (confidence !== undefined && confidence > 0.7)
+                || riskLevel === E_RiskLevel.HIGH
+                || riskLevel === E_RiskLevel.CRITICAL;
+
+            if (shouldFlag) {
+                try {
+                    await userCtr.updateUser(context, {
+                        filter: { id: ownerId },
+                        update: {
+                            $inc: { flagCount: 1 },
+                            $push: {
+                                notes: {
+                                    type: E_NoteType.AUTOMATED_DETECTION,
+                                    content: reasonText,
+                                    createdAt: new Date(),
+                                },
                             },
-                        },
-                    } as any,
-                });
-            }
-            catch {
-                /* best-effort; do not block moderation flow */
+                        } as any,
+                    });
+                }
+                catch {
+                    /* best-effort; do not block moderation flow */
+                }
             }
         }
 
