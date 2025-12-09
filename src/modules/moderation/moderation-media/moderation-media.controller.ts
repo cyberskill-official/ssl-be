@@ -496,8 +496,8 @@ export const moderationMediaCtr = {
             });
         }
 
-        // Check if there's already an APPROVE log for this moderation media
-        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
+        // Check if there's already a manual APPROVE log (created by a moderator, not AI)
+        // We allow multiple APPROVE logs to track both AI auto-approval and manual approval
         const existingApproveLogs = await moderationLogCtr.getModerationLogs(context, {
             filter: {
                 moderationMediaId: id,
@@ -506,23 +506,32 @@ export const moderationMediaCtr = {
             options: { pagination: false },
         });
 
-        // If moderation media is already APPROVED AND there's already an APPROVE log, treat as idempotent success
+        // Check if there's already a manual APPROVE log from this moderator
+        const hasManualApproveLog = existingApproveLogs.success
+            && existingApproveLogs.result?.docs
+            && existingApproveLogs.result.docs.some(
+                log => log.reason && log.reason.includes('Approved by moderator'),
+            );
+
+        // If moderation media is already APPROVED AND there's already a manual APPROVE log from this moderator, treat as idempotent success
+        // But allow changing from REJECTED to APPROVED (override AI rejection)
         if (
             currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED
-            && existingApproveLogs.success
-            && existingApproveLogs.result?.docs
-            && existingApproveLogs.result.docs.length > 0
+            && hasManualApproveLog
         ) {
             return {
                 success: true,
-                message: 'ModerationMedia already approved.',
+                message: 'ModerationMedia already approved by moderator.',
                 result: currentModerationMedia.result,
             };
         }
 
-        // If status is already APPROVED but no log exists, just create the log without updating status
-        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
-        if (currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED) {
+        // If status is already APPROVED (by AI) but no manual log, create log for tracking
+        // This allows moderators to approve even if AI has already approved, for audit trail purposes
+        if (
+            currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED
+            && !hasManualApproveLog
+        ) {
             try {
                 // Create APPROVE log for manual approval tracking
                 await moderationLogCtr.createModerationLog(context, {
@@ -530,7 +539,7 @@ export const moderationMediaCtr = {
                         action: E_ModerationLogAction.APPROVE,
                         userId: currentModerationMedia.result.uploadedById || currentUser.id,
                         moderationMediaId: id,
-                        reason: 'Approved by moderator (manual approval after AI auto-approval)',
+                        reason: 'Approved by moderator (manual approval)',
                     },
                 });
             }
@@ -541,10 +550,13 @@ export const moderationMediaCtr = {
             // Return the existing moderation media since it's already approved
             return {
                 success: true,
-                message: 'ModerationMedia approved (log created for manual approval tracking).',
+                message: 'ModerationMedia approved (manual approval log created).',
                 result: currentModerationMedia.result,
             };
         }
+
+        // If status is REJECTED, allow changing to APPROVED (override AI rejection)
+        // This allows moderators to approve even if AI has rejected
 
         // Update moderation media status (status is not APPROVED yet, so this is a new approval)
         const moderationMediaUpdated = await moderationMediaCtr._updateModerationMediaStatus(
@@ -604,8 +616,8 @@ export const moderationMediaCtr = {
             });
         }
 
-        // Check if there's already a DELETE log for this moderation media
-        // This handles the case where moderation media was auto-rejected by AI but no DELETE log was created
+        // Check if there's already a manual DELETE log (created by a moderator, not AI)
+        // We allow multiple DELETE logs to track both AI auto-rejection and manual rejection
         const existingDeleteLogs = await moderationLogCtr.getModerationLogs(context, {
             filter: {
                 moderationMediaId: id,
@@ -614,20 +626,60 @@ export const moderationMediaCtr = {
             options: { pagination: false },
         });
 
-        // If moderation media is already REJECTED AND there's already a DELETE log, treat as idempotent success
+        // Check if there's already a manual DELETE log from this moderator
+        const hasManualDeleteLog = existingDeleteLogs.success
+            && existingDeleteLogs.result?.docs
+            && existingDeleteLogs.result.docs.some(
+                log => log.reason && (log.reason.includes('Rejected by moderator') || log.reason.includes('rejected by moderator')),
+            );
+
+        // If moderation media is already REJECTED AND there's already a manual DELETE log from this moderator, treat as idempotent success
+        // But allow changing from APPROVED to REJECTED (override AI approval)
         if (
             currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED
-            && existingDeleteLogs.success
-            && existingDeleteLogs.result?.docs
-            && existingDeleteLogs.result.docs.length > 0
+            && hasManualDeleteLog
         ) {
             throwError({
-                message: 'ModerationMedia already rejected.',
+                message: 'ModerationMedia already rejected by moderator.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        // Try delete underlying file on Bunny before status update
+        // If status is already REJECTED (by AI) but no manual log, create log for tracking
+        // This allows moderators to reject even if AI has already rejected, for audit trail purposes
+        // Skip file deletion since it's already been deleted
+        if (
+            currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED
+            && !hasManualDeleteLog
+        ) {
+            try {
+                // Create DELETE log for manual rejection tracking
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.DELETE,
+                        userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                        moderationMediaId: id,
+                        reason: reason || 'Rejected by moderator (manual rejection)',
+                    },
+                });
+            }
+            catch {
+                // Log error but don't block - moderation log creation failure shouldn't prevent response
+            }
+
+            // Return the existing moderation media since it's already rejected
+            return {
+                success: true,
+                message: 'ModerationMedia rejected (manual rejection log created).',
+                result: currentModerationMedia.result,
+            };
+        }
+
+        // If status is APPROVED, allow changing to REJECTED (override AI approval)
+        // This allows moderators to reject even if AI has approved
+        // Need to delete file in this case
+
+        // Try delete underlying file on Bunny before status update (only if not already rejected)
         const media = currentModerationMedia.result;
         try {
             if (media.type === E_ModerationMediaType.VIDEO && media.url) {
@@ -667,7 +719,6 @@ export const moderationMediaCtr = {
         );
 
         // Create DELETE log if it doesn't exist yet
-        // This handles the case where moderation media was auto-rejected by AI but no DELETE log was created
         if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
             try {
                 // Check again if log was created between the check and the update
