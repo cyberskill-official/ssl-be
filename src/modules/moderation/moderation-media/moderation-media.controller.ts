@@ -578,7 +578,24 @@ export const moderationMediaCtr = {
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
-        if (currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED) {
+
+        // Check if there's already a DELETE log for this moderation media
+        // This handles the case where moderation media was auto-rejected by AI but no DELETE log was created
+        const existingDeleteLogs = await moderationLogCtr.getModerationLogs(context, {
+            filter: {
+                moderationMediaId: id,
+                action: E_ModerationLogAction.DELETE,
+            },
+            options: { pagination: false },
+        });
+
+        // If moderation media is already REJECTED AND there's already a DELETE log, treat as idempotent success
+        if (
+            currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED
+            && existingDeleteLogs.success
+            && existingDeleteLogs.result?.docs
+            && existingDeleteLogs.result.docs.length > 0
+        ) {
             throwError({
                 message: 'ModerationMedia already rejected.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -623,6 +640,41 @@ export const moderationMediaCtr = {
             E_ModerationMediaStatus.REJECTED,
             reason,
         );
+
+        // Create DELETE log if it doesn't exist yet
+        // This handles the case where moderation media was auto-rejected by AI but no DELETE log was created
+        if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
+            try {
+                // Check again if log was created between the check and the update
+                const checkLogsAgain = await moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        moderationMediaId: id,
+                        action: E_ModerationLogAction.DELETE,
+                    },
+                    options: { pagination: false },
+                });
+
+                if (
+                    !checkLogsAgain.success
+                    || !checkLogsAgain.result?.docs
+                    || checkLogsAgain.result.docs.length === 0
+                ) {
+                    // No DELETE log exists, create one
+                    await moderationLogCtr.createModerationLog(context, {
+                        doc: {
+                            action: E_ModerationLogAction.DELETE,
+                            userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                            moderationMediaId: id,
+                            reason: reason || 'Rejected by moderator',
+                        },
+                    });
+                }
+            }
+            catch {
+                // Log error but don't block - moderation log creation failure shouldn't prevent response
+                // The moderation media is already rejected, so this is just for audit trail
+            }
+        }
 
         return moderationMediaUpdated;
     },
