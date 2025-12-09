@@ -758,10 +758,36 @@ export const moderationMediaCtr = {
             reason,
         );
 
-        // Create DELETE log if it doesn't exist yet
+        // Create DELETE log if it doesn't exist yet and update AI decision in existing logs
         if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
             try {
-                // Check again if log was created between the check and the update
+                // Get all moderation logs for this media to update AI decision
+                const allLogs = await moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        moderationMediaId: id,
+                    },
+                    options: { pagination: false },
+                });
+
+                // Update AI decision in logs that have aiResult with PENDING decision
+                if (allLogs.success && allLogs.result?.docs) {
+                    for (const log of allLogs.result.docs) {
+                        if (log.aiResult && log.aiResult.decision === E_ModerationMediaStatus.PENDING) {
+                            // Update AI decision to REJECTED
+                            await moderationLogCtr.updateModerationLog(context, {
+                                filter: { id: log.id },
+                                update: {
+                                    aiResult: {
+                                        ...log.aiResult,
+                                        decision: E_ModerationMediaStatus.REJECTED,
+                                    },
+                                },
+                            });
+                        }
+                    }
+                }
+
+                // Check if DELETE log exists
                 const checkLogsAgain = await moderationLogCtr.getModerationLogs(context, {
                     filter: {
                         moderationMediaId: id,
