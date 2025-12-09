@@ -37,7 +37,7 @@ import type {
 import { aiModerationCtr } from '../ai-moderation/ai-moderation.controller.js';
 import { E_RiskLevel } from '../ai-moderation/ai-moderation.type.js';
 import { moderationLogCtr } from '../moderation-log/moderation-log.controller.js';
-import { E_ModerationLogAction } from '../moderation-log/moderation-log.type.js';
+import { E_ModerationLogAction, E_ModerationLogType } from '../moderation-log/moderation-log.type.js';
 import { ModerationMediaModel } from './moderation-media.model.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
 import { mapModerationMediaTypeTo } from './moderation-media.util.js';
@@ -574,9 +574,13 @@ export const moderationMediaCtr = {
         ) {
             try {
                 // Create APPROVE log for manual approval tracking
+                const mediaType = currentModerationMedia.result.type
+                    ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                    : E_ModerationLogType.IMAGE;
                 await moderationLogCtr.createModerationLog(context, {
                     doc: {
                         action: E_ModerationLogAction.APPROVE,
+                        type: mediaType, // Set type to IMAGE or VIDEO
                         userId: currentModerationMedia.result.uploadedById || currentUser.id,
                         moderationMediaId: id,
                         reason: 'Approved by moderator (manual approval)',
@@ -624,9 +628,13 @@ export const moderationMediaCtr = {
                     || checkLogsAgain.result.docs.length === 0
                 ) {
                     // No APPROVE log exists, create one
+                    const mediaType = currentModerationMedia.result.type
+                        ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                        : E_ModerationLogType.IMAGE;
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
                             action: E_ModerationLogAction.APPROVE,
+                            type: mediaType, // Set type to IMAGE or VIDEO
                             userId: currentModerationMedia.result.uploadedById || currentUser.id,
                             moderationMediaId: id,
                             reason: 'Approved by moderator',
@@ -694,9 +702,13 @@ export const moderationMediaCtr = {
         ) {
             try {
                 // Create DELETE log for manual rejection tracking
+                const mediaType = currentModerationMedia.result.type
+                    ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? 'VIDEO' : 'IMAGE')
+                    : 'IMAGE';
                 await moderationLogCtr.createModerationLog(context, {
                     doc: {
                         action: E_ModerationLogAction.DELETE,
+                        type: mediaType as any, // Set type to IMAGE or VIDEO
                         userId: currentModerationMedia.result.uploadedById || currentUser.id,
                         moderationMediaId: id,
                         reason: reason || 'Rejected by moderator (manual rejection)',
@@ -802,9 +814,13 @@ export const moderationMediaCtr = {
                     || checkLogsAgain.result.docs.length === 0
                 ) {
                     // No DELETE log exists, create one
+                    const mediaType = currentModerationMedia.result.type
+                        ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                        : E_ModerationLogType.IMAGE;
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
                             action: E_ModerationLogAction.DELETE,
+                            type: mediaType, // Set type to IMAGE or VIDEO
                             userId: currentModerationMedia.result.uploadedById || currentUser.id,
                             moderationMediaId: id,
                             reason: reason || 'Rejected by moderator',

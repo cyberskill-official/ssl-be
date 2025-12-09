@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_ModerationLog } from './moderation-log.type.js';
 
-import { E_ModerationLogAction } from './moderation-log.type.js';
+import { E_ModerationLogAction, E_ModerationLogType } from './moderation-log.type.js';
 
 export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
     mongoose,
@@ -20,6 +20,10 @@ export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
                 },
             ],
         },
+        type: {
+            type: String,
+            enum: Object.values(E_ModerationLogType),
+        },
         userId: {
             type: String,
         },
@@ -27,6 +31,9 @@ export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
             type: String,
         },
         messageId: {
+            type: String,
+        },
+        content: {
             type: String,
         },
         reason: {

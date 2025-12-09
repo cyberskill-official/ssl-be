@@ -23,7 +23,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { keywordCtr } from '#modules/keyword/index.js';
 import { aiModerationCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
-import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/moderation-log/moderation-log.type.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
@@ -186,13 +186,16 @@ export const messageCtr = {
 
         // If message contains keyword, flag it for manual review instead of blocking
         // This allows admins to see full context before taking action
-        if (matchedKeyword && createdMessage?.id) {
+        if (matchedKeyword && createdMessage?.id && content?.type === E_MessageType.TEXT && content.value) {
             try {
+                const fullMessageText = typeof content.value === 'string' ? content.value : '';
                 await moderationLogCtr.createModerationLog(context, {
                     doc: {
                         action: E_ModerationLogAction.WARN,
+                        type: E_ModerationLogType.TEXT, // Set type to TEXT for text moderation
                         userId: senderId,
                         messageId: createdMessage.id,
+                        content: fullMessageText, // Store full message content directly
                         reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
                     },
                 });

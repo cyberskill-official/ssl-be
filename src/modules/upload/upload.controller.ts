@@ -24,7 +24,7 @@ import {
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
-import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
@@ -267,6 +267,7 @@ export const uploadCtr = {
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
                             action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                            type: E_ModerationLogType.VIDEO, // Set type to VIDEO for video uploads
                             userId: currentUser.id,
                             moderationMediaId: moderationId,
                             aiResult: moderationResult.result,
@@ -430,9 +431,18 @@ export const uploadCtr = {
 
                 // Always create moderation log regardless of rejection status
                 try {
+                    // Get moderation media to determine type (IMAGE or VIDEO)
+                    const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+                        filter: { id: moderationId },
+                    });
+                    const mediaType = moderationMedia.success && moderationMedia.result?.type
+                        ? (moderationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                        : E_ModerationLogType.IMAGE;
+
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
                             action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                            type: mediaType, // Set type to IMAGE or VIDEO
                             userId: currentUser.id,
                             moderationMediaId: moderationId,
                             aiResult: moderateImage.result,

@@ -7,18 +7,26 @@ enum E_ModerationLogAction {
     CLOSE
 }
 
+enum E_ModerationLogType {
+    TEXT
+    IMAGE
+    VIDEO
+}
+
 type T_ModerationLog {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
     action: E_ModerationLogAction
+    type: E_ModerationLogType
     userId: String
     user: T_User
     moderationMediaId: String
     moderationMedia: T_ModerationMedia
     messageId: String
     message: T_Message
+    content: String
     reason: String
     aiResult: T_MediaModerationResult
 }
@@ -29,26 +37,32 @@ input Input_QueryModerationLog {
     createdAt: DateTime
     updatedAt: DateTime
     action: E_ModerationLogAction
+    type: E_ModerationLogType
     userId: String
     moderationMediaId: String
     messageId: String
+    content: String
     reason: String
 }
 
 input Input_CreateModerationLog {
     action: E_ModerationLogAction!
+    type: E_ModerationLogType
     userId: String
     moderationMediaId: String
     messageId: String
+    content: String
     reason: String
 }
 
 input Input_UpdateModerationLog {
     isDel: Boolean
     action: E_ModerationLogAction
+    type: E_ModerationLogType
     userId: String
     moderationMediaId: String
     messageId: String
+    content: String
     reason: String
 }
 

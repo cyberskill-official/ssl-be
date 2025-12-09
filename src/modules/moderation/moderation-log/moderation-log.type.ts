@@ -15,14 +15,22 @@ export enum E_ModerationLogAction {
     CLOSE = 'CLOSE',
 }
 
+export enum E_ModerationLogType {
+    TEXT = 'TEXT',
+    IMAGE = 'IMAGE',
+    VIDEO = 'VIDEO',
+}
+
 export interface I_ModerationLog extends I_GenericDocument {
     action?: E_ModerationLogAction;
+    type?: E_ModerationLogType; // Type of content: TEXT, IMAGE, or VIDEO
     userId?: string;
     user?: I_User;
     moderationMediaId?: string;
     moderationMedia?: I_ModerationMedia;
     messageId?: string; // For flagging messages that need manual review
     message?: I_Message; // Populated message
+    content?: string; // Full message content (stored directly, no fallback needed)
     aiResult?: I_MediaModerationResult;
     reason?: string; // Additional context, e.g., matched keyword
 }
