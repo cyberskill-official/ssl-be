@@ -233,6 +233,19 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
             else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
                 content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
+                try {
+                    const { log } = await import('@cyberskill/shared/node/log');
+                    log.warn('[MESSAGE][transformMessageMedia] blur image for free viewer', {
+                        viewerId: viewerId ?? sessionUser?.id,
+                        senderId,
+                        isOwner,
+                        viewerIsFreeMember,
+                        viewerExempt,
+                    });
+                }
+                catch {
+                    // ignore logging failures
+                }
             }
             // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
             else {
