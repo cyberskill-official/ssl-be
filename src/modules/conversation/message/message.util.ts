@@ -13,14 +13,11 @@ import { E_ModerationLogAction } from '#modules/moderation/moderation-log/modera
 import { userCtr } from '#modules/user/user.controller.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
-import { getEnv } from '#shared/env/env.util.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Message } from './message.type.js';
 
 import { E_MessageType } from './message.type.js';
-
-const env = getEnv();
 
 const mongooseCtr = new MongooseController(UserModel);
 
@@ -111,26 +108,23 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
-    // Debug viewer flags for message media hydration (opt-in via MEDIA_VIEWER_DEBUG)
-    const enableViewerDebug = env.MEDIA_VIEWER_DEBUG === 'true';
-    if (enableViewerDebug) {
-        try {
-            const { log } = await import('@cyberskill/shared/node/log');
-            log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
-                viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
-                viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
-                viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
-                viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
-                viewerIsStaff: viewerMediaOptions.viewerIsStaff,
-                viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
-                membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
-                membershipEndDate: (sessionUser as any)?.membershipEndDate,
-                rolesIds: (sessionUser as any)?.rolesIds,
-            });
-        }
-        catch {
-            // ignore logging failures
-        }
+    // Debug viewer flags for message media hydration (opt-in to avoid log noise)
+    try {
+        const { log } = await import('@cyberskill/shared/node/log');
+        log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
+            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+            membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
+            membershipEndDate: (sessionUser as any)?.membershipEndDate,
+            rolesIds: (sessionUser as any)?.rolesIds,
+        });
+    }
+    catch {
+        // ignore logging failures
     }
 
     if (content?.type === E_MessageType.VIDEO) {
@@ -216,14 +210,21 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerIsAdmin = (Array.isArray(rolesForExemptCheck) && rolesForExemptCheck.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')))) ?? false;
             const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-            // Use viewer media context (includes safety default to FREE to avoid leaks)
-            const viewerIsPaidMember = Boolean(viewerMediaOptions.viewerIsPaidMember);
-            let viewerIsFreeMember = Boolean(viewerMediaOptions.viewerIsFreeMember);
-
-            // Safety fallback: if we cannot determine membership and viewer is not exempt, treat as free
-            if (!viewerIsFreeMember && !viewerIsPaidMember && !viewerExempt) {
-                viewerIsFreeMember = true;
+            // Check viewer's membership status (not sender's)
+            // Use sessionUser instead of viewer because sessionUser has roles populated
+            const viewerRoles = Array.isArray(sessionUser?.roles) ? sessionUser?.roles : (Array.isArray(viewer?.roles) ? viewer?.roles : []);
+            const viewerHasFreeRole = viewerRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
+            const viewerHasPaidRole = viewerRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            let viewerMembershipActive = false;
+            try {
+                // Use sessionUser for membership check if available, otherwise use viewer
+                const userForMembershipCheck = sessionUser || viewer;
+                viewerMembershipActive = userForMembershipCheck ? authnCtr.isMembershipActive(userForMembershipCheck) : false;
             }
+            catch {
+                viewerMembershipActive = false;
+            }
+            const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
 
             // Case 1: Sender chưa xác thực tuổi → người khác thấy null (owner/staff/admin vẫn thấy rõ)
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
