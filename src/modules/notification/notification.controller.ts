@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 import mongoose, { isValidObjectId, Types } from 'mongoose';
@@ -287,10 +287,6 @@ export const notificationCtr = {
                 const actorAgeVerifyMap = new Map<string, boolean>();
                 const actorAvatarUrlMap = new Map<string, string | null>(); // Track actor's gallery URL
                 if (actorIds.size > 0) {
-                    log.warn('[getNotifications] Starting to fetch actors:', {
-                        actorIdsCount: actorIds.size,
-                        actorIds: Array.from(actorIds),
-                    });
                     // Query actors with roles and galleries for avatarUrl
                     const actorsResult = await userCtr.getUsers(_context, {
                         filter: { id: { $in: Array.from(actorIds) } },
@@ -305,11 +301,6 @@ export const notificationCtr = {
                         ],
                     } as any);
 
-                    log.warn('[getNotifications] actorsResult:', {
-                        success: actorsResult.success,
-                        docsCount: actorsResult.success && 'result' in actorsResult ? actorsResult.result?.docs?.length ?? 0 : 0,
-                    });
-
                     if (actorsResult.success && Array.isArray(actorsResult.result?.docs)) {
                         // First pass: check which actors have ageVerify from getUsers
                         const actorsWithoutAgeVerify = new Set<string>();
@@ -323,17 +314,9 @@ export const notificationCtr = {
                                 if (actor.ageVerify) {
                                     const isActorAgeVerified = actor.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                     actorAgeVerifyMap.set(actor.id, isActorAgeVerified);
-                                    log.warn('[getNotifications] Found ageVerify in getUsers result:', {
-                                        actorId: actor.id,
-                                        ageVerifyStatus: actor.ageVerify?.status,
-                                        isActorAgeVerified,
-                                    });
                                 }
                                 else {
                                     // ageVerify not found, need to query separately
-                                    log.warn('[getNotifications] ageVerify not found in getUsers result, will query separately:', {
-                                        actorId: actor.id,
-                                    });
                                     actorsWithoutAgeVerify.add(actor.id);
                                 }
                             }
@@ -342,11 +325,6 @@ export const notificationCtr = {
                         // Second pass: query ageVerify for actors that don't have it
                         // Query directly from MongoDB collection (safe, only reading ageVerify field)
                         if (actorsWithoutAgeVerify.size > 0) {
-                            log.warn('[getNotifications] Querying ageVerify for actors without it:', {
-                                count: actorsWithoutAgeVerify.size,
-                                actorIds: Array.from(actorsWithoutAgeVerify),
-                            });
-
                             // Query ageVerify directly from MongoDB collection
                             if (mongoose.connection.db) {
                                 try {
@@ -362,25 +340,12 @@ export const notificationCtr = {
                                         if (actorId) {
                                             const isActorAgeVerified = ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                                             actorAgeVerifyMap.set(actorId, isActorAgeVerified);
-                                            log.warn('[getNotifications] ageVerify query result (direct MongoDB):', {
-                                                actorId,
-                                                hasAgeVerify: !!ageVerify,
-                                                ageVerifyStatus: ageVerify?.status,
-                                                isActorAgeVerified,
-                                            });
                                         }
                                     }
 
                                     // For actors not found in direct query, default to false
-                                    for (const actorId of actorsWithoutAgeVerify) {
-                                        if (!actorAgeVerifyMap.has(actorId)) {
-                                            log.warn('[getNotifications] ageVerify not found in direct MongoDB query:', { actorId });
-                                            actorAgeVerifyMap.set(actorId, false);
-                                        }
-                                    }
                                 }
-                                catch (error) {
-                                    log.warn('[getNotifications] Failed to query ageVerify directly from MongoDB:', { error });
+                                catch {
                                     // Fallback to userCtr.getUser for each actor
                                     const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
                                         try {
@@ -406,7 +371,6 @@ export const notificationCtr = {
                             }
                             else {
                                 // Fallback to userCtr.getUser if mongoose.connection.db is not available
-                                log.warn('[getNotifications] mongoose.connection.db not available, using userCtr.getUser fallback');
                                 const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
                                     try {
                                         const userResult = await userCtr.getUser(_context, {
@@ -427,24 +391,6 @@ export const notificationCtr = {
                                     }
                                 });
                                 await Promise.all(ageVerifyPromises);
-                            }
-                        }
-
-                        // Log for debugging
-                        for (const actor of actorsResult.result.docs) {
-                            if (actor.id) {
-                                const isActorAgeVerified = actorAgeVerifyMap.get(actor.id) ?? false;
-                                log.warn('[getNotifications] Actor gallery URL:', {
-                                    actorId: actor.id,
-                                    username: actor.username,
-                                    hasPartner1Gallery: !!actor.partner1?.gallery?.url,
-                                    hasPartner2Gallery: !!actor.partner2?.gallery?.url,
-                                    galleryUrl: !!actorAvatarUrlMap.get(actor.id),
-                                    hasAgeVerify: !!actor.ageVerify,
-                                    ageVerifyStatus: actor.ageVerify?.status,
-                                    isActorAgeVerified,
-                                    actorAgeVerifyMapHasValue: actorAgeVerifyMap.has(actor.id),
-                                });
                             }
                         }
                     }
@@ -536,19 +482,6 @@ export const notificationCtr = {
 
                         // Get the URL to use (prioritize gallery URL from map, then existing avatarUrl in presentation)
                         const urlToUse = actorGalleryUrlFromMap ?? existingAvatarUrl;
-
-                        log.warn('[getNotifications] Processing actor avatar:', {
-                            actorId,
-                            actorGalleryUrlFromMap: actorGalleryUrlFromMap || null,
-                            existingAvatarUrl: existingAvatarUrl || null,
-                            urlToUse: urlToUse || null,
-                            hasUrlToUse: !!urlToUse,
-                            isActorAgeVerified,
-                            isActorOwner,
-                            viewerIsFreeMember,
-                            viewerExempt,
-                            viewerIsPaidMember,
-                        });
 
                         // Only process if we have a URL to use
                         if (urlToUse) {
@@ -1100,21 +1033,10 @@ export const notificationCtr = {
                     notification: result.result,
                     presentation: result.result.presentation,
                 };
-                log.info('[Notification] Publishing in-app notification:', {
-                    notificationId: result.result.id,
-                    targetId: result.result.targetId,
-                    type: result.result.type,
-                    channels: result.result.channels,
-                });
                 pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_ADDED, payload);
             }
             else {
-                log.warn('[Notification] Notification created but not published (no IN_APP channel):', {
-                    notificationId: result.result.id,
-                    targetId: result.result.targetId,
-                    type: result.result.type,
-                    channels: result.result.channels,
-                });
+                // If no IN_APP channel, ensure presentation is null
             }
 
             // If EMAIL channel is requested, send email immediately (no cron)
@@ -1179,20 +1101,7 @@ export const notificationCtr = {
 
                         if (!sendRes) {
                             if (templateKey) {
-                                log.info('[Notification] Sending PAYMENT_SUCCESS email:', {
-                                    templateKey,
-                                    targetEmail,
-                                    hasTemplateData: Object.keys(templateData).length > 0,
-                                    templateDataKeys: Object.keys(templateData),
-                                });
                                 sendRes = await emailCtr.sendEmail(templateKey, targetEmail, templateData).catch(e => ({ success: false, message: (e as Error).message }));
-                                if (sendRes && !(sendRes as any).success) {
-                                    log.error('[Notification] Failed to send PAYMENT_SUCCESS email:', {
-                                        templateKey,
-                                        targetEmail,
-                                        error: (sendRes as any).message,
-                                    });
-                                }
                             }
                             else {
                                 await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });
@@ -1207,7 +1116,7 @@ export const notificationCtr = {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                         }
                     }
-                    catch (err) {
+                    catch {
                         try {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                         }
@@ -1215,7 +1124,6 @@ export const notificationCtr = {
                             // ignore
                         }
                         // log but don't crash the main flow
-                        log.error('[NOTIFICATION] immediate email send failed:', err);
                     }
                 })();
             }

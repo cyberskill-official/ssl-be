@@ -108,7 +108,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
-    // Debug viewer flags for message media hydration
+    // Debug viewer flags for message media hydration (opt-in to avoid log noise)
     try {
         const { log } = await import('@cyberskill/shared/node/log');
         log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
