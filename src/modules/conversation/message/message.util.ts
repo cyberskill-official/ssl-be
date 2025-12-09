@@ -69,7 +69,16 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
         if (viewer?.id) {
             const sessionUserPopulated = await mongooseCtr.findOne(
                 { id: viewer.id },
-                undefined,
+                {
+                    id: 1,
+                    roles: 1,
+                    rolesIds: 1,
+                    ageVerify: 1,
+                    membershipExpiresAt: 1,
+                    membershipEndDate: 1,
+                    partner1: 1,
+                    partner2: 1,
+                } as any,
                 undefined,
                 [
                     { path: 'roles' },
@@ -98,6 +107,25 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     }
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+    // Debug viewer flags for message media hydration
+    try {
+        const { log } = await import('@cyberskill/shared/node/log');
+        log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
+            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+            membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
+            membershipEndDate: (sessionUser as any)?.membershipEndDate,
+            rolesIds: (sessionUser as any)?.rolesIds,
+        });
+    }
+    catch {
+        // ignore logging failures
+    }
 
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
@@ -286,12 +314,21 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             let transformedSender = { ...plainSender };
 
             // Ensure ageVerify and roles are populated for blur logic to work correctly
-            if ((!transformedSender.ageVerify || !transformedSender.roles) && transformedSender.id) {
+            if ((!transformedSender.ageVerify || !transformedSender.roles || !transformedSender.rolesIds || transformedSender.membershipExpiresAt === undefined || (transformedSender as any).membershipEndDate === undefined) && transformedSender.id) {
                 try {
                     const mongooseCtr = new MongooseController(UserModel);
                     const senderPopulated = await mongooseCtr.findOne(
                         { id: transformedSender.id },
-                        undefined,
+                        {
+                            id: 1,
+                            roles: 1,
+                            rolesIds: 1,
+                            ageVerify: 1,
+                            membershipExpiresAt: 1,
+                            membershipEndDate: 1,
+                            partner1: 1,
+                            partner2: 1,
+                        } as any,
                         undefined,
                         [
                             { path: 'ageVerify' },
