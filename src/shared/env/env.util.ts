@@ -89,6 +89,7 @@ export function getEnv(): I_Environment {
         NETVALVE_MID_USD: str({ default: '' }),
         USER_APP_URL: str({ default: PAYMENT_REDIRECT_URL }),
         PAYMENT_REDIRECT_URL: str({ default: '' }),
+        MEDIA_VIEWER_DEBUG: str({ default: 'true' }),
     });
 
     const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;

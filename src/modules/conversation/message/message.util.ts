@@ -13,11 +13,14 @@ import { E_ModerationLogAction } from '#modules/moderation/moderation-log/modera
 import { userCtr } from '#modules/user/user.controller.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { getEnv } from '#shared/env/env.util.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Message } from './message.type.js';
 
 import { E_MessageType } from './message.type.js';
+
+const env = getEnv();
 
 const mongooseCtr = new MongooseController(UserModel);
 
@@ -108,23 +111,26 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
-    // Debug viewer flags for message media hydration (opt-in to avoid log noise)
-    try {
-        const { log } = await import('@cyberskill/shared/node/log');
-        log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
-            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
-            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
-            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
-            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
-            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
-            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
-            membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
-            membershipEndDate: (sessionUser as any)?.membershipEndDate,
-            rolesIds: (sessionUser as any)?.rolesIds,
-        });
-    }
-    catch {
-        // ignore logging failures
+    // Debug viewer flags for message media hydration (opt-in via MEDIA_VIEWER_DEBUG)
+    const enableViewerDebug = env.MEDIA_VIEWER_DEBUG === 'true';
+    if (enableViewerDebug) {
+        try {
+            const { log } = await import('@cyberskill/shared/node/log');
+            log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
+                viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+                viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+                viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+                viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+                viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+                viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+                membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
+                membershipEndDate: (sessionUser as any)?.membershipEndDate,
+                rolesIds: (sessionUser as any)?.rolesIds,
+            });
+        }
+        catch {
+            // ignore logging failures
+        }
     }
 
     if (content?.type === E_MessageType.VIDEO) {
