@@ -362,7 +362,7 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
-    // Debug viewer flags to trace blur logic
+    // Debug viewer flags to trace blur logic in conversations
     try {
         const { log } = await import('@cyberskill/shared/node/log');
         log.warn('[CONVERSATION][transformConversationMedia] viewer flags', {

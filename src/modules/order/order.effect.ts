@@ -1,5 +1,5 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { addMonths } from 'date-fns';
 
 import type { I_Event } from '#modules/event/event.type.js';
@@ -23,7 +23,6 @@ interface I_OrderPaidEffectsResult {
 async function ensurePaidRole(context: I_Context, user: { rolesIds?: string[] }): Promise<string | null> {
     const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
     if (!paidRole.success) {
-        log.warn('[Order Effect] PAID_MEMBER role not found');
         return null;
     }
     const paidRoleId = paidRole.result.id;
@@ -37,7 +36,6 @@ async function ensurePaidRole(context: I_Context, user: { rolesIds?: string[] })
 async function getFreeMemberRoleId(context: I_Context): Promise<string | null> {
     const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
     if (!freeRole.success) {
-        log.warn('[Order Effect] FREE_MEMBER role not found');
         return null;
     }
     return freeRole.result.id;
@@ -86,7 +84,6 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const freeMemberRoleId = await getFreeMemberRoleId(context);
 
     if (!paidRoleId) {
-        log.error('[Order Effect] PAID_MEMBER role ID not found, cannot update user roles');
         throwError({
             message: 'PAID_MEMBER role not found in system.',
             status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -123,12 +120,6 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     });
 
     if (!updateResult.success) {
-        log.error('[Order Effect] Failed to update user:', {
-            userId: order.userId,
-            orderId: order.id,
-            error: updateResult.message,
-            updatePayload,
-        });
         throwError({ message: updateResult.message ?? 'Failed to extend membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
     }
 
@@ -136,20 +127,18 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const updatedUserRes = await userCtr.getUser(context, { filter: { id: order.userId } });
 
     if (!updatedUserRes.success || !updatedUserRes.result) {
-        log.error('[Order Effect] Failed to reload user after update:', {
-            userId: order.userId,
-            orderId: order.id,
+        throwError({
+            message: 'Failed to reload user after membership extension.',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
         });
     }
     else {
         // Verify that PAID_MEMBER role was added
         const updatedRoles = updatedUserRes.result.rolesIds ?? [];
         if (!updatedRoles.includes(paidRoleId)) {
-            log.error('[Order Effect] PAID_MEMBER role was not added to user:', {
-                userId: order.userId,
-                orderId: order.id,
-                paidRoleId,
-                currentRoles: updatedRoles,
+            throwError({
+                message: 'PAID_MEMBER role was not added to user after membership extension.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
     }
@@ -200,11 +189,6 @@ async function addFreeEventCountForAnnouncement(context: I_Context, order: I_Ord
     });
 
     if (!updateResult.success) {
-        log.error('[Order Effect] Failed to add freeEventCount:', {
-            userId: order.userId,
-            orderId: order.id,
-            error: updateResult.message,
-        });
         throwError({
             message: updateResult.message ?? 'Failed to add freeEventCount.',
             status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -225,11 +209,6 @@ async function addFreeEventCountForAnnouncement(context: I_Context, order: I_Ord
 export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
     const result: I_OrderPaidEffectsResult = {};
     if (!order || order.status !== E_OrderStatus.PAID) {
-        log.warn('[Order Effect] Skipping applyOrderPaidEffects:', {
-            hasOrder: !!order,
-            orderStatus: order?.status,
-            expectedStatus: E_OrderStatus.PAID,
-        });
         return result;
     }
 

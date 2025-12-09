@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -143,14 +143,7 @@ export const galleryCtr = {
             }
         }
 
-        // Debug membership resolution to investigate unexpected blurs for paid users
-        log.warn('[GALLERY][getGallery] viewer flags', {
-            viewerId: context.req?.session?.user?.id,
-            isLoggedIn,
-            isPaidMember,
-            isFreeMember,
-            viewerAgeVerified,
-        });
+        // Debug log removed to reduce noise
 
         const galleryFound = await mongooseCtr.findOne(filter, projection, options, populate);
 
@@ -394,16 +387,7 @@ export const galleryCtr = {
             }
         }
 
-        // Debug membership resolution to investigate unexpected blurs for paid users
-        log.warn('[GALLERY][getGalleries] viewer flags', {
-            viewerId: sessionUserId,
-            isLoggedIn,
-            isPaidMember,
-            isFreeMember,
-            viewerAgeVerified,
-            isStaff,
-            isAdmin,
-        });
+        // Debug log removed to reduce noise
 
         const galleries = await mongooseCtr.findPaging(mongoFilter, {
             ...options,

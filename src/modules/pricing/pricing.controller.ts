@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Country } from '#modules/location/index.js';
@@ -33,39 +33,20 @@ const mongooseCtr = new MongooseController<I_Pricing>(PricingModel);
 
 export const pricingCtr = {
     async getPricing(_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryPricing>): Promise<I_Return<I_Pricing>> {
-        log.warn('[getPricing] Querying pricing with filter:', JSON.stringify(filter, null, 2));
-        log.warn('[getPricing] Populate:', populate);
         const result = await mongooseCtr.findOne(filter, projection, options, populate);
-        log.warn('[getPricing] Query result:', {
-            success: result.success,
-            hasResult: !!result,
-            pricingId: result.success ? result.result?.id : undefined,
-            currencyId: result.success ? result.result?.currencyId : undefined,
-            hasCurrency: result.success ? !!result.result?.currency : false,
-            currencyCode: result.success ? result.result?.currency?.code : undefined,
-        });
         // Ensure currencyId is always returned, even after populate
         if (result.success && result.result && !result.result.currencyId && result.result.id) {
-            log.warn('[getPricing] currencyId missing, querying raw pricing for currencyId:', result.result.id);
             const pricingRawRes = await mongooseCtr.findOne(
                 { id: result.result.id },
                 { currencyId: 1 }, // Only get currencyId
             );
-            log.warn('[getPricing] Raw pricing query result:', {
-                success: pricingRawRes.success,
-                currencyId: pricingRawRes.success && 'result' in pricingRawRes ? pricingRawRes.result?.currencyId : undefined,
-            });
+
             if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
                 if (result.success && result.result) {
                     result.result.currencyId = pricingRawRes.result.currencyId;
-                    log.warn('[getPricing] Restored currencyId:', result.result.currencyId);
                 }
             }
         }
-        log.warn('[getPricing] Final result:', {
-            pricingId: result.success ? result.result?.id : undefined,
-            currencyId: result.success ? result.result?.currencyId : undefined,
-        });
         return result;
     },
     async getPricings(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryPricing>): Promise<I_Return<T_PaginateResult<I_Pricing>>> {
@@ -146,8 +127,8 @@ export const pricingCtr = {
                     userIp = userFound.result.lastLoginIp;
                 }
             }
-            catch (error) {
-                log.warn('Failed to get user IP from database:', error);
+            catch {
+                // Ignore
             }
         }
 

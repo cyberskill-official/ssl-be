@@ -12,7 +12,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Destination } from '#modules/destination/destination.type.js';
@@ -1284,18 +1284,6 @@ export const locationCtr = {
         }
 
         const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
-
-        log.warn('[LOCATION][getLocationsInViewport] viewer flags', {
-            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
-            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
-            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
-            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
-            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
-            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
-            membershipExpiresAt: sessionUser?.membershipExpiresAt,
-            membershipEndDate: sessionUser?.membershipEndDate,
-            rolesIds: sessionUser?.rolesIds,
-        });
 
         docs = docs.map((d) => {
             try {

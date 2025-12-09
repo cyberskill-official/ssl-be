@@ -2,7 +2,6 @@ import type { I_Input_DeleteMany, I_Input_FindOne, I_Input_FindPaging, T_DeleteR
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -84,16 +83,6 @@ export const paymentCtr = {
             };
         }
         catch (error) {
-            log.error('Failed to record payment transaction', {
-                error,
-                filter,
-                payload: {
-                    ...setPayload,
-                    provider: payload.provider,
-                    operation: payload.operation,
-                },
-            });
-
             return {
                 success: false,
                 message: error instanceof Error ? error.message : 'Failed to record payment transaction',

@@ -78,6 +78,24 @@ const disableOtpEnforcement = String(
     ((env as unknown) as Record<string, unknown>)?.['DISABLE_OTP_ENFORCEMENT'] ?? 'true',
 ).toLowerCase() !== 'false';
 
+function clearSessionCookie(req?: I_Request): void {
+    const res = (req as any)?.res;
+    if (!res?.clearCookie)
+        return;
+
+    const cookieOptions = {
+        path: '/',
+        ...(env.IS_DEV ? {} : { sameSite: 'none' as const, secure: true }),
+    };
+
+    try {
+        res.clearCookie(env.SESSION_NAME, cookieOptions);
+    }
+    catch {
+        // best-effort; ignore
+    }
+}
+
 interface I_GuardianTokenPayload extends I_SessionPayload {
     guardian: true;
 }
@@ -1433,6 +1451,13 @@ export const authnCtr = {
         //     update: { tempOtp: null, tempOtpCreatedAt: null },
         // });
 
+        // Regenerate session to avoid session fixation and ensure clean state per login
+        if (context.req.session?.regenerate) {
+            await new Promise<void>((resolve) => {
+                context.req?.session?.regenerate(() => resolve());
+            });
+        }
+
         assignSessionUser(context.req.session, sanitizedLoginUser);
 
         return {
@@ -1460,6 +1485,10 @@ export const authnCtr = {
         }
 
         delete context.req.session.guardianView;
+        delete context.req.session.user;
+
+        clearSessionCookie(context.req);
+
         context.req.session.destroy(() => { });
 
         return {
