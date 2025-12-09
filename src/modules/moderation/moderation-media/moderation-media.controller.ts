@@ -36,6 +36,8 @@ import type {
 
 import { aiModerationCtr } from '../ai-moderation/ai-moderation.controller.js';
 import { E_RiskLevel } from '../ai-moderation/ai-moderation.type.js';
+import { moderationLogCtr } from '../moderation-log/moderation-log.controller.js';
+import { E_ModerationLogAction } from '../moderation-log/moderation-log.type.js';
 import { ModerationMediaModel } from './moderation-media.model.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-media.type.js';
 import { mapModerationMediaTypeTo } from './moderation-media.util.js';
@@ -493,19 +495,73 @@ export const moderationMediaCtr = {
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
-        if (currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED) {
-            throwError({
+
+        // Check if there's already an APPROVE log for this moderation media
+        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
+        const existingApproveLogs = await moderationLogCtr.getModerationLogs(context, {
+            filter: {
+                moderationMediaId: id,
+                action: E_ModerationLogAction.APPROVE,
+            },
+            options: { pagination: false },
+        });
+
+        // If moderation media is already APPROVED AND there's already an APPROVE log, treat as idempotent success
+        if (
+            currentModerationMedia.result.status === E_ModerationMediaStatus.APPROVED
+            && existingApproveLogs.success
+            && existingApproveLogs.result?.docs
+            && existingApproveLogs.result.docs.length > 0
+        ) {
+            return {
+                success: true,
                 message: 'ModerationMedia already approved.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+                result: currentModerationMedia.result,
+            };
         }
 
+        // Update moderation media status (if not already APPROVED, or if APPROVED but no log exists)
         const moderationMediaUpdated = await moderationMediaCtr._updateModerationMediaStatus(
             context,
             currentModerationMedia.result,
             currentUser,
             E_ModerationMediaStatus.APPROVED,
         );
+
+        // Create APPROVE log if it doesn't exist yet
+        // This handles the case where moderation media was auto-approved by AI but no APPROVE log was created
+        if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
+            try {
+                // Check again if log was created between the check and the update
+                const checkLogsAgain = await moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        moderationMediaId: id,
+                        action: E_ModerationLogAction.APPROVE,
+                    },
+                    options: { pagination: false },
+                });
+
+                if (
+                    !checkLogsAgain.success
+                    || !checkLogsAgain.result?.docs
+                    || checkLogsAgain.result.docs.length === 0
+                ) {
+                    // No APPROVE log exists, create one
+                    await moderationLogCtr.createModerationLog(context, {
+                        doc: {
+                            action: E_ModerationLogAction.APPROVE,
+                            userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                            moderationMediaId: id,
+                            reason: 'Approved by moderator',
+                        },
+                    });
+                }
+            }
+            catch {
+                // Log error but don't block - moderation log creation failure shouldn't prevent response
+                // The moderation media is already approved, so this is just for audit trail
+            }
+        }
 
         return moderationMediaUpdated;
     },
