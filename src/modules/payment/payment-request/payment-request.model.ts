@@ -20,14 +20,14 @@ export const PaymentRequestModel = mongo.createModel<I_PaymentRequest>({
 
 // Create index for meta.orderId to enable efficient queries from Order to PaymentRequest
 // This allows querying PaymentRequest by orderId stored in meta: { orderId: "..." }
-try {
-    PaymentRequestModel.collection.createIndex(
-        { 'meta.orderId': 1 },
-        { name: 'idx_meta_orderId', sparse: true },
-    );
-}
-catch (err) {
-    // Best-effort index creation; log but do not crash startup
+// try {
+//     PaymentRequestModel.collection.createIndex(
+//         { 'meta.orderId': 1 },
+//         { name: 'idx_meta_orderId', sparse: true },
+//     );
+// }
+// catch (err) {
+//     // Best-effort index creation; log but do not crash startup
 
-    console.warn('payment-request: failed to create meta.orderId index', err);
-}
+//     console.warn('payment-request: failed to create meta.orderId index', err);
+// }
