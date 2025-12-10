@@ -85,25 +85,29 @@ export const uploadCtr = {
             ]);
         }
 
-        // FREE_MEMBER can only upload images, not videos
-        if (type === E_UploadType.VIDEO && isFreeMember && !isStaff && !isAdmin) {
-            throwError({
-                message: 'Free members can upload images only.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
         const isInRegistration = !isGuest && currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery = entity === E_UploadEntity.GALLERY;
 
-        // Age verification is required for all uploads (including FREE_MEMBER uploading images)
+        // FREE_MEMBER restrictions:
+        // 1. Can only upload images, not videos (applies to all entities including GALLERY)
+        if (isFreeMember && !isStaff && !isAdmin) {
+            if (type === E_UploadType.VIDEO) {
+                throwError({
+                    message: 'Free members can upload images only.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        // Age verification check: only block upload if status is NOT APPROVED
         // Exception: guest, staff, admin, or when skipModeration is true
         const requiresAgeVerification
             = !isGuest && !isStaff && !isAdmin && !skipModeration;
 
         if (requiresAgeVerification) {
-            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            if (!isAgeApproved) {
+            const ageVerifyStatus = currentUser?.ageVerify?.status;
+            // Only block if status is NOT APPROVED (including undefined/null)
+            if (ageVerifyStatus !== E_AgeVerifyStatus.APPROVED) {
                 throwError({
                     status: RESPONSE_STATUS.FORBIDDEN,
                     message: 'Uploads require completed age verification. Please complete age verification before uploading.',
@@ -111,24 +115,36 @@ export const uploadCtr = {
             }
         }
 
-        // Gallery uploads require paid membership (this is separate from FREE_MEMBER image uploads)
-        const shouldGateUpload
-            = !isGuest
-                && !isStaff
-                && !isAdmin
-                && !skipModeration
-                && !isInRegistration
-                && isGallery;
+        // Gallery uploads: FREE_MEMBER can upload images, but videos require paid membership
+        const isGalleryUpload = !isGuest
+            && !isStaff
+            && !isAdmin
+            && !skipModeration
+            && !isInRegistration
+            && isGallery;
 
-        if (shouldGateUpload) {
-            const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            const isPaidMember = await authnCtr.isPaidMember(context);
-            const membershipOk = authnCtr.isMembershipActive(currentUser);
+        if (isGalleryUpload) {
+            const ageVerifyStatus = currentUser?.ageVerify?.status;
+            const isAgeApproved = ageVerifyStatus === E_AgeVerifyStatus.APPROVED;
 
-            if (!(isAgeApproved && isPaidMember && membershipOk)) {
+            // FREE_MEMBER can upload images to gallery (if age verified)
+            // But videos require paid membership
+            if (type === E_UploadType.VIDEO) {
+                const isPaidMember = await authnCtr.isPaidMember(context);
+                const membershipOk = authnCtr.isMembershipActive(currentUser);
+
+                if (!(isAgeApproved && isPaidMember && membershipOk)) {
+                    throwError({
+                        status: RESPONSE_STATUS.FORBIDDEN,
+                        message: 'Video uploads to gallery require active paid membership and completed age verification.',
+                    });
+                }
+            }
+            // For images, only block if status is NOT APPROVED
+            else if (ageVerifyStatus !== E_AgeVerifyStatus.APPROVED) {
                 throwError({
                     status: RESPONSE_STATUS.FORBIDDEN,
-                    message: 'Uploads require active paid membership and completed age verification.',
+                    message: 'Gallery uploads require completed age verification.',
                 });
             }
         }
