@@ -7,7 +7,7 @@ import type { I_NetvalveCredentials } from './netvalve.type.js';
  * This is ONLY used for createOrder (HPP order creation).
  * Other operations (sale, refund, etc.) use NETVALVE_API_BASE_URL.
  */
-const NETVALVE_DEFAULT_HPP_BASE_URL = 'https://api.netvalve.com';
+const NETVALVE_DEFAULT_HPP_BASE_URL = 'https://hpp-api.netvalve.com';
 
 export function getNetvalveCredentials(): I_NetvalveCredentials {
     const env = getEnv();
@@ -39,14 +39,28 @@ export function getNetvalveCredentials(): I_NetvalveCredentials {
     }
 
     const resolvedBaseUrl = normalizeUrl(baseUrl)!;
-    // HPP base URL: use baseUrl if it contains '/hpp', otherwise use default HPP URL
-    const resolvedHppBaseUrl = resolvedBaseUrl.includes('/hpp')
-        ? resolvedBaseUrl
-        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://api.netvalve.com');
+
+    // HPP base URL priority (for HPP order creation ONLY):
+    // 1. Use NETVALVE_HPP_BASE_URL if explicitly set (allows override for testing)
+    // 2. Always use default HPP URL: https://hpp-api.netvalve.com
+    // Note: HPP order endpoint is separate from main API and always uses hpp-api.netvalve.com
+    const resolvedHppBaseUrl = env.NETVALVE_HPP_BASE_URL?.trim()
+        ? normalizeUrl(env.NETVALVE_HPP_BASE_URL)!
+        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://hpp-api.netvalve.com');
+
+    // Payment API base URL (for GET /order and /orders endpoints):
+    // UAT uses payment-api.uat.sandbox-netvalve.com, Production uses api.netvalve.com
+    let resolvedPaymentApiBaseUrl: string | undefined;
+    if (resolvedBaseUrl.includes('uat') || resolvedBaseUrl.includes('sandbox')) {
+        // UAT: use payment-api subdomain
+        resolvedPaymentApiBaseUrl = 'https://payment-api.uat.sandbox-netvalve.com';
+    }
+    // Production: use baseUrl (api.netvalve.com) - no need to set separately
 
     return {
         baseUrl: resolvedBaseUrl,
         hppBaseUrl: resolvedHppBaseUrl,
+        paymentApiBaseUrl: resolvedPaymentApiBaseUrl,
         clientId,
         apiKey,
         siteId: env.NETVALVE_SITE_ID?.trim() || undefined,

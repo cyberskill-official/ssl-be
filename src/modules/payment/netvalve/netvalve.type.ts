@@ -1,6 +1,7 @@
 export interface I_NetvalveCredentials {
     baseUrl: string;
     hppBaseUrl?: string;
+    paymentApiBaseUrl?: string; // For GET /order and /orders endpoints (UAT uses payment-api subdomain)
     clientId: string; // Used as userName for Basic Auth
     apiKey: string; // Used as password for Basic Auth, or as apiKey for API Key method
     siteId?: string;

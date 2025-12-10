@@ -190,7 +190,13 @@ export async function postNetvalveGetRequest<T_Response extends Record<string, u
         params.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
     }
 
-    const url = `${credentials.baseUrl}${endpoint}${params.toString() ? `?${params.toString()}` : ''}`;
+    // For GET /order and /orders endpoints, use paymentApiBaseUrl if available (UAT)
+    // Otherwise use baseUrl (Production)
+    const baseUrlForRequest = (endpoint === '/order' || endpoint === '/orders') && credentials.paymentApiBaseUrl
+        ? credentials.paymentApiBaseUrl
+        : credentials.baseUrl;
+
+    const url = `${baseUrlForRequest}${endpoint}${params.toString() ? `?${params.toString()}` : ''}`;
 
     return fetchNetvalve<T_Response>(url, {
         method: 'GET',
