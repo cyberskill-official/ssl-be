@@ -90,7 +90,17 @@ export function getEnv(): I_Environment {
         PAYMENT_REDIRECT_URL: str(),
         MEDIA_VIEWER_DEBUG: str({ default: 'true' }),
         MONGO_URI: str({ default: '' }),
+        NETVALVE_HPP_BASE_URL: str({ default: '' }),
     });
+
+    let mongoUri = cleanedEnv.MONGO_URI;
+    if (!mongoUri || mongoUri.trim() === '') {
+        const { MONGO_USERNAME, MONGO_PASSWORD, MONGO_HOST, MONGO_PORT, MONGO_NAME } = cleanedEnv;
+        const auth = MONGO_USERNAME && MONGO_PASSWORD
+            ? `${encodeURIComponent(MONGO_USERNAME)}:${encodeURIComponent(MONGO_PASSWORD)}@`
+            : '';
+        mongoUri = `mongodb://${auth}${MONGO_HOST}:${MONGO_PORT}/${MONGO_NAME}`;
+    }
 
     return {
         ...cleanedEnv,
