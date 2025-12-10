@@ -272,17 +272,28 @@ export async function recordNetvalveTransaction(
         ? rawResult as Record<string, unknown>
         : null;
 
-    let transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
+    // For HPP_ORDER, prioritize clientOrderId from request as it's always available
+    // This ensures we can record the transaction even when Netvalve returns an error
+    let transactionId: string | undefined;
 
-    // For HPP_ORDER, if transactionId is not found, use clientOrderId or orderId as fallback
-    if (!transactionId && operation === E_PaymentGatewayOperation.HPP_ORDER) {
-        // Try orderId from response first (Netvalve's order ID)
-        transactionId = asString(resultPayload?.['orderId']);
+    if (operation === E_PaymentGatewayOperation.HPP_ORDER) {
+        // First try to get transactionId from response (Netvalve's transactionID or orderId)
+        transactionId = extractTransactionId(resultPayload ?? {});
 
-        // If still not found, use clientOrderId from request (our internal order ID)
+        // If not found in response, try orderId from response
+        if (!transactionId && resultPayload) {
+            transactionId = asString(resultPayload['orderId']);
+        }
+
+        // Fallback to clientOrderId from request (our internal order ID)
+        // This is always available and ensures we can record failed transactions
         if (!transactionId) {
             transactionId = asString(requestPayload['clientOrderId']);
         }
+    }
+    else {
+        // For other operations, use standard extraction
+        transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
     }
 
     if (!transactionId) {
