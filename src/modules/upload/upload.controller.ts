@@ -85,6 +85,7 @@ export const uploadCtr = {
             ]);
         }
 
+        // FREE_MEMBER can only upload images, not videos
         if (type === E_UploadType.VIDEO && isFreeMember && !isStaff && !isAdmin) {
             throwError({
                 message: 'Free members can upload images only.',
@@ -95,14 +96,8 @@ export const uploadCtr = {
         const isInRegistration = !isGuest && currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery = entity === E_UploadEntity.GALLERY;
 
-        const shouldGateUpload
-            = !isGuest
-                && !isStaff
-                && !isAdmin
-                && !skipModeration
-                && !isInRegistration
-                && isGallery;
-
+        // Age verification is required for all uploads (including FREE_MEMBER uploading images)
+        // Exception: guest, staff, admin, or when skipModeration is true
         const requiresAgeVerification
             = !isGuest && !isStaff && !isAdmin && !skipModeration;
 
@@ -111,10 +106,19 @@ export const uploadCtr = {
             if (!isAgeApproved) {
                 throwError({
                     status: RESPONSE_STATUS.FORBIDDEN,
-                    message: 'Uploads require completed age verification.',
+                    message: 'Uploads require completed age verification. Please complete age verification before uploading.',
                 });
             }
         }
+
+        // Gallery uploads require paid membership (this is separate from FREE_MEMBER image uploads)
+        const shouldGateUpload
+            = !isGuest
+                && !isStaff
+                && !isAdmin
+                && !skipModeration
+                && !isInRegistration
+                && isGallery;
 
         if (shouldGateUpload) {
             const isAgeApproved = currentUser?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
