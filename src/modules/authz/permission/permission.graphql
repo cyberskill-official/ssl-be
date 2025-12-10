@@ -1,0 +1,90 @@
+enum E_PermissionType {
+    GRAPHQL
+    REST
+    ROUTE
+}
+
+enum E_PermissionMethod {
+    QUERY
+    MUTATION
+    SUBSCRIPTION
+    GET
+    POST
+    PUT
+    PATCH
+    DELETE
+}
+
+type T_Permission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    target: String
+    name: String
+    type: E_PermissionType
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+input Input_QueryPermission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    target: String
+    name: String
+    type: E_PermissionType
+    method: E_PermissionMethod
+    isPublic: Boolean
+}
+
+input Input_CreatePermission {
+    target: String!
+    name: String!
+    isPublic: Boolean
+}
+
+input Input_UpdatePermission {
+    target: String
+    name: String
+    isPublic: Boolean
+}
+
+type T_Response_Permission {
+    success: Boolean
+    message: String
+    result: T_Permission
+}
+
+type T_Permissions {
+    docs: [T_Permission]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Permissions {
+    success: Boolean
+    message: String
+    result: T_Permissions
+}
+
+type Query {
+    getPermission(filter: Input_QueryPermission!, projection: JSON, options: JSON, populate: JSON): T_Response_Permission!
+    getPermissions(filter: Input_QueryPermission, options: JSON): T_Response_Permissions!
+}
+
+type Mutation {
+    createPermission(doc: Input_CreatePermission!): T_Response_Permission!
+    updatePermission(filter: Input_QueryPermission!, update: Input_UpdatePermission, options: JSON): T_Response_Permission!
+    deletePermission(filter: Input_QueryPermission!, options: JSON): T_Response_Permission!
+}

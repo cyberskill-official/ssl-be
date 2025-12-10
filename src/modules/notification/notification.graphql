@@ -1,0 +1,287 @@
+enum E_NotificationType {
+    MEDIA_LIKED
+    NEW_FOLLOWER
+    NEW_MESSAGE
+    CONVERSATION_INVITATION
+    EVENT_PARTICIPATION_ACCEPTED
+    MODERATION_MEDIA_REJECTED
+    GROUP_JOIN_REQUEST
+    GROUP_JOIN_APPROVED
+    GROUP_MEMBER_JOINED
+    GROUP_ADMIN_ROLE_GRANTED
+    NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST
+    NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED
+    FOLLOWED_PROFILE_POSTED_MEDIA
+    NEW_BLOG_POST
+    NEW_PODCAST
+    RECEIPT_EMAIL_ONLY
+    PAYMENT_ISSUE
+    PAYMENT_SUCCESS
+    GUESTBOOK_POST
+    GALLERY_COMMENT
+    PROFILE_VISIT
+    AGE_VERIFICATION_APPROVED
+    AGE_VERIFICATION_SUBMITTED
+}
+
+enum E_NotificationChannel {
+    IN_APP
+    EMAIL
+}
+
+enum E_NotificationStatus {
+    QUEUED
+    SENT
+    READ
+    DISMISSED
+    FAILED
+}
+
+enum E_NotificationEntityType {
+    USER
+    MEDIA
+    ANNOUNCEMENT
+    BLOG
+    PODCAST
+    MESSAGE_THREAD
+    GUESTBOOK_ENTRY
+    PAYMENT
+    EVENT
+    DESTINATION
+    CONVERSATION
+}
+
+enum E_NotificationAction {
+    ADDED
+    UPDATED
+    READ
+    DISMISSED
+    DELETED
+}
+
+enum E_RedirectType {
+    PROFILE
+    MEDIA
+    BLOG
+    PODCAST
+    MESSAGE_THREAD
+    GUESTBOOK_ENTRY
+    PAYMENT
+    EVENT
+    DESTINATION
+    CONVERSATION
+}
+
+type T_Notification {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: [E_NotificationType]
+    actorId: String
+    targetId: String
+    entityType: E_NotificationEntityType
+    entityId: String
+    title: String
+    body: String
+    # data: JSON
+    presentation: T_NotificationPresentation
+    channels: [E_NotificationChannel]
+    status: E_NotificationStatus
+    scheduledAt: DateTime
+    readAt: DateTime
+    dismissedAt: DateTime
+    isEmailSuppressed: Boolean
+}
+
+type T_NotificationPresentationActor {
+    username: String
+    accountType: E_AccountType
+    avatarUrl: String
+    gender: E_Gender
+}
+
+type T_NotificationRedirect {
+    kind: E_RedirectType
+    id: String
+    url: String
+    map: T_Map
+    eventType: E_EventType
+    commentId: String
+    locationId: String
+    entityId: String
+    entityType: E_LocationEntityType
+}
+
+type T_NotificationContext {
+    conversationType: E_ConversationType
+    groupName: String
+    isOpenComment: Boolean
+    parentMessageId: String
+    profileOwnerId: String
+    participantCount: Int
+    profileOwnerUsername: String
+    mediaId: String
+    mediaType: String
+    galleryType: String
+    isVideo: Boolean
+}
+
+type T_NotificationPresentation {
+    id: String
+    actor: T_NotificationPresentationActor
+    thumbnailUrl: String
+    redirect: T_NotificationRedirect
+    headline: String
+    context: T_NotificationContext
+}
+
+type T_Notifications {
+    docs: [T_Notification]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Notification {
+    success: Boolean
+    message: String
+    result: T_Notification
+}
+
+type T_Response_Notifications {
+    success: Boolean
+    message: String
+    result: T_Notifications
+}
+
+input Input_QueryNotification {
+    id: String
+    createdAt: DateTime
+    updatedAt: DateTime
+    isDel: Boolean
+    type: [E_NotificationType]
+    actorId: String
+    targetId: String
+    entityType: E_NotificationEntityType
+    entityId: String
+    title: String
+    body: String
+    # data: JSON
+    presentation: Input_NotificationPresentation
+    channels: [E_NotificationChannel]
+    status: E_NotificationStatus
+    scheduledAt: DateTime
+    readAt: DateTime
+    dismissedAt: DateTime
+    isEmailSuppressed: Boolean
+}
+
+input Input_NotificationRedirect {
+    kind: E_RedirectType
+    id: String
+    url: String
+    map: Input_Map
+    eventType: E_EventType
+    commentId: String
+    locationId: String
+    entityId: String
+    entityType: E_LocationEntityType
+}
+
+input Input_NotificationPresentationActor {
+    username: String
+    accountType: String
+    avatarUrl: String
+    gender: String
+}
+
+input Input_NotificationContext {
+    conversationType: E_ConversationType
+    groupName: String
+    isOpenComment: Boolean
+    parentMessageId: String
+    participantCount: Int
+    profileOwnerId: String
+    profileOwnerUsername: String
+    mediaId: String
+    mediaType: String
+    galleryType: String
+    isVideo: Boolean
+}
+
+input Input_NotificationPresentation {
+    id: String
+    actor: Input_NotificationPresentationActor
+    thumbnailUrl: String
+    redirect: Input_NotificationRedirect
+    headline: String
+    context: Input_NotificationContext
+}
+
+input Input_CreateNotification {
+    type: [E_NotificationType]!
+    actorId: String
+    targetId: String!
+    entityType: E_NotificationEntityType!
+    entityId: String!
+    title: String
+    body: String
+    # data: JSON
+    channels: [E_NotificationChannel]
+    scheduledAt: DateTime
+    presentation: Input_NotificationPresentation
+}
+
+input Input_UpdateNotification {
+    status: E_NotificationStatus
+    readAt: DateTime
+    dismissedAt: DateTime
+    title: String
+    body: String
+    channels: [E_NotificationChannel]
+}
+
+type T_NotificationEvent {
+    notificationId: String!
+    type: [E_NotificationType]!
+    action: E_NotificationAction!
+    notification: T_Notification
+}
+
+type T_NotificationCounters {
+    numberOfConversationUnRead: Int!
+    numberOfOtherUnRead: Int!
+}
+
+type Query {
+    getNotifications(filter: Input_QueryNotification, options: JSON): T_Response_Notifications!
+    getNotification(filter: Input_QueryNotification): T_Response_Notification!
+    getNotificationCounters: T_NotificationCounters!
+}
+
+type Mutation {
+    createNotification(doc: Input_CreateNotification!): T_Response_Notification!
+    createNotificationWithSettings(doc: Input_CreateNotification!): T_Response_Notification!
+    updateNotification(filter: Input_QueryNotification!, update: Input_UpdateNotification!): T_Response_Notification!
+    deleteNotification(filter: Input_QueryNotification!): T_Response_Notification!
+    markNotificationRead(filter: Input_QueryNotification!): T_Response_Notification!
+    dismissNotification(filter: Input_QueryNotification!): T_Response_Notification!
+}
+
+type Subscription {
+    notificationAdded: T_Notification!
+    notificationUpdated: T_Notification!
+    notificationRead: T_Notification!
+    notificationDismissed: T_Notification!
+    notificationDeleted: T_Notification!
+    notificationEvent: T_NotificationEvent!
+}

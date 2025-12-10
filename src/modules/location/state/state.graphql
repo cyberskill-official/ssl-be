@@ -1,0 +1,77 @@
+type T_State {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    countryId: String
+    country: T_Country
+    code: String
+    type: String
+    latitude: String
+    longitude: String
+}
+
+input Input_QueryState {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    countryId: String
+    code: String
+    type: String
+    latitude: String
+    longitude: String
+}
+
+input Input_CreateState {
+    name: String
+    countryId: String
+    code: String
+    type: String
+    latitude: String
+    longitude: String
+}
+
+input Input_UpdateState {
+    isDel: Boolean
+    name: String
+    countryId: String
+    code: String
+    type: String
+    latitude: String
+    longitude: String
+}
+
+type T_Response_State {
+    success: Boolean
+    message: String
+    result: T_State
+}
+
+type T_States {
+    docs: [T_State]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_States {
+    success: Boolean
+    message: String
+    result: T_States
+}
+
+type Query {
+    getState(filter: Input_QueryState!, projection: JSON, options: JSON, populate: JSON): T_Response_State!
+    getStates(filter: Input_QueryState, options: JSON): T_Response_States!
+}

@@ -1,0 +1,92 @@
+enum E_TagType {
+    LOOKING_FOR
+    PROFILE_PURPOSE
+    WILLINGNESS_TO_GO
+    RULES_OF_ENGAGEMENT
+    RELATIONSHIP_STATUS
+    SEXUAL_ORIENTATION
+    SEXUAL_PREFERENCES
+    SMOKING_HABITS
+    PREFERRED_DRINKS
+    BODY_TYPE
+    HEIGHT
+    HAIR_COLOR
+    EYE_COLOR
+    ETHNICITY
+    CATALOGUE
+}
+
+type T_Tag {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    createdBy: T_User
+    usageCount: Int
+}
+
+input Input_QueryTag {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    type: E_TagType
+    isCustom: Boolean
+    createdById: String
+    usageCount: Int
+}
+
+input Input_CreateTag {
+    name: String!
+    type: E_TagType
+}
+
+input Input_UpdateTag {
+    isDel: Boolean
+    name: String
+    type: E_TagType
+    usageCount: Int
+}
+
+type T_Response_Tag {
+    success: Boolean
+    message: String
+    result: T_Tag
+}
+
+type T_Tags {
+    docs: [T_Tag]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Tags {
+    success: Boolean
+    message: String
+    result: T_Tags
+}
+
+type Query {
+    getTag(filter: Input_QueryTag!, projection: JSON, options: JSON, populate: JSON): T_Response_Tag!
+    getTags(filter: Input_QueryTag, options: JSON): T_Response_Tags!
+}
+
+type Mutation {
+    createTag(doc: Input_CreateTag!): T_Response_Tag!
+    updateTag(filter: Input_QueryTag!, update: Input_UpdateTag, options: JSON): T_Response_Tag!
+    deleteTag(filter: Input_QueryTag!, options: JSON): T_Response_Tag!
+}

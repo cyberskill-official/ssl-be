@@ -1,0 +1,86 @@
+enum E_KeywordCategory {
+    INAPPROPRIATE 
+    SPAM  
+    OFFENSIVE 
+    CUSTOM
+}
+
+type T_Keyword {
+    id:	String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
+    isActive: Boolean
+}
+
+input Input_QueryKeyword {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
+    isActive: Boolean
+}
+
+input Input_CreateKeyword {
+    word: String!
+    category: E_KeywordCategory!
+    occurrences: Int
+    isActive: Boolean
+}
+
+input Input_UpdateKeyword{
+    isDel: Boolean
+    word: String
+    category: E_KeywordCategory
+    occurrences: Int
+    isActive: Boolean
+}
+
+type T_Response_Keyword {
+    success: Boolean
+    message: String
+    result: T_Keyword
+}
+
+type T_Keywords {
+    docs: [T_Keyword]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Keywords {
+    success: Boolean
+    message: String
+    result: T_Keywords
+}
+
+type Query {
+    getKeyword(
+        filter: Input_QueryKeyword!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Keyword!
+    getKeywords(filter: Input_QueryKeyword, options: JSON): T_Response_Keywords!
+}
+
+type Mutation {
+    createKeyword(doc: Input_CreateKeyword!): T_Response_Keyword!
+    updateKeyword(filter: Input_QueryKeyword!, update: Input_UpdateKeyword!, options: JSON): T_Response_Keyword!
+    deleteKeyword(filter: Input_QueryKeyword!, options: JSON): T_Response_Keyword!
+}

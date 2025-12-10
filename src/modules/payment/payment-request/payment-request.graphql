@@ -1,0 +1,80 @@
+type T_PaymentRequest {
+    id: String!
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    gateway: String
+    status: String
+    paymentUrl: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    meta: JSON
+}
+
+input Input_QueryPaymentRequest {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    gateway: String
+    status: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    meta: JSON
+}
+
+type T_Response_PaymentRequest {
+    success: Boolean!
+    message: String
+    result: T_PaymentRequest
+}
+type T_PaymentRequests {
+    docs: [T_PaymentRequest]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PaymentRequests {
+    success: Boolean!
+    message: String
+    result: T_PaymentRequests
+}
+
+input Input_CreatePaymentRequest {
+    gateway: String!
+    status: String!
+    paymentUrl: String!
+    externalOrderId: String!
+    gatewayResponse: JSON
+    meta: JSON
+}
+
+input Input_UpdatePaymentRequest {
+    gateway: String
+    status: String
+    paymentUrl: String
+    externalOrderId: String
+    gatewayResponse: JSON
+    meta: JSON
+}
+
+type Query {
+    getPaymentRequest(filter: Input_QueryPaymentRequest!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
+    getPaymentRequests(filter: Input_QueryPaymentRequest, options: JSON): T_Response_PaymentRequests!
+}
+
+type Mutation {
+    createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
+    updatePaymentRequest(filter: Input_QueryPaymentRequest!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
+    deletePaymentRequest(filter: Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequest!
+    deletePaymentRequests(filter: Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequests!
+}   

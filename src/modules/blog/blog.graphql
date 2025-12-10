@@ -1,0 +1,166 @@
+enum E_BlogType {
+    BLOG
+    PODCAST
+}
+
+enum E_BlogCategory {
+    TRAVELS
+    SWINGER_CLUB
+    SEX
+    DATING
+    LIFESTYLE
+    RELATIONSHIPS
+    SEXUALITY
+    TRAVEL
+}
+
+type T_Blog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    title: String
+    slug: String
+    authorName: String
+    websiteName: String
+    websiteURL: String
+    type: E_BlogType
+    category: E_BlogCategory
+    featuredImage: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedBlogsIds: [String]
+    relatedBlogs: [T_Blog]
+    languageId: String
+    language: T_Language
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialLinks: [T_SocialLink]
+    authorId: String
+    author: T_User
+    seo: T_Seo
+    isActive: Boolean
+    readCount: Int
+    isLustEditorial: Boolean
+}
+
+input Input_QueryBlog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    title: String
+    slug: String
+    authorName: String
+    websiteName: String
+    websiteURL: String
+    type: E_BlogType
+    category: E_BlogCategory
+    featuredImage: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialLinks: [Input_SocialLink]
+    authorId: String
+    seo: Input_Seo
+    isActive: Boolean
+    readCount: Int
+    isLustEditorial: Boolean
+}
+
+input Input_CreateBlog {
+    title: String!
+    authorName: String
+    authorId: String
+    websiteName: String
+    websiteURL: String
+    type: E_BlogType!
+    category: E_BlogCategory!
+    featuredImage: String!
+    contentHeadline: String!
+    contentSubHeadline: String!
+    content: String!
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialLinks: [Input_SocialLink]
+    seo: Input_Seo
+    isActive: Boolean
+    isLustEditorial: Boolean
+}
+
+input Input_UpdateBlog {
+    isDel: Boolean
+    title: String
+    authorName: String
+    authorId: String
+    websiteName: String
+    websiteURL: String
+    type: E_BlogType
+    category: E_BlogCategory
+    featuredImage: String
+    contentHeadline: String
+    contentSubHeadline: String
+    content: String
+    relatedBlogsIds: [String]
+    languageId: String
+    hostName: String
+    logo: String
+    cover: String
+    file: String
+    socialLinks: [Input_SocialLink]
+    seo: Input_Seo
+    isActive: Boolean
+    isLustEditorial: Boolean
+}
+
+type T_Response_Blog {
+    success: Boolean
+    message: String
+    result: T_Blog
+}
+
+type T_Blogs {
+    docs: [T_Blog]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Blogs {
+    success: Boolean
+    message: String
+    result: T_Blogs
+}
+
+type Query {
+    getBlog(filter: Input_QueryBlog!, projection: JSON, options: JSON, populate: JSON): T_Response_Blog!
+    getBlogs(filter: Input_QueryBlog, options: JSON): T_Response_Blogs!
+}
+
+type Mutation {
+    createBlog(doc: Input_CreateBlog!): T_Response_Blog!
+    updateBlog(filter: Input_QueryBlog!, update: Input_UpdateBlog, options: JSON): T_Response_Blog!
+    deleteBlog(filter: Input_QueryBlog!, options: JSON): T_Response_Blog!
+    updateReadCount(filter: Input_QueryBlog!): T_Response_Blog!
+}

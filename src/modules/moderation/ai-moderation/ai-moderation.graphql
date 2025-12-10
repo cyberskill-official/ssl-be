@@ -1,0 +1,101 @@
+enum E_SentimentType {
+    MIXED
+    NEGATIVE
+    NEUTRAL
+    POSITIVE
+}
+
+enum E_RiskLevel {
+    LOW
+    MEDIUM
+    HIGH
+    CRITICAL
+}
+
+enum E_TextModerationDecision {
+    ALLOW
+    REVIEW
+    BLOCK
+}
+
+enum E_ModerationCategory {
+    SENTIMENT
+    EXPLICIT_NUDITY
+    NON_EXPLICIT_NUDITY 
+    SWIMWEAR_OR_UNDERWEAR
+    VIOLENCE
+    VISUALLY_DISTURBING
+    HATE_SYMBOLS
+    DRUGS
+    TOBACCO
+    ALCOHOL
+    GAMBLING
+    RUDE_GESTURES
+    EXPLICIT_CONTENT
+    HATE_SPEECH
+    PII
+}
+
+type T_TextModerationOutput {
+    category: E_ModerationCategory!
+    decision: E_SentimentType
+    score: Float
+}
+
+type T_PIIEntity {
+    type: String!
+    score: Float!
+    beginOffset: Int!
+    endOffset: Int!
+}
+
+type T_TextModerationResult {
+    output: [T_TextModerationOutput]
+    reasons: [String]
+    decision: E_TextModerationDecision
+    language: String
+    # piiResult: [T_PIIEntity] 
+}
+
+type T_TextModerationResponse {
+    success: Boolean!
+    message: String
+    result: T_TextModerationResult
+}
+
+type T_MediaModerationResult {
+    confidence: Float
+    decision: E_ModerationMediaStatus
+    riskLevel: E_RiskLevel
+    reasons: [String]
+    textDetection: [T_TextDetection]
+    contextLabels: [T_ContextLabel]
+}
+
+type T_ImageModerationResponse {
+    success: Boolean!
+    message: String
+    result: T_MediaModerationResult
+}
+
+type T_TextDetection {
+    detectedText: String!
+}
+
+type T_ContextLabel {
+    name: String!
+    confidence: Float!
+    timestampMs: Int
+}
+
+type T_VideoModerationResponse {
+    success: Boolean!
+    message: String
+    result: T_MediaModerationResult
+}
+
+type Mutation {
+    moderateText(text: String!): T_TextModerationResponse!
+    moderateImage(imageUrl: String!): T_ImageModerationResponse!
+    moderateVideo(videoUrl: String!): T_VideoModerationResponse!
+}

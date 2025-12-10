@@ -1,0 +1,149 @@
+
+type T_TimeZone {
+    zoneName: String
+    gmtOffset: Float
+    gmtOffsetName: String
+    abbreviation: String
+    tzName: String
+}
+
+input Input_TimeZone {
+    zoneName: String
+    gmtOffset: Float
+    gmtOffsetName: String
+    abbreviation: String
+    tzName: String
+}
+
+type T_Country {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    slug: String
+    iso2: String
+    iso3: String
+    numeric_code: String
+    phonecode: String
+    capital: String
+    currency: String
+    currency_name: String
+    currency_symbol: String
+    tld: String
+    native: String
+    regionId: String
+    region: T_Region
+    subRegionId: String
+    subRegion: T_SubRegion
+    nationality: String
+    timezones: [T_TimeZone]
+    latitude: String
+    longitude: String
+    emoji: String
+    emojiU: String
+}
+
+input Input_QueryCountry {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    slug: String
+    iso2: String
+    iso3: String
+    numeric_code: String
+    phonecode: String
+    capital: String
+    currency: String
+    currency_name: String
+    currency_symbol: String
+    tld: String
+    native: String
+    regionId: String
+    subRegionId: String
+    nationality: String
+    timezones: [Input_TimeZone]
+    latitude: String
+    longitude: String
+    emoji: String
+    emojiU: String
+}
+
+input Input_CreateCountry {
+    name: String
+    iso2: String
+    iso3: String
+    numeric_code: String
+    phonecode: String
+    capital: String
+    currency: String
+    currency_name: String
+    currency_symbol: String
+    tld: String
+    native: String
+    regionId: String
+    subRegionId: String
+    nationality: String
+    timezones: [Input_TimeZone]
+    latitude: String
+    longitude: String
+    emoji: String
+    emojiU: String
+}
+
+input Input_UpdateCountry {
+    isDel: Boolean
+    name: String
+    iso2: String
+    iso3: String
+    numeric_code: String
+    phonecode: String
+    capital: String
+    currency: String
+    currency_name: String
+    currency_symbol: String
+    tld: String
+    native: String
+    regionId: String
+    subRegionId: String
+    nationality: String
+    timezones: [Input_TimeZone]
+    latitude: String
+    longitude: String
+    emoji: String
+    emojiU: String
+}
+
+type T_Response_Country {
+    success: Boolean
+    message: String
+    result: T_Country
+}
+
+type T_Countries {
+    docs: [T_Country]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Countries {
+    success: Boolean
+    message: String
+    result: T_Countries
+}
+
+type Query {
+    getCountry(filter: Input_QueryCountry!, projection: JSON, options: JSON, populate: JSON): T_Response_Country!
+    getCountries(filter: Input_QueryCountry, options: JSON): T_Response_Countries!
+}

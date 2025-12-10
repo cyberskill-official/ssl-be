@@ -1,0 +1,78 @@
+type T_City {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    stateId: String
+    state: T_State
+    countryId: String
+    country: T_Country
+    latitude: String
+    longitude: String
+    wikiDataId: String
+}
+
+input Input_QueryCity {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    stateId: String
+    countryId: String
+    latitude: String
+    longitude: String
+    wikiDataId: String
+}
+
+input Input_CreateCity {
+    name: String
+    stateId: String
+    countryId: String
+    latitude: String
+    longitude: String
+    wikiDataId: String
+}
+
+input Input_UpdateCity {
+    isDel: Boolean
+    name: String
+    stateId: String
+    countryId: String
+    latitude: String
+    longitude: String
+    wikiDataId: String
+}
+
+type T_Response_City {
+    success: Boolean
+    message: String
+    result: T_City
+}
+
+type T_Cities {
+    docs: [T_City]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Cities {
+    success: Boolean
+    message: String
+    result: T_Cities
+}
+
+type Query {
+    getCity(filter: Input_QueryCity!, projection: JSON, options: JSON, populate: JSON): T_Response_City!
+    getCities(filter: Input_QueryCity, options: JSON): T_Response_Cities!
+}

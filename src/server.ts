@@ -7,45 +7,75 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
-// import { authCtr } from '#modules/auth/index.js';
+// import type { I_Context } from '#shared/typescript/index.js';
+import { permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
-import { getEnv } from '#modules/env/index.js';
-import { schema } from '#modules/graphql/schema.js';
 import { mainRouter } from '#modules/rest-api/index.js';
+import { updateUserActivity } from '#modules/user/index.js';
+import { getEnv } from '#shared/env/index.js';
+import { schema } from '#shared/graphql/schema.js';
 
 const env = getEnv();
 
 (async () => {
     const app = createExpress({
-        staticFolder: env.STATIC_FOLDER,
+        static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
 
-    app.use(createSession({
-        name: env.SESSION_NAME,
-        secret: env.SESSION_SECRET,
+    app.use(createCors({
+        // TODO: remove this after testing
+        isDev: true,
+        // isDev: !env.IS_PROD,
+        whiteList: env.CORS_WHITELIST,
+    }));
+
+    const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
         saveUninitialized: false,
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
+            stringify: false,
         }),
+        rolling: true,
         cookie: {
+            maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
-    }));
+    };
+
+    const sessionMiddleware = createSession({
+        ...sharedSessionOptions,
+        name: env.SESSION_NAME,
+        secret: env.SESSION_SECRET,
+    });
+
+    const sessionParser = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+        sessionMiddleware(req, res, next);
+    app.use(sessionParser);
 
     const httpServer = createServer(app);
     const wsServer = createWSServer({
         server: httpServer,
         path: env.ENDPOINT_WS,
+        sessionParser,
     });
-    const serverCleanup = initGraphQLWS({ schema, server: wsServer });
+    const serverCleanup = initGraphQLWS({
+        schema,
+        server: wsServer,
+        context: (req) => {
+            return req;
+        },
+    });
 
     // MongoDB
     if (!env.IS_PROD) {
         mongoose.set('debug', true);
     }
+
     await mongoose.connect(env.MONGO_URI);
     log.info(`Running MongoDb at ${env.MONGO_URI}`);
+
+    await permissionCtr.syncPermissions();
 
     mongoose.connection.once('error', (err) => {
         log.error('Mongoose connection error:', err);
@@ -60,6 +90,7 @@ const env = getEnv();
             if (serverCleanup) {
                 await serverCleanup.dispose();
             }
+
             log.info('WebSocket server drained');
         },
     });
@@ -69,17 +100,19 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_GRAPHQL,
-        createCors({
-            isDev: !env.IS_PROD,
-            whiteList: env.CORS_WHITELIST,
-        }),
         express.json({ limit: env.BODY_PARSER_LIMIT }),
+        updateUserActivity,
         expressMiddleware(apolloServer, {
-            context: async ({ req }) => {
-                // await authCtr.checkAuthorizedGraphql({ req: req as unknown as I_Context['req'] });
-                return {
-                    req,
-                };
+            context: async (context) => {
+                const indexes = await mongoose.connection.db?.collection('sessions').indexes();
+
+                if (indexes?.some(idx => idx.name === 'expires_1')) {
+                    await mongoose.connection.db?.collection('sessions').dropIndex('expires_1');
+                }
+
+                // await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
+
+                return context;
             },
         }) as unknown as express.RequestHandler,
     );
@@ -92,12 +125,9 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_RESTAPI,
-        createCors({
-            isDev: !env.IS_PROD,
-            whiteList: env.CORS_WHITELIST,
-        }),
+        updateUserActivity,
         // (req, res, next) => {
-        //     authCtr.checkAuthorizedRest(req as I_Context, res, next).catch(next);
+        //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
         // },
         mainRouter,
     );

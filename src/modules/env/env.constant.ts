@@ -1,9 +1,0 @@
-export const PORT = 8000;
-export const STATIC_FOLDER = 'static';
-export const BODY_PARSER_LIMIT = '50mb';
-export const MONGO_HOST = 'localhost';
-export const MONGO_PORT = 27017;
-export const MONGO_BACKUP_FOLDER = 'backup';
-export const ENDPOINT_WS = '/subscriptions';
-export const ENDPOINT_GRAPHQL = '/graphql';
-export const ENDPOINT_RESTAPI = '/rest';

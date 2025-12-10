@@ -1,0 +1,80 @@
+type T_MessageStatus {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    messageId: String
+    message: T_Message
+    userId: String
+    user: T_User
+    readAt: DateTime
+}
+
+input Input_QueryMessageStatus {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    messageId: String
+    userId: String
+    readAt: DateTime
+}
+
+input Input_CreateMessageStatus {
+    messageId: String!
+    userId: String!
+    readAt: DateTime
+}
+
+input Input_UpdateMessageStatus {
+    isDel: Boolean
+    messageId: String
+    userId: String
+    readAt: DateTime
+}
+
+type T_Response_MessageStatus {
+    success: Boolean
+    message: String
+    result: T_MessageStatus
+}
+
+type T_MessageStatuses {
+    docs: [T_MessageStatus]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_MessageStatuses {
+    success: Boolean
+    message: String
+    result: T_MessageStatuses
+}
+
+type T_Response_CreateMessageStatuses {
+    success: Boolean
+    message: String
+    result: [T_MessageStatus]
+}
+
+type Query {
+    getMessageStatuses(filter: Input_QueryMessageStatus, options: JSON): T_Response_MessageStatuses!
+}
+
+type Mutation {
+    createMessageStatus(doc: Input_CreateMessageStatus!): T_Response_MessageStatus!
+    createMessageStatuses(docs: [Input_CreateMessageStatus!]!): T_Response_CreateMessageStatuses!
+    updateMessageStatus(filter: Input_QueryMessageStatus!, update: Input_UpdateMessageStatus, options: JSON): T_Response_MessageStatus!
+    deleteMessageStatus(filter: Input_QueryMessageStatus!, options: JSON): T_Response_MessageStatus!
+    deleteMessageStatuses(filter: Input_QueryMessageStatus!, options: JSON): T_Response_MessageStatus!
+    markAsRead(messageId: String!, userId: String!): T_Response_MessageStatus!
+}

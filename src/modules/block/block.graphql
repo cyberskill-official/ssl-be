@@ -1,0 +1,74 @@
+
+type T_Block {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    blockId: String
+    block: T_User
+}
+
+input Input_Block{
+    blockId: String!
+}
+
+input Input_UnBlock {
+    blockId: String!
+}
+
+input Input_QueryBlock {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    blockId: String
+}
+
+input Input_CreateBlock {
+    blockId: String!
+}
+
+input Input_UpdateBlock {
+    isDel: Boolean
+    userId: String
+    blockId: String
+}
+
+type T_Response_Block {
+    success: Boolean
+    message: String
+    result: T_Block
+}
+
+type T_Blocks {
+    docs: [T_Block]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Blocks {
+    success: Boolean
+    message: String
+    result: T_Blocks
+}
+
+type Query {
+    getBlocks(options: JSON): T_Response_Blocks!
+}
+
+type Mutation {
+    block(doc: Input_CreateBlock!): T_Response_Block!
+    unBlock(filter: Input_UnBlock!, options: JSON): T_Response_Block!
+}

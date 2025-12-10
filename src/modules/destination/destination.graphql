@@ -1,0 +1,282 @@
+enum E_DestinationType {
+    CLUB
+    RESORT
+}
+
+enum E_DestinationRating {
+    BRONZE 
+    SILVER 
+    GOLD 
+}
+
+enum E_DestinationAgeGroup {
+    A18_25 
+    A26_35 
+    A36_45 
+    A45_PLUS 
+}
+
+input Input_Seo {
+    title: String
+    description: String
+    keywords: [String]
+    socialImage: String
+    socialMediaDescription: String
+    urlSlug: String
+    altTextForImages: String
+}
+
+type T_Hotel {
+    name: String
+    locationId: String
+    location: T_Location
+    url: String
+    description: String
+    image: String
+}
+
+input Input_Hotel {
+    name: String
+    location: Input_Location
+    url: String
+    description: String
+    image: String
+}
+
+type T_Seo {
+    title: String
+    description: String
+    keywords: [String]
+    socialImage: String
+    socialMediaDescription: String
+    urlSlug: String
+    altTextForImages: String
+}
+
+type T_Destination {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_DestinationType
+    name: String
+    slug: String
+    websiteURL: String
+    rating: E_DestinationRating
+    images: [String]
+    introductionHeadline: String
+    introductionContent: String
+    ageGroup: E_DestinationAgeGroup
+    ratingStar: String
+    logo: String
+    locationId: String
+    location: T_Location
+    nearbyHotels: [T_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: T_Rating
+    guestsRating: T_Rating
+    facilitiesRating: T_Rating
+    serviceRating: T_Rating
+    xFactorRating: T_Rating
+    highlightSex: String
+    highlightWellness: String
+    highlightBar: String
+    highlightDance: String
+    seo: T_Seo
+    linkTo: String
+    isActive: Boolean
+    createdById: String
+    createdBy: T_User
+}
+
+input Input_QueryDestination {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_DestinationType
+    name: String
+    slug: String
+    websiteURL: String
+    rating: E_DestinationRating
+    images: [String]
+    introductionHeadline: String
+    introductionContent: String
+    ageGroup: E_DestinationAgeGroup
+    ratingStar: String
+    logo: String
+    locationId: String
+    countryId: String
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
+    highlightSex: String
+    highlightWellness: String
+    highlightBar: String
+    highlightDance: String
+    seo: Input_Seo
+    linkTo: String
+    isActive: Boolean
+    createdById: String
+}
+
+input Input_CreateDestination {
+    type: E_DestinationType!
+    name: String!
+    websiteURL: String!
+    rating: E_DestinationRating!
+    images: [String]!
+    introductionHeadline: String!
+    introductionContent: String!
+    ageGroup: E_DestinationAgeGroup!
+    ratingStar: String
+    logo: String
+    location: Input_Location
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
+    highlightSex: String
+    highlightWellness: String
+    highlightBar: String
+    highlightDance: String
+    seo: Input_Seo
+    linkTo: String
+    isActive: Boolean!
+    createdById: String
+}
+
+input Input_UpdateDestination {
+    isDel: Boolean
+    type: E_DestinationType
+    name: String
+    websiteURL: String
+    rating: E_DestinationRating
+    images: [String]
+    introductionHeadline: String
+    introductionContent: String
+    ageGroup: E_DestinationAgeGroup
+    ratingStar: String
+    logo: String
+    location: Input_Location
+    nearbyHotels: [Input_Hotel]
+    wearImage: String
+    womenDressCode: String
+    menDressCode: String
+    useDefaultText: Boolean
+    atmosphereRating: Input_Rating
+    guestsRating: Input_Rating
+    facilitiesRating: Input_Rating
+    serviceRating: Input_Rating
+    xFactorRating: Input_Rating
+    highlightSex: String
+    highlightWellness: String
+    highlightBar: String
+    highlightDance: String
+    seo: Input_Seo
+    linkTo: String
+    isActive: Boolean
+    createdById: String
+}
+
+type T_Response_Destination {
+    success: Boolean
+    message: String
+    result: T_Destination
+}
+
+type T_DestinationCountrySummary {
+    id: String
+    name: String
+}
+
+type T_DestinationCountriesSummary {
+    club: Int
+    resort: Int
+    total: Int
+    countries: [T_DestinationCountrySummary]
+    countriesTotal: Int
+}
+
+type T_Response_DestinationCountriesSummary {
+    success: Boolean
+    message: String
+    result: T_DestinationCountriesSummary
+}
+
+type T_Destinations {
+    docs: [T_Destination]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Destinations {
+    success: Boolean
+    message: String
+    result: T_Destinations
+}
+
+input Input_QueryDestinationSummary {
+    filter: Input_QueryDestination
+}
+
+type T_Response_AvailableCountries {
+    success: Boolean
+    message: String
+    result: [T_Country]
+}
+
+type Query {
+    getDestination(
+        filter: Input_QueryDestination!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Destination!
+    getDestinations(
+        filter: Input_QueryDestination
+        options: JSON
+    ): T_Response_Destinations!
+    getDestinationAvailableCountries: T_Response_AvailableCountries!
+    getDestinationCountsAndCountries(
+        input: Input_QueryDestinationSummary
+    ): T_Response_DestinationCountriesSummary!
+}
+
+type Mutation {
+    createDestination(doc: Input_CreateDestination!): T_Response_Destination!
+    updateDestination(
+        filter: Input_QueryDestination!
+        update: Input_UpdateDestination!
+        options: JSON
+    ): T_Response_Destination!
+    deleteDestination(
+        filter: Input_QueryDestination!
+        options: JSON
+    ): T_Response_Destination!
+}

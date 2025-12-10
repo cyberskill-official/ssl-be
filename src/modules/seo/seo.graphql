@@ -1,0 +1,17 @@
+type T_Seo {
+    title: String
+    description: String
+    keywords: [String]
+    socialImage: String
+    socialMediaDescription: String
+    altTextForImages: String
+}
+
+input Input_Seo {
+    title: String
+    description: String
+    keywords: [String]
+    socialImage: String
+    socialMediaDescription: String
+    altTextForImages: String
+}

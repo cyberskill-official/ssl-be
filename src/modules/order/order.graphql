@@ -1,0 +1,102 @@
+enum E_OrderStatus {
+    CREATED
+    PENDING
+    PAID
+    FAILED
+    CANCELLED
+}
+
+type T_Order {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    amount: Float
+    status: E_OrderStatus
+    paymentTransactionId: String
+    paymentTransaction: T_PaymentTransaction
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+    pricingId: String
+    pricing: T_Pricing
+}
+
+input Input_QueryOrder {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    amount: Float
+    status: E_OrderStatus
+    paymentTransactionId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+    pricingId: String
+} 
+
+input Input_CreateOrder {
+    userId: String
+    amount: Float
+    status: E_OrderStatus
+    paymentTransactionId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+    pricingId: String
+}
+
+input Input_UpdateOrder {
+    userId: String
+    amount: Float
+    status: E_OrderStatus
+    paymentTransactionId: String
+    clientOrderId: String
+    customerDetails: JSON
+    meta: JSON
+    pricingId: String
+}
+
+type T_Response_Order {
+    success: Boolean!
+    message: String
+    result: T_Order
+}
+
+type T_Orders {
+    docs: [T_Order]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Orders {
+    success: Boolean!
+    message: String
+    result: T_Orders
+}
+
+
+type Query {
+    getOrder(filter: Input_QueryOrder!, projection: JSON, options: JSON, populate: JSON): T_Response_Order!
+    getOrders(filter: Input_QueryOrder, options: JSON): T_Response_Orders!
+}
+
+type Mutation {
+    createOrder(doc: Input_CreateOrder!): T_Response_Order!
+    updateOrder(filter: Input_QueryOrder!, update: Input_UpdateOrder!, options: JSON): T_Response_Order!
+    deleteOrder(filter: Input_QueryOrder!, options: JSON): T_Response_Order!
+    deleteOrders(filter: Input_QueryOrder!, options: JSON): T_Response_Orders!
+}
