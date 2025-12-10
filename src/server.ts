@@ -29,11 +29,19 @@ const env = getEnv();
         whiteList: env.CORS_WHITELIST,
     }));
 
+    // MongoDB - Connect first to use connection for session store
+    if (!env.IS_PROD) {
+        mongoose.set('debug', true);
+    }
+
+    await mongoose.connect(env.MONGO_URI);
+    log.info(`Running MongoDb at ${env.MONGO_URI}`);
+
     const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
         saveUninitialized: false,
         store: mongoStore.create({
-            mongoUrl: env.MONGO_URI,
+            clientPromise: Promise.resolve(mongoose.connection.getClient()),
             stringify: false,
         }),
         rolling: true,
@@ -66,14 +74,6 @@ const env = getEnv();
             return req;
         },
     });
-
-    // MongoDB
-    if (!env.IS_PROD) {
-        mongoose.set('debug', true);
-    }
-
-    await mongoose.connect(env.MONGO_URI);
-    log.info(`Running MongoDb at ${env.MONGO_URI}`);
 
     await permissionCtr.syncPermissions();
 

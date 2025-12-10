@@ -94,6 +94,7 @@ export function getEnv(): I_Environment {
 
     return {
         ...cleanedEnv,
+        MONGO_URI: mongoUri,
         ...mapEnvironment({
             NODE_ENV: cleanedEnv.NODE_ENV,
             NODE_ENV_MODE: cleanedEnv.NODE_ENV_MODE,
