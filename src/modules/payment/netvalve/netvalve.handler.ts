@@ -7,10 +7,9 @@ import type { I_Context } from '#shared/typescript/express.js';
 
 import { asString } from '#shared/util/index.js';
 
-import type { E_PaymentGatewayOperation } from '../payment-transaction/index.js';
 import type { I_Netvalve3DSProviderResponse, I_NetvalveCredentials, I_NetvalveErrorResponse, I_NetvalveHppOrderPayload, I_NetvalveRoutingPayload } from './index.js';
 
-import { E_PaymentProvider, E_PaymentStatus } from '../payment-transaction/index.js';
+import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus } from '../payment-transaction/index.js';
 import { paymentCtr } from '../payment-transaction/payment-transaction.controller.js';
 import { E_Netvalve3DSFlow, getNetvalveCredentials, NETVALVE_HEADER_API_KEY, NETVALVE_HEADER_CLIENT_ID } from './index.js';
 
@@ -273,7 +272,18 @@ export async function recordNetvalveTransaction(
         ? rawResult as Record<string, unknown>
         : null;
 
-    const transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
+    let transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
+
+    // For HPP_ORDER, if transactionId is not found, use clientOrderId or orderId as fallback
+    if (!transactionId && operation === E_PaymentGatewayOperation.HPP_ORDER) {
+        // Try orderId from response first (Netvalve's order ID)
+        transactionId = asString(resultPayload?.['orderId']);
+
+        // If still not found, use clientOrderId from request (our internal order ID)
+        if (!transactionId) {
+            transactionId = asString(requestPayload['clientOrderId']);
+        }
+    }
 
     if (!transactionId) {
         log.warn('Cannot record Netvalve transaction: missing transactionId', { operation, requestPayload, resultPayload });
