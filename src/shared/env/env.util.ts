@@ -89,14 +89,8 @@ export function getEnv(): I_Environment {
         USER_APP_URL: str(),
         PAYMENT_REDIRECT_URL: str(),
         MEDIA_VIEWER_DEBUG: str({ default: 'true' }),
+        MONGO_URI: str({ default: '' }),
     });
-
-    const haveAuth = !!cleanedEnv.MONGO_USERNAME && !!cleanedEnv.MONGO_PASSWORD;
-
-    const MONGO_URI = `mongodb://${haveAuth
-        ? `${encodeURIComponent(cleanedEnv.MONGO_USERNAME)}:${encodeURIComponent(cleanedEnv.MONGO_PASSWORD)}@`
-        : ''
-    }${cleanedEnv.MONGO_HOST}:${cleanedEnv.MONGO_PORT}/${cleanedEnv.MONGO_NAME}${haveAuth ? '?authSource=admin' : ''}`;
 
     return {
         ...cleanedEnv,
@@ -104,6 +98,5 @@ export function getEnv(): I_Environment {
             NODE_ENV: cleanedEnv.NODE_ENV,
             NODE_ENV_MODE: cleanedEnv.NODE_ENV_MODE,
         }),
-        MONGO_URI,
     };
 }
