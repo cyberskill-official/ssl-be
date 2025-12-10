@@ -7,7 +7,7 @@ import type { I_NetvalveCredentials } from './netvalve.type.js';
  * This is ONLY used for createOrder (HPP order creation).
  * Other operations (sale, refund, etc.) use NETVALVE_API_BASE_URL.
  */
-const NETVALVE_DEFAULT_HPP_BASE_URL = 'https://hpp-api.uat.sandbox-netvalve.com/';
+const NETVALVE_DEFAULT_HPP_BASE_URL = 'https://api.netvalve.com';
 
 export function getNetvalveCredentials(): I_NetvalveCredentials {
     const env = getEnv();
@@ -42,7 +42,7 @@ export function getNetvalveCredentials(): I_NetvalveCredentials {
     // HPP base URL: use baseUrl if it contains '/hpp', otherwise use default HPP URL
     const resolvedHppBaseUrl = resolvedBaseUrl.includes('/hpp')
         ? resolvedBaseUrl
-        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://hpp-api.uat.sandbox-netvalve.com');
+        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://api.netvalve.com');
 
     return {
         baseUrl: resolvedBaseUrl,
