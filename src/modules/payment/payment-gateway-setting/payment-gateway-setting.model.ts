@@ -60,4 +60,4 @@ export const PaymentGatewaySettingModel = mongo.createModel<I_PaymentGatewaySett
     ],
 });
 
-PaymentGatewaySettingModel.schema.index({ paymentGatewayId: 1, key: 1 }, { unique: true });
+// PaymentGatewaySettingModel.schema.index({ paymentGatewayId: 1, key: 1 }, { unique: true });
