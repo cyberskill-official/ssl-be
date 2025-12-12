@@ -126,6 +126,18 @@ export const eventCtr = {
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
             eventFound.result.image = signedImage ?? undefined;
+            log.info('[EVENT][getEvent] image processed', {
+                eventId: eventFound.result.id,
+                creatorId: eventFound.result.createdById,
+                viewerId: context?.req?.session?.user?.id,
+                imageClass: (() => {
+                    if (!signedImage)
+                        return 'null/undefined';
+                    const match = String(signedImage).match(/class=([^&]+)/i);
+                    return match ? match[1] : 'none';
+                })(),
+                imageUrlSample: signedImage ? String(signedImage).slice(0, 160) : undefined,
+            });
         }
 
         // Blur creator avatar/gallery based on creator's status (not viewer's)
