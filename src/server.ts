@@ -23,9 +23,7 @@ const env = getEnv();
     });
 
     app.use(createCors({
-        // TODO: remove this after testing
-        // isDev: true,
-        // isDev: !env.IS_PROD,
+        isDev: !env.IS_PROD,
         whiteList: env.CORS_WHITELIST,
     }));
 
