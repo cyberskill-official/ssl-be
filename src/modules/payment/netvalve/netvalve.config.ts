@@ -2,22 +2,22 @@ import { getEnv } from '#shared/env/index.js';
 
 import type { I_NetvalveCredentials } from './netvalve.type.js';
 
-/**
- * Default HPP base URL for Netvalve Hosted Payment Page.
- * This is ONLY used for createOrder (HPP order creation).
- * Other operations (sale, refund, etc.) use NETVALVE_API_BASE_URL.
- */
-const NETVALVE_DEFAULT_HPP_BASE_URL = 'https://hpp-api.netvalve.com';
-
 export function getNetvalveCredentials(): I_NetvalveCredentials {
     const env = getEnv();
 
-    const baseUrl = env.NETVALVE_API_BASE_URL?.trim();
+    // Per requirement: use only these two env vars
+    // NETVALVE_API_SANDBOX_BASE_URL -> payment API base (e.g. https://payment-api.uat.sandbox-netvalve.com)
+    // NETVALVE_API_HPP_BASE_URL     -> HPP base (e.g. https://hpp-api.uat.sandbox-netvalve.com)
+    const apiBaseUrl = env.NETVALVE_API_SANDBOX_BASE_URL?.trim();
+    const hppBaseUrl = env.NETVALVE_API_HPP_BASE_URL?.trim();
     const clientId = env.NETVALVE_CLIENT_ID?.trim();
     const apiKey = env.NETVALVE_API_KEY?.trim();
 
-    if (!baseUrl) {
-        throw new Error('Missing NETVALVE_API_BASE_URL environment variable');
+    if (!apiBaseUrl) {
+        throw new Error('Missing NETVALVE_API_SANDBOX_BASE_URL environment variable');
+    }
+    if (!hppBaseUrl) {
+        throw new Error('Missing NETVALVE_API_HPP_BASE_URL environment variable');
     }
     if (!clientId || !apiKey) {
         throw new Error('Missing Netvalve client credentials');
@@ -38,29 +38,14 @@ export function getNetvalveCredentials(): I_NetvalveCredentials {
         midByCurrency['USD'] = env.NETVALVE_MID_USD;
     }
 
-    const resolvedBaseUrl = normalizeUrl(baseUrl)!;
-
-    // HPP base URL priority (for HPP order creation ONLY):
-    // 1. Use NETVALVE_HPP_BASE_URL if explicitly set (allows override for testing)
-    // 2. Always use default HPP URL: https://hpp-api.netvalve.com
-    // Note: HPP order endpoint is separate from main API and always uses hpp-api.netvalve.com
-    const resolvedHppBaseUrl = env.NETVALVE_HPP_BASE_URL?.trim()
-        ? normalizeUrl(env.NETVALVE_HPP_BASE_URL)!
-        : (normalizeUrl(NETVALVE_DEFAULT_HPP_BASE_URL) ?? 'https://hpp-api.netvalve.com');
-
-    // Payment API base URL (for GET /order and /orders endpoints):
-    // UAT uses payment-api.uat.sandbox-netvalve.com, Production uses api.netvalve.com
-    let resolvedPaymentApiBaseUrl: string | undefined;
-    if (resolvedBaseUrl.includes('uat') || resolvedBaseUrl.includes('sandbox')) {
-        // UAT: use payment-api subdomain
-        resolvedPaymentApiBaseUrl = 'https://payment-api.uat.sandbox-netvalve.com';
-    }
-    // Production: use baseUrl (api.netvalve.com) - no need to set separately
+    const resolvedBaseUrl = normalizeUrl(apiBaseUrl)!; // Payment API base
+    const resolvedHppBaseUrl = normalizeUrl(hppBaseUrl)!; // HPP base
 
     return {
         baseUrl: resolvedBaseUrl,
         hppBaseUrl: resolvedHppBaseUrl,
-        paymentApiBaseUrl: resolvedPaymentApiBaseUrl,
+        // For GET /order and /orders, use payment API base (same as baseUrl here)
+        paymentApiBaseUrl: resolvedBaseUrl,
         clientId,
         apiKey,
         siteId: env.NETVALVE_SITE_ID?.trim() || undefined,

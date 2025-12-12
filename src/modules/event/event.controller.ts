@@ -117,6 +117,12 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
+            log.info('[EVENT][getEvent] signing image', {
+                eventId: eventFound.result.id,
+                creatorId: eventFound.result.createdById,
+                viewerId: context?.req?.session?.user?.id,
+                viewerRoles: context?.req?.session?.user?.roles?.map((r: any) => r?.name),
+            });
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
             eventFound.result.image = signedImage ?? undefined;
@@ -186,6 +192,17 @@ export const eventCtr = {
                 creatorMembershipActive = false;
             }
             const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+            log.info('[EVENT][getEvent] blur decision', {
+                eventId: eventFound.result.id,
+                creatorId,
+                viewerId,
+                viewerExempt,
+                viewerIsFreeMember,
+                isOwner,
+                isCreatorVerified,
+                isCreatorFreeMember,
+                creatorRoles: creatorRoles.map((r: any) => r?.name),
+            });
 
             if (creator) {
                 const p1 = creator.partner1;
@@ -304,6 +321,13 @@ export const eventCtr = {
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
             viewerExempt = isAdmin || isStaff;
             viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
+            log.info('[EVENT][getEvents] viewer context', {
+                viewerId,
+                viewerExempt,
+                viewerIsFreeMember,
+                viewerRoles: roles.map((r: any) => r?.name),
+                eventsCount: filteredDocs.length,
+            });
         }
         catch {
             // Viewer not authenticated
@@ -311,6 +335,13 @@ export const eventCtr = {
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
             if (event.image) {
+                log.info('[EVENT][getEvents] signing image', {
+                    eventId: event.id,
+                    creatorId: event.createdById,
+                    viewerId,
+                    viewerExempt,
+                    viewerIsFreeMember,
+                });
                 const signedImage = await signEventImage(event.image, context, event.createdById);
                 // If signEventImage returns null, set to undefined to show default image
                 event.image = signedImage ?? undefined;
@@ -360,6 +391,17 @@ export const eventCtr = {
                     creatorMembershipActive = false;
                 }
                 const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+                log.info('[EVENT][getEvents] blur decision', {
+                    eventId: event.id,
+                    creatorId,
+                    viewerId,
+                    viewerExempt,
+                    viewerIsFreeMember,
+                    isOwner,
+                    isCreatorVerified,
+                    isCreatorFreeMember,
+                    creatorRoles: creatorRoles.map((r: any) => r?.name),
+                });
 
                 if (creator) {
                     const p1 = creator.partner1;

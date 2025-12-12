@@ -47,8 +47,8 @@ export interface I_Environment {
     POSTMARK_SERVER_API_TOKEN: string;
     SESSION_INACTIVITY_MINUTES: number;
     ADMIN_PANEL_ORIGINS: string[];
-    NETVALVE_API_BASE_URL: string;
-    NETVALVE_HPP_BASE_URL?: string;
+    NETVALVE_API_HPP_BASE_URL: string;
+    NETVALVE_API_SANDBOX_BASE_URL: string;
     NETVALVE_CLIENT_ID: string;
     NETVALVE_API_KEY: string;
     NETVALVE_SITE_ID: string;

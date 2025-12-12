@@ -1,10 +1,11 @@
 import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
-import { addDays, isAfter, isValid, parse, set, subMonths } from 'date-fns';
+import { addDays, addMonths, isAfter, isValid, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
 
 import type { I_Event } from '#modules/event/index.js';
+import type { I_Context } from '#shared/typescript/index.js';
 
 import { PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY } from '#modules/authn/authn.constant.js';
 import { roleCtr } from '#modules/authz/index.js';
@@ -12,6 +13,10 @@ import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_LocationEntityType, LocationModel } from '#modules/location/index.js';
+import { orderCtr } from '#modules/order/index.js';
+import { E_OrderStatus } from '#modules/order/order.type.js';
+import { paymentCtr } from '#modules/payment/index.js';
+import { netvalveCtr } from '#modules/payment/netvalve/netvalve.controller.js';
 import { userCtr } from '#modules/user/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
@@ -84,6 +89,7 @@ export const cron = {
         cron.disableExpiredAds().start();
         cron.enforceSessionInactivity().start();
         cron.markInactiveUsersOffline().start();
+        cron.rebillExpiringMemberships().start();
         cron.downgradeExpiredMemberships().start();
         cron.cleanupInactiveFreeUsers().start();
     },
@@ -445,6 +451,149 @@ export const cron = {
             }
             catch (error) {
                 log.error('[CRON] Error downgrading expired memberships:', error);
+            }
+        });
+    },
+    rebillExpiringMemberships: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
+            try {
+                const now = new Date();
+                const tomorrow = addDays(now, 1);
+                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                if (!paidRole.success) {
+                    log.warn('[CRON] Paid member role not found; skipping rebill check.');
+                    return;
+                }
+                const paidRoleId = paidRole.result.id;
+
+                const candidatesRes = await userCtr.getUsers({}, {
+                    filter: {
+                        isDel: { $ne: true },
+                        isAdminBlocked: { $ne: true },
+                        rolesIds: { $in: [paidRoleId] },
+                        membershipExpiresAt: { $exists: true, $ne: null, $gt: now, $lte: tomorrow },
+                    },
+                    options: { pagination: false },
+                });
+
+                if (!candidatesRes.success || !candidatesRes.result?.docs?.length) {
+                    log.info('[CRON] No memberships expiring within 1 day for rebill');
+                    return;
+                }
+
+                let rebilledCount = 0;
+
+                const tryRebillOnce = async (userId: string): Promise<boolean> => {
+                    try {
+                        const ctx = {} as I_Context;
+                        const ordersRes = await orderCtr.getOrders(ctx, {
+                            filter: {
+                                userId,
+                                status: E_OrderStatus.PAID,
+                            },
+                            options: {
+                                pagination: false,
+                                sort: { createdAt: -1 },
+                                limit: 1,
+                                populate: [
+                                    { path: 'paymentTransaction' },
+                                    { path: 'pricing', populate: ['currency'] },
+                                ],
+                            },
+                        } as any);
+
+                        const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
+                        if (!lastOrder || !lastOrder.amount) {
+                            return false;
+                        }
+
+                        let transactionId: string | undefined = (lastOrder as any)?.paymentTransaction?.transactionId;
+                        if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
+                            const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                filter: { id: (lastOrder as any).paymentTransactionId },
+                            } as any);
+                            if (ptRes.success && ptRes.result?.transactionId) {
+                                transactionId = ptRes.result.transactionId;
+                            }
+                        }
+
+                        if (!transactionId) {
+                            return false;
+                        }
+
+                        const amount = typeof lastOrder.amount === 'number' ? lastOrder.amount : Number(lastOrder.amount);
+                        if (!Number.isFinite(amount) || amount <= 0) {
+                            return false;
+                        }
+
+                        const currency = (lastOrder as any)?.pricing?.currency?.code || 'EUR';
+
+                        const payload = {
+                            transactionID: String(transactionId),
+                            amount,
+                            currency,
+                            clientOrderId: `${lastOrder.id}-rebill`,
+                        } as any;
+
+                        const rebillRes = await netvalveCtr.rebill(ctx, payload);
+                        if (!rebillRes.success) {
+                            log.warn('[CRON] Rebill failed', { userId, transactionId, message: rebillRes.message });
+                            return false;
+                        }
+
+                        // Extend membership by one month from expiry or now
+                        const userFound = await userCtr.getUser(ctx, { filter: { id: userId } });
+                        if (!userFound.success || !userFound.result) {
+                            return false;
+                        }
+                        const user = userFound.result;
+                        const currentExpiry = user.membershipExpiresAt ? new Date(user.membershipExpiresAt) : null;
+                        let baseDate = now;
+                        if (currentExpiry && currentExpiry > now) {
+                            baseDate = currentExpiry;
+                        }
+                        else if (currentExpiry) {
+                            const monthsSinceExpiry = Math.floor((now.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                            if (monthsSinceExpiry < 12) {
+                                baseDate = currentExpiry;
+                            }
+                        }
+                        const newExpiry = addMonths(baseDate, 1);
+
+                        const updateRes = await userCtr.updateUser(ctx, {
+                            filter: { id: userId },
+                            update: {
+                                membershipExpiresAt: newExpiry,
+                            },
+                        });
+
+                        if (!updateRes.success) {
+                            log.error('[CRON] Failed to update user after rebill', { userId, message: updateRes.message });
+                            return false;
+                        }
+
+                        rebilledCount += 1;
+                        return true;
+                    }
+                    catch (error) {
+                        log.error('[CRON] Error attempting rebill', { userId, error });
+                        return false;
+                    }
+                };
+
+                for (const user of candidatesRes.result.docs) {
+                    await tryRebillOnce(user.id);
+                }
+
+                if (rebilledCount > 0) {
+                    log.success(`[CRON] Re-billed and extended ${rebilledCount} expiring membership(s).`);
+                }
+                else {
+                    log.info('[CRON] No memberships rebilled.');
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Error rebilling expiring memberships:', error);
             }
         });
     },

@@ -24,7 +24,6 @@ import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailService } from '#modules/email/email.service.js';
 import { emailCtr } from '#modules/email/index.js';
-import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -42,7 +41,7 @@ import {
 } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
-import { date, extractClientIp, helper, validate } from '#shared/util/index.js';
+import { date, helper, validate } from '#shared/util/index.js';
 
 import type {
     I_AgeVerify,
@@ -482,19 +481,7 @@ export const authnCtr = {
         assignSessionUser(context.req.session, sanitizedUser);
         try {
             // Prefer client IP from request headers (proxied environments)
-            const clientIp = extractClientIp(context?.req, true);
-            let ipToPersist: string | undefined = clientIp;
-            if (!ipToPersist) {
-                // Fallback to server external IP (less accurate)
-                const myInfo = await ipInfoCtr.getMyIp();
-                ipToPersist = myInfo?.result?.ip as string | undefined;
-            }
-            if (ipToPersist) {
-                await userCtr.updateUser(context, {
-                    filter: { id: context.req.session.user.id },
-                    update: { lastLoginIp: ipToPersist },
-                });
-            }
+            // Skip server-side IP extraction; rely on FE-provided IP at login
         }
         catch (error) {
             console.warn('Failed to update user IP in checkAuth:', error);
@@ -705,48 +692,7 @@ export const authnCtr = {
         const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
         assignSessionUser(context.req.session, sanitizedNewUser);
 
-        // Try to detect user's country/state from IP and update user record (best-effort)
-        try {
-            const clientIp = extractClientIp(context?.req, true);
-            let ipToLookup: string | undefined = clientIp;
-            if (!ipToLookup) {
-                const myIpInfo = await ipInfoCtr.getMyIp();
-                ipToLookup = myIpInfo?.result?.ip as string | undefined;
-            }
-
-            if (ipToLookup) {
-                const ipInfo = await ipInfoCtr.getIpInfo(ipToLookup);
-                if (ipInfo.success && ipInfo.result) {
-                    const country = (ipInfo.result as any).country as string | undefined;
-                    const region = (ipInfo.result as any).region as string | undefined;
-                    const updatePayload: Record<string, unknown> = {};
-                    if (country)
-                        updatePayload['countryId'] = country;
-                    if (region)
-                        updatePayload['stateId'] = region;
-
-                    if (Object.keys(updatePayload).length > 0) {
-                        // Cast to any to avoid strict type mismatch on optional user update fields
-                        await userCtr.updateUser(context, {
-                            filter: { id: userCreated.result.id },
-                            update: updatePayload as any,
-                        }).catch(() => { /* best-effort */ });
-
-                        // sync session user with geo info (use any to avoid type errors)
-                        if (context.req?.session?.user) {
-                            const sessUser = context.req.session.user as any;
-                            if (country)
-                                sessUser.countryId = country;
-                            if (region)
-                                sessUser.stateId = region;
-                        }
-                    }
-                }
-            }
-        }
-        catch (err) {
-            console.warn('Failed to detect user geo at registration:', err);
-        }
+        // NOTE: removed server-side IP extraction; rely on FE-provided data if needed
 
         return { success: true, result: { user: sanitizedNewUser } };
     },
@@ -1392,14 +1338,9 @@ export const authnCtr = {
             });
         }
 
-        // Get IP address and update user's lastLoginIp
+        // Get IP address (only FE-provided ip in args.ip)
         try {
-            const headerIp = extractClientIp(context?.req, true);
-            let clientIp = headerIp;
-            if (!clientIp) {
-                const myIpInfo = await ipInfoCtr.getMyIp();
-                clientIp = myIpInfo?.result?.ip as string | undefined;
-            }
+            const clientIp = typeof args.ip === 'string' ? args.ip.trim() : '';
 
             const updatePayload: Partial<I_Input_UpdateUser> = {};
             if (clientIp) {
