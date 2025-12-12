@@ -133,19 +133,14 @@ export const eventCtr = {
             let viewerId: string | undefined;
             let viewerExempt = false;
             let viewerIsFreeMember = false;
-            try {
-                const viewer = await authnCtr.getUserFromSession(context);
+            const viewer = context?.req?.session?.user as I_User | undefined;
+            if (viewer) {
                 viewerId = viewer?.id;
-
-                // Check if viewer is staff/admin
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
                 const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
                 const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
                 viewerExempt = isAdmin || isStaff;
                 viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
-            }
-            catch {
-                // Viewer not authenticated
             }
 
             const creator = (eventFound.result)?.createdBy;
@@ -311,11 +306,11 @@ export const eventCtr = {
         let viewerId: string | undefined;
         let viewerExempt = false;
         let viewerIsFreeMember = false;
-        try {
-            const viewer = await authnCtr.getUserFromSession(context);
-            viewerId = viewer?.id;
+        const viewer = context?.req?.session?.user as I_User | undefined;
+        log.warn('[EVENT][getEvents] viewer info', { viewerId: viewer?.id, viewerRoles: viewer?.roles?.map((r: any) => r?.name) });
 
-            // Check if viewer is staff/admin
+        if (viewer) {
+            viewerId = viewer?.id;
             const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
             const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
@@ -328,9 +323,6 @@ export const eventCtr = {
                 viewerRoles: roles.map((r: any) => r?.name),
                 eventsCount: filteredDocs.length,
             });
-        }
-        catch {
-            // Viewer not authenticated
         }
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
