@@ -41,6 +41,39 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
 
+        // Cleanup stale in-progress orders older than 10 minutes (best-effort)
+        try {
+            const staleThreshold = new Date(Date.now() - 10 * 60 * 1000);
+            await orderCtr.deleteOrders(context, {
+                filter: {
+                    userId: currentUser.id,
+                    status: { $in: [E_OrderStatus.CREATED, E_OrderStatus.PENDING] } as any,
+                    createdAt: { $lt: staleThreshold } as any,
+                },
+            } as any);
+        }
+        catch {
+            // non-fatal cleanup
+        }
+
+        // Rate-limit: block creating a new payment if there's an in-progress order in the last 10 minutes
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const recentOrderRes = await orderCtr.getOrders(context, {
+            filter: {
+                userId: currentUser.id,
+                status: { $in: [E_OrderStatus.CREATED, E_OrderStatus.PENDING] } as any,
+                createdAt: { $gte: tenMinutesAgo } as any,
+            },
+            options: { pagination: false, sort: { createdAt: -1 } },
+        } as any);
+
+        if (recentOrderRes.success && recentOrderRes.result?.docs?.length > 0) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'You have a payment in progress. Please wait 10 minutes before starting a new payment.',
+            });
+        }
+
         // Parse loc (latitude,longitude) from FE geolocation IP
         let latitude: number | undefined;
         let longitude: number | undefined;
@@ -254,10 +287,29 @@ export const paymentController = {
 
         // Validate that pricing has a valid currencyId
         if (!pricing.currencyId) {
-            throwError({
-                status: RESPONSE_STATUS.BAD_REQUEST,
-                message: `Pricing record (${pricing.id}) is missing currencyId. Please contact administrator to fix the pricing configuration.`,
-            });
+            // Try to auto-fix missing currencyId by selecting a valid currency
+            const allCurrenciesRes = await currencyCtr.getCurrencies(context, { filter: {} });
+            if (allCurrenciesRes.success && 'result' in allCurrenciesRes && allCurrenciesRes.result?.docs?.length) {
+                const eurCurrency = allCurrenciesRes.result.docs.find(c => c.code === 'EUR' && !c.isDel);
+                const usdCurrency = allCurrenciesRes.result.docs.find(c => c.code === 'USD' && !c.isDel);
+                const firstAvailableCurrency = allCurrenciesRes.result.docs.find(c => !c.isDel);
+                const selected = eurCurrency || usdCurrency || firstAvailableCurrency;
+                if (selected) {
+                    await pricingCtr.updatePricing(context, {
+                        filter: { id: pricing.id },
+                        update: { currencyId: selected.id },
+                    }).catch(() => { /* best-effort */ });
+                    pricing.currencyId = selected.id;
+                    pricing.currency = selected as any;
+                }
+            }
+
+            if (!pricing.currencyId) {
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: `Pricing record (${pricing.id}) is missing currencyId. Please contact administrator to fix the pricing configuration.`,
+                });
+            }
         }
 
         const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;

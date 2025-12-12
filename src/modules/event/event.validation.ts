@@ -1,12 +1,13 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { E_Event_PinStyle } from '#modules/location/index.js';
+import { userCtr } from '#modules/user/user.controller.js';
 
 import type { I_Input_TimeBasedEventData, I_TimeBasedEventValidation } from './event.type.js';
 
@@ -181,39 +182,87 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
     const isStaff = viewerRoles.some(role => role.name === 'STAFF');
     const isAdmin = viewerRoles.some(role => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
     const viewerExempt = isStaff || isAdmin;
+    const viewerIsFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER');
 
-    // Check if event creator (owner) is age-verified
-    let isCreatorAgeVerified = false;
+    // Skip age-verify gating for creator (do not hide image for unverified creators)
+    const isCreatorAgeVerified = true;
+    let creatorRoles: Array<{ name?: string; ancestorsIds?: string[] }> = [];
+    let creatorMembershipActive = false;
+
     if (eventCreatedById && !isOwner && !viewerExempt) {
         try {
-            const { userCtr } = await import('#modules/user/index.js');
             const creatorResult = await userCtr.getUser(context!, {
                 filter: { id: eventCreatedById },
-                projection: { ageVerify: 1 },
+                projection: { roles: 1, membershipEndDate: 1 },
             });
             if (creatorResult.success && creatorResult.result) {
-                isCreatorAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+                creatorRoles = Array.isArray(creatorResult.result.roles) ? creatorResult.result.roles : [];
+                try {
+                    creatorMembershipActive = creatorResult.result ? authnCtr.isMembershipActive(creatorResult.result) : false;
+                }
+                catch {
+                    creatorMembershipActive = false;
+                }
             }
         }
         catch {
-            // If fetch fails, assume verified to avoid blocking
-            isCreatorAgeVerified = true;
+            // ignore
         }
     }
-    else {
-        // If owner or exempt, assume verified (or don't need to check)
-        isCreatorAgeVerified = true;
+
+    // Check if creator is FREE_MEMBER (blur based on creator's status)
+    const creatorHasFreeRole = creatorRoles.some((role: { name?: string }) => role.name === 'FREE_MEMBER') ?? false;
+    const creatorHasPaidRole = creatorRoles.some((role: { name?: string }) => role.name === 'PAID_MEMBER') ?? false;
+    const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+
+    // Apply blur/sign logic
+    // Case 1: Owner or staff/admin can always see clearly
+    if (isOwner || viewerExempt) {
+        log.info('[EVENT][signEventImage] return normal (owner/admin)', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
+        return bunnyCtr.generateSignedUrl({
+            fullUrl,
+            extraQueryParams: { class: 'normal' },
+        });
     }
 
-    // If creator is not age-verified and viewer is not owner/staff/admin, return null (will show default image)
-    if (!isCreatorAgeVerified && !isOwner && !viewerExempt) {
-        return null;
-    }
-
-    // Apply blur/sign logic based on viewer's context
-    if (shouldBlurForContext(context, eventCreatedById)) {
+    // Case 2: Viewer is FREE_MEMBER → always blur others' event images
+    if (viewerIsFreeMember) {
+        log.info('[EVENT][signEventImage] blur because viewer is free', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
+
+    // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
+    if (isCreatorFreeMember && isCreatorAgeVerified) {
+        log.info('[EVENT][signEventImage] blur because creator is free', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
+        return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
+    }
+
+    // Case 4: Creator is PAID_MEMBER verified → show normal
+    log.info('[EVENT][signEventImage] return normal (creator paid or verified)', {
+        viewerId,
+        eventCreatedById,
+        viewerIsFreeMember,
+        isCreatorFreeMember,
+        isCreatorAgeVerified,
+    });
     return bunnyCtr.generateSignedUrl({
         fullUrl,
         extraQueryParams: { class: 'normal' },

@@ -55,7 +55,7 @@ import type {
 
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
-import { mapEventTypeToPinStyle, normalizeBlurredMedia, shouldBlurForContext, signEventImage, validateTimeBasedEvent } from './event.validation.js';
+import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
 
 const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
@@ -117,30 +117,51 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
+            log.warn('[EVENT][getEvent] signing image', {
+                eventId: eventFound.result.id,
+                creatorId: eventFound.result.createdById,
+                viewerId: context?.req?.session?.user?.id,
+                viewerRoles: context?.req?.session?.user?.roles?.map((r: any) => r?.name),
+            });
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
             eventFound.result.image = signedImage ?? undefined;
-
-            if (signedImage && !shouldBlurForContext(context, eventFound.result.createdById))
-                eventFound.result.image = normalizeBlurredMedia(signedImage);
+            log.warn('[EVENT][getEvent] image processed', {
+                eventId: eventFound.result.id,
+                creatorId: eventFound.result.createdById,
+                viewerId: context?.req?.session?.user?.id,
+                imageClass: (() => {
+                    if (!signedImage)
+                        return 'null/undefined';
+                    const match = String(signedImage).match(/class=([^&]+)/i);
+                    return match ? match[1] : 'none';
+                })(),
+                imageUrlSample: signedImage ? String(signedImage).slice(0, 160) : undefined,
+            });
         }
 
         // Blur creator avatar/gallery based on creator's status (not viewer's)
         try {
             let viewerId: string | undefined;
             let viewerExempt = false;
-            try {
-                const viewer = await authnCtr.getUserFromSession(context);
-                viewerId = viewer?.id;
+            let viewerIsFreeMember = false;
+            let viewer = context?.req?.session?.user as I_User | undefined;
+            if (!viewer) {
+                try {
+                    viewer = await authnCtr.getUserFromSession(context);
+                }
+                catch {
+                    viewer = undefined;
+                }
+            }
 
-                // Check if viewer is staff/admin
+            if (viewer) {
+                viewerId = viewer?.id;
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
                 const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
                 const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
                 viewerExempt = isAdmin || isStaff;
-            }
-            catch {
-                // Viewer not authenticated
+                viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
             }
 
             const creator = (eventFound.result)?.createdBy;
@@ -187,6 +208,17 @@ export const eventCtr = {
                 creatorMembershipActive = false;
             }
             const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+            log.warn('[EVENT][getEvent] blur decision', {
+                eventId: eventFound.result.id,
+                creatorId,
+                viewerId,
+                viewerExempt,
+                viewerIsFreeMember,
+                isOwner,
+                isCreatorVerified,
+                isCreatorFreeMember,
+                creatorRoles: creatorRoles.map((r: any) => r?.name),
+            });
 
             if (creator) {
                 const p1 = creator.partner1;
@@ -199,7 +231,16 @@ export const eventCtr = {
                     if (p2?.gallery?.url)
                         p2.gallery.url = null as any;
                 }
-                // Case 2: Creator is FREE_MEMBER (age-verified) → show blur
+                // Case 2: Viewer is FREE_MEMBER → blur creator avatar
+                else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
+                    if (p1?.gallery?.url) {
+                        p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                    if (p2?.gallery?.url) {
+                        p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
+                    }
+                }
+                // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
                 else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
@@ -208,7 +249,7 @@ export const eventCtr = {
                         p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                     }
                 }
-                // Case 3: Creator is PAID_MEMBER verified or owner/admin → show normal
+                // Case 4: Creator is PAID_MEMBER verified or owner/admin → show normal
                 else {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -229,6 +270,15 @@ export const eventCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
+        // Require login to view events (to ensure we know viewer roles for blur logic)
+        const checkAuth = await authnCtr.checkAuth(context);
+        if (!checkAuth.success) {
+            throwError({
+                message: 'Authentication required to view events.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
         const now = new Date();
         const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
 
@@ -282,30 +332,50 @@ export const eventCtr = {
             return !isOwnerInactive(creator, event.createdById);
         });
 
-        // Blur/signed media according to creator's status (not viewer's)
+        // Blur/signed media according to creator's status and viewer's membership
         let viewerId: string | undefined;
         let viewerExempt = false;
-        try {
-            const viewer = await authnCtr.getUserFromSession(context);
-            viewerId = viewer?.id;
+        let viewerIsFreeMember = false;
+        let viewer = context?.req?.session?.user as I_User | undefined;
+        if (!viewer) {
+            try {
+                viewer = await authnCtr.getUserFromSession(context);
+            }
+            catch {
+                viewer = undefined;
+            }
+        }
 
-            // Check if viewer is staff/admin
+        log.warn('[EVENT][getEvents] viewer info', { viewerId: viewer?.id, viewerRoles: viewer?.roles?.map((r: any) => r?.name) });
+
+        if (viewer) {
+            viewerId = viewer?.id;
             const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
             const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
             viewerExempt = isAdmin || isStaff;
-        }
-        catch {
-            // Viewer not authenticated
+            viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
+            log.warn('[EVENT][getEvents] viewer context', {
+                viewerId,
+                viewerExempt,
+                viewerIsFreeMember,
+                viewerRoles: roles.map((r: any) => r?.name),
+                eventsCount: filteredDocs.length,
+            });
         }
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
             if (event.image) {
+                log.warn('[EVENT][getEvents] signing image', {
+                    eventId: event.id,
+                    creatorId: event.createdById,
+                    viewerId,
+                    viewerExempt,
+                    viewerIsFreeMember,
+                });
                 const signedImage = await signEventImage(event.image, context, event.createdById);
                 // If signEventImage returns null, set to undefined to show default image
                 event.image = signedImage ?? undefined;
-                if (signedImage && !shouldBlurForContext(context, event.createdById))
-                    event.image = normalizeBlurredMedia(signedImage);
             }
             try {
                 const creator = (event).createdBy;
@@ -352,6 +422,17 @@ export const eventCtr = {
                     creatorMembershipActive = false;
                 }
                 const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
+                log.warn('[EVENT][getEvents] blur decision', {
+                    eventId: event.id,
+                    creatorId,
+                    viewerId,
+                    viewerExempt,
+                    viewerIsFreeMember,
+                    isOwner,
+                    isCreatorVerified,
+                    isCreatorFreeMember,
+                    creatorRoles: creatorRoles.map((r: any) => r?.name),
+                });
 
                 if (creator) {
                     const p1 = creator.partner1;
@@ -364,7 +445,16 @@ export const eventCtr = {
                         if (p2?.gallery?.url)
                             p2.gallery.url = null as any;
                     }
-                    // Case 2: Creator is FREE_MEMBER (age-verified) → show blur
+                    // Case 2: Viewer is FREE_MEMBER → blur creator avatar
+                    else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
+                        if (p1?.gallery?.url) {
+                            p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
+                        }
+                        if (p2?.gallery?.url) {
+                            p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
+                        }
+                    }
+                    // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
                     else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
@@ -373,7 +463,7 @@ export const eventCtr = {
                             p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                         }
                     }
-                    // Case 3: Creator is PAID_MEMBER verified or owner/admin → show normal
+                    // Case 4: Creator is PAID_MEMBER verified or owner/admin → show normal
                     else {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });

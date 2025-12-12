@@ -1301,8 +1301,9 @@ export const locationCtr = {
                 if (d.entityType === E_LocationEntityType.EVENT) {
                     const ev = e as I_Event;
 
-                    // Blur nếu viewer chưa age verify
-                    const shouldBlur = !(viewerMediaOptions.viewerAgeVerified ?? false);
+                    // Blur nếu viewer là FREE_MEMBER (trừ admin/staff)
+                    const shouldBlur = !((viewerMediaOptions.viewerIsAdmin ?? false) || (viewerMediaOptions.viewerIsStaff ?? false))
+                        && (viewerMediaOptions.viewerIsFreeMember ?? false);
 
                     if (ev?.image) {
                         ev.image = shouldBlur

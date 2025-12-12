@@ -30,6 +30,7 @@ export interface I_Input_Login {
     password: string;
     tempOtp?: string;
     rememberMe?: boolean;
+    ip?: string;
 }
 
 export interface I_Input_GuardianLogin {
