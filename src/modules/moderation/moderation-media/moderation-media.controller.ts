@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { GraphQLError } from 'graphql';
 
@@ -188,7 +188,7 @@ export const moderationMediaCtr = {
                 }
                 catch (error) {
                     // Do not block uploads on AI moderation failure; log and continue
-                    console.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+                    log.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
                 }
             }
 
@@ -413,6 +413,12 @@ export const moderationMediaCtr = {
                         ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                         ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                     };
+                    log.warn('[MODERATION][GALLERY] applying status update', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
+                        galleryUpdate,
+                    });
                     await galleryCtr.updateGallery(context, {
                         filter: { moderationMediaId: moderation.id },
                         update: galleryUpdate,
@@ -424,6 +430,11 @@ export const moderationMediaCtr = {
                             update: galleryUpdate,
                         });
                     }
+                    log.warn('[MODERATION][GALLERY] status update applied', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
+                    });
                     if (
                         status === E_ModerationMediaStatus.APPROVED
                         && currentStatus !== E_ModerationMediaStatus.APPROVED
