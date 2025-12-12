@@ -1,5 +1,5 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/express.js';
@@ -229,6 +229,13 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
     // Apply blur/sign logic
     // Case 1: Owner or staff/admin can always see clearly
     if (isOwner || viewerExempt) {
+        log.info('[EVENT][signEventImage] return normal (owner/admin)', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
         return bunnyCtr.generateSignedUrl({
             fullUrl,
             extraQueryParams: { class: 'normal' },
@@ -237,15 +244,36 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
 
     // Case 2: Viewer is FREE_MEMBER → always blur others' event images
     if (viewerIsFreeMember) {
+        log.info('[EVENT][signEventImage] blur because viewer is free', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
 
     // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
     if (isCreatorFreeMember && isCreatorAgeVerified) {
+        log.info('[EVENT][signEventImage] blur because creator is free', {
+            viewerId,
+            eventCreatedById,
+            viewerIsFreeMember,
+            isCreatorFreeMember,
+            isCreatorAgeVerified,
+        });
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
 
     // Case 4: Creator is PAID_MEMBER verified → show normal
+    log.info('[EVENT][signEventImage] return normal (creator paid or verified)', {
+        viewerId,
+        eventCreatedById,
+        viewerIsFreeMember,
+        isCreatorFreeMember,
+        isCreatorAgeVerified,
+    });
     return bunnyCtr.generateSignedUrl({
         fullUrl,
         extraQueryParams: { class: 'normal' },
