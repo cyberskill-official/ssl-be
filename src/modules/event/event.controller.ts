@@ -117,7 +117,7 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            log.info('[EVENT][getEvent] signing image', {
+            log.warn('[EVENT][getEvent] signing image', {
                 eventId: eventFound.result.id,
                 creatorId: eventFound.result.createdById,
                 viewerId: context?.req?.session?.user?.id,
@@ -126,7 +126,7 @@ export const eventCtr = {
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
             eventFound.result.image = signedImage ?? undefined;
-            log.info('[EVENT][getEvent] image processed', {
+            log.warn('[EVENT][getEvent] image processed', {
                 eventId: eventFound.result.id,
                 creatorId: eventFound.result.createdById,
                 viewerId: context?.req?.session?.user?.id,
@@ -199,7 +199,7 @@ export const eventCtr = {
                 creatorMembershipActive = false;
             }
             const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-            log.info('[EVENT][getEvent] blur decision', {
+            log.warn('[EVENT][getEvent] blur decision', {
                 eventId: eventFound.result.id,
                 creatorId,
                 viewerId,
@@ -328,7 +328,7 @@ export const eventCtr = {
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
             viewerExempt = isAdmin || isStaff;
             viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
-            log.info('[EVENT][getEvents] viewer context', {
+            log.warn('[EVENT][getEvents] viewer context', {
                 viewerId,
                 viewerExempt,
                 viewerIsFreeMember,
@@ -339,7 +339,7 @@ export const eventCtr = {
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
             if (event.image) {
-                log.info('[EVENT][getEvents] signing image', {
+                log.warn('[EVENT][getEvents] signing image', {
                     eventId: event.id,
                     creatorId: event.createdById,
                     viewerId,
@@ -395,7 +395,7 @@ export const eventCtr = {
                     creatorMembershipActive = false;
                 }
                 const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-                log.info('[EVENT][getEvents] blur decision', {
+                log.warn('[EVENT][getEvents] blur decision', {
                     eventId: event.id,
                     creatorId,
                     viewerId,
