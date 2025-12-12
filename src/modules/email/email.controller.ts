@@ -37,6 +37,19 @@ export const emailCtr = {
             const emails = Array.isArray(to) ? to : [to];
 
             const templateFromCache = emailTemplateCache.get(templateKey);
+            const safeTemplateData = templateData ?? {};
+            const renderData = {
+                ...safeTemplateData,
+                email: (safeTemplateData as Record<string, any>)?.['email']
+                    ?? (Array.isArray(to) ? to[0] : to)
+                    ?? '',
+            };
+            log.warn('[Email][sendEmail] render context', {
+                templateKey,
+                to,
+                renderEmail: renderData.email,
+                hasTemplateDataEmail: (safeTemplateData as Record<string, any>)?.['email'] !== undefined,
+            });
             let html: string;
             let subjectText: string;
 
@@ -46,28 +59,30 @@ export const emailCtr = {
             }
 
             if (templateFromCache) {
+                log.warn('[Email][sendEmail] template source: cache', { templateKey });
                 const { content, subject: templateSubject } = templateFromCache;
 
                 if (templateSubject) {
-                    const rendered = subject || await ejs.render(templateSubject, templateData);
+                    const rendered = subject || await ejs.render(templateSubject, renderData);
                     subjectText = rendered || subjectText;
                     if (env.IS_DEV || env.IS_STAG) {
                         subjectText = `[SECRETWINGERLUST] ${subjectText}`;
                     }
                 }
 
-                html = content ? await ejs.render(content, templateData) : emailCtr.generateBasicTemplate(templateData);
+                html = content ? await ejs.render(content, renderData) : emailCtr.generateBasicTemplate(renderData);
             }
             else {
                 const template = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey } });
 
                 if (template.success && template.result) {
+                    log.warn('[Email][sendEmail] template source: db', { templateKey });
                     const { content, subject: templateSubject } = template.result;
 
                     emailTemplateCache.set(templateKey, content || '', templateSubject);
 
                     if (templateSubject) {
-                        const rendered = subject || await ejs.render(templateSubject, templateData);
+                        const rendered = subject || await ejs.render(templateSubject, renderData);
                         subjectText = rendered || subjectText;
                         if (env.IS_DEV || env.IS_STAG) {
                             subjectText = `[SECRETWINGERLUST] ${subjectText}`;
@@ -75,11 +90,11 @@ export const emailCtr = {
                     }
 
                     if (content) {
-                        html = await ejs.render(content, templateData);
+                        html = await ejs.render(content, renderData);
                     }
                     else {
                         log.warn('[Email] Template found but has no content, using basic template:', { templateKey });
-                        html = emailCtr.generateBasicTemplate(templateData);
+                        html = emailCtr.generateBasicTemplate(renderData);
                     }
                 }
                 else {
@@ -88,7 +103,7 @@ export const emailCtr = {
                         templateSuccess: template.success,
                         templateMessage: template.message,
                     });
-                    html = emailCtr.generateBasicTemplate(templateData);
+                    html = emailCtr.generateBasicTemplate(renderData);
                 }
             }
 
@@ -97,7 +112,7 @@ export const emailCtr = {
                 subject: subjectText,
                 html,
                 metadata: {
-                    templateData,
+                    templateData: renderData,
                     renderEngine: 'ejs',
                 },
             };
