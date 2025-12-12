@@ -9,7 +9,7 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { GraphQLError } from 'graphql';
 
@@ -188,7 +188,7 @@ export const moderationMediaCtr = {
                 }
                 catch (error) {
                     // Do not block uploads on AI moderation failure; log and continue
-                    console.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+                    log.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
                 }
             }
 
@@ -224,6 +224,10 @@ export const moderationMediaCtr = {
                     initialStatus = E_ModerationMediaStatus.REJECTED;
                     reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
                 }
+                else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
+                    // Auto-approve when AI explicitly approves
+                    initialStatus = E_ModerationMediaStatus.APPROVED;
+                }
                 else if (aiReason) {
                     reason = `AI flagged for review: ${aiReason}`;
                 }
@@ -234,7 +238,7 @@ export const moderationMediaCtr = {
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: false,
+                isPublished: initialStatus === E_ModerationMediaStatus.APPROVED,
             });
 
             if (!moderationCreated.success) {
@@ -351,9 +355,30 @@ export const moderationMediaCtr = {
     },
 
     updateModerationMedia: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
+        // If status is being changed, delegate to _updateModerationMediaStatus to keep entity (gallery, etc.) in sync
+        if (update?.status !== undefined) {
+            const moderationRes = await mongooseCtr.findOne(filter);
+            if (!moderationRes.success || !moderationRes.result) {
+                throwError({
+                    message: 'ModerationMedia not found.',
+                    status: RESPONSE_STATUS.NOT_FOUND,
+                });
+            }
+            // Require an authenticated user for audit trail
+            const currentUser = await authnCtr.getUserFromSession(context);
+
+            return moderationMediaCtr._updateModerationMediaStatus(
+                context,
+                moderationRes.result,
+                currentUser,
+                update.status as E_ModerationMediaStatus,
+                (update as any).reason,
+            );
+        }
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     _updateModerationMediaStatus: async (
@@ -381,17 +406,34 @@ export const moderationMediaCtr = {
                     });
                     break;
 
-                case E_UploadEntity.GALLERY:
+                case E_UploadEntity.GALLERY: {
+                    const galleryUpdate = {
+                        status,
+                        isPublished: status === E_ModerationMediaStatus.APPROVED,
+                        ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                        ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
+                    };
+                    log.warn('[MODERATION][GALLERY] applying status update', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
+                        galleryUpdate,
+                    });
                     await galleryCtr.updateGallery(context, {
-                        filter: {
-                            moderationMediaId: moderation.id,
-                        },
-                        update: {
-                            status,
-                            isPublished: status === E_ModerationMediaStatus.APPROVED,
-                            ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
-                            ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
-                        },
+                        filter: { moderationMediaId: moderation.id },
+                        update: galleryUpdate,
+                    });
+                    // Fallback: if entityId present, force update by id as well
+                    if (moderation.entityId) {
+                        await galleryCtr.updateGallery(context, {
+                            filter: { id: moderation.entityId },
+                            update: galleryUpdate,
+                        });
+                    }
+                    log.warn('[MODERATION][GALLERY] status update applied', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
                     });
                     if (
                         status === E_ModerationMediaStatus.APPROVED
@@ -401,6 +443,7 @@ export const moderationMediaCtr = {
                         await galleryCtr.notifyGalleryPublished(context, moderation.entityId);
                     }
                     break;
+                }
 
                 case E_UploadEntity.CONVERSATION:
                     // TODO: Handle conversation module if needed

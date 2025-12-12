@@ -363,14 +363,15 @@ export const galleryCtr = {
         }
 
         const mongoFilter: Record<string, unknown> = { ...(modifiedFilter as Record<string, unknown>) };
-
+        // Always hide deleted items
+        mongoFilter['isDel'] = { $ne: true };
+        // By default, hide REJECTED for everyone unless explicitly requested
+        const hasExplicitStatus = filter?.status !== undefined;
+        if (!hasExplicitStatus && mongoFilter['status'] === undefined) {
+            mongoFilter['status'] = { $ne: E_ModerationMediaStatus.REJECTED };
+        }
+        // Only non-staff/admin/non-owner need isPublished; owner/staff/admin can see unpublished if explicitly filtered
         if (!isStaff && !isAdmin && !isOwner) {
-            const hasExplicitStatus = filter?.status !== undefined;
-            if (mongoFilter['status'] === undefined) {
-                mongoFilter['status'] = { $in: [E_ModerationMediaStatus.APPROVED, null] };
-            }
-            // Only add isPublished filter when user hasn't explicitly provided status filter
-            // This allows logged-in users to query by status without being restricted by isPublished
             if (!hasExplicitStatus && mongoFilter['isPublished'] === undefined) {
                 mongoFilter['isPublished'] = { $ne: false };
             }

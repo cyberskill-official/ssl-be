@@ -14,7 +14,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isAfter, startOfDay } from 'date-fns';
 
@@ -117,27 +117,9 @@ export const eventCtr = {
         }
 
         if (eventFound.result.image) {
-            log.warn('[EVENT][getEvent] signing image', {
-                eventId: eventFound.result.id,
-                creatorId: eventFound.result.createdById,
-                viewerId: context?.req?.session?.user?.id,
-                viewerRoles: context?.req?.session?.user?.roles?.map((r: any) => r?.name),
-            });
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
             eventFound.result.image = signedImage ?? undefined;
-            log.warn('[EVENT][getEvent] image processed', {
-                eventId: eventFound.result.id,
-                creatorId: eventFound.result.createdById,
-                viewerId: context?.req?.session?.user?.id,
-                imageClass: (() => {
-                    if (!signedImage)
-                        return 'null/undefined';
-                    const match = String(signedImage).match(/class=([^&]+)/i);
-                    return match ? match[1] : 'none';
-                })(),
-                imageUrlSample: signedImage ? String(signedImage).slice(0, 160) : undefined,
-            });
         }
 
         // Blur creator avatar/gallery based on creator's status (not viewer's)
@@ -208,17 +190,6 @@ export const eventCtr = {
                 creatorMembershipActive = false;
             }
             const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-            log.warn('[EVENT][getEvent] blur decision', {
-                eventId: eventFound.result.id,
-                creatorId,
-                viewerId,
-                viewerExempt,
-                viewerIsFreeMember,
-                isOwner,
-                isCreatorVerified,
-                isCreatorFreeMember,
-                creatorRoles: creatorRoles.map((r: any) => r?.name),
-            });
 
             if (creator) {
                 const p1 = creator.partner1;
@@ -272,11 +243,8 @@ export const eventCtr = {
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
         // Require login to view events (to ensure we know viewer roles for blur logic)
         const checkAuth = await authnCtr.checkAuth(context);
-        if (!checkAuth.success) {
-            throwError({
-                message: 'Authentication required to view events.',
-                status: RESPONSE_STATUS.UNAUTHORIZED,
-            });
+        if (!checkAuth.success || !checkAuth.result?.user) {
+            throwError({ message: 'Authentication required to view events.', status: RESPONSE_STATUS.UNAUTHORIZED });
         }
 
         const now = new Date();
@@ -346,8 +314,6 @@ export const eventCtr = {
             }
         }
 
-        log.warn('[EVENT][getEvents] viewer info', { viewerId: viewer?.id, viewerRoles: viewer?.roles?.map((r: any) => r?.name) });
-
         if (viewer) {
             viewerId = viewer?.id;
             const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
@@ -355,24 +321,10 @@ export const eventCtr = {
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
             viewerExempt = isAdmin || isStaff;
             viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
-            log.warn('[EVENT][getEvents] viewer context', {
-                viewerId,
-                viewerExempt,
-                viewerIsFreeMember,
-                viewerRoles: roles.map((r: any) => r?.name),
-                eventsCount: filteredDocs.length,
-            });
         }
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
             if (event.image) {
-                log.warn('[EVENT][getEvents] signing image', {
-                    eventId: event.id,
-                    creatorId: event.createdById,
-                    viewerId,
-                    viewerExempt,
-                    viewerIsFreeMember,
-                });
                 const signedImage = await signEventImage(event.image, context, event.createdById);
                 // If signEventImage returns null, set to undefined to show default image
                 event.image = signedImage ?? undefined;
@@ -422,17 +374,6 @@ export const eventCtr = {
                     creatorMembershipActive = false;
                 }
                 const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-                log.warn('[EVENT][getEvents] blur decision', {
-                    eventId: event.id,
-                    creatorId,
-                    viewerId,
-                    viewerExempt,
-                    viewerIsFreeMember,
-                    isOwner,
-                    isCreatorVerified,
-                    isCreatorFreeMember,
-                    creatorRoles: creatorRoles.map((r: any) => r?.name),
-                });
 
                 if (creator) {
                     const p1 = creator.partner1;
@@ -740,7 +681,6 @@ export const eventCtr = {
                 && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
 
             if (!isPaidMember) {
-                const prevCount = typeof currentUser.freeEventCount === 'number' ? currentUser.freeEventCount : undefined;
                 await userCtr.updateUser(context, {
                     filter: { id: currentUser.id },
                     update: {
@@ -749,18 +689,10 @@ export const eventCtr = {
                         },
                     },
                 });
-                log.info('[Event Controller] Decreased freeEventCount for user:', {
-                    userId: currentUser.id,
-                    previousCount: prevCount,
-                    newCount: prevCount !== undefined ? prevCount - 1 : undefined,
-                });
             }
         }
-        catch (error) {
-            log.error('[Event Controller] Failed to decrease freeEventCount:', {
-                userId: currentUser.id,
-                error,
-            });
+        catch {
+
             // Don't fail event creation if freeEventCount update fails, but log the error
         }
 

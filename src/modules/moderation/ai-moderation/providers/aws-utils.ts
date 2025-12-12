@@ -30,14 +30,6 @@ export class AWSMediaUtils {
 
         try {
             // Validate video format
-            const bytes = new Uint8Array(videoBuffer);
-            const isMP4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70; // ftyp
-            const isMOV = bytes[4] === 0x6D && bytes[5] === 0x6F && bytes[6] === 0x6F && bytes[7] === 0x76; // moov
-            const isAVI = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46; // RIFF
-
-            if (!isMP4 && !isMOV && !isAVI) {
-                log.warn('Video format may not be supported by AWS Rekognition. Supported formats: MP4, MOV, AVI');
-            }
 
             const s3Client = AWSMediaUtils.getS3Client();
 
