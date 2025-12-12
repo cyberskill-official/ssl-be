@@ -4,7 +4,7 @@ import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { E_Event_PinStyle } from '#modules/location/index.js';
 import { userCtr } from '#modules/user/user.controller.js';
@@ -184,8 +184,8 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
     const viewerExempt = isStaff || isAdmin;
     const viewerIsFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER');
 
-    // Check if event creator (owner) is age-verified
-    let isCreatorAgeVerified = false;
+    // Skip age-verify gating for creator (do not hide image for unverified creators)
+    const isCreatorAgeVerified = true;
     let creatorRoles: Array<{ name?: string; ancestorsIds?: string[] }> = [];
     let creatorMembershipActive = false;
 
@@ -193,10 +193,9 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
         try {
             const creatorResult = await userCtr.getUser(context!, {
                 filter: { id: eventCreatedById },
-                projection: { ageVerify: 1, roles: 1, membershipEndDate: 1 },
+                projection: { roles: 1, membershipEndDate: 1 },
             });
             if (creatorResult.success && creatorResult.result) {
-                isCreatorAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
                 creatorRoles = Array.isArray(creatorResult.result.roles) ? creatorResult.result.roles : [];
                 try {
                     creatorMembershipActive = creatorResult.result ? authnCtr.isMembershipActive(creatorResult.result) : false;
@@ -207,18 +206,8 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
             }
         }
         catch {
-            // If fetch fails, assume verified to avoid blocking
-            isCreatorAgeVerified = true;
+            // ignore
         }
-    }
-    else {
-        // If owner or exempt, assume verified (or don't need to check)
-        isCreatorAgeVerified = true;
-    }
-
-    // If creator is not age-verified and viewer is not owner/staff/admin, return null (will show default image)
-    if (!isCreatorAgeVerified && !isOwner && !viewerExempt) {
-        return null;
     }
 
     // Check if creator is FREE_MEMBER (blur based on creator's status)

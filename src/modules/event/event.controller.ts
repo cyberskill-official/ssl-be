@@ -145,7 +145,16 @@ export const eventCtr = {
             let viewerId: string | undefined;
             let viewerExempt = false;
             let viewerIsFreeMember = false;
-            const viewer = context?.req?.session?.user as I_User | undefined;
+            let viewer = context?.req?.session?.user as I_User | undefined;
+            if (!viewer) {
+                try {
+                    viewer = await authnCtr.getUserFromSession(context);
+                }
+                catch {
+                    viewer = undefined;
+                }
+            }
+
             if (viewer) {
                 viewerId = viewer?.id;
                 const roles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
@@ -261,6 +270,15 @@ export const eventCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
+        // Require login to view events (to ensure we know viewer roles for blur logic)
+        const checkAuth = await authnCtr.checkAuth(context);
+        if (!checkAuth.success) {
+            throwError({
+                message: 'Authentication required to view events.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
+
         const now = new Date();
         const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
 
@@ -318,7 +336,16 @@ export const eventCtr = {
         let viewerId: string | undefined;
         let viewerExempt = false;
         let viewerIsFreeMember = false;
-        const viewer = context?.req?.session?.user as I_User | undefined;
+        let viewer = context?.req?.session?.user as I_User | undefined;
+        if (!viewer) {
+            try {
+                viewer = await authnCtr.getUserFromSession(context);
+            }
+            catch {
+                viewer = undefined;
+            }
+        }
+
         log.warn('[EVENT][getEvents] viewer info', { viewerId: viewer?.id, viewerRoles: viewer?.roles?.map((r: any) => r?.name) });
 
         if (viewer) {
