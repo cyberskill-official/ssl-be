@@ -19,9 +19,7 @@
         "migrate:up": "cyberskill mongo:migrate:up",
         "ready": "run-s cyberskill:ready migrate:ready",
         "reset": "cyberskill reset",
-        "start": "run-s ready migrate:up start:prod",
         "start:dev": "tsx watch ./src/server.ts",
-        "start:prod": "tsx ./build/server.js",
         "tsc": "tsc",
         "tsc:alias": "tsc-alias -p tsconfig.json"
     },

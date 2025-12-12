@@ -1,3 +1,4 @@
+---
 name: 🚀 CI - Deploy
 on:
   workflow_dispatch:
@@ -7,14 +8,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
+
+      - name: Set Environment Prefix
+        id: env
+        run: |
+          echo "Ref name: ${{ github.ref_name }}"
+          if [[ "${{ github.ref_name }}" == "develop" ]]; then
+            echo "ENV_PREFIX=SSL_DEVELOPMENT_BE" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            echo "ENV_PREFIX=SSL_PRODUCTION_BE" >> $GITHUB_OUTPUT
+          else
+            echo "Error: Branch '${{ github.ref_name }}' is not configured for deployment."
+            exit 1
+          fi
 
       - name: Deploy
         uses: cyberskill-world/.github/actions/deploy@main
         with:
-          HOST: ${{ vars.SSL_DEVELOPMENT_HOST }}
-          USERNAME: ${{ vars.SSL_DEVELOPMENT_USERNAME }}
-          PRIVATE_KEY: ${{ secrets.SSL_DEVELOPMENT_PRIVATE_KEY }}
-          PATH: ssl-be
-          BRANCH: ${GITHUB_REF##*/}
-          NAME: ssl-be
+          HOST: ${{ vars[format('{0}_HOST', steps.env.outputs.ENV_PREFIX)] }}
+          PORT: ${{ vars[format('{0}_PORT', steps.env.outputs.ENV_PREFIX)] }}
+          USERNAME: ${{ vars[format('{0}_USERNAME', steps.env.outputs.ENV_PREFIX)] }}
+          PASSWORD: ${{ secrets[format('{0}_PASSWORD', steps.env.outputs.ENV_PREFIX)] }}
+          KEY: ${{ secrets[format('{0}_KEY', steps.env.outputs.ENV_PREFIX)] }}
+          PATH: ${{ vars[format('{0}_PATH', steps.env.outputs.ENV_PREFIX)] }}
+          BRANCH: ${{ github.ref_name }}
