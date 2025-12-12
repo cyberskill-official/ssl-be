@@ -44,6 +44,12 @@ export const emailCtr = {
                     ?? (Array.isArray(to) ? to[0] : to)
                     ?? '',
             };
+            log.warn('[Email][sendEmail] render context', {
+                templateKey,
+                to,
+                renderEmail: renderData.email,
+                hasTemplateDataEmail: (safeTemplateData as Record<string, any>)?.['email'] !== undefined,
+            });
             let html: string;
             let subjectText: string;
 
