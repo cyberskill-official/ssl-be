@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { I_EmailTemplate, I_Input_CreateEmailTemplate } from '#modules/email-template/email-template.type.js';
 
-import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, EMAIL_VERIFICATION, FORGOT_PASSWORD, MEMBERSHIP_DOWNGRADE, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED, PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY, REPLY_FROM_ADMIN, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/authn.constant.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, EMAIL_VERIFICATION, FORGOT_PASSWORD, MEMBERSHIP_DOWNGRADE, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED, PAYMENT_SUCCESS, PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY, REPLY_FROM_ADMIN, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/authn.constant.js';
 
 interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 }
@@ -272,6 +272,112 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
             <br/><strong style="color:#000000;">Sign in to discover who's reaching out.</strong>`,
             showNotificationPreferences: true,
         }),
+    },
+    {
+        templateKey: PAYMENT_SUCCESS,
+        name: 'Payment success receipt',
+        subject: ' Payment successful – receipt',
+        content: `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:Myanmar Text;">
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color:#f5f5f5;">
+        <tr>
+            <td align="center" style="padding:20px 0;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width:600px;background-color:#ffffff;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
+                            <img src="${LOGO_BASE64}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                        </td>
+                    </tr>
+                    <!-- Main Content -->
+                    <tr>
+                        <td style="padding:40px 30px;background-color:#ffffff;">
+                            <h1 style="font-size:24px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Payment receipt</h1>
+                            <p style="margin:0 0 16px;font-size:14px;color:#000000;font-family:Myanmar Text;">Hi <%= userEmail %>,</p>
+                            <p style="margin:0 0 16px;font-size:14px;color:#000000;font-family:Myanmar Text;">Thank you for your payment. Here are your receipt details:</p>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin:10px 0 20px;border-collapse:collapse;">
+                                <tr>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Invoice no.</td>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= invoiceNo %></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Date</td>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= paymentDate %></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Payment method</td>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= paymentMethod %></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Transaction ID</td>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= transactionId %></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Membership period</td>
+                                    <td style="padding:6px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= membershipPeriod %></td>
+                                </tr>
+                            </table>
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse:collapse;margin-bottom:20px;">
+                                <tr style="border-bottom:1px solid #000000;">
+                                    <td style="padding:10px 0;font-size:14px;font-weight:bold;color:#000000;font-family:Myanmar Text;width:60%;">Description</td>
+                                    <td style="padding:10px 0;font-size:14px;font-weight:bold;color:#000000;font-family:Myanmar Text;text-align:right;width:40%;">Amount</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Membership</td>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Price (excl. VAT)</td>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= subtotal %></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">VAT <%= taxRate %>%</td>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"><%= tax %></td>
+                                </tr>
+                                <tr style="border-top:1px solid #000000;">
+                                    <td style="padding:12px 0 4px;font-size:14px;font-weight:bold;color:#000000;font-family:Myanmar Text;">Total</td>
+                                    <td style="padding:12px 0 4px;font-size:14px;font-weight:bold;color:#000000;font-family:Myanmar Text;text-align:right;"><%= totalAmount %></td>
+                                </tr>
+                            </table>
+                            <p style="margin:0 0 10px;font-size:13px;color:#000000;font-family:Myanmar Text;">Billing country: <%= country %></p>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color:#631B1C;padding:20px;text-align:center;">
+                            <p style="color:#ffffff;font-size:20px;margin:0 0 10px;font-family:Myanmar Text;text-align:center;">For swingers - Created by swingers</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`,
+        variables: [
+            'invoiceNo',
+            'paymentDate',
+            'userEmail',
+            'country',
+            'subtotal',
+            'taxRate',
+            'tax',
+            'totalAmount',
+            'paymentMethod',
+            'transactionId',
+            'membershipPeriod',
+        ],
     },
     {
         templateKey: NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST,

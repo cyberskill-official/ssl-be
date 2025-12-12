@@ -43,6 +43,8 @@ export const emailCtr = {
                 email: (safeTemplateData as Record<string, any>)?.['email']
                     ?? (Array.isArray(to) ? to[0] : to)
                     ?? '',
+                otp: (safeTemplateData as Record<string, any>)?.['otp'] ?? '',
+                expireIn: (safeTemplateData as Record<string, any>)?.['expireIn'] ?? '',
             };
             log.warn('[Email][sendEmail] render context', {
                 templateKey,
