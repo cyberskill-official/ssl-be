@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { execSync } from 'node:child_process';
 
 const instanceId = process.env.NODE_APP_INSTANCE;
