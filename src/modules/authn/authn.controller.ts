@@ -1427,53 +1427,38 @@ export const authnCtr = {
 
         assignSessionUser(context.req.session, sanitizedLoginUser);
 
-        // Log session info after login
+        // Log session info after login - check cookie after response is prepared
         const sessionId = context.req?.sessionID;
         const res = (context.req as any)?.res;
-        const cookieHeader = context.req?.headers?.cookie;
 
         // Force session save to ensure cookie is set
-        // Use callback to ensure it completes before response
-        await new Promise<void>((resolve, reject) => {
-            if (!context.req?.session) {
-                resolve();
-                return;
-            }
-
-            // Mark session as modified to ensure it gets saved
-            context.req.session.touch();
-
-            context.req.session.save((err) => {
-                if (err) {
-                    log.error('[LOGIN] Failed to save session', { error: err, sessionId });
-                    reject(err);
-                    return;
-                }
-
-                // Check Set-Cookie header after save
-                const setCookieHeaders = res?.getHeader?.('Set-Cookie');
-
-                log.info('[LOGIN] Session assigned and saved', {
-                    sessionId,
-                    userId: sanitizedLoginUser.id,
-                    username: sanitizedLoginUser.username,
-                    email: sanitizedLoginUser.email,
-                    hasSessionCookie: !!setCookieHeaders,
-                    setCookieHeader: Array.isArray(setCookieHeaders)
-                        ? setCookieHeaders.map((c: string) => c.substring(0, 200))
-                        : (setCookieHeaders ? String(setCookieHeaders).substring(0, 200) : null),
-                    hasRequestCookie: !!cookieHeader,
-                    requestCookieHeader: cookieHeader ? String(cookieHeader).substring(0, 150) : null,
-                    sessionUser: context.req?.session?.user
-                        ? {
-                                id: context.req.session.user.id,
-                                username: context.req.session.user.username,
-                            }
-                        : null,
-                });
-
-                resolve();
+        if (context.req?.session?.save) {
+            await new Promise<void>((resolve) => {
+                context.req?.session?.save(() => resolve());
             });
+        }
+
+        // Check Set-Cookie header after save
+        const setCookieHeaders = res?.getHeader?.('Set-Cookie');
+        const cookieHeader = context.req?.headers?.cookie;
+
+        log.info('[LOGIN] Session assigned', {
+            sessionId,
+            userId: sanitizedLoginUser.id,
+            username: sanitizedLoginUser.username,
+            email: sanitizedLoginUser.email,
+            hasSessionCookie: !!setCookieHeaders,
+            setCookieHeader: Array.isArray(setCookieHeaders)
+                ? setCookieHeaders.map((c: string) => c.substring(0, 200))
+                : (setCookieHeaders ? String(setCookieHeaders).substring(0, 200) : null),
+            hasRequestCookie: !!cookieHeader,
+            requestCookieHeader: cookieHeader ? String(cookieHeader).substring(0, 150) : null,
+            sessionUser: context.req?.session?.user
+                ? {
+                        id: context.req.session.user.id,
+                        username: context.req.session.user.username,
+                    }
+                : null,
         });
 
         return {
