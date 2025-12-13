@@ -1420,36 +1420,8 @@ export const authnCtr = {
 
         // Regenerate session to avoid session fixation and ensure clean state per login
         if (context.req.session?.regenerate) {
-            await new Promise<void>((resolve, reject) => {
-                context.req?.session?.regenerate((err) => {
-                    if (err) {
-                        log.error('[LOGIN] Failed to regenerate session', { error: err });
-                        reject(err);
-                        return;
-                    }
-                    log.info('[LOGIN] Session regenerated', {
-                        newSessionId: context.req?.sessionID,
-                        hasSession: !!context.req?.session,
-                    });
-
-                    // Immediately save the new session to ensure cookie is set
-                    if (context.req?.session?.save) {
-                        context.req.session.save((saveErr) => {
-                            if (saveErr) {
-                                log.error('[LOGIN] Failed to save session after regenerate', { error: saveErr });
-                                reject(saveErr);
-                                return;
-                            }
-                            log.info('[LOGIN] New session saved after regenerate', {
-                                sessionId: context.req?.sessionID,
-                            });
-                            resolve();
-                        });
-                    }
-                    else {
-                        resolve();
-                    }
-                });
+            await new Promise<void>((resolve) => {
+                context.req?.session?.regenerate(() => resolve());
             });
         }
 
@@ -1464,17 +1436,12 @@ export const authnCtr = {
         // Use callback to ensure it completes before response
         await new Promise<void>((resolve, reject) => {
             if (!context.req?.session) {
-                log.error('[LOGIN] No session after assignSessionUser');
                 resolve();
                 return;
             }
 
             // Mark session as modified to ensure it gets saved
-            // This is critical for saveUninitialized: false
             context.req.session.touch();
-
-            // Explicitly mark session as needing save
-            (context.req.session as any).cookie = (context.req.session as any).cookie || {};
 
             context.req.session.save((err) => {
                 if (err) {
@@ -1503,7 +1470,6 @@ export const authnCtr = {
                                 username: context.req.session.user.username,
                             }
                         : null,
-                    sessionCookie: (context.req?.session as any)?.cookie,
                 });
 
                 resolve();

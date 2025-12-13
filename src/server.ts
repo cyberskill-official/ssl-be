@@ -52,9 +52,7 @@ const env = getEnv();
 
     const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
-        // Temporarily set to true to debug cookie issue
-        // With false, new sessions after regenerate() may not be saved
-        saveUninitialized: true,
+        saveUninitialized: false,
         store: mongoStore.create({
             clientPromise: Promise.resolve(mongoose.connection.getClient()),
             stringify: false,
