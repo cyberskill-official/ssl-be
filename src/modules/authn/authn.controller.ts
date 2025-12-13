@@ -1427,33 +1427,17 @@ export const authnCtr = {
 
         assignSessionUser(context.req.session, sanitizedLoginUser);
 
-        // Log session info after login - check cookie after response is prepared
-        const sessionId = context.req?.sessionID;
-        const res = (context.req as any)?.res;
-
-        // Force session save to ensure cookie is set
-        if (context.req?.session?.save) {
-            await new Promise<void>((resolve) => {
-                context.req?.session?.save(() => resolve());
-            });
-        }
-
-        // Check Set-Cookie header after save
-        const setCookieHeaders = res?.getHeader?.('Set-Cookie');
-        const cookieHeader = context.req?.headers?.cookie;
-
+        // Log session info after login
+        const sessionId = context.req.sessionID;
+        const sessionCookie = (context.req as any)?.res?.getHeader?.('Set-Cookie');
         log.info('[LOGIN] Session assigned', {
             sessionId,
             userId: sanitizedLoginUser.id,
             username: sanitizedLoginUser.username,
             email: sanitizedLoginUser.email,
-            hasSessionCookie: !!setCookieHeaders,
-            setCookieHeader: Array.isArray(setCookieHeaders)
-                ? setCookieHeaders.map((c: string) => c.substring(0, 200))
-                : (setCookieHeaders ? String(setCookieHeaders).substring(0, 200) : null),
-            hasRequestCookie: !!cookieHeader,
-            requestCookieHeader: cookieHeader ? String(cookieHeader).substring(0, 150) : null,
-            sessionUser: context.req?.session?.user
+            hasSessionCookie: !!sessionCookie,
+            cookieHeader: Array.isArray(sessionCookie) ? sessionCookie[0] : sessionCookie,
+            sessionUser: context.req.session.user
                 ? {
                         id: context.req.session.user.id,
                         username: context.req.session.user.username,

@@ -62,29 +62,6 @@ const env = getEnv();
         sessionMiddleware(req, res, next);
     app.use(sessionParser);
 
-    // Debug middleware to log session and cookie info
-    app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
-        const cookieHeader = req.headers.cookie;
-        const sessionId = (req as any).sessionID;
-        const hasSession = !!(req as any).session;
-        const hasSessionUser = !!(req as any).session?.user;
-
-        // Only log for GraphQL requests to avoid spam
-        if (req.path.includes('/graphql')) {
-            log.info('[SESSION_MIDDLEWARE] Request received', {
-                path: req.path,
-                method: req.method,
-                sessionId,
-                hasSession,
-                hasSessionUser,
-                hasCookieHeader: !!cookieHeader,
-                cookieHeader: cookieHeader ? (typeof cookieHeader === 'string' ? cookieHeader.substring(0, 150) : 'non-string') : null,
-                sessionCookieName: env.SESSION_NAME,
-            });
-        }
-        next();
-    });
-
     const httpServer = createServer(app);
     const wsServer = createWSServer({
         server: httpServer,
