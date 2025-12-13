@@ -16,6 +16,8 @@ import { schema } from '#shared/graphql/schema.js';
 const env = getEnv();
 
 (async () => {
+    log.info(`ENV: ${JSON.stringify(env, null, 2)}`);
+
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });

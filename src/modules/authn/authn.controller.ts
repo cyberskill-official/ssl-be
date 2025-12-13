@@ -353,6 +353,9 @@ export const authnCtr = {
             return authnCtr.checkToken(context, { token: args.token });
         }
 
+        console.log(`[AUTHN] checkAuth: sessionID=${context.req?.session?.id}, user=${context.req?.session?.user?.id ? 'PRESENT' : 'MISSING'}`);
+        console.log(`[AUTHN] checkAuth: cookie header=${context.req?.headers?.cookie || 'MISSING'}`);
+
         if (!context?.req?.session?.user) {
             return {
                 success: false,
