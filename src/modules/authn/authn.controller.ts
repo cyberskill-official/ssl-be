@@ -154,7 +154,8 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
                 session.save((err) => {
                     if (err) {
                         reject(err);
-                    } else {
+                    }
+                    else {
                         resolve();
                     }
                 });
@@ -162,7 +163,7 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
         }
     }
     catch (error) {
-        console.warn('Failed to persist session activity during assignment:', error);
+        log.warn('Failed to persist session activity during assignment:', error);
     }
 }
 
@@ -230,7 +231,7 @@ export const authnCtr = {
             }
         }
         catch (err) {
-            console.warn('[AUTHN] failed to create verification entry for admin OTP', err);
+            log.warn('[AUTHN] failed to create verification entry for admin OTP', err);
             // best-effort: continue to send email even if verification creation fails
         }
 
@@ -353,9 +354,6 @@ export const authnCtr = {
             return authnCtr.checkToken(context, { token: args.token });
         }
 
-        console.log(`[AUTHN] checkAuth: sessionID=${context.req?.session?.id}, user=${context.req?.session?.user?.id ? 'PRESENT' : 'MISSING'}`);
-        console.log(`[AUTHN] checkAuth: cookie header=${context.req?.headers?.cookie || 'MISSING'}`);
-
         if (!context?.req?.session?.user) {
             return {
                 success: false,
@@ -438,7 +436,7 @@ export const authnCtr = {
             }
         }
         catch (err) {
-            console.warn('Failed to validate session inactivity:', err);
+            log.warn('Failed to validate session inactivity:', err);
         }
 
         if (!isGuardianSession && isAdmin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
@@ -503,7 +501,7 @@ export const authnCtr = {
             // Skip server-side IP extraction; rely on FE-provided IP at login
         }
         catch (error) {
-            console.warn('Failed to update user IP in checkAuth:', error);
+            log.warn('Failed to update user IP in checkAuth:', error);
         }
 
         return {
@@ -1377,7 +1375,7 @@ export const authnCtr = {
         }
         catch (error) {
             // Don't block login if IP update fails
-            console.warn('Failed to update user IP:', error);
+            log.warn('Failed to update user IP:', error);
         }
 
         const token = rememberMe
@@ -1414,19 +1412,14 @@ export const authnCtr = {
         //     update: { tempOtp: null, tempOtpCreatedAt: null },
         // });
 
-        // Regenerate session to avoid session fixation and ensure clean state per login
-        console.log(`[AUTHN] Login: Regenerating session... (old ID: ${context.req.session?.id})`);
         if (context.req.session?.regenerate) {
             await new Promise<void>((resolve) => {
                 context.req?.session?.regenerate((err) => {
                     if (err) {
-                        console.error('[AUTHN] Login: Session regeneration failed', err);
-                        // resolve anyway to try continuing, or reject?
-                        // Usually if regeneration fails, we might still want to proceed but log it.
-                        // But strictly speaking, it's a security risk if old session remains.
                         resolve();
-                    } else {
-                        console.log(`[AUTHN] Login: Session regenerated (new ID: ${context.req?.session?.id})`);
+                        log.error('Session regeneration error after login:', err);
+                    }
+                    else {
                         resolve();
                     }
                 });
@@ -1769,16 +1762,16 @@ export const authnCtr = {
                 ...(isOtherMethod
                     ? {}
                     : {
-                        aiResult: aiResult
-                            ? {
-                                documentAge: aiResult.documentAge,
-                                selfieAgeRange: aiResult.selfieAgeRange,
-                                similarity: aiResult.similarity,
-                                isOver18: aiResult.isOver18,
-                                dateOfBirth: aiResult.dateOfBirth,
-                            }
-                            : undefined,
-                    }),
+                            aiResult: aiResult
+                                ? {
+                                        documentAge: aiResult.documentAge,
+                                        selfieAgeRange: aiResult.selfieAgeRange,
+                                        similarity: aiResult.similarity,
+                                        isOver18: aiResult.isOver18,
+                                        dateOfBirth: aiResult.dateOfBirth,
+                                    }
+                                : undefined,
+                        }),
             },
         };
 
@@ -1903,7 +1896,7 @@ export const authnCtr = {
         const currentStatus = userFound.result.ageVerify.status;
         const awaitingManualReview
             = currentStatus === E_AgeVerifyStatus.PENDING
-            || (currentStatus === E_AgeVerifyStatus.APPROVED && !userFound.result.ageVerify.approvedById);
+                || (currentStatus === E_AgeVerifyStatus.APPROVED && !userFound.result.ageVerify.approvedById);
 
         if (!awaitingManualReview) {
             throwError({
