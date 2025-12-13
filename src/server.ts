@@ -22,16 +22,6 @@ const env = getEnv();
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
 
-    app.set('trust proxy', 1);
-
-    const cookieOptions = {
-        maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
-        ...(!env.IS_DEV && { secure: true, sameSite: 'none' as const }),
-    };
-
-    log.info(`[DEBUG] IS_DEV: ${env.IS_DEV}`);
-    log.info(`[DEBUG] Cookie Options: ${JSON.stringify(cookieOptions, null, 2)}`);
-
     app.use(createSession({
         name: env.SESSION_NAME,
         secret: env.SESSION_SECRET,
@@ -40,7 +30,10 @@ const env = getEnv();
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
         }),
-        cookie: cookieOptions,
+        cookie: {
+            maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
+            ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
+        },
     }));
 
     const httpServer = createServer(app);

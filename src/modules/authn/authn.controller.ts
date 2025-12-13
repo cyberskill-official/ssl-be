@@ -79,12 +79,14 @@ const disableOtpEnforcement = String(
 
 function clearSessionCookie(req?: I_Request): void {
     const res = (req as any)?.res;
-    if (!res?.clearCookie)
+
+    if (!res?.clearCookie) {
         return;
+    }
 
     const cookieOptions = {
         path: '/',
-        ...(env.IS_DEV ? {} : { sameSite: 'none' as const, secure: true }),
+        ...(env.IS_DEV ? {} : { sameSite: 'none', secure: true }),
     };
 
     try {
@@ -134,7 +136,6 @@ function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
 
 async function assignSessionUser(session: I_Request['session'], user: I_User) {
     if (!session) {
-        console.warn('[AUTHN] assignSessionUser: No session provided');
         return;
     }
 
@@ -144,7 +145,6 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
         : user;
 
     session.user = safeUser;
-    console.log(`[AUTHN] assignSessionUser: assigning user ${safeUser?.id} to session ${session.id} (keys: ${Object.keys(safeUser || {}).join(',')})`);
 
     try {
         Reflect.set(session, 'lastActivity', Date.now());
@@ -153,10 +153,8 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
             await new Promise<void>((resolve, reject) => {
                 session.save((err) => {
                     if (err) {
-                        console.error('[AUTHN] assignSessionUser: session.save failed', err);
                         reject(err);
                     } else {
-                        console.log('[AUTHN] assignSessionUser: session.save success');
                         resolve();
                     }
                 });
@@ -167,8 +165,6 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
         console.warn('Failed to persist session activity during assignment:', error);
     }
 }
-
-// extractClientIp is now shared in env.util
 
 export const authnCtr = {
     sendOTPEmailForAdmin: async (
@@ -500,8 +496,8 @@ export const authnCtr = {
             sanitizedUser.guardianOwnerId = undefined;
         }
 
-        console.log(`[AUTHN] checkAuth: User validated from session: ${sanitizedUser.id}`);
         await assignSessionUser(context.req.session, sanitizedUser);
+
         try {
             // Prefer client IP from request headers (proxied environments)
             // Skip server-side IP extraction; rely on FE-provided IP at login
