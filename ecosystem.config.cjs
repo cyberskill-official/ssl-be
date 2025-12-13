@@ -4,7 +4,8 @@ let branch = 'unknown';
 
 try {
     branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
-} catch {
+}
+catch {
     console.warn('Failed to detect git branch, defaulting to single mode');
 }
 

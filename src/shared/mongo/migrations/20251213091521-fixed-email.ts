@@ -17,7 +17,7 @@ fileURLToPath(import.meta.url); // keep for consistency with other migrations
 const USER_APP_BASE_URL = (() => {
     const raw = process.env['USER_APP_URL']?.trim();
     if (!raw) {
-        return 'https://development.secretswingerlust.com/home';
+        return 'https://secretswingerlust.com/home';
     }
     return raw.replace(/\/+$/, '');
 })();
@@ -41,7 +41,7 @@ function generateEmailTemplate(options: {
         greeting = 'Hi there,',
         message,
         buttonText = 'Sign in',
-        buttonLink = 'https://development.secretswingerlust.com/home',
+        buttonLink = 'https://secretswingerlust.com/home',
         showNotificationPreferences = true,
     } = options;
 
@@ -64,7 +64,7 @@ function generateEmailTemplate(options: {
             </p>
             <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1.8;font-family:Myanmar Text;font-weight:normal;">
                 <li style="margin-bottom:8px;font-weight:normal;">
-                    Sign in to <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secretswingerlust.com</a>
+                    Sign in to <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secretswingerlust.com</a>
                 </li>
                 <li style="margin-bottom:8px;font-weight:normal;">Click My Profile (top-right)</li>
                 <li style="margin-bottom:8px;font-weight:normal;">Select Notifications</li>
@@ -257,7 +257,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Someone just followed you',
         content: generateEmailTemplate({
             title: 'Someone just followed you 👀',
-            message: `You have a new follower on <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.`,
+            message: `You have a new follower on <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.`,
             showNotificationPreferences: true,
         }),
     },
@@ -385,7 +385,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' A new profile just appeared near you 👋',
         content: generateEmailTemplate({
             title: 'A new profile just appeared near you 👋',
-            message: `A new profile has just joined <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> in your area.`,
+            message: `A new profile has just joined <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> in your area.`,
             showNotificationPreferences: true,
         }),
     },
@@ -395,7 +395,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' A new announcement near you 📍',
         content: generateEmailTemplate({
             title: 'New announcement near you 📍',
-            message: `A new announcement has just been posted in your area on <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.`,
+            message: `A new announcement has just been posted in your area on <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.`,
             showNotificationPreferences: true,
         }),
     },
@@ -405,7 +405,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Your account has been deleted',
         content: generateEmailTemplate({
             title: 'We\'re sad to see you go – but thank you ❤️',
-            message: `Thank you for being a part of <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – it's been a pleasure having you with us on this journey into the world of honest and passionate swinger experiences.<br/><br/>Your profile has now been deleted, and we will ensure that all your data is deleted in accordance with our privacy policy.<br/><br/>We sincerely hope to see you again in the future. The door is always open.<br/><br/>If you have any feedback or suggestions for how we can improve, we'd love to hear from you. Feel free to write to us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a> – your opinion matters.`,
+            message: `Thank you for being a part of <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – it's been a pleasure having you with us on this journey into the world of honest and passionate swinger experiences.<br/><br/>Your profile has now been deleted, and we will ensure that all your data is deleted in accordance with our privacy policy.<br/><br/>We sincerely hope to see you again in the future. The door is always open.<br/><br/>If you have any feedback or suggestions for how we can improve, we'd love to hear from you. Feel free to write to us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a> – your opinion matters.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -418,7 +418,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Your profile has been suspended',
         content: generateEmailTemplate({
             title: 'Your profile has been suspended',
-            message: `We're reaching out to inform you that your profile on <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> has been suspended due to a serious violation of our community guidelines.<br/><br/>If you have not received any prior warnings, this suspension is the result of an incident we consider to be severe and clearly against our rules and values.<br/><br/>As part of our security measures, a suspension also means that you will not be able to create a new profile.<br/><br/>If you believe there has been a misunderstanding, or if you would like to provide an explanation, please don't hesitate to contact us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.<br/><br/>We take the integrity and safety of our community very seriously, and we appreciate your understanding.`,
+            message: `We're reaching out to inform you that your profile on <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> has been suspended due to a serious violation of our community guidelines.<br/><br/>If you have not received any prior warnings, this suspension is the result of an incident we consider to be severe and clearly against our rules and values.<br/><br/>As part of our security measures, a suspension also means that you will not be able to create a new profile.<br/><br/>If you believe there has been a misunderstanding, or if you would like to provide an explanation, please don't hesitate to contact us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.<br/><br/>We take the integrity and safety of our community very seriously, and we appreciate your understanding.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -431,7 +431,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Welcome – Where Real Swinger Adventures Begin ❤️‍🔥',
         content: generateEmailTemplate({
             title: 'Welcome to Secretswingerlust – Where Real Swinger Adventures Begin ❤️‍🔥',
-            message: `Welcome to <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not secretswingerlust.com<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At Secretswingerlust, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
+            message: `Welcome to <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not secretswingerlust.com<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At Secretswingerlust, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -444,7 +444,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' You\'re still part of the adventure 💫',
         content: generateEmailTemplate({
             title: 'You\'re still part of the adventure 💫',
-            message: `Thank you for your time as a valued member of <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – we've truly enjoyed having you as part of our paying community.<br/><br/>Although you've chosen to end your membership, your profile remains active, and we hope you'll continue to explore and engage in our playful universe. You're still very much part of the SecretSwingerLust community!<br/><br/>Some features will no longer be available with your free profile – but there's still plenty of excitement waiting for you. And who knows… maybe you'll be tempted to upgrade again in the future 😉<br/><br/>Until then, we're happy to have you here.`,
+            message: `Thank you for your time as a valued member of <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – we've truly enjoyed having you as part of our paying community.<br/><br/>Although you've chosen to end your membership, your profile remains active, and we hope you'll continue to explore and engage in our playful universe. You're still very much part of the SecretSwingerLust community!<br/><br/>Some features will no longer be available with your free profile – but there's still plenty of excitement waiting for you. And who knows… maybe you'll be tempted to upgrade again in the future 😉<br/><br/>Until then, we're happy to have you here.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -470,7 +470,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Your profile is at risk of deletion ⏱️',
         content: generateEmailTemplate({
             title: 'Your profile is at risk of being deleted ⏱️',
-            message: `We've noticed that your profile on <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> has been inactive for quite some time.<br/><br/>To keep our community fresh and active, we regularly remove unused profiles – and yours is now scheduled for deletion in 30 days.<br/><br/>If you wish to keep your profile, simply log in before then and you're safe – no further action needed. If you no longer wish to be part of our playful universe, you don't have to do anything – your data will be permanently deleted after the 30-day period.<br/><br/>If you have any questions or need help reactivating your profile, feel free to contact us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.<br/><br/>We'd love to see you back! ✨`,
+            message: `We've noticed that your profile on <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> has been inactive for quite some time.<br/><br/>To keep our community fresh and active, we regularly remove unused profiles – and yours is now scheduled for deletion in 30 days.<br/><br/>If you wish to keep your profile, simply log in before then and you're safe – no further action needed. If you no longer wish to be part of our playful universe, you don't have to do anything – your data will be permanently deleted after the 30-day period.<br/><br/>If you have any questions or need help reactivating your profile, feel free to contact us at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.<br/><br/>We'd love to see you back! ✨`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -483,7 +483,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
         subject: ' Final reminder – profile deletion in 10 days ⏳',
         content: generateEmailTemplate({
             title: 'Final reminder – your profile will be deleted in 10 days ⏳',
-            message: `This is a friendly reminder that your profile on <a href="https://development.secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a> is still inactive – and is now scheduled for deletion in just 10 days.<br/><br/>If you want to keep your profile and stay part of our adventurous community, simply log in before the deadline. It only takes a moment – and everything will stay just as you left it.<br/><br/>If we don't hear from you, your profile and all associated data will be permanently deleted in accordance with our privacy policy.<br/><br/>Questions? Reach out any time at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.`,
+            message: `This is a friendly reminder that your profile on <a href="https://secretswingerlust.com/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a> is still inactive – and is now scheduled for deletion in just 10 days.<br/><br/>If you want to keep your profile and stay part of our adventurous community, simply log in before the deadline. It only takes a moment – and everything will stay just as you left it.<br/><br/>If we don't hear from you, your profile and all associated data will be permanently deleted in accordance with our privacy policy.<br/><br/>Questions? Reach out any time at <a href="mailto:info@secretswingerlust.com" target="_blank" rel="noopener noreferrer" style="color:#000000;text-decoration:none;">info@secretswingerlust.com</a>.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',

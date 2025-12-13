@@ -108,25 +108,6 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
 
-    // Debug viewer flags for message media hydration (opt-in to avoid log noise)
-    try {
-        const { log } = await import('@cyberskill/shared/node/log');
-        log.warn('[MESSAGE][transformMessageMedia] viewer flags', {
-            viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
-            viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
-            viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
-            viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
-            viewerIsStaff: viewerMediaOptions.viewerIsStaff,
-            viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
-            membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
-            membershipEndDate: (sessionUser as any)?.membershipEndDate,
-            rolesIds: (sessionUser as any)?.rolesIds,
-        });
-    }
-    catch {
-        // ignore logging failures
-    }
-
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
         // Only re-sign if URL has remote_ip restriction or if token is expired/missing

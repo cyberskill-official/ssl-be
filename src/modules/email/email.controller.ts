@@ -38,6 +38,10 @@ export const emailCtr = {
 
             const templateFromCache = emailTemplateCache.get(templateKey);
             const safeTemplateData = templateData ?? {};
+
+            // Get USER_APP_URL from env and ensure it doesn't end with trailing slash
+            const userAppUrl = env.USER_APP_URL ? env.USER_APP_URL.replace(/\/+$/, '') : '';
+
             const renderData = {
                 ...safeTemplateData,
                 email: (safeTemplateData as Record<string, any>)?.['email']
@@ -45,6 +49,9 @@ export const emailCtr = {
                     ?? '',
                 otp: (safeTemplateData as Record<string, any>)?.['otp'] ?? '',
                 expireIn: (safeTemplateData as Record<string, any>)?.['expireIn'] ?? '',
+                // Add USER_APP_URL to renderData so email templates can use it dynamically
+                USER_APP_URL: userAppUrl,
+                userAppUrl, // Also provide lowercase version for convenience
             };
             log.warn('[Email][sendEmail] render context', {
                 templateKey,
