@@ -35,6 +35,7 @@ const env = getEnv();
     await mongoose.connect(env.MONGO_URI);
     log.info(`Running MongoDb at ${env.MONGO_URI}`);
 
+    const cookieDomain = (env.SESSION_COOKIE_DOMAIN || '').trim();
     const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
         saveUninitialized: false,
@@ -45,7 +46,9 @@ const env = getEnv();
         rolling: true,
         cookie: {
             maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
-            ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
+            // Enable cross-site cookies when domain is provided (staging/prod)
+            ...((cookieDomain || !env.IS_DEV) && { secure: true, sameSite: 'none' as const }),
+            ...(cookieDomain ? { domain: cookieDomain } : {}),
         },
     };
 

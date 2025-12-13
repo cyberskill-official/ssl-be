@@ -338,7 +338,29 @@ export const authnCtr = {
             return authnCtr.checkToken(context, { token: args.token });
         }
 
+        // Log session info at start of checkAuth
+        const sessionId = context.req?.sessionID;
+        const sessionCookie = context.req?.headers?.cookie;
+        const hasSession = !!context.req?.session;
+        const hasSessionUser = !!context.req?.session?.user;
+
+        log.info('[CHECK_AUTH] Checking session', {
+            sessionId,
+            hasSession,
+            hasSessionUser,
+            sessionUserId: context.req?.session?.user?.id || null,
+            sessionUsername: context.req?.session?.user?.username || null,
+            hasCookieHeader: !!sessionCookie,
+            cookieHeader: sessionCookie ? (typeof sessionCookie === 'string' ? sessionCookie.substring(0, 100) : 'non-string') : null,
+        });
+
         if (!context?.req?.session?.user) {
+            log.warn('[CHECK_AUTH] Session not found', {
+                sessionId,
+                hasSession,
+                hasSessionUser,
+                hasCookieHeader: !!sessionCookie,
+            });
             return {
                 success: false,
                 message: 'Session not found.',
@@ -486,6 +508,16 @@ export const authnCtr = {
         catch (error) {
             console.warn('Failed to update user IP in checkAuth:', error);
         }
+
+        // Log successful checkAuth
+        log.info('[CHECK_AUTH] Success', {
+            sessionId: context.req.sessionID,
+            userId: sanitizedUser.id,
+            username: sanitizedUser.username,
+            email: sanitizedUser.email,
+            isAdmin,
+            isGuardianSession,
+        });
 
         return {
             success: true,
@@ -1394,6 +1426,24 @@ export const authnCtr = {
         }
 
         assignSessionUser(context.req.session, sanitizedLoginUser);
+
+        // Log session info after login
+        const sessionId = context.req.sessionID;
+        const sessionCookie = (context.req as any)?.res?.getHeader?.('Set-Cookie');
+        log.info('[LOGIN] Session assigned', {
+            sessionId,
+            userId: sanitizedLoginUser.id,
+            username: sanitizedLoginUser.username,
+            email: sanitizedLoginUser.email,
+            hasSessionCookie: !!sessionCookie,
+            cookieHeader: Array.isArray(sessionCookie) ? sessionCookie[0] : sessionCookie,
+            sessionUser: context.req.session.user
+                ? {
+                        id: context.req.session.user.id,
+                        username: context.req.session.user.username,
+                    }
+                : null,
+        });
 
         return {
             success: true,
