@@ -91,7 +91,6 @@ export function getEnv(): I_Environment {
         PAYMENT_REDIRECT_URL: str(),
         MEDIA_VIEWER_DEBUG: str({ default: 'true' }),
         MONGO_URI: str({ default: '' }),
-        SESSION_COOKIE_DOMAIN: str({ default: '' }),
     });
 
     return {

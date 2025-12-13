@@ -57,5 +57,4 @@ export interface I_Environment {
     USER_APP_URL: string;
     PAYMENT_REDIRECT_URL: string;
     MEDIA_VIEWER_DEBUG: string;
-    SESSION_COOKIE_DOMAIN?: string;
 }
