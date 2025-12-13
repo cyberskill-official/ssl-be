@@ -1431,7 +1431,24 @@ export const authnCtr = {
                         newSessionId: context.req?.sessionID,
                         hasSession: !!context.req?.session,
                     });
-                    resolve();
+
+                    // Immediately save the new session to ensure cookie is set
+                    if (context.req?.session?.save) {
+                        context.req.session.save((saveErr) => {
+                            if (saveErr) {
+                                log.error('[LOGIN] Failed to save session after regenerate', { error: saveErr });
+                                reject(saveErr);
+                                return;
+                            }
+                            log.info('[LOGIN] New session saved after regenerate', {
+                                sessionId: context.req?.sessionID,
+                            });
+                            resolve();
+                        });
+                    }
+                    else {
+                        resolve();
+                    }
                 });
             });
         }
