@@ -36,6 +36,20 @@ const env = getEnv();
     log.info(`Running MongoDb at ${env.MONGO_URI}`);
 
     const cookieDomain = (env.SESSION_COOKIE_DOMAIN || '').trim();
+    const cookieConfig = {
+        maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
+        // Enable cross-site cookies when domain is provided (staging/prod)
+        ...((cookieDomain || !env.IS_DEV) && { secure: true, sameSite: 'none' as const }),
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
+    };
+
+    log.info('[SESSION_CONFIG] Cookie configuration', {
+        sessionName: env.SESSION_NAME,
+        cookieDomain: cookieDomain || '(not set)',
+        isDev: env.IS_DEV,
+        cookieConfig,
+    });
+
     const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
         resave: false,
         saveUninitialized: false,
@@ -44,12 +58,7 @@ const env = getEnv();
             stringify: false,
         }),
         rolling: true,
-        cookie: {
-            maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
-            // Enable cross-site cookies when domain is provided (staging/prod)
-            ...((cookieDomain || !env.IS_DEV) && { secure: true, sameSite: 'none' as const }),
-            ...(cookieDomain ? { domain: cookieDomain } : {}),
-        },
+        cookie: cookieConfig,
     };
 
     const sessionMiddleware = createSession({
@@ -63,7 +72,7 @@ const env = getEnv();
     app.use(sessionParser);
 
     // Debug middleware to log session and cookie info
-    app.use((req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
         const cookieHeader = req.headers.cookie;
         const sessionId = (req as any).sessionID;
         const hasSession = !!(req as any).session;
@@ -80,6 +89,21 @@ const env = getEnv();
                 hasCookieHeader: !!cookieHeader,
                 cookieHeader: cookieHeader ? (typeof cookieHeader === 'string' ? cookieHeader.substring(0, 150) : 'non-string') : null,
                 sessionCookieName: env.SESSION_NAME,
+            });
+
+            // Hook into response finish to log Set-Cookie header
+            res.on('finish', () => {
+                const setCookieHeaders = res.getHeader('Set-Cookie');
+                log.info('[SESSION_MIDDLEWARE] Response sent', {
+                    path: req.path,
+                    method: req.method,
+                    sessionId,
+                    statusCode: res.statusCode,
+                    hasSetCookie: !!setCookieHeaders,
+                    setCookieHeader: Array.isArray(setCookieHeaders)
+                        ? setCookieHeaders.map((c: string) => c.substring(0, 200))
+                        : (setCookieHeaders ? String(setCookieHeaders).substring(0, 200) : null),
+                });
             });
         }
         next();
