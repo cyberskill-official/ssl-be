@@ -21,6 +21,7 @@ module.exports = {
         max_memory_restart: '1G',
         env: {
             NODE_ENV: 'production',
+            NODE_ENV_MODE: isMain ? 'production' : 'staging',
             PORT: 8000,
         },
     }],

@@ -132,16 +132,35 @@ function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
     return Array.isArray(user.rolesIds) && user.rolesIds.includes(roleId);
 }
 
-function assignSessionUser(session: I_Request['session'], user: I_User) {
-    if (!session)
+async function assignSessionUser(session: I_Request['session'], user: I_User) {
+    if (!session) {
+        console.warn('[AUTHN] assignSessionUser: No session provided');
         return;
+    }
 
-    session.user = user;
+    // Ensure user is a POJO to avoid serialization issues with Mongoose documents
+    const safeUser = (user && typeof (user as any).toObject === 'function')
+        ? (user as any).toObject()
+        : user;
+
+    session.user = safeUser;
+    console.log(`[AUTHN] assignSessionUser: assigning user ${safeUser?.id} to session ${session.id} (keys: ${Object.keys(safeUser || {}).join(',')})`);
 
     try {
         Reflect.set(session, 'lastActivity', Date.now());
+
         if (typeof session.save === 'function') {
-            session.save(() => { /* best-effort */ });
+            await new Promise<void>((resolve, reject) => {
+                session.save((err) => {
+                    if (err) {
+                        console.error('[AUTHN] assignSessionUser: session.save failed', err);
+                        reject(err);
+                    } else {
+                        console.log('[AUTHN] assignSessionUser: session.save success');
+                        resolve();
+                    }
+                });
+            });
         }
     }
     catch (error) {
@@ -338,6 +357,9 @@ export const authnCtr = {
             return authnCtr.checkToken(context, { token: args.token });
         }
 
+        console.log(`[AUTHN] checkAuth: sessionID=${context.req?.session?.id}, user=${context.req?.session?.user?.id ? 'PRESENT' : 'MISSING'}`);
+        console.log(`[AUTHN] checkAuth: cookie header=${context.req?.headers?.cookie || 'MISSING'}`);
+
         if (!context?.req?.session?.user) {
             return {
                 success: false,
@@ -387,7 +409,7 @@ export const authnCtr = {
         }
 
         // Cập nhật lại lastActivity ngay sau khi xác thực user thành công
-        assignSessionUser(context.req.session, userFound.result);
+        await assignSessionUser(context.req.session, userFound.result);
 
         const guardianViewMeta = context.req.session.guardianView;
         const isGuardianSession = Boolean(
@@ -399,7 +421,7 @@ export const authnCtr = {
         const isAdmin = userHasRoleId(userFound.result, adminRoleId);
 
         if (isGuardianSession && !isAdmin) {
-            context.req.session.destroy(() => {});
+            context.req.session.destroy(() => { });
             throwError({
                 message: 'Guardian access revoked.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
@@ -433,7 +455,7 @@ export const authnCtr = {
         }
 
         if (!isAdmin && userFound.result.isAdminBlocked) {
-            context.req.session.destroy(() => {});
+            context.req.session.destroy(() => { });
             return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
         }
 
@@ -470,7 +492,7 @@ export const authnCtr = {
             sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
         }
 
-        else if (isAdmin) {
+        if (isAdmin) {
             sanitizedUser.isActive = true;
             sanitizedUser.isEmailVerified = true;
             sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
@@ -478,7 +500,8 @@ export const authnCtr = {
             sanitizedUser.guardianOwnerId = undefined;
         }
 
-        assignSessionUser(context.req.session, sanitizedUser);
+        console.log(`[AUTHN] checkAuth: User validated from session: ${sanitizedUser.id}`);
+        await assignSessionUser(context.req.session, sanitizedUser);
         try {
             // Prefer client IP from request headers (proxied environments)
             // Skip server-side IP extraction; rely on FE-provided IP at login
@@ -690,7 +713,7 @@ export const authnCtr = {
         }
 
         const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
-        assignSessionUser(context.req.session, sanitizedNewUser);
+        await assignSessionUser(context.req.session, sanitizedNewUser);
 
         // NOTE: removed server-side IP extraction; rely on FE-provided data if needed
 
@@ -1175,7 +1198,7 @@ export const authnCtr = {
         sanitizedUser.isEmailVerified = true;
         sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
 
-        assignSessionUser(context.req.session, sanitizedUser);
+        await assignSessionUser(context.req.session, sanitizedUser);
         context.req.session.guardianView = {
             ownerId: adminUser.result.id,
             issuedAt: Date.now(),
@@ -1244,9 +1267,6 @@ export const authnCtr = {
 
         const adminRoleIdLogin = await getAdminRoleId(context);
         const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
-
-        console.warn('isAdminLogin', isAdminLogin);
-
         const otpValue = userFound.result.tempOtp;
         const otpCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt) : null;
         const otpAgeMs = otpCreatedAt ? Date.now() - otpCreatedAt.getTime() : null;
@@ -1377,7 +1397,13 @@ export const authnCtr = {
             userFound.result.guardianOwnerId = undefined;
         }
 
-        const sanitizedLoginUser = omit(userFound.result, 'password') as I_User;
+        // Ensure we work with a POJO
+        const userObj = (userFound.result && typeof (userFound.result as any).toObject === 'function')
+            ? (userFound.result as any).toObject()
+            : userFound.result;
+
+        const sanitizedLoginUser = omit(userObj, 'password') as I_User;
+
         if (isAdminLogin) {
             sanitizedLoginUser.isActive = true;
             sanitizedLoginUser.isEmailVerified = true;
@@ -1393,13 +1419,25 @@ export const authnCtr = {
         // });
 
         // Regenerate session to avoid session fixation and ensure clean state per login
+        console.log(`[AUTHN] Login: Regenerating session... (old ID: ${context.req.session?.id})`);
         if (context.req.session?.regenerate) {
             await new Promise<void>((resolve) => {
-                context.req?.session?.regenerate(() => resolve());
+                context.req?.session?.regenerate((err) => {
+                    if (err) {
+                        console.error('[AUTHN] Login: Session regeneration failed', err);
+                        // resolve anyway to try continuing, or reject?
+                        // Usually if regeneration fails, we might still want to proceed but log it.
+                        // But strictly speaking, it's a security risk if old session remains.
+                        resolve();
+                    } else {
+                        console.log(`[AUTHN] Login: Session regenerated (new ID: ${context.req?.session?.id})`);
+                        resolve();
+                    }
+                });
             });
         }
 
-        assignSessionUser(context.req.session, sanitizedLoginUser);
+        await assignSessionUser(context.req.session, sanitizedLoginUser);
 
         return {
             success: true,
@@ -1735,16 +1773,16 @@ export const authnCtr = {
                 ...(isOtherMethod
                     ? {}
                     : {
-                            aiResult: aiResult
-                                ? {
-                                        documentAge: aiResult.documentAge,
-                                        selfieAgeRange: aiResult.selfieAgeRange,
-                                        similarity: aiResult.similarity,
-                                        isOver18: aiResult.isOver18,
-                                        dateOfBirth: aiResult.dateOfBirth,
-                                    }
-                                : undefined,
-                        }),
+                        aiResult: aiResult
+                            ? {
+                                documentAge: aiResult.documentAge,
+                                selfieAgeRange: aiResult.selfieAgeRange,
+                                similarity: aiResult.similarity,
+                                isOver18: aiResult.isOver18,
+                                dateOfBirth: aiResult.dateOfBirth,
+                            }
+                            : undefined,
+                    }),
             },
         };
 
@@ -1869,7 +1907,7 @@ export const authnCtr = {
         const currentStatus = userFound.result.ageVerify.status;
         const awaitingManualReview
             = currentStatus === E_AgeVerifyStatus.PENDING
-                || (currentStatus === E_AgeVerifyStatus.APPROVED && !userFound.result.ageVerify.approvedById);
+            || (currentStatus === E_AgeVerifyStatus.APPROVED && !userFound.result.ageVerify.approvedById);
 
         if (!awaitingManualReview) {
             throwError({
