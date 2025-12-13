@@ -7,8 +7,6 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
-// import type { I_Context } from '#shared/typescript/index.js';
-import { permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
@@ -22,59 +20,33 @@ const env = getEnv();
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
 
-    app.use(createCors({
-        isDev: !env.IS_PROD,
-        whiteList: env.CORS_WHITELIST,
-    }));
-
-    // MongoDB - Connect first to use connection for session store
-    if (!env.IS_PROD) {
-        mongoose.set('debug', true);
-    }
-
-    await mongoose.connect(env.MONGO_URI);
-    log.info(`Running MongoDb at ${env.MONGO_URI}`);
-
-    const sharedSessionOptions: Omit<Parameters<typeof createSession>[0], 'name' | 'secret'> = {
+    app.use(createSession({
+        name: env.SESSION_NAME,
+        secret: env.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
         store: mongoStore.create({
-            clientPromise: Promise.resolve(mongoose.connection.getClient()),
-            stringify: false,
+            mongoUrl: env.MONGO_URI,
         }),
-        rolling: true,
         cookie: {
             maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
-    };
-
-    const sessionMiddleware = createSession({
-        ...sharedSessionOptions,
-        name: env.SESSION_NAME,
-        secret: env.SESSION_SECRET,
-    });
-
-    const sessionParser = (req: express.Request, res: express.Response, next: express.NextFunction) =>
-        sessionMiddleware(req, res, next);
-    app.use(sessionParser);
+    }));
 
     const httpServer = createServer(app);
     const wsServer = createWSServer({
         server: httpServer,
         path: env.ENDPOINT_WS,
-        sessionParser,
     });
-    const serverCleanup = initGraphQLWS({
-        schema,
-        server: wsServer,
-        context: (req) => {
-            return req;
-        },
-    });
+    const serverCleanup = initGraphQLWS({ schema, server: wsServer });
 
-    await permissionCtr.syncPermissions();
-
+    // MongoDB
+    if (!env.IS_PROD) {
+        mongoose.set('debug', true);
+    }
+    await mongoose.connect(env.MONGO_URI);
+    log.info(`Running MongoDb at ${env.MONGO_URI}`);
     mongoose.connection.once('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
@@ -98,6 +70,10 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_GRAPHQL,
+        createCors({
+            isDev: !env.IS_PROD,
+            whiteList: env.CORS_WHITELIST,
+        }),
         express.json({ limit: env.BODY_PARSER_LIMIT }),
         updateUserActivity,
         expressMiddleware(apolloServer, {
@@ -123,6 +99,10 @@ const env = getEnv();
 
     app.use(
         env.ENDPOINT_RESTAPI,
+        createCors({
+            isDev: !env.IS_PROD,
+            whiteList: env.CORS_WHITELIST,
+        }),
         updateUserActivity,
         // (req, res, next) => {
         //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
