@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_Order } from './order.type.js';
 
-import { E_OrderStatus } from './order.type.js';
+import { E_OrderStatus, E_OrderType } from './order.type.js';
 
 export const OrderModel = mongo.createModel<I_Order>({
     mongoose,
@@ -13,6 +13,7 @@ export const OrderModel = mongo.createModel<I_Order>({
         userId: { type: String },
         amount: { type: Number },
         status: { type: String, enum: Object.values(E_OrderStatus) },
+        orderType: { type: String, enum: Object.values(E_OrderType) },
         paymentTransactionId: { type: String },
         clientOrderId: { type: String },
         customerDetails: { type: mongoose.Schema.Types.Mixed },
