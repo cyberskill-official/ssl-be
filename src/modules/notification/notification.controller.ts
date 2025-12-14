@@ -1049,6 +1049,7 @@ export const notificationCtr = {
                             ? (userRes.result.username
                                 || undefined)
                             : undefined;
+
                         if (!targetEmail) {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                             return;
@@ -1060,6 +1061,7 @@ export const notificationCtr = {
                         let templateKey: string | '';
                         const templateData: Record<string, any> = {};
                         let sendRes;
+
                         switch (t) {
                             case E_NotificationType.NEW_FOLLOWER:
                                 templateKey = NEW_FOLLOWER;
@@ -1101,7 +1103,9 @@ export const notificationCtr = {
 
                         if (!sendRes) {
                             if (templateKey) {
-                                sendRes = await emailCtr.sendEmail(templateKey, targetEmail, templateData).catch(e => ({ success: false, message: (e as Error).message }));
+                                sendRes = await emailCtr.sendEmail(templateKey, targetEmail, templateData).catch((e) => {
+                                    return { success: false, message: (e as Error).message };
+                                });
                             }
                             else {
                                 await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT });

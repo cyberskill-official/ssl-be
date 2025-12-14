@@ -1,13 +1,15 @@
+import { log } from '@cyberskill/shared/node/log';
 import { path } from '@cyberskill/shared/node/path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_MessageType } from '#modules/conversation/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import {
     E_ModerationMediaStatus,
     E_RiskLevel,
-    moderationMediaCtr,
 } from '#modules/moderation/index.js';
+import { moderationMediaCtr } from '#modules/moderation/moderation-media/moderation-media.controller.js';
 import { E_NoteType } from '#modules/note/note.type.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
@@ -102,14 +104,30 @@ export async function applyAiModerationDecision(
 
     // Auto-approve safe content (LOW risk)
     if (shouldAutoApprove) {
-        await moderationMediaCtr.updateModerationMedia(context, {
+        log.info('[AI_MODERATION] AI auto-approving media:', {
+            moderationId,
+            riskLevel: aiRiskLevel,
+            reason: aiReason,
+        });
+
+        const updateResult = await moderationMediaCtr.updateModerationMedia(context, {
             filter: { id: moderationId },
             update: {
                 status: E_ModerationMediaStatus.APPROVED,
                 reason: aiReason ? `AI approved: ${aiReason}` : 'AI approved: safe content',
                 isPublished: true,
+                moderatedById: undefined, // AI approval - no human moderator
             },
         });
+
+        if (updateResult.success && updateResult.result) {
+            log.info('[AI_MODERATION] AI auto-approve result:', {
+                moderationId,
+                success: updateResult.success,
+                moderatedById: updateResult.result.moderatedById || 'undefined',
+                status: updateResult.result.status,
+            });
+        }
 
         try {
             await galleryCtr.updateGallery(context, {
@@ -146,6 +164,7 @@ export async function applyAiModerationDecision(
                 reason: autoRejectReason,
                 isPublished: false,
                 isDel: true,
+                moderatedById: undefined, // AI rejection - no human moderator
             },
         });
 
@@ -211,6 +230,83 @@ export async function applyAiModerationDecision(
         }
         catch {
             /* ignore gallery sync errors */
+        }
+
+        // Check and delete messages that use this rejected media
+        if (moderationUpdated.success && moderationUpdated.result?.url) {
+            try {
+                const mediaUrl = moderationUpdated.result.url;
+                // Extract base URL by removing query parameters
+                let baseUrl = mediaUrl;
+                let pathname = '';
+                try {
+                    const url = new URL(mediaUrl);
+                    pathname = url.pathname;
+                    baseUrl = `${url.protocol}//${url.hostname}${pathname}`;
+                }
+                catch {
+                    // If URL parsing fails, use original URL
+                }
+
+                // Find all messages that contain this media URL using message controller
+                const { messageCtr } = await import('#modules/conversation/message/message.controller.js');
+
+                const urlConditions: any[] = [
+                    { 'content.value': mediaUrl },
+                    { 'content.value': baseUrl },
+                ];
+                if (pathname) {
+                    urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                }
+
+                // Find messages with this media URL
+                const messagesResult = await messageCtr.getMessages(context, {
+                    filter: {
+                        isDel: { $ne: true },
+                        $and: [
+                            { $or: urlConditions },
+                            {
+                                $or: [
+                                    { 'content.type': E_MessageType.IMAGE },
+                                    { 'content.type': E_MessageType.VIDEO },
+                                ],
+                            },
+                        ],
+                    },
+                    options: { pagination: false },
+                });
+
+                if (messagesResult.success && messagesResult.result?.docs && messagesResult.result.docs.length > 0) {
+                    const messageIds = messagesResult.result.docs.map(msg => msg.id).filter(Boolean);
+                    if (messageIds.length > 0) {
+                        // Soft delete messages that use rejected media using redactMessages
+                        for (const messageId of messageIds) {
+                            try {
+                                await messageCtr.redactMessages({ id: messageId });
+                            }
+                            catch (error) {
+                                log.error('Failed to redact message with rejected media', {
+                                    error: error instanceof Error ? error.message : String(error),
+                                    messageId,
+                                });
+                            }
+                        }
+
+                        log.info(`Deleted ${messageIds.length} message(s) that used rejected media`, {
+                            moderationMediaId: moderationId,
+                            mediaUrl,
+                            messageIds,
+                        });
+                    }
+                }
+            }
+            catch (error) {
+                // Log error but don't block moderation flow
+                log.error('Failed to delete messages with rejected media', {
+                    error: error instanceof Error ? error.message : String(error),
+                    moderationMediaId: moderationId,
+                });
+            }
         }
     }
     else if (warnReason) {

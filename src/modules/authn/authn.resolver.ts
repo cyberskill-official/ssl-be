@@ -23,6 +23,7 @@ const authResolver = {
         forgotPasswordRequest: (_parent: unknown, args: I_Input_ForgotPasswordRequest, context: I_Context) => authnCtr.forgotPasswordRequest(context, args),
         resetPassword: (_parent: unknown, args: I_Input_ResetPassword, context: I_Context) => authnCtr.resetPassword(context, args),
         verifyAge: (_parent: unknown, args: I_Input_UploadMany, context: I_Context) => authnCtr.verifyAge(context, args),
+        skipAgeVerification: async (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.skipAgeVerification(context),
         approveAgeVerify: async (_parent: unknown, args: I_Input_ApproveAgeVerify, context: I_Context) => authnCtr.approveAgeVerify(context, args),
         rejectAgeVerify: async (_parent: unknown, args: I_Input_RejectAgeVerify, context: I_Context) => authnCtr.rejectAgeVerify(context, args),
         createGuardianVisitToken: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.createGuardianVisitToken(context),

@@ -242,10 +242,6 @@ export const eventCtr = {
         { filter, options }: I_Input_FindPaging<I_Input_QueryEvent>,
     ): Promise<I_Return<T_PaginateResult<I_Event>>> => {
         // Require login to view events (to ensure we know viewer roles for blur logic)
-        const checkAuth = await authnCtr.checkAuth(context);
-        if (!checkAuth.success || !checkAuth.result?.user) {
-            throwError({ message: 'Authentication required to view events.', status: RESPONSE_STATUS.UNAUTHORIZED });
-        }
 
         const now = new Date();
         const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };

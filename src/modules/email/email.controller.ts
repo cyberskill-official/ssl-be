@@ -53,12 +53,6 @@ export const emailCtr = {
                 USER_APP_URL: userAppUrl,
                 userAppUrl, // Also provide lowercase version for convenience
             };
-            log.warn('[Email][sendEmail] render context', {
-                templateKey,
-                to,
-                renderEmail: renderData.email,
-                hasTemplateDataEmail: (safeTemplateData as Record<string, any>)?.['email'] !== undefined,
-            });
             let html: string;
             let subjectText: string;
 
@@ -68,7 +62,6 @@ export const emailCtr = {
             }
 
             if (templateFromCache) {
-                log.warn('[Email][sendEmail] template source: cache', { templateKey });
                 const { content, subject: templateSubject } = templateFromCache;
 
                 if (templateSubject) {

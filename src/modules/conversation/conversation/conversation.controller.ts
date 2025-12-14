@@ -2636,7 +2636,9 @@ export const conversationCtr = {
                             },
                         });
                     }
-                    catch { /* swallow */ }
+                    catch {
+                        // Failed to create notification - continue with other recipients
+                    }
                 }
             }
 
