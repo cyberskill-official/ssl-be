@@ -1178,12 +1178,8 @@ export const conversationCtr = {
 
             const conversationId = conversationResult.result.id;
 
-            // participants: admins + current user (if not already admin)
-            const participantDocs = adminUsers.map(admin => ({ conversationId, userId: admin.id, role: E_ParticipantRole.ADMIN }));
-
-            if (!participantDocs.some(d => d.userId === currentUser.id)) {
-                participantDocs.push({ conversationId, userId: currentUser.id, role: E_ParticipantRole.MEMBER });
-            }
+            // Only add the current user as participant - admins will be added when they reply
+            const participantDocs = [{ conversationId, userId: currentUser.id, role: E_ParticipantRole.MEMBER }];
 
             const pRes = await participantCtr.createParticipants(context, { docs: participantDocs });
             if (!pRes.success) {
@@ -1237,18 +1233,8 @@ export const conversationCtr = {
         }
         const guestConversationId = guestConversation.result.id;
 
-        // add admin participants (admins must monitor)
-        const adminParticipantDocs = adminUsers.map(admin => ({ conversationId: guestConversationId, userId: admin.id, role: E_ParticipantRole.ADMIN }));
-        const pResGuest = await participantCtr.createParticipants(context, { docs: adminParticipantDocs });
-
-        if (!pResGuest.success) {
-            await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => {});
-
-            throwError({
-                message: pResGuest.message ?? 'Failed to add admin participants to conversation.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
+        // Don't add admin participants automatically - admins will be added when they reply
+        // This keeps the conversation clean and prevents unnecessary "joined the group" notifications
 
         // Create initial guest message authored by primaryAdmin so admins see it in the thread
         const guestMessageValue = userMessage || 'No message provided.';
@@ -1272,8 +1258,7 @@ export const conversationCtr = {
         });
 
         if (!guestMessageResult.success || !guestMessageResult.result) {
-            await participantCtr.deleteParticipants(context, { filter: { conversationId: guestConversationId } }).catch(() => {});
-
+            // No participants to delete since we don't add them at creation time
             await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => {});
 
             throwError({
@@ -1354,7 +1339,7 @@ export const conversationCtr = {
                                 context: {
                                     conversationType: E_ConversationType.PRIVATE,
                                     isOpenComment: false,
-                                    participantCount: (adminParticipantDocs || []).length || adminUsers.length,
+                                    participantCount: 0, // No participants initially - admins will be added when they reply
                                     profileOwnerId: undefined,
                                 },
                             },
@@ -1700,6 +1685,13 @@ export const conversationCtr = {
                 // sending an external email to the guest address.
                 if (providedConvId) {
                     try {
+                        // Ensure current admin is a participant; create participant if missing
+                        const participantRes = await participantCtr.getParticipant(context, { filter: { conversationId: providedConvId, userId: currentUser.id } });
+                        if (!participantRes.success || !participantRes.result) {
+                            // Add admin as participant when they reply (non-blocking on failure)
+                            await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => {});
+                        }
+
                         const createMsg = await messageCtr.createMessageOnly(context, {
                             doc: {
                                 conversationId: providedConvId,
@@ -2636,7 +2628,9 @@ export const conversationCtr = {
                             },
                         });
                     }
-                    catch { /* swallow */ }
+                    catch {
+                        // Failed to create notification - continue with other recipients
+                    }
                 }
             }
 
