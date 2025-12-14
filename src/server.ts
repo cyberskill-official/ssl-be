@@ -16,8 +16,6 @@ import { schema } from '#shared/graphql/schema.js';
 const env = getEnv();
 
 (async () => {
-    log.info(`ENV: ${JSON.stringify(env, null, 2)}`);
-
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
@@ -31,7 +29,7 @@ const env = getEnv();
             mongoUrl: env.MONGO_URI,
         }),
         cookie: {
-            maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
+            // maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
     }));
@@ -48,7 +46,6 @@ const env = getEnv();
         mongoose.set('debug', true);
     }
     await mongoose.connect(env.MONGO_URI);
-    log.info(`Running MongoDb at ${env.MONGO_URI}`);
     mongoose.connection.once('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
@@ -62,13 +59,10 @@ const env = getEnv();
             if (serverCleanup) {
                 await serverCleanup.dispose();
             }
-
-            log.info('WebSocket server drained');
         },
     });
 
     await apolloServer.start();
-    log.info(`Running GRAPHQL at http://localhost:${env.PORT}${env.ENDPOINT_GRAPHQL}`);
 
     app.use(
         env.ENDPOINT_GRAPHQL,
@@ -97,7 +91,6 @@ const env = getEnv();
     await new Promise<void>(resolve =>
         httpServer.listen({ port: env.PORT }, resolve),
     );
-    log.info(`Running RestAPI at http://localhost:${env.PORT}${env.ENDPOINT_RESTAPI}`);
 
     app.use(
         env.ENDPOINT_RESTAPI,
@@ -114,7 +107,6 @@ const env = getEnv();
 
     // Start cron jobs
     cron.start();
-    log.info('Cron jobs started');
 
     // Graceful shutdown
     ['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, async () => {

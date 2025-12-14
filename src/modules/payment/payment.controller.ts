@@ -14,7 +14,7 @@ import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
-import { E_OrderStatus } from '#modules/order/order.type.js';
+import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
@@ -404,10 +404,16 @@ export const paymentController = {
 
         // Create order first - clientOrderId will be set to order.id after creation
         // userId is automatically set from currentUser (BE), not from FE input
+        // Determine orderType based on pricingType: MEMBERSHIP = SUBSCRIPTION, ANNOUNCEMENT = A_LA_CARTE_EVENT
+        const orderType = pricingType === E_PricingType.MEMBERSHIP
+            ? E_OrderType.SUBSCRIPTION
+            : E_OrderType.A_LA_CARTE_EVENT;
+
         const orderDoc: I_Input_CreateOrder = {
             userId: currentUser.id, // BE automatically sets userId from session
             amount: resolvedAmount,
             pricingId: pricing.id, // From auto-detected pricing
+            orderType, // SUBSCRIPTION or A_LA_CARTE_EVENT
         };
 
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });

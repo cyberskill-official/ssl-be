@@ -10,10 +10,16 @@ export enum E_OrderStatus {
     CANCELLED = 'CANCELLED',
 }
 
+export enum E_OrderType {
+    SUBSCRIPTION = 'SUBSCRIPTION',
+    A_LA_CARTE_EVENT = 'A_LA_CARTE_EVENT',
+}
+
 export interface I_Order extends I_GenericDocument {
     userId?: string;
     amount?: number;
     status?: E_OrderStatus;
+    orderType?: E_OrderType; // SUBSCRIPTION or A_LA_CARTE_EVENT
     paymentTransactionId?: string;
     paymentTransaction?: I_PaymentTransaction;
     clientOrderId?: string; // client's idempotency id
