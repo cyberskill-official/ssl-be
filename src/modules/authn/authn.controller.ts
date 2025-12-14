@@ -1861,43 +1861,6 @@ export const authnCtr = {
 
         return userUpdated;
     },
-    skipAgeVerification: async (
-        context: I_Context,
-    ): Promise<I_Return<I_Response_Auth>> => {
-        const currentUser = await authnCtr.getUserFromSession(context);
-
-        // Send notification to user about skipping age verification
-        try {
-            await notificationCtr.createNotificationWithSettings(context, {
-                doc: {
-                    targetId: currentUser.id,
-                    type: [E_NotificationType.AGE_VERIFICATION_SKIPPED],
-                    entityType: E_NotificationEntityType.USER,
-                    entityId: currentUser.id,
-                    body: 'Dear user, you have chosen not to complete age verification. This means that no one can see your images or videos — including your profile pictures. The process takes less than 5 minutes, and your information is safe with us.',
-                    channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                    presentation: {
-                        headline: 'Age Verification Skipped',
-                        redirect: {
-                            kind: E_RedirectType.PROFILE,
-                            id: currentUser.id,
-                        },
-                    },
-                },
-            });
-        }
-        catch (error) {
-            // Non-fatal: log but don't block the response
-            log.error('Failed to send age verification skipped notification:', error);
-        }
-
-        return {
-            success: true,
-            result: {
-                user: currentUser,
-            },
-        };
-    },
     approveAgeVerify: async (
         context: I_Context,
         { userId }: I_Input_ApproveAgeVerify,

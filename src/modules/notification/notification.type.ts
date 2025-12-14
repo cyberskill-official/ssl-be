@@ -28,7 +28,6 @@ export enum E_NotificationType {
     PROFILE_VISIT = 'PROFILE_VISIT',
     AGE_VERIFICATION_APPROVED = 'AGE_VERIFICATION_APPROVED',
     AGE_VERIFICATION_SUBMITTED = 'AGE_VERIFICATION_SUBMITTED',
-    AGE_VERIFICATION_SKIPPED = 'AGE_VERIFICATION_SKIPPED',
 }
 
 export const OTHER_TYPES = [
@@ -53,7 +52,6 @@ export const OTHER_TYPES = [
     E_NotificationType.PROFILE_VISIT,
     E_NotificationType.AGE_VERIFICATION_APPROVED,
     E_NotificationType.AGE_VERIFICATION_SUBMITTED,
-    E_NotificationType.AGE_VERIFICATION_SKIPPED,
 ];
 
 export enum E_NotificationChannel {
