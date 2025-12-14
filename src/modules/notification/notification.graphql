@@ -22,6 +22,7 @@ enum E_NotificationType {
     PROFILE_VISIT
     AGE_VERIFICATION_APPROVED
     AGE_VERIFICATION_SUBMITTED
+    AGE_VERIFICATION_SKIPPED
 }
 
 enum E_NotificationChannel {

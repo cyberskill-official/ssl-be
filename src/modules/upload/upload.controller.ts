@@ -8,9 +8,7 @@ import { Buffer } from 'node:buffer';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import type {
-    E_ModerationMediaStatus,
-} from '#modules/moderation/index.js';
+import type { } from '#modules/moderation/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -20,6 +18,7 @@ import { generateAndUploadThumbnail } from '#modules/gallery/thumbnail.util.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import {
     aiModerationCtr,
+    E_ModerationMediaStatus,
     E_ModerationMediaType,
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
@@ -253,6 +252,8 @@ export const uploadCtr = {
                 // swallow thumbnail errors; not critical for upload
             }
 
+            // Create moderationMedia - AI moderation will run inside createModerationMedia
+            // and set status to REJECTED or PENDING (no auto-approve)
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                 doc: {
                     type: E_ModerationMediaType.VIDEO,
@@ -273,45 +274,77 @@ export const uploadCtr = {
                 });
             }
 
-            let finalVideoStatus = moderationCreated.result!.status;
+            // Get final status after AI moderation (which runs inside createModerationMedia)
+            let finalVideoStatus: E_ModerationMediaStatus = moderationCreated.result!.status || E_ModerationMediaStatus.PENDING;
 
-            // Run AI after upload and record initial result to moderation_log
-            try {
-            // Pass the same bytes to AI moderation to ensure consistency
-                const videoBytes = new Uint8Array(videoBuffer);
-                const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
-                if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
+            // Run AI moderation again to create moderation log (if not already done in createModerationMedia)
+            // This ensures we have a log entry for tracking
+            if (!shouldBypassModeration && moderationCreated.result?.id) {
+                try {
                     const moderationId = moderationCreated.result.id;
-                    const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
+                    // Pass the same bytes to AI moderation to ensure consistency
+                    const videoBytes = new Uint8Array(videoBuffer);
+                    const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
 
-                    await moderationLogCtr.createModerationLog(context, {
-                        doc: {
-                            action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
-                            type: E_ModerationLogType.VIDEO, // Set type to VIDEO for video uploads
-                            userId: currentUser.id,
-                            moderationMediaId: moderationId,
-                            aiResult: moderationResult.result,
-                        },
-                    });
+                    if (moderationResult.success) {
+                        const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
 
-                    // Fetch updated status after AI moderation decision
-                    const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
-                        filter: { id: moderationId },
-                    });
-                    if (updatedModeration.success && updatedModeration.result) {
-                        finalVideoStatus = updatedModeration.result.status;
+                        await moderationLogCtr.createModerationLog(context, {
+                            doc: {
+                                action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                                type: E_ModerationLogType.VIDEO,
+                                userId: currentUser.id,
+                                moderationMediaId: moderationId,
+                                aiResult: moderationResult.result,
+                            },
+                        });
+
+                        // Fetch updated status after AI moderation decision
+                        const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
+                            filter: { id: moderationId },
+                        });
+                        if (updatedModeration.success && updatedModeration.result) {
+                            finalVideoStatus = updatedModeration.result.status || E_ModerationMediaStatus.PENDING;
+                        }
                     }
                 }
+                catch {
+                    // Log error but don't block upload
+                }
             }
-            catch (error) {
-                // Do not block upload on AI/log failure - log error but allow upload to succeed
-                log.error('Failed to create AI moderation log (video)', {
-                    error: error instanceof Error ? error.message : String(error),
-                    stack: error instanceof Error ? error.stack : undefined,
-                    videoUrl: videoUploaded.result,
-                    userId: currentUser.id,
+
+            // Block upload if media is REJECTED - don't return URL
+            if (finalVideoStatus === E_ModerationMediaStatus.REJECTED) {
+                // Check if rejected by human moderator or AI
+                const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+                    filter: { id: moderationCreated.result!.id! },
                 });
-                // Continue without throwing - upload should succeed even if AI moderation fails
+
+                const hasModerator = moderationMedia.success && moderationMedia.result?.moderatedById;
+
+                if (hasModerator) {
+                    // Rejected by human moderator
+                    throwError({
+                        message: 'Media upload was rejected. The content does not meet our community guidelines and cannot be used.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+                else {
+                    // Rejected by AI - show as pending moderation
+                    throwError({
+                        message: 'Media is pending moderation. Please wait for approval before using this media.',
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
+                }
+            }
+
+            // Block upload if media is PENDING (for non-staff/admin users)
+            // Staff/Admin can still get URL even if PENDING for moderation purposes
+            if (finalVideoStatus === E_ModerationMediaStatus.PENDING && !isStaff && !isAdmin) {
+                throwError({
+                    message: 'Media is pending moderation. Please wait for approval before using this media.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
             }
 
             return {
@@ -427,12 +460,6 @@ export const uploadCtr = {
             await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
         }
         catch (uploadError) {
-            log.error('Failed to upload file to Bunny CDN', {
-                error: uploadError instanceof Error ? uploadError.message : String(uploadError),
-                stack: uploadError instanceof Error ? uploadError.stack : undefined,
-                uploadPath,
-                userId: currentUser.id,
-            });
             throwError({
                 message: `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -487,15 +514,42 @@ export const uploadCtr = {
                 }
             }
         }
-        catch (error) {
-            // Do not block upload on AI/log failure - log error but allow upload to succeed
-            log.error('Failed to create AI moderation log on upload', {
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-                uploadedUrl,
-                userId: currentUser.id,
+        catch {
+            // Do not block upload on AI/log failure - continue without throwing
+        }
+
+        // Block upload if media is REJECTED - check moderatedById to determine message
+        if (finalStatus === E_ModerationMediaStatus.REJECTED) {
+            // Check if rejected by human moderator or AI
+            const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+                filter: { id: moderationCreated.result!.id! },
             });
-            // Continue without throwing - upload should succeed even if AI moderation fails
+
+            const hasModerator = moderationMedia.success && moderationMedia.result?.moderatedById;
+
+            if (hasModerator) {
+                // Rejected by human moderator
+                throwError({
+                    message: 'Media upload was rejected. The content does not meet our community guidelines and cannot be used.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+            else {
+                // Rejected by AI - show as pending moderation
+                throwError({
+                    message: 'Media is pending moderation. Please wait for approval before using this media.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+        }
+
+        // Block upload if media is PENDING (for non-staff/admin users)
+        // Staff/Admin can still get URL even if PENDING for moderation purposes
+        if (finalStatus === E_ModerationMediaStatus.PENDING && !isStaff && !isAdmin) {
+            throwError({
+                message: 'Media is pending moderation. Please wait for approval before using this media.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
         }
 
         return {
