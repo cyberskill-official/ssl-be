@@ -7,12 +7,15 @@ import { authnCtr } from '#modules/authn/index.js';
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { getEnv } from '#shared/env/env.util.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
 import type { I_Conversation, I_ConversationMeta } from './index.js';
 
 import { transformMessageMedia } from '../message/index.js';
 import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './index.js';
+
+const env = getEnv();
 
 /**
  * Kiểm tra người dùng có trong cuộc trò chuyện riêng không
@@ -361,6 +364,28 @@ export async function transformConversationMedia<T extends I_Conversation>(conte
     }
 
     const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+    // Debug viewer flags to trace blur logic in conversations (opt-in via MEDIA_VIEWER_DEBUG)
+    const enableViewerDebug = env.MEDIA_VIEWER_DEBUG === 'true';
+    if (enableViewerDebug) {
+        try {
+            const { log } = await import('@cyberskill/shared/node/log');
+            log.warn('[CONVERSATION][transformConversationMedia] viewer flags', {
+                viewerId: sessionUser?.id ?? context.req?.session?.user?.id,
+                viewerIsPaidMember: viewerMediaOptions.viewerIsPaidMember,
+                viewerIsFreeMember: viewerMediaOptions.viewerIsFreeMember,
+                viewerAgeVerified: viewerMediaOptions.viewerAgeVerified,
+                viewerIsStaff: viewerMediaOptions.viewerIsStaff,
+                viewerIsAdmin: viewerMediaOptions.viewerIsAdmin,
+                membershipExpiresAt: (sessionUser as any)?.membershipExpiresAt,
+                membershipEndDate: (sessionUser as any)?.membershipEndDate,
+                rolesIds: (sessionUser as any)?.rolesIds,
+            });
+        }
+        catch {
+            // ignore logging failures
+        }
+    }
 
     // Transform participant avatars using hydrateUserMedia
     let transformedParticipants = plainConversation.participants;
