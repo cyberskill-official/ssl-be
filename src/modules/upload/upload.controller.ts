@@ -282,37 +282,39 @@ export const uploadCtr = {
                 const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
                 if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
                     const moderationId = moderationCreated.result.id;
-                    const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
+                    // Pass the same bytes to AI moderation to ensure consistency
+                    const videoBytes = new Uint8Array(videoBuffer);
+                    const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
 
-                    await moderationLogCtr.createModerationLog(context, {
-                        doc: {
-                            action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
-                            type: E_ModerationLogType.VIDEO, // Set type to VIDEO for video uploads
-                            userId: currentUser.id,
-                            moderationMediaId: moderationId,
-                            aiResult: moderationResult.result,
-                        },
-                    });
+                    if (moderationResult.success) {
+                        const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
 
-                    // Fetch updated status after AI moderation decision
-                    const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
-                        filter: { id: moderationId },
-                    });
-                    if (updatedModeration.success && updatedModeration.result) {
-                        finalVideoStatus = updatedModeration.result.status;
+                        await moderationLogCtr.createModerationLog(context, {
+                            doc: {
+                                action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                                type: E_ModerationLogType.VIDEO,
+                                userId: currentUser.id,
+                                moderationMediaId: moderationId,
+                                aiResult: moderationResult.result,
+                            },
+                        });
+
+                        // Fetch updated status after AI moderation decision
+                        const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
+                            filter: { id: moderationId },
+                        });
+                        if (updatedModeration.success && updatedModeration.result) {
+                            finalVideoStatus = updatedModeration.result.status || E_ModerationMediaStatus.PENDING;
+                        }
                     }
                 }
+                catch {
+                    // Log error but don't block upload
+                }
             }
-            catch (error) {
-                // Do not block upload on AI/log failure - log error but allow upload to succeed
-                log.error('Failed to create AI moderation log (video)', {
-                    error: error instanceof Error ? error.message : String(error),
-                    stack: error instanceof Error ? error.stack : undefined,
-                    videoUrl: videoUploaded.result,
-                    userId: currentUser.id,
-                });
-                // Continue without throwing - upload should succeed even if AI moderation fails
-            }
+
+            // Always return success response with status, even if REJECTED or PENDING
+            // Frontend will handle the status appropriately
 
             return {
                 success: true,
@@ -487,16 +489,12 @@ export const uploadCtr = {
                 }
             }
         }
-        catch (error) {
-            // Do not block upload on AI/log failure - log error but allow upload to succeed
-            log.error('Failed to create AI moderation log on upload', {
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-                uploadedUrl,
-                userId: currentUser.id,
-            });
-            // Continue without throwing - upload should succeed even if AI moderation fails
+        catch {
+            // Do not block upload on AI/log failure - continue without throwing
         }
+
+        // Always return success response with status, even if REJECTED or PENDING
+        // Frontend will handle the status appropriately
 
         return {
             message: 'Upload successful',

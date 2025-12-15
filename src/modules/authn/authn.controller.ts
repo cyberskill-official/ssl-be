@@ -1861,6 +1861,68 @@ export const authnCtr = {
 
         return userUpdated;
     },
+    skipAgeVerification: async (
+        context: I_Context,
+    ): Promise<I_Return<I_Response_Auth>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        // Send notification to user about skipping age verification
+        // Check if notification already exists to prevent duplicates
+        try {
+            const existingNotification = await notificationCtr.getNotifications(context, {
+                filter: {
+                    targetId: currentUser.id,
+                    type: [E_NotificationType.AGE_VERIFICATION_SKIPPED],
+                    entityType: E_NotificationEntityType.USER,
+                    entityId: currentUser.id,
+                    dismissedAt: null, // Only consider non-dismissed notifications
+                },
+                options: { limit: 1 },
+            });
+
+            // Only create notification if it doesn't already exist
+            if (!existingNotification.success || !existingNotification.result?.docs || existingNotification.result.docs.length === 0) {
+                const notificationResult = await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: currentUser.id,
+                        type: [E_NotificationType.AGE_VERIFICATION_SKIPPED],
+                        entityType: E_NotificationEntityType.USER,
+                        entityId: currentUser.id,
+                        body: 'Dear user, you have chosen not to complete age verification. This means that no one can see your images or videos — including your profile pictures. The process takes less than 5 minutes, and your information is safe with us.',
+                        channels: [E_NotificationChannel.IN_APP],
+                        presentation: {
+                            headline: 'Age Verification Skipped',
+                            redirect: {
+                                kind: E_RedirectType.PROFILE,
+                                id: currentUser.id,
+                            },
+                        },
+                    },
+                });
+
+                if (!notificationResult.success) {
+                    log.warn('Failed to create age verification skipped notification:', {
+                        userId: currentUser.id,
+                        message: notificationResult.message,
+                    });
+                }
+            }
+        }
+        catch (error) {
+            // Non-fatal: log but don't block the response
+            log.error('Failed to create age verification skipped notification:', {
+                userId: currentUser.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
+        return {
+            success: true,
+            result: {
+                user: currentUser,
+            },
+        };
+    },
     approveAgeVerify: async (
         context: I_Context,
         { userId }: I_Input_ApproveAgeVerify,

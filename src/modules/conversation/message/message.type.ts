@@ -1,5 +1,6 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import type { I_User } from '#modules/user/user.type.js';
 
 import type { I_ContactAdmin, I_Conversation } from '../conversation/index.js';
@@ -30,6 +31,7 @@ export interface I_Message extends I_GenericDocument {
     deletedAt?: Date;
     redacted?: boolean;
     expiresAt?: Date;
+    statusMedia?: E_ModerationMediaStatus;
 }
 
 export type T_Message_Populate = 'sender' | 'conversation' | 'parent' | 'messageStatuses';
@@ -41,6 +43,7 @@ export interface I_Input_CreateMessage extends Omit<I_Message, T_Omit_Create | T
     recipientId?: string;
     conversationId?: string;
     parentId?: string;
+    statusMedia?: E_ModerationMediaStatus;
 }
 
 export interface I_Input_UpdateMessage extends Omit<I_Message, T_Omit_Update | T_Message_Populate> { }

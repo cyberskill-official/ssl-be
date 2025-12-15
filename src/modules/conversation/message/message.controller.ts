@@ -17,6 +17,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
 
+import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
@@ -62,7 +63,7 @@ export const messageCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateMessage>,
     ): Promise<I_Return<I_Message>> => {
-        const { recipientId, conversationId, content, parentId } = doc;
+        const { recipientId, conversationId, content, parentId, statusMedia } = doc;
 
         const currentUser = await authnCtr.getUserFromSession(context);
         const senderId = currentUser.id;
@@ -142,6 +143,7 @@ export const messageCtr = {
                 senderId,
                 recipientId,
                 content,
+                statusMedia as E_ModerationMediaStatus | undefined,
             );
 
             if (!result.success) {
@@ -165,6 +167,7 @@ export const messageCtr = {
                 senderId,
                 content,
                 parentId,
+                statusMedia as E_ModerationMediaStatus | undefined,
             );
 
             if (!sendResult.success) {
@@ -177,7 +180,7 @@ export const messageCtr = {
             }
         }
         else {
-            const created = await mongooseCtr.createOne({ ...doc, senderId });
+            const created = await mongooseCtr.createOne({ ...doc, senderId, statusMedia });
             const transformedResult = await transformMessageResult(context, created);
             if (transformedResult.success && transformedResult.result) {
                 createdMessage = transformedResult.result;

@@ -85,7 +85,6 @@ export const emailCtr = {
                 const template = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey } });
 
                 if (template.success && template.result) {
-                    log.warn('[Email][sendEmail] template source: db', { templateKey });
                     const { content, subject: templateSubject } = template.result;
 
                     emailTemplateCache.set(templateKey, content || '', templateSubject);

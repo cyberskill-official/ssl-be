@@ -13,6 +13,7 @@ export const PAYMENT_FAILED = 'payment-failed';
 export const PAYMENT_SUCCESS = 'payment-success';
 export const PROFILE_DELETION_30_DAY = 'profile-deletion-30-day';
 export const PROFILE_DELETION_10_DAY = 'profile-deletion-10-day';
+export const AGE_VERIFICATION_SKIPPED = 'age-verification-skipped';
 export const TOKEN_EXPIRES = '30d'; // 30 days
 export const GUARDIAN_VISIT_TOKEN_EXPIRES = '60m'; // 60 minutes
 export const VERIFICATION_EXPIRES = {

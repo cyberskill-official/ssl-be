@@ -19,6 +19,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
+import { E_MessageType, messageCtr, MessageModel } from '#modules/conversation/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
 import { E_NoteType } from '#modules/note/note.type.js';
@@ -470,6 +471,214 @@ export const moderationMediaCtr = {
                         message: `Unsupported module type: ${currentEntity}`,
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
+            }
+
+            // Restore messages when media is approved (from REJECTED or PENDING)
+            // Also create new message if no message exists yet
+            if (status === E_ModerationMediaStatus.APPROVED && moderation.url) {
+                try {
+                    // Get raw URL from database (without signed token/expires)
+                    // The moderation.url might be signed, so we need to get the raw URL from DB
+                    let mediaUrl = moderation.url as string;
+
+                    // If URL contains token/expires parameters, remove them to get raw URL
+                    try {
+                        const urlObj = new URL(mediaUrl);
+                        // Remove token, expires, and class parameters to get base URL
+                        urlObj.searchParams.delete('token');
+                        urlObj.searchParams.delete('expires');
+                        urlObj.searchParams.delete('class');
+                        mediaUrl = urlObj.toString();
+                    }
+                    catch {
+                        // If URL parsing fails, use original URL
+                    }
+
+                    // Also try to get raw URL directly from database
+                    const rawModerationMedia = await mongooseCtr.findOne({ id: moderation.id }, { url: 1 });
+                    if (rawModerationMedia.success && rawModerationMedia.result?.url) {
+                        mediaUrl = rawModerationMedia.result.url as string;
+                    }
+                    // Find redacted messages from this user that were created around the time moderation was created
+                    // Since content.value was cleared when redacted, we find by time window and user
+                    const moderationCreatedAt = moderation.createdAt
+                        ? (typeof moderation.createdAt === 'string' ? new Date(moderation.createdAt) : moderation.createdAt)
+                        : new Date();
+
+                    // Find all messages with IMAGE/VIDEO type from this user
+                    // Since content.value was cleared when redacted, we can't match by URL
+                    // We'll search in a wider time window (up to 1 hour before and after moderation)
+                    // If still not found, search all redacted messages from this user in the last 24 hours
+                    const expandedTimeWindowStart = new Date(moderationCreatedAt.getTime() - 60 * 60 * 1000); // 1 hour before
+                    const expandedTimeWindowEnd = new Date(moderationCreatedAt.getTime() + 60 * 60 * 1000); // 1 hour after
+
+                    // First, try to find messages by URL (if message was created before rejection)
+                    // Extract base URL pattern to match messages
+                    let baseUrl = mediaUrl;
+                    let pathname = '';
+                    try {
+                        const url = new URL(mediaUrl);
+                        pathname = url.pathname;
+                        baseUrl = `${url.protocol}//${url.hostname}${pathname}`;
+                    }
+                    catch {
+                        // If URL parsing fails, use original URL
+                    }
+
+                    const urlConditions: any[] = [
+                        { 'content.value': mediaUrl },
+                        { 'content.value': baseUrl },
+                    ];
+                    if (pathname) {
+                        urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                    }
+
+                    // First: update statusMedia on all messages that reference this media URL
+                    // (so FE sees latest APPROVED/REJECTED/PENDING state)
+                    const messageMongooseCtr = new MongooseController(MessageModel);
+                    try {
+                        await messageMongooseCtr.updateMany(
+                            {
+                                senderId: moderation.uploadedById,
+                                $or: urlConditions,
+                            },
+                            { statusMedia: status },
+                        );
+                    }
+                    catch {
+                        // Non-fatal: if statusMedia update fails, continue with restore logic
+                    }
+
+                    // Then: try to find messages by URL first (most accurate) for possible restore
+
+                    // Query directly to bypass any filters in getMessages
+                    const messagesByUrl = await messageMongooseCtr.findPaging(
+                        {
+                            senderId: moderation.uploadedById,
+                            isDel: { $ne: true }, // Only exclude hard deleted
+                            $and: [
+                                { $or: urlConditions },
+                                {
+                                    $or: [
+                                        { 'content.type': E_MessageType.IMAGE },
+                                        { 'content.type': E_MessageType.VIDEO },
+                                    ],
+                                },
+                            ],
+                        },
+                        { pagination: false },
+                    );
+
+                    let allMessages = messagesByUrl;
+
+                    // If no messages found by URL, try time window search
+                    if (!allMessages.success || !allMessages.result?.docs || allMessages.result.docs.length === 0) {
+                        allMessages = await messageCtr.getMessages(context, {
+                            filter: {
+                                senderId: moderation.uploadedById,
+                                createdAt: {
+                                    $gte: expandedTimeWindowStart,
+                                    $lte: expandedTimeWindowEnd,
+                                },
+                                $or: [
+                                    { 'content.type': E_MessageType.IMAGE },
+                                    { 'content.type': E_MessageType.VIDEO },
+                                ],
+                            },
+                            options: { pagination: false },
+                        });
+                    }
+
+                    // If no messages found in time window, search all redacted/deleted messages from this user in last 24 hours
+                    if (!allMessages.success || !allMessages.result?.docs || allMessages.result.docs.length === 0) {
+                        const last24Hours = new Date(moderationCreatedAt.getTime() - 24 * 60 * 60 * 1000);
+
+                        allMessages = await messageCtr.getMessages(context, {
+                            filter: {
+                                senderId: moderation.uploadedById,
+                                createdAt: {
+                                    $gte: last24Hours,
+                                },
+                                $and: [
+                                    {
+                                        $or: [
+                                            { 'content.type': E_MessageType.IMAGE },
+                                            { 'content.type': E_MessageType.VIDEO },
+                                        ],
+                                    },
+                                    {
+                                        $or: [
+                                            { redacted: true },
+                                            { deletedAt: { $exists: true, $ne: null } },
+                                            { 'content.value': '' },
+                                        ],
+                                    },
+                                ],
+                            },
+                            options: { pagination: false },
+                        });
+                    }
+
+                    // Filter messages that are redacted, deleted, or have empty content.value (indicating they were redacted)
+                    const redactedMessages = allMessages.success && allMessages.result?.docs
+                        ? {
+                                success: true,
+                                result: {
+                                    docs: allMessages.result.docs.filter((msg: any) => {
+                                        // Check if message is redacted, deleted, or has empty content.value
+                                        const isRedacted = msg.redacted === true;
+                                        const isDeleted = msg.deletedAt && msg.deletedAt !== null;
+                                        const hasEmptyContent = !msg.content?.value || msg.content.value === '';
+                                        const shouldRestore = isRedacted || isDeleted || hasEmptyContent;
+
+                                        return shouldRestore;
+                                    }),
+                                    totalDocs: 0,
+                                },
+                            }
+                        : { success: false, result: { docs: [] } };
+
+                    if (redactedMessages.success && redactedMessages.result?.docs && redactedMessages.result.docs.length > 0) {
+                        const messageIds = redactedMessages.result.docs.map(msg => msg.id).filter(Boolean);
+
+                        if (messageIds.length > 0) {
+                            // Restore all messages - set URL from moderationMedia
+                            // Use mongooseCtr directly to bypass permission check
+                            const messageMongooseCtr = new MongooseController(MessageModel);
+
+                            for (const messageId of messageIds) {
+                                try {
+                                    await messageMongooseCtr.updateOne(
+                                        { id: messageId },
+                                        {
+                                            $unset: {
+                                                deletedAt: '',
+                                                expiresAt: '',
+                                            },
+                                            $set: {
+                                                'redacted': false,
+                                                'content.value': mediaUrl, // Restore URL from moderationMedia
+                                            },
+                                        },
+                                    );
+                                }
+                                catch {
+                                    // Failed to restore message - continue with other messages
+                                }
+                            }
+                        }
+                    }
+                    // If no redacted/deleted messages were found, do NOT create new messages.
+                    // Manual approval should only change the moderation status; message creation is handled at upload time.
+                }
+                catch (error) {
+                    // Log error but don't block moderation flow
+                    log.error('Failed to restore messages with approved media', {
+                        error: error instanceof Error ? error.message : String(error),
+                        stack: error instanceof Error ? error.stack : undefined,
+                        moderationMediaId: moderation.id,
+                    });
+                }
             }
 
             // Red-flag profile when moderation is rejected (manual flow)
