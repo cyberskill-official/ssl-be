@@ -43,7 +43,7 @@ export interface I_Input_CreateMessage extends Omit<I_Message, T_Omit_Create | T
     recipientId?: string;
     conversationId?: string;
     parentId?: string;
-    stutusMedia?: E_ModerationMediaStatus;
+    statusMedia?: E_ModerationMediaStatus;
 }
 
 export interface I_Input_UpdateMessage extends Omit<I_Message, T_Omit_Update | T_Message_Populate> { }

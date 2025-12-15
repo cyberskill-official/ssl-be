@@ -16,6 +16,7 @@ import { withFilter } from 'graphql-subscriptions';
 
 import type { I_Event } from '#modules/event/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
+import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import type { I_Notification } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
@@ -2094,6 +2095,7 @@ export const conversationCtr = {
         senderId: string,
         recipientId: string,
         content: I_MessageContent,
+        statusMedia?: E_ModerationMediaStatus,
     ): Promise<I_Return<I_Conversation>> => {
         let isFreeMember = false;
         let isAdminUser = false;
@@ -2139,7 +2141,7 @@ export const conversationCtr = {
             }
 
             const messageResult = await messageCtr.createMessageOnly(context, {
-                doc: { conversationId: directMessageResult.conversationId, senderId, content, expiresAt: undefined },
+                doc: { conversationId: directMessageResult.conversationId, senderId, content, expiresAt: undefined, statusMedia },
             });
             if (!messageResult.success) {
                 throwError({ message: 'Failed to create message', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -2258,6 +2260,7 @@ export const conversationCtr = {
         senderId: string,
         content: I_MessageContent,
         parentId?: string,
+        statusMedia?: E_ModerationMediaStatus,
     ): Promise<I_Return<I_Message>> => {
         try {
             // 1) Load conversation (participants populated)
@@ -2346,6 +2349,7 @@ export const conversationCtr = {
                     senderId,
                     content,
                     parentId,
+                    statusMedia,
                     expiresAt:
           conversation.type === E_ConversationType.GROUP && conversation.retentionDays
               ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)
