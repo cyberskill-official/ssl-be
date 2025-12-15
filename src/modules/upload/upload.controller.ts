@@ -8,9 +8,6 @@ import { Buffer } from 'node:buffer';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import type {
-    E_ModerationMediaStatus,
-} from '#modules/moderation/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -20,6 +17,7 @@ import { generateAndUploadThumbnail } from '#modules/gallery/thumbnail.util.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import {
     aiModerationCtr,
+    E_ModerationMediaStatus,
     E_ModerationMediaType,
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
@@ -249,8 +247,9 @@ export const uploadCtr = {
                     thumbnailUrl = thumbRes.result!;
                 }
             }
-            catch {
+            catch (error) {
                 // swallow thumbnail errors; not critical for upload
+                log.error('Failed to generate thumbnail:', error);
             }
 
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
@@ -277,10 +276,7 @@ export const uploadCtr = {
 
             // Run AI after upload and record initial result to moderation_log
             try {
-            // Pass the same bytes to AI moderation to ensure consistency
-                const videoBytes = new Uint8Array(videoBuffer);
-                const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
-                if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
+                if (moderationCreated.success && moderationCreated.result?.id) {
                     const moderationId = moderationCreated.result.id;
                     // Pass the same bytes to AI moderation to ensure consistency
                     const videoBytes = new Uint8Array(videoBuffer);
@@ -308,9 +304,9 @@ export const uploadCtr = {
                         }
                     }
                 }
-                catch {
-                    // Log error but don't block upload
-                }
+            }
+            catch (error) {
+                log.error('Failed to run AI moderation again:', error);
             }
 
             // Always return success response with status, even if REJECTED or PENDING
@@ -489,8 +485,8 @@ export const uploadCtr = {
                 }
             }
         }
-        catch {
-            // Do not block upload on AI/log failure - continue without throwing
+        catch (error) {
+            log.error('Failed to run AI moderation again:', error);
         }
 
         // Always return success response with status, even if REJECTED or PENDING
