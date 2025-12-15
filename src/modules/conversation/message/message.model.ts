@@ -1,6 +1,8 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
+
 import type { I_ContactAdmin } from '../conversation/conversation.type.js';
 import type { I_Message } from './message.type.js';
 
@@ -131,6 +133,10 @@ export const MessageModel = mongo.createModel<I_Message>({
         expiresAt: {
             type: Date,
             index: { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $exists: true } } },
+        },
+        statusMedia: {
+            type: String,
+            enum: Object.values(E_ModerationMediaStatus),
         },
     },
     virtuals: [

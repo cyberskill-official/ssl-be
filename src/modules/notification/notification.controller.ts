@@ -9,7 +9,7 @@ import mongoose, { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
-import { NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
+import { AGE_VERIFICATION_SKIPPED, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
@@ -1077,6 +1077,9 @@ export const notificationCtr = {
                                 break;
                             case E_NotificationType.PAYMENT_ISSUE:
                                 templateKey = PAYMENT_FAILED;
+                                break;
+                            case E_NotificationType.AGE_VERIFICATION_SKIPPED:
+                                templateKey = AGE_VERIFICATION_SKIPPED;
                                 break;
                             case E_NotificationType.MEDIA_LIKED: {
                                 templateKey = '';

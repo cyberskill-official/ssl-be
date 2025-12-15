@@ -1866,7 +1866,7 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        // Send notification to user about skipping age verification
+        // Create notification but don't set body - frontend will handle body display
         try {
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
@@ -1874,7 +1874,7 @@ export const authnCtr = {
                     type: [E_NotificationType.AGE_VERIFICATION_SKIPPED],
                     entityType: E_NotificationEntityType.USER,
                     entityId: currentUser.id,
-                    body: 'Dear user, you have chosen not to complete age verification. This means that no one can see your images or videos — including your profile pictures. The process takes less than 5 minutes, and your information is safe with us.',
+                    body: '',
                     channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
                     presentation: {
                         headline: 'Age Verification Skipped',
@@ -1888,7 +1888,10 @@ export const authnCtr = {
         }
         catch (error) {
             // Non-fatal: log but don't block the response
-            log.error('Failed to send age verification skipped notification:', error);
+            log.error('Failed to create age verification skipped notification:', {
+                userId: currentUser.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
         }
 
         return {
