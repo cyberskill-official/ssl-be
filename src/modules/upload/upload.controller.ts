@@ -8,7 +8,9 @@ import { Buffer } from 'node:buffer';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import type { } from '#modules/moderation/index.js';
+import type {
+    E_ModerationMediaStatus,
+} from '#modules/moderation/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -18,7 +20,6 @@ import { generateAndUploadThumbnail } from '#modules/gallery/thumbnail.util.js';
 import { ipInfoCtr } from '#modules/ipInfo/ipinfo.controller.js';
 import {
     aiModerationCtr,
-    E_ModerationMediaStatus,
     E_ModerationMediaType,
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
@@ -252,8 +253,6 @@ export const uploadCtr = {
                 // swallow thumbnail errors; not critical for upload
             }
 
-            // Create moderationMedia - AI moderation will run inside createModerationMedia
-            // and set status to REJECTED or PENDING (no auto-approve)
             const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                 doc: {
                     type: E_ModerationMediaType.VIDEO,
@@ -274,13 +273,14 @@ export const uploadCtr = {
                 });
             }
 
-            // Get final status after AI moderation (which runs inside createModerationMedia)
-            let finalVideoStatus: E_ModerationMediaStatus = moderationCreated.result!.status || E_ModerationMediaStatus.PENDING;
+            let finalVideoStatus = moderationCreated.result!.status;
 
-            // Run AI moderation again to create moderation log (if not already done in createModerationMedia)
-            // This ensures we have a log entry for tracking
-            if (!shouldBypassModeration && moderationCreated.result?.id) {
-                try {
+            // Run AI after upload and record initial result to moderation_log
+            try {
+            // Pass the same bytes to AI moderation to ensure consistency
+                const videoBytes = new Uint8Array(videoBuffer);
+                const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
+                if (moderationResult.success && moderationCreated.success && moderationCreated.result?.id) {
                     const moderationId = moderationCreated.result.id;
                     // Pass the same bytes to AI moderation to ensure consistency
                     const videoBytes = new Uint8Array(videoBuffer);
@@ -429,6 +429,12 @@ export const uploadCtr = {
             await BunnyFile.upload(storageZone, `${uploadPath}`, fileWebStream.result);
         }
         catch (uploadError) {
+            log.error('Failed to upload file to Bunny CDN', {
+                error: uploadError instanceof Error ? uploadError.message : String(uploadError),
+                stack: uploadError instanceof Error ? uploadError.stack : undefined,
+                uploadPath,
+                userId: currentUser.id,
+            });
             throwError({
                 message: `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,

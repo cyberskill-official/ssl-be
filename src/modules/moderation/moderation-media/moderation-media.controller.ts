@@ -225,8 +225,10 @@ export const moderationMediaCtr = {
                     initialStatus = E_ModerationMediaStatus.REJECTED;
                     reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
                 }
-                // Don't auto-approve based on AI decision - always keep PENDING for manual review
-                // Only auto-approve if risk level is LOW (handled in applyAiModerationDecision)
+                else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
+                    // Auto-approve when AI explicitly approves
+                    initialStatus = E_ModerationMediaStatus.APPROVED;
+                }
                 else if (aiReason) {
                     reason = `AI flagged for review: ${aiReason}`;
                 }
@@ -237,13 +239,8 @@ export const moderationMediaCtr = {
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: false,
-                moderatedById: undefined, // Set to undefined initially - will be set to user ID only when manually approved/rejected
+                isPublished: initialStatus === E_ModerationMediaStatus.APPROVED,
             });
-
-            if (moderationCreated.success && moderationCreated.result) {
-                // Moderation media created successfully
-            }
 
             if (!moderationCreated.success) {
                 throwError({
@@ -363,9 +360,7 @@ export const moderationMediaCtr = {
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
         // If status is being changed, delegate to _updateModerationMediaStatus to keep entity (gallery, etc.) in sync
-        // BUT: If moderatedById is explicitly set in update (e.g., null/undefined for AI moderation),
-        // don't delegate to _updateModerationMediaStatus as it will override moderatedById
-        if (update?.status !== undefined && !('moderatedById' in update)) {
+        if (update?.status !== undefined) {
             const moderationRes = await mongooseCtr.findOne(filter);
             if (!moderationRes.success || !moderationRes.result) {
                 throwError({
@@ -394,10 +389,6 @@ export const moderationMediaCtr = {
         status: E_ModerationMediaStatus,
         reason?: string,
     ): Promise<I_Return<I_ModerationMedia>> => {
-        // NOTE: This function does NOT run AI moderation.
-        // AI moderation only runs during createModerationMedia (upload step).
-        // Manual approval/rejection bypasses AI moderation completely.
-
         const currentStatus = moderation.status;
         const currentEntity = moderation.entity;
 
@@ -423,6 +414,12 @@ export const moderationMediaCtr = {
                         ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                         ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                     };
+                    log.warn('[MODERATION][GALLERY] applying status update', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
+                        galleryUpdate,
+                    });
                     await galleryCtr.updateGallery(context, {
                         filter: { moderationMediaId: moderation.id },
                         update: galleryUpdate,
@@ -434,6 +431,11 @@ export const moderationMediaCtr = {
                             update: galleryUpdate,
                         });
                     }
+                    log.warn('[MODERATION][GALLERY] status update applied', {
+                        moderationId: moderation.id,
+                        entityId: moderation.entityId,
+                        status,
+                    });
                     if (
                         status === E_ModerationMediaStatus.APPROVED
                         && currentStatus !== E_ModerationMediaStatus.APPROVED
@@ -742,7 +744,7 @@ export const moderationMediaCtr = {
                 }
             }
 
-            const updateResult = await mongooseCtr.updateOne(
+            return mongooseCtr.updateOne(
                 { id: moderation.id },
                 {
                     status,
@@ -753,8 +755,6 @@ export const moderationMediaCtr = {
                     ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                 },
             );
-
-            return updateResult;
         }
         catch (error) {
             await mongooseCtr.updateOne(
@@ -773,10 +773,6 @@ export const moderationMediaCtr = {
         { id }: I_Input_ApproveModerationMedia,
     ): Promise<I_Return<I_ModerationMedia>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-
-        // NOTE: Manual approval bypasses AI moderation completely.
-        // AI moderation only runs during createModerationMedia (upload step).
-        // When admin manually approves, we do NOT re-run AI moderation.
 
         const currentModerationMedia = await moderationMediaCtr.getModerationMedia(
             context,
