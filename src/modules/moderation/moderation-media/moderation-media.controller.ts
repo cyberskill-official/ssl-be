@@ -19,7 +19,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
-import { conversationCtr, E_ConversationType, E_MessageType, messageCtr, MessageModel, participantCtr } from '#modules/conversation/index.js';
+import { E_MessageType, messageCtr, MessageModel } from '#modules/conversation/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { E_GalleryType } from '#modules/gallery/gallery.type.js';
 import { E_NoteType } from '#modules/note/note.type.js';
@@ -531,9 +531,23 @@ export const moderationMediaCtr = {
                         urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
                     }
 
-                    // Try to find messages by URL first (most accurate)
-                    // Query directly from database to include deleted/redacted messages
+                    // First: update statusMedia on all messages that reference this media URL
+                    // (so FE sees latest APPROVED/REJECTED/PENDING state)
                     const messageMongooseCtr = new MongooseController(MessageModel);
+                    try {
+                        await messageMongooseCtr.updateMany(
+                            {
+                                senderId: moderation.uploadedById,
+                                $or: urlConditions,
+                            },
+                            { statusMedia: status },
+                        );
+                    }
+                    catch {
+                        // Non-fatal: if statusMedia update fails, continue with restore logic
+                    }
+
+                    // Then: try to find messages by URL first (most accurate) for possible restore
 
                     // Query directly to bypass any filters in getMessages
                     const messagesByUrl = await messageMongooseCtr.findPaging(
@@ -652,88 +666,8 @@ export const moderationMediaCtr = {
                             }
                         }
                     }
-                    else {
-                        if (moderation.entity === E_UploadEntity.CONVERSATION && moderation.uploadedById) {
-                            try {
-                                // First, try to use entityId as conversationId (in case it's actually a conversation ID)
-                                let conversationId: string | undefined = moderation.entityId;
-
-                                // If entityId doesn't work as conversationId, find user's most recent conversation
-                                if (conversationId) {
-                                    const conversationCheck = await conversationCtr.getConversation(context, {
-                                        filter: { id: conversationId },
-                                    });
-
-                                    if (!conversationCheck.success || !conversationCheck.result) {
-                                        conversationId = undefined;
-                                    }
-                                }
-
-                                // If no valid conversationId, find user's most recent conversation (PRIVATE or GROUP)
-                                // Use participantCtr to find conversations by uploadedById (not currentUser)
-                                if (!conversationId) {
-                                    // Get conversation IDs for the user who uploaded the media
-                                    const privateConversationIds = await participantCtr.getConversationIdsByUserId(
-                                        moderation.uploadedById,
-                                        E_ConversationType.PRIVATE,
-                                    );
-
-                                    const groupConversationIds = await participantCtr.getConversationIdsByUserId(
-                                        moderation.uploadedById,
-                                        E_ConversationType.GROUP,
-                                    );
-
-                                    const allConversationIds = Array.from(new Set([...privateConversationIds, ...groupConversationIds]));
-
-                                    if (allConversationIds.length > 0) {
-                                        // Get the most recent conversation
-                                        const conversationsResult = await conversationCtr.getConversations(context, {
-                                            filter: { id: { $in: allConversationIds } },
-                                            options: {
-                                                pagination: false,
-                                                sort: { lastMessageAt: -1, updatedAt: -1 },
-                                                limit: 1,
-                                            },
-                                        });
-                                        if (conversationsResult.success && conversationsResult.result?.docs && conversationsResult.result.docs.length > 0) {
-                                            const firstConv = conversationsResult.result.docs[0];
-                                            if (firstConv?.id) {
-                                                conversationId = firstConv.id;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // If we have a conversationId, create the message
-                                // IMPORTANT: Use moderation.uploadedById as senderId (the person who uploaded the media),
-                                // NOT currentUser.id (the admin who approved it)
-                                if (conversationId && moderation.uploadedById) {
-                                    const messageType = moderation.type === E_ModerationMediaType.VIDEO ? E_MessageType.VIDEO : E_MessageType.IMAGE;
-
-                                    // DEBUG: Log sender and conversation info before creating message
-
-                                    // Use sendMessage to trigger notifications and emails
-                                    // This will create the message AND send notifications/emails to recipients
-                                    const newMessage = await conversationCtr.sendMessage(
-                                        context,
-                                        conversationId,
-                                        moderation.uploadedById, // Use uploadedById as senderId, not currentUser.id
-                                        {
-                                            type: messageType,
-                                            value: mediaUrl,
-                                        },
-                                    );
-
-                                    if (newMessage.success) {
-                                        // Message created successfully
-                                    }
-                                }
-                            }
-                            catch {
-                                // Failed to create new message - continue without blocking moderation flow
-                            }
-                        }
-                    }
+                    // If no redacted/deleted messages were found, do NOT create new messages.
+                    // Manual approval should only change the moderation status; message creation is handled at upload time.
                 }
                 catch (error) {
                     // Log error but don't block moderation flow
