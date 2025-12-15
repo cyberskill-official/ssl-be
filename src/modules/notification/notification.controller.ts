@@ -704,7 +704,8 @@ export const notificationCtr = {
         const currentUser = await authnCtr.getUserFromSession(context).catch(() => null);
         const currentUserId = currentUser?.id;
         const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
-            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED);
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED)
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SKIPPED);
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }
