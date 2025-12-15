@@ -313,39 +313,8 @@ export const uploadCtr = {
                 }
             }
 
-            // Block upload if media is REJECTED - don't return URL
-            if (finalVideoStatus === E_ModerationMediaStatus.REJECTED) {
-                // Check if rejected by human moderator or AI
-                const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
-                    filter: { id: moderationCreated.result!.id! },
-                });
-
-                const hasModerator = moderationMedia.success && moderationMedia.result?.moderatedById;
-
-                if (hasModerator) {
-                    // Rejected by human moderator
-                    throwError({
-                        message: 'Media upload was rejected. The content does not meet our community guidelines and cannot be used.',
-                        status: RESPONSE_STATUS.BAD_REQUEST,
-                    });
-                }
-                else {
-                    // Rejected by AI - show as pending moderation
-                    throwError({
-                        message: 'Media is pending moderation. Please wait for approval before using this media.',
-                        status: RESPONSE_STATUS.BAD_REQUEST,
-                    });
-                }
-            }
-
-            // Block upload if media is PENDING (for non-staff/admin users)
-            // Staff/Admin can still get URL even if PENDING for moderation purposes
-            if (finalVideoStatus === E_ModerationMediaStatus.PENDING && !isStaff && !isAdmin) {
-                throwError({
-                    message: 'Media is pending moderation. Please wait for approval before using this media.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
+            // Always return success response with status, even if REJECTED or PENDING
+            // Frontend will handle the status appropriately
 
             return {
                 success: true,
@@ -518,39 +487,8 @@ export const uploadCtr = {
             // Do not block upload on AI/log failure - continue without throwing
         }
 
-        // Block upload if media is REJECTED - check moderatedById to determine message
-        if (finalStatus === E_ModerationMediaStatus.REJECTED) {
-            // Check if rejected by human moderator or AI
-            const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
-                filter: { id: moderationCreated.result!.id! },
-            });
-
-            const hasModerator = moderationMedia.success && moderationMedia.result?.moderatedById;
-
-            if (hasModerator) {
-                // Rejected by human moderator
-                throwError({
-                    message: 'Media upload was rejected. The content does not meet our community guidelines and cannot be used.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-            else {
-                // Rejected by AI - show as pending moderation
-                throwError({
-                    message: 'Media is pending moderation. Please wait for approval before using this media.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-        }
-
-        // Block upload if media is PENDING (for non-staff/admin users)
-        // Staff/Admin can still get URL even if PENDING for moderation purposes
-        if (finalStatus === E_ModerationMediaStatus.PENDING && !isStaff && !isAdmin) {
-            throwError({
-                message: 'Media is pending moderation. Please wait for approval before using this media.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
+        // Always return success response with status, even if REJECTED or PENDING
+        // Frontend will handle the status appropriately
 
         return {
             message: 'Upload successful',
