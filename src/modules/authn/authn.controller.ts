@@ -702,9 +702,6 @@ export const authnCtr = {
             throwError({ message: 'Role not found.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        // Get IP address from FE (similar to login)
-        const clientIp = typeof doc.ip === 'string' ? doc.ip.trim() : '';
-
         const userCreated = await userCtr.createUser(context, {
             doc: {
                 email: emailLowerCase,
@@ -720,22 +717,10 @@ export const authnCtr = {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        // Update lastLoginIp if IP is provided (similar to login logic)
-        if (clientIp) {
-            try {
-                await userCtr.updateUser(context, {
-                    filter: { id: userCreated.result.id },
-                    update: { lastLoginIp: clientIp },
-                });
-            }
-            catch (error) {
-                // Don't block registration if IP update fails
-                log.warn('Failed to update user IP during registration:', error);
-            }
-        }
-
         const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
         await assignSessionUser(context.req.session, sanitizedNewUser);
+
+        // NOTE: removed server-side IP extraction; rely on FE-provided data if needed
 
         return { success: true, result: { user: sanitizedNewUser } };
     },

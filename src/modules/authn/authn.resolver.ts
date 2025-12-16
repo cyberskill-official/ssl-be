@@ -25,7 +25,6 @@ const authResolver = {
         verifyAge: (_parent: unknown, args: I_Input_UploadMany, context: I_Context) => authnCtr.verifyAge(context, args),
         approveAgeVerify: async (_parent: unknown, args: I_Input_ApproveAgeVerify, context: I_Context) => authnCtr.approveAgeVerify(context, args),
         rejectAgeVerify: async (_parent: unknown, args: I_Input_RejectAgeVerify, context: I_Context) => authnCtr.rejectAgeVerify(context, args),
-        skipAgeVerification: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.skipAgeVerification(context),
         createGuardianVisitToken: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.createGuardianVisitToken(context),
         guardianLogin: (_parent: unknown, args: I_Input_GuardianLogin, context: I_Context) => authnCtr.guardianLogin(context, args),
         sendOTPEmailForAdmin: (_parent: unknown, args: I_Input_SendOTPEmailForAdminStaff, context: I_Context) => authnCtr.sendOTPEmailForAdmin(context, args.email),
