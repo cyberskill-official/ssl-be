@@ -16,7 +16,7 @@ jobs:
           echo "Ref name: ${{ github.ref_name }}"
           if [[ "${{ github.ref_name }}" == "develop" ]]; then
             echo "ENV_PREFIX=SSL_DEVELOPMENT_BE" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+          elseif [[ "${{ github.ref_name }}" == "main" ]]; then
             echo "ENV_PREFIX=SSL_PRODUCTION_BE" >> $GITHUB_OUTPUT
           else
             echo "Error: Branch '${{ github.ref_name }}' is not configured for deployment."
