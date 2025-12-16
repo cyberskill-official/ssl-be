@@ -12,6 +12,7 @@ input Input_Register {
     email: String!
     password: String!
     accountType: E_AccountType
+    ip: String
 }
 
 # Step 3
@@ -107,6 +108,7 @@ type Mutation {
     verifyAge(files: [Upload]!, method: E_AgeVerifyMethod): T_Response_VerifyAge!
     approveAgeVerify(userId: String!): T_Response_VerifyAge!
     rejectAgeVerify(userId: String!, reason: String!): T_Response_VerifyAge!
+    skipAgeVerification: T_Response_Auth!
     createGuardianVisitToken: T_Response_Auth!
     guardianLogin(token: String!): T_Response_Auth!
 }
