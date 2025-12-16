@@ -167,6 +167,57 @@ async function assignSessionUser(session: I_Request['session'], user: I_User) {
     }
 }
 
+// Helper function to get IP from request and update lastLoginIp
+async function updateUserIpFromRequest(
+    context: I_Context,
+    userId: string,
+    ipFromArgs?: string,
+): Promise<void> {
+    let clientIp: string | undefined;
+
+    // Try to get IP from args first
+    if (ipFromArgs && typeof ipFromArgs === 'string') {
+        clientIp = ipFromArgs.trim() || undefined;
+    }
+
+    // Fallback: Try to get IP from request headers if not provided
+    if (!clientIp && context.req) {
+        const headers = context.req.headers || {};
+        const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
+        if (forwardedFor && typeof forwardedFor === 'string') {
+            clientIp = forwardedFor.split(',')[0]?.trim();
+        }
+        if (!clientIp) {
+            clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
+        }
+        if (!clientIp) {
+            clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
+        }
+        // Clean up IP (remove IPv6 prefix, port, etc.)
+        if (clientIp) {
+            clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
+        }
+    }
+
+    // Update lastLoginIp if IP is found
+    if (clientIp) {
+        try {
+            await userCtr.updateUser(context, {
+                filter: { id: userId },
+                update: { lastLoginIp: clientIp },
+            });
+            log.info(`[Register] Updated lastLoginIp to: ${clientIp} for user: ${userId}`);
+        }
+        catch (error) {
+            // Don't block registration if IP update fails
+            log.warn(`[Register] Failed to update user IP: ${(error as Error).message}`);
+        }
+    }
+    else {
+        log.warn(`[Register] No IP found to update for user: ${userId}`);
+    }
+}
+
 export const authnCtr = {
     sendOTPEmailForAdmin: async (
         context: I_Context,
@@ -666,22 +717,33 @@ export const authnCtr = {
         validate.email.validate(emailLowerCase);
         validate.username.validate(username);
 
-        const existingByEmail = await userCtr.getUser(context, { filter: { email: emailLowerCase } });
-        if (existingByEmail.success) {
-            if (existingByEmail.result.isAdminBlocked === true) {
+        // Query directly from database (deleted users are completely removed, so no need to check isDel)
+        // Use userCtr.getUser - it will find users even if soft-deleted (hard-deleted users are gone from DB)
+        const existingByEmail = await userCtr.getUser(context, {
+            filter: { email: emailLowerCase },
+        });
+        if (existingByEmail.success && existingByEmail.result) {
+            const isAdminBlocked = existingByEmail.result.isAdminBlocked === true;
+
+            if (isAdminBlocked) {
                 throwError({ message: 'This email is banned.', status: RESPONSE_STATUS.FORBIDDEN });
             }
-            if (existingByEmail.result.isDel === true) {
-                throwError({
-                    message: 'This email belongs to a deleted profile and cannot be used to create a new one.',
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
+
+            // If user exists and is not admin-blocked, block signup
             throwError({ message: 'Email already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const existingByUsername = await userCtr.getUser(context, { filter: { username } });
-        if (existingByUsername.success) {
+        const existingByUsername = await userCtr.getUser(context, {
+            filter: { username },
+        });
+        if (existingByUsername.success && existingByUsername.result) {
+            const isAdminBlocked = existingByUsername.result.isAdminBlocked === true;
+
+            if (isAdminBlocked) {
+                throwError({ message: 'This username is banned.', status: RESPONSE_STATUS.FORBIDDEN });
+            }
+
+            // If user exists and is not admin-blocked, block signup
             throwError({ message: 'Username already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -690,6 +752,34 @@ export const authnCtr = {
         if (!roleFound.success) {
             throwError({ message: 'Role not found.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
+
+        // Get IP address from FE (similar to login), fallback to request headers if not provided
+        let clientIp: string | undefined;
+        if (doc.ip && typeof doc.ip === 'string') {
+            clientIp = doc.ip.trim() || undefined;
+        }
+
+        // Fallback: Try to get IP from request headers if FE doesn't provide
+        if (!clientIp && context.req) {
+            const headers = context.req.headers || {};
+            const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
+            if (forwardedFor && typeof forwardedFor === 'string') {
+                // x-forwarded-for can contain multiple IPs, take the first one
+                clientIp = forwardedFor.split(',')[0]?.trim();
+            }
+            if (!clientIp) {
+                clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
+            }
+            if (!clientIp) {
+                clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
+            }
+            // Clean up IP (remove IPv6 prefix, port, etc.)
+            if (clientIp) {
+                clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
+            }
+        }
+
+        log.info(`[Register] IP from FE: ${doc.ip || 'NOT PROVIDED'}, Final IP: ${clientIp || 'NOT FOUND'}, doc.ip type: ${typeof doc.ip}`);
 
         const userCreated = await userCtr.createUser(context, {
             doc: {
@@ -704,6 +794,39 @@ export const authnCtr = {
         });
         if (!userCreated.success) {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+        }
+
+        log.info(`[Register] User created with ID: ${userCreated.result.id}, current lastLoginIp: ${userCreated.result.lastLoginIp || 'NOT SET'}`);
+
+        // Update lastLoginIp if IP is provided from FE
+        if (clientIp) {
+            try {
+                log.info(`[Register] Updating lastLoginIp to: ${clientIp} for user: ${userCreated.result.id}`);
+                const updateResult = await userCtr.updateUser(context, {
+                    filter: { id: userCreated.result.id },
+                    update: { lastLoginIp: clientIp },
+                });
+                log.info(`[Register] Update result: success=${updateResult.success}, message=${updateResult.message || 'N/A'}`);
+
+                // Refresh user to get updated lastLoginIp
+                const userUpdated = await userCtr.getUser(context, {
+                    filter: { id: userCreated.result.id },
+                });
+                if (userUpdated.success && userUpdated.result) {
+                    log.info(`[Register] User refreshed, new lastLoginIp: ${userUpdated.result.lastLoginIp || 'NOT SET'}`);
+                    userCreated.result = userUpdated.result;
+                }
+                else {
+                    log.warn(`[Register] Failed to refresh user after IP update: ${userUpdated.message || 'Unknown error'}`);
+                }
+            }
+            catch (error) {
+                // Don't block registration if IP update fails
+                log.warn(`[Register] Failed to update user IP during registration: ${(error as Error).message}`, error);
+            }
+        }
+        else {
+            log.warn(`[Register] No IP provided from FE, lastLoginIp will not be set`);
         }
 
         const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
@@ -848,6 +971,9 @@ export const authnCtr = {
             });
         }
 
+        // Update IP when user continues registration
+        await updateUserIpFromRequest(context, userFound.result.id);
+
         return {
             success: true,
             result: {
@@ -909,6 +1035,9 @@ export const authnCtr = {
             });
         }
 
+        // Update IP when user continues registration
+        await updateUserIpFromRequest(context, currentUser.id);
+
         return {
             success: true,
             result: {
@@ -945,6 +1074,9 @@ export const authnCtr = {
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
+
+        // Update IP when user continues registration
+        await updateUserIpFromRequest(context, currentUser.id);
 
         return {
             success: true,
@@ -1086,6 +1218,9 @@ export const authnCtr = {
                 context.req.session.user.freeEventCount = 1;
             }
         }
+
+        // Update IP when user continues registration
+        await updateUserIpFromRequest(context, currentUser.id);
 
         return {
             success: true,
