@@ -48,6 +48,7 @@ export interface I_Input_Register {
     email: string;
     password: string;
     accountType: E_AccountType;
+    ip?: string;
 }
 
 // Step 2
