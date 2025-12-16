@@ -21,26 +21,25 @@ import path from 'node:path';
 import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { blockCtr } from '#modules/block/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
-import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
-import { messageCtr } from '#modules/conversation/message/message.controller.js';
-import { participantCtr } from '#modules/conversation/participant/participant.controller.js';
+import { conversationCtr, messageCtr, participantCtr } from '#modules/conversation/index.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/index.js';
-import { FollowModel } from '#modules/follow/follow.model.js';
+import { followCtr } from '#modules/follow/index.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { likeCtr } from '#modules/like/index.js';
 import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
 import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
-import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { orderCtr } from '#modules/order/index.js';
-import { paymentRequestCtr } from '#modules/payment/index.js';
+import { paymentCtr, paymentRequestCtr } from '#modules/payment/index.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
+import { verificationCtr } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
@@ -715,19 +714,28 @@ export const userCtr = {
         validate.username.validate(username);
         validate.password.validate(password);
 
-        // 1) Chặn nếu email thuộc hồ sơ admin-blocked
+        // 1) Chặn nếu email thuộc hồ sơ admin-blocked (không ràng buộc isDel)
         const adminBlocked = await mongooseCtr.findOne({ email, isAdminBlocked: true });
         if (adminBlocked.success) {
             throwError({ message: 'User is admin-blocked.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         // 2) Chặn nếu trùng username/email với hồ sơ CHƯA XOÁ
-        // (Deleted users are completely removed, so no need to check isDel)
         const existed = await mongooseCtr.findOne(
-            { $or: [{ username }, { email }] },
+            { $or: [{ username }, { email }], isDel: { $ne: true } },
         );
         if (existed.success) {
             throwError({ message: 'User already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        // 3) Chặn nếu trùng username/email với hồ sơ BỊ SUSPEND (isDel: true nhưng vẫn còn trong DB)
+        // Nếu user muốn delete (hard delete), data sẽ bị xóa khỏi DB nên không check được
+        // Nếu user muốn suspend (soft delete), data vẫn còn trong DB với isDel: true
+        const suspended = await mongooseCtr.findOne(
+            { $or: [{ username }, { email }], isDel: true },
+        );
+        if (suspended.success) {
+            throwError({ message: 'This account is suspended. You cannot create a new profile with this email or username.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         if (doc.partner1?.dateOfBirth && !isAdultDateOfBirth(doc.partner1.dateOfBirth)) {
@@ -1052,202 +1060,226 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        // Hard delete: completely remove user and all related data from the system
+        // Delete: hard delete, removes data completely from DB, allows new account creation
         const userToDelete = await userCtr.getUser(context, { filter });
 
         if (!userToDelete.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        const userId = userToDelete.result.id;
-        if (!userId) {
-            throwError({ message: 'User ID not found.', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (userToDelete.result.email && userToDelete.result.isDel !== true) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userToDelete.result.email);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue account deleted email:', emailResponse.message);
+            }
         }
 
+        // Hard delete: remove everything
+        if (userToDelete.result.partner1?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userToDelete.result.partner1?.locationId } });
+            if (!locationDeleted.success) {
+                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            }
+        }
+
+        if (userToDelete.result.settings?.temporaryLocation?.locationId) {
+            const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: userToDelete.result.settings?.temporaryLocation?.locationId } });
+            if (!locationDeleted.success) {
+                throwError({ message: locationDeleted.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+            }
+        }
+
+        // Cascade delete resources owned/created by the user
+        const ownerId = userToDelete.result.id;
         try {
-            // Get conversation IDs where user is a participant
-            const privateConversationIds = await participantCtr.getConversationIdsByUserId(
-                userId,
-                E_ConversationType.PRIVATE,
-            );
-            const groupConversationIds = await participantCtr.getConversationIdsByUserId(
-                userId,
-                E_ConversationType.GROUP,
-            );
-            const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
-                userId,
-                E_ConversationType.ADMIN_BROADCAST,
-            );
-            const allConversationIds = Array.from(new Set([...privateConversationIds, ...groupConversationIds, ...adminBroadcastIds]));
-
-            // Get conversations created by user
-            const conversationsCreated = await conversationCtr.getConversations(context, {
-                filter: { createdById: userId },
-                options: { pagination: false },
-            });
-            const createdConversationIds = conversationsCreated.success && conversationsCreated.result
-                ? conversationsCreated.result.docs.map(c => c.id)
-                : [];
-            const allConversationIdsToDelete = Array.from(new Set([...allConversationIds, ...createdConversationIds]));
-
-            // Delete all messages from user or in user's conversations
-            await messageCtr.deleteMessages(context, {
-                filter: {
-                    $or: [
-                        { senderId: userId },
-                        { conversationId: { $in: allConversationIdsToDelete } },
-                    ],
-                },
-            });
-
-            // Delete all participants
-            await participantCtr.deleteParticipants(context, {
-                filter: {
-                    $or: [
-                        { userId },
-                        { conversationId: { $in: allConversationIdsToDelete } },
-                    ],
-                },
-            });
-
-            // Delete all conversations
-            for (const conversationId of allConversationIdsToDelete) {
-                await conversationCtr.deleteConversation(context, { filter: { id: conversationId } });
+            // Delete announcements/events created by this user (all, including past)
+            try {
+                await eventCtr.deleteEvents(context, { filter: { createdById: ownerId } });
             }
+            catch { /* ignore */ }
 
-            // Delete all events created by user
-            const events = await eventCtr.getEvents(context, {
-                filter: { createdById: userId },
-                options: { pagination: false },
-            });
-            if (events.success && events.result) {
-                for (const event of events.result.docs) {
-                    await eventCtr.deleteEvent(context, { filter: { id: event.id } });
-                }
-            }
-
-            // Delete all follows (user following others and others following user)
-            const followMongooseCtr = new MongooseController(FollowModel);
-            await followMongooseCtr.deleteMany({
-                $or: [
-                    { userId },
-                    { followId: userId },
-                ],
-            });
-
-            // Delete all likes by user
-            await likeCtr.deleteLikes(context, {
-                filter: { userId },
-            });
-
-            // Delete all notifications for user or from user
-            const notifications = await notificationCtr.getNotifications(context, {
-                filter: {
-                    $or: [
-                        { userId },
-                        { 'context.actorId': userId },
-                    ],
-                },
-                options: { pagination: false },
-            });
-            if (notifications.success && notifications.result) {
-                for (const notification of notifications.result.docs) {
-                    await notificationCtr.deleteNotification(context, { filter: { id: notification.id } });
-                }
-            }
-
-            // Delete all locations created by user
-            const locations = await locationCtr.getLocations(context, {
-                filter: {
-                    $or: [
-                        { createdById: userId },
-                        { entityType: E_LocationEntityType.USER, entityId: userId },
-                    ],
-                },
-                options: { pagination: false },
-            });
-            if (locations.success && locations.result) {
-                for (const location of locations.result.docs) {
-                    await locationCtr.deleteLocation(context, { filter: { id: location.id } });
-                }
-            }
-
-            // Delete all moderation media uploaded by user
-            const moderationMedia = await moderationMediaCtr.getModerationMedias(context, {
-                filter: { uploadedById: userId },
-                options: { pagination: false },
-            });
-            if (moderationMedia.success && moderationMedia.result) {
-                for (const media of moderationMedia.result.docs) {
-                    await moderationMediaCtr.deleteModerationMedia(context, { filter: { id: media.id } });
-                }
-            }
-
-            // Delete all moderation logs for user
-            const moderationLogs = await moderationLogCtr.getModerationLogs(context, {
-                filter: { userId },
-                options: { pagination: false },
-            });
-            if (moderationLogs.success && moderationLogs.result) {
-                for (const log of moderationLogs.result.docs) {
-                    await moderationLogCtr.deleteModerationLog(context, { filter: { id: log.id } });
-                }
-            }
-
-            // Delete all orders for user
-            const orders = await orderCtr.getOrders(context, {
-                filter: { userId },
-                options: { pagination: false },
-            });
-            const orderIds: string[] = [];
-            if (orders.success && orders.result) {
-                for (const order of orders.result.docs) {
-                    orderIds.push(order.id);
-                    await orderCtr.deleteOrder(context, { filter: { id: order.id } });
-                }
-            }
-
-            // Delete all payment requests for user's orders
-            if (orderIds.length > 0) {
-                const paymentRequests = await paymentRequestCtr.getPaymentRequests(context, {
-                    filter: {
-                        'meta.orderId': { $in: orderIds },
-                    },
-                    options: { pagination: false },
-                });
-                if (paymentRequests.success && paymentRequests.result) {
-                    for (const paymentRequest of paymentRequests.result.docs) {
-                        await paymentRequestCtr.deletePaymentRequest(context, { filter: { id: paymentRequest.id } });
+            // Delete conversations created by this user
+            try {
+                const convs = await conversationCtr.getConversations(context, { filter: { createdById: ownerId }, options: { pagination: false } });
+                if (convs.success && convs.result && Array.isArray(convs.result.docs)) {
+                    for (const c of convs.result.docs) {
+                        try {
+                            await conversationCtr.deleteConversation(context, { filter: { id: c.id } });
+                        }
+                        catch {
+                            // ignore
+                        }
                     }
                 }
             }
+            catch { /* ignore */ }
 
-            // Delete user's galleries (handled by gallery controller if needed)
-            // Note: Gallery deletion might require additional logic for file cleanup
+            // Delete follow relationships (both follower and following)
+            try {
+                const follows = await followCtr.getFollows(context, { filter: { userId: ownerId }, options: { pagination: false } });
+                if (follows.success && follows.result && Array.isArray(follows.result.docs)) {
+                    for (const f of follows.result.docs) {
+                        try {
+                            await followCtr.deleteFollow(context, { filter: { id: f.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
 
-            // Finally, delete the user
-            return mongooseCtr.deleteOne(filter, options);
+                const followers = await followCtr.getFollowers(context, { filter: { followId: ownerId }, options: { pagination: false } });
+                if (followers.success && followers.result && Array.isArray(followers.result.docs)) {
+                    for (const f of followers.result.docs) {
+                        try {
+                            await followCtr.deleteFollow(context, { filter: { id: f.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+
+            // Delete notifications where this user is target or actor
+            try {
+                const notifsTarget = await notificationCtr.getNotifications(context, { filter: { targetId: ownerId }, options: { pagination: false } });
+                if (notifsTarget.success && notifsTarget.result && Array.isArray(notifsTarget.result.docs)) {
+                    for (const n of notifsTarget.result.docs) {
+                        try {
+                            await notificationCtr.deleteNotification(context, { filter: { id: n.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+
+                const notifsActor = await notificationCtr.getNotifications(context, { filter: { actorId: ownerId }, options: { pagination: false } });
+                if (notifsActor.success && notifsActor.result && Array.isArray(notifsActor.result.docs)) {
+                    for (const n of notifsActor.result.docs) {
+                        try {
+                            await notificationCtr.deleteNotification(context, { filter: { id: n.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+
+            // Delete galleries uploaded by the user
+            try {
+                const galls = await galleryCtr.getGalleries(context, { filter: { uploadedById: ownerId }, options: { pagination: false } });
+                if (galls.success && galls.result && Array.isArray(galls.result.docs)) {
+                    for (const g of galls.result.docs) {
+                        try {
+                            await galleryCtr.deleteGallery(context, { filter: { id: g.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+
+            // Redact messages sent by user (soft-delete)
+            try {
+                await messageCtr.redactMessages({ senderId: ownerId });
+            }
+            catch { /* ignore */ }
+
+            // Remove participant records for user (groups, private mappings)
+            try {
+                await participantCtr.deleteParticipants(context, { filter: { userId: ownerId } });
+            }
+            catch { /* ignore */ }
+
+            // Delete orders -> paymentRequests -> payment transactions
+            try {
+                const ordersRes = await orderCtr.getOrders(context, { filter: { buyerId: ownerId }, options: { pagination: false } });
+                const orderIds: string[] = [];
+                if (ordersRes.success && ordersRes.result && Array.isArray(ordersRes.result.docs)) {
+                    for (const o of ordersRes.result.docs) {
+                        orderIds.push(o.id);
+                        try {
+                            await orderCtr.deleteOrder(context, { filter: { id: o.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+
+                // Delete payment requests for these orders
+                if (orderIds.length) {
+                    try {
+                        const prs = await paymentRequestCtr.getPaymentRequests(context, { filter: { orderId: { $in: orderIds } }, options: { pagination: false } });
+                        if (prs.success && prs.result && Array.isArray(prs.result.docs)) {
+                            for (const pr of prs.result.docs) {
+                                try {
+                                    await paymentRequestCtr.deletePaymentRequest(context, { filter: { id: pr.id } });
+                                }
+                                catch {
+                                    /* ignore */
+                                }
+                            }
+                        }
+                    }
+                    catch { /* ignore */ }
+
+                    // Delete payment transactions related to these orders via payment controller
+                    try {
+                        await paymentCtr.deletePaymentTransactions(context, { filter: { orderId: { $in: orderIds } } });
+                    }
+                    catch { /* ignore */ }
+                }
+            }
+            catch { /* ignore */ }
+
+            // Delete verifications for user
+            try {
+                await verificationCtr.deleteVerifications(context, { filter: { userId: ownerId } });
+            }
+            catch {
+                /* ignore */
+            }
+
+            // Delete moderation media uploaded by user
+            try {
+                const mm = await moderationMediaCtr.getModerationMedias(context, { filter: { uploadedById: ownerId }, options: { pagination: false } });
+                if (mm.success && mm.result && Array.isArray(mm.result.docs)) {
+                    for (const m of mm.result.docs) {
+                        try {
+                            await moderationMediaCtr.deleteModerationMedia(context, { filter: { id: m.id } });
+                        }
+                        catch {
+                            /* ignore */
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+
+            // Remove likes and blocks via controller bulk-delete helpers
+            try {
+                await likeCtr.deleteLikes(context, { filter: { userId: ownerId } });
+            }
+            catch { /* ignore */ }
+
+            try {
+                await blockCtr.deleteBlocks(context, { filter: { $or: [{ userId: ownerId }, { blockId: ownerId }] } });
+            }
+            catch { /* ignore */ }
         }
-        catch (error) {
-            throwError({
-                message: `Failed to delete user and related data: ${(error as Error).message}`,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-    },
-
-    recoverUser: async (
-        context: I_Context,
-        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
-    ): Promise<I_Return<I_User>> => {
-        const userFound = await userCtr.getUser(context, { filter });
-
-        if (!userFound.success) {
-            throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        catch {
+            // Non-fatal: ignore cascade errors and continue with user deletion
         }
 
-        // Recover: clear isDel flag
-        return mongooseCtr.updateOne(filter, { isDel: false }, options);
+        return mongooseCtr.deleteOne(filter, options);
     },
     softDeleteUser: async (
         context: I_Context,
@@ -1268,6 +1300,20 @@ export const userCtr = {
         }
 
         return mongooseCtr.updateOne(filter, { isDel: true }, options);
+    },
+
+    recoverUser: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
+    ): Promise<I_Return<I_User>> => {
+        const userFound = await userCtr.getUser(context, { filter });
+
+        if (!userFound.success) {
+            throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        // Recover: clear isDel flag
+        return mongooseCtr.updateOne(filter, { isDel: false }, options);
     },
 
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {
@@ -1356,15 +1402,13 @@ export const userCtr = {
         if (!userFound.success) {
             throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'User not found' });
         }
-        if (userFound.result.isAdminBlocked && userFound.result.isDel) {
+        if (userFound.result.isAdminBlocked) {
             return { success: true } as I_Return<I_User>; // idempotent
         }
 
-        // Block user: set isAdminBlocked: true, soft delete, and send violation email
-        // updateUser will automatically send ACCOUNT_SUSPENDED email when isDel changes to true
         return userCtr.updateUser(context, {
             filter: { id: userId },
-            update: { isAdminBlocked: true, isDel: true },
+            update: { isAdminBlocked: true },
         });
     },
 
@@ -1391,7 +1435,6 @@ export const userCtr = {
         }
 
         const { userId } = filter || {};
-
         if (!userId) {
             throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Missing userId' });
         }
@@ -1404,10 +1447,9 @@ export const userCtr = {
             return { success: true } as I_Return<I_User>; // idempotent
         }
 
-        // Unblock user: set isAdminBlocked: false and isDel: false to restore user access
         return userCtr.updateUser(context, {
             filter: { id: userId },
-            update: { isAdminBlocked: false, isDel: false },
+            update: { isAdminBlocked: false },
         });
     },
 

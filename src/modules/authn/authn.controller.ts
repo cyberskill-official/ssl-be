@@ -666,33 +666,22 @@ export const authnCtr = {
         validate.email.validate(emailLowerCase);
         validate.username.validate(username);
 
-        // Query directly from database (deleted users are completely removed, so no need to check isDel)
-        // Use userCtr.getUser - it will find users even if soft-deleted (hard-deleted users are gone from DB)
-        const existingByEmail = await userCtr.getUser(context, {
-            filter: { email: emailLowerCase },
-        });
-        if (existingByEmail.success && existingByEmail.result) {
-            const isAdminBlocked = existingByEmail.result.isAdminBlocked === true;
-
-            if (isAdminBlocked) {
+        const existingByEmail = await userCtr.getUser(context, { filter: { email: emailLowerCase } });
+        if (existingByEmail.success) {
+            if (existingByEmail.result.isAdminBlocked === true) {
                 throwError({ message: 'This email is banned.', status: RESPONSE_STATUS.FORBIDDEN });
             }
-
-            // If user exists and is not admin-blocked, block signup
+            if (existingByEmail.result.isDel === true) {
+                throwError({
+                    message: 'This email belongs to a deleted profile and cannot be used to create a new one.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
             throwError({ message: 'Email already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const existingByUsername = await userCtr.getUser(context, {
-            filter: { username },
-        });
-        if (existingByUsername.success && existingByUsername.result) {
-            const isAdminBlocked = existingByUsername.result.isAdminBlocked === true;
-
-            if (isAdminBlocked) {
-                throwError({ message: 'This username is banned.', status: RESPONSE_STATUS.FORBIDDEN });
-            }
-
-            // If user exists and is not admin-blocked, block signup
+        const existingByUsername = await userCtr.getUser(context, { filter: { username } });
+        if (existingByUsername.success) {
             throwError({ message: 'Username already exists.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
