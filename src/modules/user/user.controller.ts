@@ -11,7 +11,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
@@ -24,6 +24,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
+import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { messageCtr } from '#modules/conversation/message/message.controller.js';
 import { participantCtr } from '#modules/conversation/participant/participant.controller.js';
@@ -1110,9 +1111,26 @@ export const userCtr = {
                 },
             });
 
-            // Delete all conversations
+            // Delete all conversations directly using MongooseController (admin can delete any conversation)
+            // First delete messages and participants, then delete conversation
+            const conversationMongooseCtr = new MongooseController(ConversationModel);
             for (const conversationId of allConversationIdsToDelete) {
-                await conversationCtr.deleteConversation(context, { filter: { id: conversationId } });
+                try {
+                    // Delete messages in this conversation
+                    await messageCtr.deleteMessages(context, {
+                        filter: { conversationId },
+                    });
+                    // Delete participants in this conversation
+                    await participantCtr.deleteParticipants(context, {
+                        filter: { conversationId },
+                    });
+                    // Finally delete the conversation
+                    await conversationMongooseCtr.deleteOne({ id: conversationId });
+                }
+                catch (error) {
+                    // Log but continue with other conversations
+                    log.warn(`Failed to delete conversation ${conversationId}:`, error);
+                }
             }
 
             // Delete all events created by user
@@ -1222,8 +1240,22 @@ export const userCtr = {
                 }
             }
 
-            // Delete user's galleries (handled by gallery controller if needed)
-            // Note: Gallery deletion might require additional logic for file cleanup
+            // Delete user's galleries
+            const galleries = await galleryCtr.getGalleries(context, {
+                filter: { createdById: userId },
+                options: { pagination: false },
+            });
+            if (galleries.success && galleries.result) {
+                for (const gallery of galleries.result.docs) {
+                    try {
+                        await galleryCtr.deleteGallery(context, { filter: { id: gallery.id } });
+                    }
+                    catch (error) {
+                        // Log but continue with other galleries
+                        log.warn(`Failed to delete gallery ${gallery.id}:`, error);
+                    }
+                }
+            }
 
             // Finally, delete the user
             return mongooseCtr.deleteOne(filter, options);
