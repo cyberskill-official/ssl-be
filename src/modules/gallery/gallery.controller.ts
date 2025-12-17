@@ -198,9 +198,13 @@ export const galleryCtr = {
         }
 
         // Check if uploader is age-verified
-        // If uploader is not age-verified and viewer is not owner/staff/admin, show default image (null)
         const isUploaderVerified = await isUploaderAgeVerified(context, galleryFound.result);
+
+        // If uploader is not age-verified:
+        // - Owner sees their own image blurred
+        // - Others see default image (null)
         const shouldShowDefaultImage = !isUploaderVerified && !isOwner && !isStaff && !isAdmin;
+        const shouldBlurOwner = !isUploaderVerified && isOwner; // Owner sees blurred when not verified
 
         // Free members: blur all galleries of others (not their own)
         // Paid members (membership active) can see clearly even if not age-verified
@@ -224,9 +228,16 @@ export const galleryCtr = {
         const applyThumbnailPolicy = (url?: string | null) => {
             if (!url)
                 return url;
-            // If uploader is not age-verified, return null to show default image
+            // If uploader is not age-verified, return null to show default image (for others)
             if (shouldShowDefaultImage) {
                 return null;
+            }
+            // If owner and not verified, show blurred image
+            if (shouldBlurOwner) {
+                return bunnyCtr.generateBlurredUrl({
+                    fullUrl: url,
+                    extraQueryParams: { class: 'blur' },
+                });
             }
             if (shouldBlur) {
                 return bunnyCtr.generateBlurredUrl({
@@ -485,9 +496,13 @@ export const galleryCtr = {
                 : (isFreeMember ? 'free' : 'premium');
 
             // Check if uploader is age-verified
-            // If uploader is not age-verified and viewer is not owner/staff/admin, show default image (null)
             const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
+
+            // If uploader is not age-verified:
+            // - Owner sees their own image blurred
+            // - Others see default image (null)
             const shouldShowDefaultImage = !isUploaderVerified && !isGalleryOwner && !isStaff && !isAdmin;
+            const shouldBlurOwner = !isUploaderVerified && isGalleryOwner; // Owner sees blurred when not verified
 
             // Free members: blur all galleries of others (not their own)
             // Paid members (membership active) can see clearly even if not age-verified
@@ -510,9 +525,16 @@ export const galleryCtr = {
             const transformMediaUrl = (url?: string | null) => {
                 if (!url)
                     return url;
-                    // If uploader is not age-verified, return null to show default image
+                // If uploader is not age-verified, return null to show default image (for others)
                 if (shouldShowDefaultImage) {
                     return null;
+                }
+                // If owner and not verified, show blurred image
+                if (shouldBlurOwner) {
+                    return bunnyCtr.generateBlurredUrl({
+                        fullUrl: url,
+                        extraQueryParams: { class: 'blur' },
+                    });
                 }
                 if (shouldBlur) {
                     return bunnyCtr.generateBlurredUrl({
