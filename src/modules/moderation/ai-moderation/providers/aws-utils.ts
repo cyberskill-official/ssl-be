@@ -40,7 +40,6 @@ export class AWSMediaUtils {
                 ContentType: 'video/mp4',
             }));
 
-            log.info(`Video uploaded to S3: ${filename}`);
             return filename;
         }
         catch (error) {
@@ -58,8 +57,8 @@ export class AWSMediaUtils {
             }
 
             // Handle remote URLs
-            const maxSize = isVideo ? 100 * 1024 * 1024 : 5 * 1024 * 1024; // 100MB for video, 5MB for image (AWS limit)
-            const timeout = isVideo ? 30000 : 15000; // 30s for video, 15s for image
+            const maxSize = isVideo ? 500 * 1024 * 1024 : 5 * 1024 * 1024; // 500MB for video, 5MB for image
+            const timeout = isVideo ? 300000 : 15000; // 5 minutes for video (to handle large files), 15s for image
 
             // Remove blur/optimization parameters from URL to get the original image
             // CDN blur parameters can cause issues with AWS Rekognition
@@ -80,7 +79,10 @@ export class AWSMediaUtils {
             const response = await axios.get(cleanUrl, {
                 responseType: 'arraybuffer',
                 timeout,
-                maxContentLength: maxSize,
+                // For video: no limit (or very high limit) to allow large files
+                // For image: keep 5MB limit
+                maxContentLength: isVideo ? Infinity : maxSize,
+                maxBodyLength: isVideo ? Infinity : maxSize,
                 headers: {
                     'User-Agent': 'SSL-BE-Moderation-Service/1.0',
                     'Accept': 'image/*,video/*,*/*',
@@ -105,10 +107,6 @@ export class AWSMediaUtils {
 
             if (size === 0) {
                 throw new Error('Empty file received');
-            }
-
-            if (size > maxSize) {
-                throw new Error(`File too large: ${size} bytes (max: ${maxSize} bytes)`);
             }
 
             // Validate image format for images
@@ -144,7 +142,6 @@ export class AWSMediaUtils {
                 }
             }
 
-            log.info(`Media downloaded successfully. Size: ${size} bytes, Type: ${isVideo ? 'video' : 'image'}`);
             return new Uint8Array(arrayBuffer);
         }
         catch (error) {
