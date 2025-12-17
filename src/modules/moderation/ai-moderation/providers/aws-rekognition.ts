@@ -250,73 +250,49 @@ export class AWSRekognitionProvider {
         let riskLevel = E_RiskLevel.LOW;
 
         // Check for rejected content: weapons, children, blood/gore
-        // These should trigger automatic rejection
+        // Decision based ONLY on labels (not confidence) - if label exists → reject
         const rejectedLabel = labelsResult?.Labels?.find((label: Label) => {
-            if (!label.Name || label.Confidence === undefined)
+            if (!label.Name)
                 return false;
             const labelName = normaliseLabelName(label.Name);
-
-            // For weapons and blood/gore: reject if confidence >= 50%
-            if (isWeaponLabel(labelName) || isBloodGoreLabel(labelName)) {
-                return label.Confidence >= 50;
-            }
-
-            // For children: only reject if confidence >= 90%
-            if (isChildrenLabel(labelName)) {
-                return label.Confidence >= 90;
-            }
-
-            return false;
+            // If label matches rejected keywords → reject (regardless of confidence)
+            return isRejectedLabel(labelName);
         });
 
         const rejectedInProcessed = processedLabels.find((label) => {
             const labelName = normaliseLabelName(label.name);
-            // For weapons and blood/gore: always reject if in processed labels
-            if (isWeaponLabel(labelName) || isBloodGoreLabel(labelName)) {
-                return true;
-            }
-            // For children: only reject if confidence >= 90%
-            if (isChildrenLabel(labelName)) {
-                return label.confidence >= 90;
-            }
-            return false;
+            // If label matches rejected keywords → reject (regardless of confidence)
+            return isRejectedLabel(labelName);
         });
 
         const hasRejectedContent = !!rejectedLabel || !!rejectedInProcessed;
 
         if (hasRejectedContent) {
             const rejectedLabelName = rejectedLabel?.Name || rejectedInProcessed?.name || 'Unknown';
-            const rejectedConfidence = rejectedLabel?.Confidence?.toFixed(1) || rejectedInProcessed?.confidence.toFixed(1) || 'N/A';
-
-            // Determine rejection reason
             const labelName = normaliseLabelName(rejectedLabelName);
-            let rejectionReason = 'Content detected - upload blocked';
+            let rejectionReason = 'Rejected content detected - upload blocked';
 
             if (isWeaponLabel(labelName)) {
-                rejectionReason = `Weapons detected (${rejectedConfidence}%) - upload blocked`;
+                rejectionReason = 'Weapons detected - upload blocked';
             }
             else if (isChildrenLabel(labelName)) {
-                rejectionReason = `Children/minors detected (${rejectedConfidence}%) - upload blocked`;
+                rejectionReason = 'Children/minors detected - upload blocked';
             }
             else if (isBloodGoreLabel(labelName)) {
-                rejectionReason = `Blood/gore/violence detected (${rejectedConfidence}%) - upload blocked`;
+                rejectionReason = 'Blood/gore/violence detected - upload blocked';
             }
 
-            // Rejected content detected - automatically reject upload
+            // Rejected content detected - automatically reject upload (regardless of confidence)
             decision = E_ModerationMediaStatus.REJECTED;
             riskLevel = E_RiskLevel.CRITICAL;
             reasons.push(rejectionReason);
         }
         else {
-            if (topLabel) {
-                const ratio = topLabel.confidence / 100;
-                const thresholdRatio = topLabel.thresholdRatio;
-                const highRiskThreshold = Math.min(0.99, thresholdRatio + 0.05);
-
-                riskLevel = ratio >= highRiskThreshold ? E_RiskLevel.HIGH : E_RiskLevel.MEDIUM;
-            }
+            // No rejected labels → approve (regardless of other labels or confidence)
+            decision = E_ModerationMediaStatus.APPROVED;
+            riskLevel = E_RiskLevel.LOW;
+            reasons.push('Auto-approved: No rejected content detected');
         }
-        // else PENDING_REVIEW + LOW (default)
 
         // If text is detected, only set risk level to HIGH if there's already problematic content
         // Don't automatically flag all images with text as high risk (reduces false positives)
@@ -324,15 +300,8 @@ export class AWSRekognitionProvider {
             detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
         );
         if (textDetections && textDetections.length > 0) {
-            // Only elevate risk if there's already concerning content detected
-            if (riskLevel === E_RiskLevel.MEDIUM || riskLevel === E_RiskLevel.HIGH) {
-                riskLevel = E_RiskLevel.HIGH;
-                reasons.push('Text detected in flagged image - requires manual review');
-            }
-            else {
-                // Just note text presence for low-risk images without escalating
-                reasons.push('Text detected in image');
-            }
+            // Just note text presence (doesn't affect decision - decision is based on labels only)
+            reasons.push('Text detected in image');
         }
 
         return {
@@ -363,6 +332,9 @@ export class AWSRekognitionProvider {
         const reasons: string[] = [];
         const contextLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
         let videoFileName: string = '';
+        // Track rejected and allowed labels for logging
+        let rejectedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
+        let allowedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
 
         try {
             // Step 1: Handle video input (URL, S3 key, or buffer)
@@ -478,39 +450,52 @@ export class AWSRekognitionProvider {
                 const videoThresholds = (settings as any).videoThresholds || AI_MODERATION_DEFAULT_CONFIG.videoThresholds;
                 const significantConfidence = videoThresholds?.significantLabelConfidence || 70;
 
-                // Calculate confidence based on all detected labels with high confidence
-                // Increased from 60 to reduce false positives
-                const significantLabels = labels.filter((label: any) => {
-                    const confidence = label.Label?.Confidence || 0;
-                    return confidence > significantConfidence;
-                });
+                // Separate rejected labels (weapons, children, blood/gore) from allowed labels
+                rejectedLabels = [];
+                allowedLabels = [];
 
-                if (significantLabels.length > 0) {
-                    confidence = Math.max(...significantLabels.map((label: any) => label.Label?.Confidence || 0)) / 100;
-
-                    // Group labels by name and keep the highest confidence and an example timestamp
-                    const labelGroups = new Map<string, { confidence: number; timestampMs?: number }>();
-                    for (const label of significantLabels) {
-                        const labelName = label.Label?.Name as string | undefined;
-                        const labelConfidence = (label.Label?.Confidence || 0) as number;
-                        const ts = label.Timestamp as number | undefined;
-                        if (!labelName)
-                            continue;
-                        const current = labelGroups.get(labelName);
-                        if (!current || labelConfidence > current.confidence) {
-                            labelGroups.set(labelName, { confidence: labelConfidence, timestampMs: ts });
-                        }
+                // Group labels by name and keep the highest confidence and an example timestamp
+                const labelGroups = new Map<string, { confidence: number; timestampMs?: number }>();
+                for (const label of labels) {
+                    const labelName = label.Label?.Name as string | undefined;
+                    const labelConfidence = (label.Label?.Confidence || 0) as number;
+                    const ts = label.Timestamp as number | undefined;
+                    if (!labelName || labelConfidence < significantConfidence)
+                        continue;
+                    const current = labelGroups.get(labelName);
+                    if (!current || labelConfidence > current.confidence) {
+                        labelGroups.set(labelName, { confidence: labelConfidence, timestampMs: ts });
                     }
+                }
 
-                    // Build context labels and human-readable reasons (top 10)
-                    const top = Array.from(labelGroups.entries())
-                        .sort((a, b) => b[1].confidence - a[1].confidence)
-                        .slice(0, 10);
-                    for (const [name, v] of top) {
-                        contextLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
-                        const at = typeof v.timestampMs === 'number' ? ` - ${Math.floor(v.timestampMs / 1000)}s` : '';
-                        reasons.push(`Context: ${name} (${v.confidence.toFixed(1)}%)${at}`);
+                // Categorize labels into rejected vs allowed
+                for (const [name, v] of labelGroups.entries()) {
+                    const normalizedName = normaliseLabelName(name);
+                    if (isRejectedLabel(normalizedName)) {
+                        // Only track rejected labels for confidence calculation
+                        rejectedLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
                     }
+                    else {
+                        // All other labels are allowed, including:
+                        // - Sexual content / nudity (explicit nudity, sexual activity, nudity, partial nudity, etc.)
+                        // - Adult content
+                        // - Clothing, Underwear, Person, Adult, Female, Woman, Lingerie, Skin, Bra, etc.
+                        allowedLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
+                    }
+                }
+
+                // Build context labels and human-readable reasons
+                // Include both rejected and allowed labels for logging
+                const allLabels = [...rejectedLabels, ...allowedLabels]
+                    .sort((a, b) => b.confidence - a.confidence)
+                    .slice(0, 10);
+
+                for (const label of allLabels) {
+                    contextLabels.push({ name: label.name, confidence: label.confidence, timestampMs: label.timestampMs });
+                    const at = typeof label.timestampMs === 'number' ? ` - ${Math.floor(label.timestampMs / 1000)}s` : '';
+                    const isRejected = rejectedLabels.some(r => r.name === label.name);
+                    const prefix = isRejected ? '⚠️ REJECTED: ' : 'Context: ';
+                    reasons.push(`${prefix}${label.name} (${label.confidence.toFixed(1)}%)${at}`);
                 }
             }
         }
@@ -521,41 +506,33 @@ export class AWSRekognitionProvider {
             });
         }
 
-        // Determine decision and risk level based on confidence
+        // Determine decision based ONLY on labels (not confidence)
+        // If rejected labels (weapons, children, blood/gore) are detected → REJECT
+        // If no rejected labels → APPROVE (regardless of confidence)
         let riskLevel = E_RiskLevel.LOW;
-        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.APPROVED; // Default to approved if no rejected labels
 
-        // Get video thresholds from settings
-        const videoThresholds = (settings as any).videoThresholds || AI_MODERATION_DEFAULT_CONFIG.videoThresholds;
-        const autoApproveThreshold = videoThresholds?.autoApproveMaxConfidence || 0.40;
-        const highRiskThreshold = 0.70;
-        const criticalRiskThreshold = 0.85;
-
-        // Auto-approve videos with very low confidence (likely safe content)
-        if (confidence < autoApproveThreshold) {
-            decision = E_ModerationMediaStatus.APPROVED;
-            riskLevel = E_RiskLevel.LOW;
-            reasons.push(`Auto-approved: Low risk detected (${(confidence * 100).toFixed(1)}%)`);
+        // Calculate confidence for logging purposes only (not used for decision)
+        if (rejectedLabels.length > 0) {
+            confidence = Math.max(...rejectedLabels.map(l => l.confidence)) / 100;
         }
-        // High confidence - requires human review
-        else if (confidence >= criticalRiskThreshold) {
-            decision = E_ModerationMediaStatus.PENDING;
-            riskLevel = E_RiskLevel.CRITICAL;
-        }
-        else if (confidence >= highRiskThreshold) {
-            decision = E_ModerationMediaStatus.PENDING;
-            riskLevel = E_RiskLevel.HIGH;
-        }
-        // Medium confidence - still requires review but lower priority
-        else if (confidence >= 0.50) {
-            decision = E_ModerationMediaStatus.PENDING;
-            riskLevel = E_RiskLevel.MEDIUM;
-        }
-        // Low-medium confidence - auto-approve with monitoring
         else {
+            confidence = 0;
+        }
+
+        // Decision based on labels only (not confidence)
+        if (rejectedLabels.length > 0) {
+            // Rejected labels detected → REJECT (regardless of confidence)
+            decision = E_ModerationMediaStatus.REJECTED;
+            riskLevel = E_RiskLevel.CRITICAL;
+            const rejectedLabelNames = rejectedLabels.map(l => l.name).join(', ');
+            reasons.push(`⚠️ REJECTED: Rejected content detected (${rejectedLabelNames}) - upload blocked`);
+        }
+        else {
+            // No rejected labels → APPROVE (all other labels are allowed)
             decision = E_ModerationMediaStatus.APPROVED;
             riskLevel = E_RiskLevel.LOW;
-            reasons.push(`Auto-approved: Acceptable risk level (${(confidence * 100).toFixed(1)}%)`);
+            reasons.push('Auto-approved: No rejected content detected (only allowed labels)');
         }
 
         return {

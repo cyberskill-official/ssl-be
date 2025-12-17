@@ -236,8 +236,19 @@ export const uploadCtr = {
                 return videoUploaded;
             }
 
-            const myIpInfo = await ipInfoCtr.getMyIp();
-            const clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+            // Get IP info with timeout to avoid blocking upload
+            let clientIp: string | undefined;
+            try {
+                const myIpInfo = await Promise.race([
+                    ipInfoCtr.getMyIp(),
+                    new Promise<{ success: boolean; result: unknown }>(resolve => setTimeout(() => resolve({ success: false, result: null }), 2000)), // 2s timeout
+                ]);
+                clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
+            }
+            catch {
+                // If IP info fails, continue without IP (not critical)
+                log.warn('[Upload] Failed to get IP info, continuing without IP');
+            }
             // Generate and upload thumbnail (best-effort)
             let thumbnailUrl: string | undefined;
             try {
@@ -272,41 +283,50 @@ export const uploadCtr = {
                 });
             }
 
-            let finalVideoStatus = moderationCreated.result!.status;
+            const finalVideoStatus = moderationCreated.result!.status;
 
-            // Run AI after upload and record initial result to moderation_log
-            try {
-                if (moderationCreated.success && moderationCreated.result?.id) {
-                    const moderationId = moderationCreated.result.id;
-                    // Pass the same bytes to AI moderation to ensure consistency
-                    const videoBytes = new Uint8Array(videoBuffer);
-                    const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: videoBytes });
+            // Run AI moderation ASYNC (don't block response) - this can take up to 5 minutes
+            // User gets immediate response, AI moderation runs in background
+            if (moderationCreated.success && moderationCreated.result?.id) {
+                const moderationId = moderationCreated.result.id;
+                const videoUrl = videoUploaded.result!;
 
-                    if (moderationResult.success) {
-                        const autoRejected = await applyAiModerationDecision(context, moderationId, moderationResult.result);
+                // Run AI moderation asynchronously (fire and forget)
+                // This prevents blocking the upload response
+                (async () => {
+                    try {
+                        // Use video URL from Bunny instead of buffer to avoid re-uploading to S3
+                        // This is faster and more efficient
+                        const moderationResult = await aiModerationCtr.moderateVideo(context, { videoUrl });
 
-                        await moderationLogCtr.createModerationLog(context, {
-                            doc: {
-                                action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
-                                type: E_ModerationLogType.VIDEO,
-                                userId: currentUser.id,
-                                moderationMediaId: moderationId,
-                                aiResult: moderationResult.result,
-                            },
-                        });
+                        if (moderationResult.success) {
+                            const aiResult = moderationResult.result;
 
-                        // Fetch updated status after AI moderation decision
-                        const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
-                            filter: { id: moderationId },
-                        });
-                        if (updatedModeration.success && updatedModeration.result) {
-                            finalVideoStatus = updatedModeration.result.status || E_ModerationMediaStatus.PENDING;
+                            const autoRejected = await applyAiModerationDecision(context, moderationId, aiResult);
+
+                            // Always create moderation log for both approved and rejected to track AI decisions
+                            const logAction = autoRejected
+                                ? E_ModerationLogAction.DELETE
+                                : (aiResult?.decision === E_ModerationMediaStatus.APPROVED
+                                        ? E_ModerationLogAction.APPROVE
+                                        : E_ModerationLogAction.WARN);
+
+                            await moderationLogCtr.createModerationLog(context, {
+                                doc: {
+                                    action: logAction,
+                                    type: E_ModerationLogType.VIDEO,
+                                    userId: currentUser.id,
+                                    moderationMediaId: moderationId,
+                                    aiResult,
+                                },
+                            });
                         }
                     }
-                }
-            }
-            catch (error) {
-                log.error('Failed to run AI moderation again:', error);
+                    catch (error) {
+                        // Silent fail - AI moderation errors shouldn't break upload
+                        log.error('AI moderation error:', error);
+                    }
+                })();
             }
 
             // Always return success response with status, even if REJECTED or PENDING
@@ -393,7 +413,7 @@ export const uploadCtr = {
             }
         }
         catch (error) {
-            console.warn('Failed to get user IP from database:', error);
+            log.error('Failed to get user IP from database:', error);
         }
 
         // Fallback to current IP if no user IP found
@@ -457,9 +477,16 @@ export const uploadCtr = {
                         ? (moderationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
                         : E_ModerationLogType.IMAGE;
 
+                    // Always create moderation log for both approved and rejected to track AI decisions
+                    const logAction = autoRejected
+                        ? E_ModerationLogAction.DELETE
+                        : (moderateImage.result?.decision === E_ModerationMediaStatus.APPROVED
+                                ? E_ModerationLogAction.APPROVE
+                                : E_ModerationLogAction.WARN);
+
                     await moderationLogCtr.createModerationLog(context, {
                         doc: {
-                            action: autoRejected ? E_ModerationLogAction.DELETE : E_ModerationLogAction.WARN,
+                            action: logAction,
                             type: mediaType, // Set type to IMAGE or VIDEO
                             userId: currentUser.id,
                             moderationMediaId: moderationId,
@@ -468,12 +495,8 @@ export const uploadCtr = {
                     });
                 }
                 catch (logError) {
-                    // Log error but don't block - moderation log creation failure shouldn't prevent response
-                    log.error('Failed to create moderation log', {
-                        error: logError instanceof Error ? logError.message : String(logError),
-                        moderationId,
-                        userId: currentUser.id,
-                    });
+                    // Silent fail - moderation log creation failure shouldn't prevent response
+                    log.error('Failed to create moderation log:', logError);
                 }
 
                 // Fetch updated status after AI moderation decision
@@ -486,7 +509,8 @@ export const uploadCtr = {
             }
         }
         catch (error) {
-            log.error('Failed to run AI moderation again:', error);
+            // Silent fail - AI moderation errors shouldn't break upload
+            log.error('AI moderation error:', error);
         }
 
         // Always return success response with status, even if REJECTED or PENDING
