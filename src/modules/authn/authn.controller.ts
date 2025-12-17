@@ -1487,13 +1487,50 @@ export const authnCtr = {
             });
         }
 
-        // Get IP address (only FE-provided ip in args.ip)
+        // Get IP address: prefer FE-provided ip, fallback to request headers if invalid/localhost
         try {
-            const clientIp = typeof args.ip === 'string' ? args.ip.trim() : '';
+            let clientIp: string | undefined;
+
+            // Try to get IP from frontend first
+            if (args.ip && typeof args.ip === 'string') {
+                const feIp = args.ip.trim();
+                // Only use FE IP if it's not localhost
+                if (feIp && feIp !== '127.0.0.1' && feIp !== '::1' && feIp !== 'localhost') {
+                    clientIp = feIp;
+                }
+            }
+
+            // Fallback: Try to get IP from request headers if FE IP is invalid/localhost
+            if (!clientIp && context.req) {
+                const headers = context.req.headers || {};
+                const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
+                if (forwardedFor && typeof forwardedFor === 'string') {
+                    // x-forwarded-for can contain multiple IPs, take the first one
+                    clientIp = forwardedFor.split(',')[0]?.trim();
+                }
+                if (!clientIp) {
+                    clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
+                }
+                if (!clientIp) {
+                    clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
+                }
+                // Clean up IP (remove IPv6 prefix, port, etc.)
+                if (clientIp) {
+                    clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
+                }
+                // Don't use localhost IPs from headers either
+                if (clientIp && (clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost')) {
+                    clientIp = undefined;
+                }
+            }
 
             const updatePayload: Partial<I_Input_UpdateUser> = {};
             if (clientIp) {
                 updatePayload.lastLoginIp = clientIp;
+                log.info(`[Login] Updating lastLoginIp to: ${clientIp} for user: ${userFound.result.id}`);
+            }
+            else {
+                log.warn(`[Login] No valid IP found (FE IP: ${args.ip || 'NOT PROVIDED'}), lastLoginIp will not be updated`);
             }
 
             if (userFound.result.inactivityDeletionWarning30SentAt || userFound.result.inactivityDeletionWarning10SentAt) {
