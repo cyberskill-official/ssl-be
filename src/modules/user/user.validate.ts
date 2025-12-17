@@ -34,9 +34,16 @@ function signProfileImage(
     // FREE_MEMBER check
     const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
 
-    // Case 1: Owner chưa xác thực tuổi → trả null cho tất cả người xem khác (trừ owner/staff/admin)
-    if (!ownerAgeVerified && !isOwner && !viewerExempt) {
-        return null;
+    // Case 1: Owner chưa xác thực tuổi → owner thấy blur, người khác thấy null (default image)
+    if (!ownerAgeVerified) {
+        if (isOwner) {
+            // Owner sees their own image blurred when not verified
+            return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
+        }
+        if (!viewerExempt) {
+            // Others see default image (null)
+            return null;
+        }
     }
 
     // Case 2: Viewer là FREE_MEMBER → luôn thấy ảnh người khác ở trạng thái blur
@@ -69,8 +76,8 @@ export function hydrateUserMedia(
         // If there's a URL, sign/blur it based on age verification
         if (rawGalleryUrl) {
             // Blur/unblur based on membership rules
-            // - Owner can always see ảnh của họ (kể cả chưa xác thực tuổi)
-            // - Nếu owner chưa xác thực tuổi: người khác sẽ thấy null
+            // - Nếu owner chưa xác thực tuổi (PENDING hoặc không có): owner thấy ảnh của họ bị blur
+            // - Nếu owner chưa xác thực tuổi: người khác sẽ thấy null (default image)
             // - FREE_MEMBER sẽ thấy ảnh người khác ở trạng thái blur
             // - MEMBERSHIP sẽ thấy ảnh rõ
             const signedGallery = signProfileImage(rawGalleryUrl, user, options);
