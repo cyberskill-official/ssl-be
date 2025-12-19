@@ -8,7 +8,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_RegisterStep } from '#modules/authn/index.js';
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { conversationCtr, E_MessageType } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/index.js';
 
@@ -113,43 +114,21 @@ export const pushChatCtr = {
 
         // Get or find system user "SecretSwingerLust"
         let systemUserId: string | null = null;
-        let systemUser: any = null;
         try {
-            const systemUserResult = await userCtr.getUser(context, {
-                filter: { username: 'SecretSwingerLust' },
-                populate: ['partner1.gallery', 'partner2.gallery'],
-            });
+            const systemUserResult = await userCtr.getUser(context, { filter: { username: 'SecretSwingerLust' } });
             if (systemUserResult.success && systemUserResult.result?.id) {
-                systemUser = systemUserResult.result;
-                systemUserId = systemUser.id;
-
-                // Verify system user has correct username and avatar
-                if (systemUser.username !== 'SecretSwingerLust') {
-                    log.warn(`[PushChat] System user found but username is "${systemUser.username}" instead of "SecretSwingerLust"`);
-                }
-
-                // Check if system user has avatar (logo)
-                const currentAvatarUrl = systemUser.partner1?.gallery?.url || systemUser.partner2?.gallery?.url;
-                if (!currentAvatarUrl) {
-                    log.warn(`[PushChat] System user "SecretSwingerLust" (${systemUserId}) does not have avatar. Please upload the SecretSwingerLust logo as avatar for this user in the admin panel.`);
-                }
+                systemUserId = systemUserResult.result.id;
             }
             else {
-                throwError({
-                    message: 'System user "SecretSwingerLust" not found. Please create this user in the admin panel with username "SecretSwingerLust" and upload the logo as avatar.',
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                });
+                // If system user doesn't exist, use current admin user as fallback
+                // In production, you should create a dedicated system user
+                systemUserId = currentUser.id;
+                log.warn('[PushChat] System user "SecretSwingerLust" not found, using admin user as sender');
             }
         }
         catch (error) {
-            if ((error as any).status === RESPONSE_STATUS.NOT_FOUND) {
-                throw error; // Re-throw if it's our custom error
-            }
             log.error('[PushChat] Failed to get system user:', error);
-            throwError({
-                message: 'Failed to get system user "SecretSwingerLust". Please ensure this user exists in the system.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
+            systemUserId = currentUser.id;
         }
 
         // Send messages to all recipients (async, don't block response)
