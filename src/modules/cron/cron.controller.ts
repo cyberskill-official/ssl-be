@@ -516,6 +516,8 @@ export const cron = {
                         }
 
                         // Only find SUBSCRIPTION orders for rebill (A_LA_CARTE_EVENT orders should not be rebilled)
+                        // IMPORTANT: NetValve requires transactionId from the FIRST payment (HPP_ORDER), not from rebill orders
+                        // So we need to find the order with PaymentTransaction.operation = HPP_ORDER
                         const ordersRes = await orderCtr.getOrders(ctx, {
                             filter: {
                                 userId,
@@ -524,8 +526,7 @@ export const cron = {
                             },
                             options: {
                                 pagination: false,
-                                sort: { createdAt: -1 },
-                                limit: 1,
+                                sort: { createdAt: 1 }, // Sort ascending to find first order first
                                 populate: [
                                     { path: 'paymentTransaction' },
                                     { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
@@ -533,30 +534,73 @@ export const cron = {
                             },
                         } as any);
 
-                        const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
-                        if (!lastOrder || !lastOrder.amount || !lastOrder.pricingId) {
+                        if (!ordersRes.success || !ordersRes.result?.docs?.length) {
                             log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}. User needs at least one PAID SUBSCRIPTION order to enable rebill. A_LA_CARTE_EVENT orders are not eligible for rebill.`);
                             return false;
                         }
 
-                        // Double-check orderType is SUBSCRIPTION (safety check)
-                        if (lastOrder.orderType !== E_OrderType.SUBSCRIPTION) {
-                            log.warn(`[CRON] Last order for user ${userId} is not SUBSCRIPTION type (${lastOrder.orderType}). A_LA_CARTE_EVENT orders cannot be rebilled.`);
-                            return false;
+                        // Find the order with PaymentTransaction.operation = HPP_ORDER (first payment)
+                        // This is the transactionId we need for rebill
+                        let lastOrder: any = null;
+                        let transactionId: string | undefined;
+                        let paymentTransactionOperation: string | undefined;
+
+                        for (const order of ordersRes.result.docs) {
+                            // Double-check orderType is SUBSCRIPTION (safety check)
+                            if (order.orderType !== E_OrderType.SUBSCRIPTION) {
+                                continue;
+                            }
+
+                            // Try to get transactionId from populated paymentTransaction
+                            let ptOperation = (order as any)?.paymentTransaction?.operation;
+                            let ptTransactionId = (order as any)?.paymentTransaction?.transactionId;
+
+                            // If not populated, query directly
+                            if (!ptTransactionId && (order as any)?.paymentTransactionId) {
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (order as any).paymentTransactionId },
+                                } as any);
+                                if (ptRes.success && ptRes.result) {
+                                    ptTransactionId = ptRes.result.transactionId;
+                                    ptOperation = ptRes.result.operation;
+                                }
+                            }
+
+                            // If this is HPP_ORDER, use it (this is the original payment)
+                            if (ptOperation === E_PaymentGatewayOperation.HPP_ORDER && ptTransactionId) {
+                                lastOrder = order;
+                                transactionId = ptTransactionId;
+                                paymentTransactionOperation = ptOperation;
+                                log.info(`[CRON] Found original HPP_ORDER payment for rebill: orderId=${order.id}, transactionId=${transactionId}`);
+                                break;
+                            }
                         }
 
-                        // Get transactionId from PaymentTransaction
-                        let transactionId: string | undefined = (lastOrder as any)?.paymentTransaction?.transactionId;
-                        let paymentTransactionOperation: string | undefined = (lastOrder as any)?.paymentTransaction?.operation;
+                        // If no HPP_ORDER found, fallback to last order (but log warning)
+                        if (!lastOrder || !transactionId) {
+                            // Fallback: use the last order (newest)
+                            lastOrder = ordersRes.result.docs[ordersRes.result.docs.length - 1];
+                            transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
+                            paymentTransactionOperation = (lastOrder as any)?.paymentTransaction?.operation;
 
-                        if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
-                            const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
-                                filter: { id: (lastOrder as any).paymentTransactionId },
-                            } as any);
-                            if (ptRes.success && ptRes.result) {
-                                transactionId = ptRes.result.transactionId;
-                                paymentTransactionOperation = ptRes.result.operation;
+                            if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (lastOrder as any).paymentTransactionId },
+                                } as any);
+                                if (ptRes.success && ptRes.result) {
+                                    transactionId = ptRes.result.transactionId;
+                                    paymentTransactionOperation = ptRes.result.operation;
+                                }
                             }
+
+                            if (paymentTransactionOperation !== E_PaymentGatewayOperation.HPP_ORDER) {
+                                log.warn(`[CRON] ⚠️  No HPP_ORDER payment found for user ${userId}. Using transactionId from ${paymentTransactionOperation || 'unknown'} operation. Rebill may fail with "Invalid Gateway Transaction Operation" because NetValve requires transactionId from the original HPP_ORDER payment.`);
+                            }
+                        }
+
+                        if (!lastOrder || !lastOrder.amount || !lastOrder.pricingId) {
+                            log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}.`);
+                            return false;
                         }
 
                         if (!transactionId) {
