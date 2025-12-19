@@ -38,7 +38,8 @@ export const paymentCtr = {
         _context: I_Context,
         payload: I_Input_RecordPaymentTransaction,
     ): Promise<I_Return<I_PaymentTransaction>> => {
-        const transactionId = payload.transactionId?.trim();
+        // Convert to string and trim (handle both string and number types)
+        const transactionId = payload.transactionId ? String(payload.transactionId).trim() : undefined;
 
         if (!transactionId) {
             return {

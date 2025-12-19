@@ -859,11 +859,14 @@ export const cron = {
                             log.info(`[CRON] Rebill returned new transactionId: ${rebillTransactionId} (original: ${transactionId})`);
                         }
 
+                        // Convert rebillTransactionId to string (NetValve may return number)
+                        const rebillTransactionIdString = String(rebillTransactionId);
+
                         // Create payment transaction record for rebill
                         const paymentTransactionRes = await paymentCtr.recordGatewayTransaction(ctx, {
                             provider: E_PaymentProvider.NETVALVE,
                             operation: E_PaymentGatewayOperation.REBILL,
-                            transactionId: rebillTransactionId,
+                            transactionId: rebillTransactionIdString,
                             status: E_PaymentTransactionStatus.SUCCESS,
                             success: true,
                             responsePayload: rebillResponse || {},
@@ -1001,7 +1004,7 @@ export const cron = {
                                     tax: taxAmount > 0 ? `${taxAmount.toFixed(2)} ${currencyCode}` : `0.00 ${currencyCode}`,
                                     totalAmount: `${amount.toFixed(2)} ${currencyCode}`,
                                     paymentMethod: 'Card',
-                                    transactionId: rebillTransactionId || 'N/A',
+                                    transactionId: rebillTransactionIdString || 'N/A',
                                     membershipPeriod: membershipPeriod || 'N/A',
                                 };
 
