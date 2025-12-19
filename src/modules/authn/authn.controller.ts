@@ -34,6 +34,7 @@ import {
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import {
     E_VerificationContext,
     E_VerificationMethod,
@@ -555,10 +556,18 @@ export const authnCtr = {
             log.warn('Failed to update user IP in checkAuth:', error);
         }
 
+        // Hydrate user media (sign/blur profile images) before returning
+        // This ensures auth?.user has correctly signed URLs for partner1 and partner2 gallery images
+        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sanitizedUser);
+        hydrateUserMedia(sanitizedUser, viewerMediaOptions);
+
+        // Update session user with hydrated media
+        await assignSessionUser(context.req.session, sanitizedUser);
+
         return {
             success: true,
             result: {
-                user: context.req.session.user,
+                user: sanitizedUser,
             },
         };
     },
@@ -1174,9 +1183,29 @@ export const authnCtr = {
         const stepsAfter = [E_RegisterStep.COMPLETE];
 
         const currentRoles = currentUser.rolesIds || [];
-        const updatedRoles = currentRoles.includes(roleId)
-            ? currentRoles
-            : [...currentRoles, roleId];
+        const updatedRoles = [...currentRoles];
+
+        // If upgrading to PAID_MEMBER (PROMO or PAID), remove FREE_MEMBER role
+        // PAID_MEMBER replaces FREE_MEMBER - user should only have one membership role at a time
+        if (type === E_MembershipType.PROMO || type === E_MembershipType.PAID) {
+            // Get FREE_MEMBER role ID to remove it
+            const freeMemberRole = await roleCtr.getRole(context, {
+                filter: { name: E_Role_User.FREE_MEMBER },
+            });
+            if (freeMemberRole.success && freeMemberRole.result?.id) {
+                const freeMemberRoleId = freeMemberRole.result.id;
+                // Remove FREE_MEMBER role if exists
+                if (updatedRoles.includes(freeMemberRoleId)) {
+                    const index = updatedRoles.indexOf(freeMemberRoleId);
+                    updatedRoles.splice(index, 1);
+                }
+            }
+        }
+
+        // Add new role if not already present
+        if (!updatedRoles.includes(roleId)) {
+            updatedRoles.push(roleId);
+        }
 
         const updatePayload: Record<string, unknown> = {
             rolesIds: updatedRoles,
@@ -1221,6 +1250,120 @@ export const authnCtr = {
 
         // Update IP when user continues registration
         await updateUserIpFromRequest(context, currentUser.id);
+
+        return {
+            success: true,
+            result: {
+                user: omit(userUpdated.result, 'password'),
+            },
+        };
+    },
+
+    cancelMembership: async (context: I_Context): Promise<I_Return<I_Response_Auth>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        // Check if user has an active paid membership
+        const isActive = authnCtr.isMembershipActive(currentUser);
+        if (!isActive) {
+            throwError({
+                message: 'You do not have an active paid membership to cancel.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        // Try to cancel subscription in NetValve (if we have a transaction ID)
+        // Note: For recurring payments, NetValve may not have a direct "cancel subscription" API
+        // The main cancellation is done by setting membershipCancelled = true to prevent future rebills
+        let netvalveCancelSuccess = false;
+        try {
+            // Find the last paid subscription order to get transaction ID
+            const { orderCtr } = await import('#modules/order/order.controller.js');
+            const { paymentCtr } = await import('#modules/payment/payment-transaction/index.js');
+            const { netvalveCtr } = await import('#modules/payment/netvalve/netvalve.controller.js');
+            const { E_OrderStatus, E_OrderType } = await import('#modules/order/order.type.js');
+
+            const ordersRes = await orderCtr.getOrders(context, {
+                filter: {
+                    userId: currentUser.id,
+                    status: E_OrderStatus.PAID,
+                    orderType: E_OrderType.SUBSCRIPTION,
+                },
+                options: {
+                    pagination: false,
+                    sort: { createdAt: -1 },
+                    limit: 1,
+                    populate: [{ path: 'paymentTransaction' }],
+                },
+            } as any);
+
+            const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
+            let transactionId: string | undefined;
+
+            if (lastOrder) {
+                // Try to get transaction ID from payment transaction
+                transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
+                if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
+                    const ptRes = await paymentCtr.getPaymentTransaction(context, {
+                        filter: { id: (lastOrder as any).paymentTransactionId },
+                    } as any);
+                    if (ptRes.success && ptRes.result?.transactionId) {
+                        transactionId = ptRes.result.transactionId;
+                    }
+                }
+            }
+
+            // If we have a transaction ID, try to cancel in NetValve
+            // Note: NetValve cancel may not work for recurring payments, but we try anyway
+            if (transactionId) {
+                const pricing = (lastOrder as any)?.pricing;
+                const currency = pricing?.currency?.code || 'EUR';
+
+                const cancelRes = await netvalveCtr.cancel(context, {
+                    transactionID: String(transactionId),
+                    currency,
+                } as any);
+
+                if (cancelRes.success) {
+                    netvalveCancelSuccess = true;
+                    log.info(`[Membership] NetValve cancel called successfully for user ${currentUser.id}, transactionId=${transactionId}`);
+                }
+                else {
+                    log.warn(`[Membership] NetValve cancel failed for user ${currentUser.id}, transactionId=${transactionId}: ${cancelRes.message}`);
+                    // Continue anyway - the main cancellation is done by setting membershipCancelled = true
+                }
+            }
+            else {
+                log.info(`[Membership] No transaction ID found for user ${currentUser.id}, skipping NetValve cancel call`);
+            }
+        }
+        catch (error) {
+            log.error(`[Membership] Error calling NetValve cancel for user ${currentUser.id}:`, error);
+            // Continue anyway - the main cancellation is done by setting membershipCancelled = true
+        }
+
+        // Mark membership as cancelled (prevents future rebills)
+        // This is the primary way to stop recurring payments
+        // User keeps access until membershipExpiresAt
+        const userUpdated = await userCtr.updateUser(context, {
+            filter: { id: currentUser.id },
+            update: {
+                membershipCancelled: true,
+            },
+        });
+
+        if (!userUpdated.success) {
+            throwError({
+                message: userUpdated.message || 'Failed to cancel membership',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        // Update session
+        if (context.req?.session?.user?.id === currentUser.id) {
+            context.req.session.user.membershipCancelled = true;
+        }
+
+        log.info(`[Membership] User ${currentUser.id} cancelled membership. Access until ${currentUser.membershipExpiresAt}. NetValve cancel: ${netvalveCancelSuccess ? 'success' : 'skipped/failed'}`);
 
         return {
             success: true,

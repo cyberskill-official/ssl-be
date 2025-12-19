@@ -212,6 +212,7 @@ type T_User {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
     freeEventCount: Int
     inactivityDeletionWarning30SentAt: DateTime
     inactivityDeletionWarning10SentAt: DateTime
@@ -252,6 +253,7 @@ input Input_QueryUser {
     flagCount: Int
     hasUpcomingEvent: Boolean
     membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
     freeEventCount: Int
     inactivityDeletionWarning30SentAt: DateTime
     inactivityDeletionWarning10SentAt: DateTime
@@ -314,6 +316,7 @@ input Input_UpdateUser {
     flagCount: Int
     tempOtp: String
     membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
     hasUpcomingEvent: Boolean
     followerCount: Int
     notes: [Input_Note]

@@ -89,7 +89,13 @@ export interface I_NetvalveRebillPayload extends I_NetvalveRoutingPayload, Recor
 }
 
 export interface I_NetvalveRebillResponse extends Record<string, unknown> {
-    transactionId?: string;
+    traceID?: string;
+    responseTimestamp?: string;
+    transactionID?: string; // NetValve returns transactionID (uppercase) when successful, similar to HPP_ORDER
+    transactionId?: string; // Fallback camelCase variant
+    responseCode?: string; // "GTW_1000" for success
+    responseMessage?: string;
+    responseCodeType?: string; // "SOFT DECLINE", "HARD DECLINE", etc.
     status?: string;
 }
 

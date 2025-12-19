@@ -1,7 +1,6 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -77,15 +76,6 @@ export const netvalveCtr = {
         }
 
         const body = applyHppMerchantRouting(payload, credentials);
-
-        log.info('[Netvalve] Creating HPP order:', {
-            hppBaseUrl: credentials.hppBaseUrl,
-            baseUrl: credentials.baseUrl,
-            endpoint: NETVALVE_HPP_ORDER_ENDPOINT,
-            clientId: credentials.clientId,
-            hasApiKey: !!credentials.apiKey,
-            body: JSON.stringify(body),
-        });
 
         const response = await postNetvalveHppRequest<I_NetvalveHppOrderResponse>(
             credentials,

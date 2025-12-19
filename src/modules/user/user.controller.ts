@@ -786,8 +786,42 @@ export const userCtr = {
             },
         };
 
+        // Validate rolesIds: ensure FREE_MEMBER and PAID_MEMBER are mutually exclusive
+        let sanitizedRolesIds = doc.rolesIds;
+        if (Array.isArray(doc.rolesIds) && doc.rolesIds.length > 0) {
+            sanitizedRolesIds = Array.from(new Set(
+                doc.rolesIds
+                    .map((roleId) => {
+                        if (typeof roleId === 'string')
+                            return roleId.trim();
+                        if (roleId == null)
+                            return '';
+                        return String(roleId).trim();
+                    })
+                    .filter(roleId => roleId.length > 0),
+            ));
+
+            // Get FREE_MEMBER and PAID_MEMBER role IDs for validation
+            const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
+            const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+
+            const paidRoleId = paidRole.success ? paidRole.result.id : null;
+            const freeRoleId = freeRole.success ? freeRole.result.id : null;
+
+            // Enforce mutual exclusivity: FREE_MEMBER and PAID_MEMBER cannot coexist
+            // If both are present, PAID_MEMBER takes priority (remove FREE_MEMBER)
+            if (paidRoleId && freeRoleId && sanitizedRolesIds.includes(paidRoleId) && sanitizedRolesIds.includes(freeRoleId)) {
+                log.warn(`[USER] createUser: User being created has both FREE_MEMBER and PAID_MEMBER roles. Removing FREE_MEMBER (PAID_MEMBER takes priority).`);
+                const index = sanitizedRolesIds.indexOf(freeRoleId);
+                if (index > -1) {
+                    sanitizedRolesIds.splice(index, 1);
+                }
+            }
+        }
+
         const userCreated = await mongooseCtr.createOne({
             ...doc,
+            rolesIds: sanitizedRolesIds,
             email, // lưu email đã chuẩn hoá
             password: bcrypt.hashSync(password),
             settings: finalSettings,
@@ -945,10 +979,15 @@ export const userCtr = {
         const existingRoles = userFound.result.rolesIds ?? [];
         const previousRegisterStep = userFound.result.registerStep;
 
+        // Check for rolesIds in both direct update and atomic operators ($set)
+        const rolesIdsToValidate = hasAtomicOperators
+            ? (update as any).$set?.rolesIds
+            : update.rolesIds;
+
         let sanitizedRolesIds: string[] | undefined;
-        if (Array.isArray(update.rolesIds)) {
+        if (Array.isArray(rolesIdsToValidate)) {
             sanitizedRolesIds = Array.from(new Set(
-                update.rolesIds
+                rolesIdsToValidate
                     .map((roleId) => {
                         if (typeof roleId === 'string')
                             return roleId.trim();
@@ -958,11 +997,24 @@ export const userCtr = {
                     })
                     .filter(roleId => roleId.length > 0),
             ));
-            update.rolesIds = sanitizedRolesIds;
+
+            // Update the source (either direct or $set)
+            if (hasAtomicOperators) {
+                if (!(update as any).$set) {
+                    (update as any).$set = {};
+                }
+                (update as any).$set.rolesIds = sanitizedRolesIds;
+            }
+            else {
+                update.rolesIds = sanitizedRolesIds;
+            }
         }
 
         let paidRoleId: string | null = null;
+        let freeRoleId: string | null = null;
         let shouldSendMembershipDowngrade = false;
+
+        // Get FREE_MEMBER and PAID_MEMBER role IDs for validation
         if (sanitizedRolesIds) {
             const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
             if (paidRole.success) {
@@ -970,6 +1022,31 @@ export const userCtr = {
                 const previouslyPaid = existingRoles.includes(paidRoleId);
                 const willRemainPaid = sanitizedRolesIds.includes(paidRoleId);
                 shouldSendMembershipDowngrade = previouslyPaid && !willRemainPaid;
+            }
+
+            const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+            if (freeRole.success) {
+                freeRoleId = freeRole.result.id;
+            }
+
+            // Enforce mutual exclusivity: FREE_MEMBER and PAID_MEMBER cannot coexist
+            // If both are present, PAID_MEMBER takes priority (remove FREE_MEMBER)
+            if (paidRoleId && freeRoleId && sanitizedRolesIds.includes(paidRoleId) && sanitizedRolesIds.includes(freeRoleId)) {
+                log.warn(`[USER] User ${userFound.result.id} has both FREE_MEMBER and PAID_MEMBER roles. Removing FREE_MEMBER (PAID_MEMBER takes priority).`);
+                const index = sanitizedRolesIds.indexOf(freeRoleId);
+                if (index > -1) {
+                    sanitizedRolesIds.splice(index, 1);
+                }
+                // Update the source (either direct or $set)
+                if (hasAtomicOperators) {
+                    if (!(update as any).$set) {
+                        (update as any).$set = {};
+                    }
+                    (update as any).$set.rolesIds = sanitizedRolesIds;
+                }
+                else {
+                    update.rolesIds = sanitizedRolesIds;
+                }
             }
         }
 
@@ -1054,6 +1131,7 @@ export const userCtr = {
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
         // Hard delete: completely remove user and all related data from the system
+        // Silent deletion: no emails, no notifications, allows re-registration
         const userToDelete = await userCtr.getUser(context, { filter });
 
         if (!userToDelete.success) {

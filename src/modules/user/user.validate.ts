@@ -72,6 +72,12 @@ export function hydrateUserMedia(
         }
 
         const rawGalleryUrl = partner.gallery?.url;
+        const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        const viewerId = options?.viewerId;
+        const isOwner = viewerId && user?.id && viewerId === user.id;
+        const viewerIsStaff = options?.viewerIsStaff ?? false;
+        const viewerIsAdmin = options?.viewerIsAdmin ?? false;
+        const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
         // If there's a URL, sign/blur it based on age verification
         if (rawGalleryUrl) {
@@ -85,17 +91,17 @@ export function hydrateUserMedia(
             if (partner.gallery) {
                 partner.gallery.url = signedGallery ?? undefined;
             }
+            else {
+                // If gallery object doesn't exist, create it
+                partner.gallery = { url: signedGallery ?? undefined } as any;
+            }
         }
         else {
             // Even if there's no URL, we need to ensure gallery object exists
             // and URL is explicitly set to undefined for non-age-verified users
             // Check if owner is not age-verified and viewer is not owner/staff/admin
-            const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            const viewerId = options?.viewerId;
-            const isOwner = viewerId && user?.id && viewerId === user.id;
-            const viewerIsStaff = options?.viewerIsStaff ?? false;
-            const viewerIsAdmin = options?.viewerIsAdmin ?? false;
-            const viewerExempt = viewerIsStaff || viewerIsAdmin;
+            // If owner is age-verified but no URL exists, keep it as undefined (user hasn't uploaded image yet)
+            // This is correct behavior - default image will be shown on frontend
 
             // If owner is not age-verified and viewer is not owner/staff/admin, ensure URL is undefined
             if (!ownerAgeVerified && !isOwner && !viewerExempt) {
@@ -103,6 +109,8 @@ export function hydrateUserMedia(
                     partner.gallery.url = undefined;
                 }
             }
+            // If owner is age-verified but no URL, keep it undefined (frontend will show default image)
+            // This is correct - user simply hasn't uploaded a profile picture yet
         }
     };
 

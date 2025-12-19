@@ -18,6 +18,7 @@ const authResolver = {
         registerPersonalInfo: (_parent: unknown, args: I_Input_UpdateOne<I_Input_Register_PersonalInfo>, context: I_Context) => authnCtr.registerPersonalInfo(context, args),
         registerPreferences: (_parent: unknown, args: I_Input_UpdateOne<I_Input_Register_Preferences>, context: I_Context) => authnCtr.registerPreferences(context, args),
         registerMembership: (_parent: unknown, args: I_Input_Register_Membership, context: I_Context) => authnCtr.registerMembership(context, args),
+        cancelMembership: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.cancelMembership(context),
         login: (_parent: unknown, args: I_Input_Login, context: I_Context) => authnCtr.login(context, args),
         logout: (_parent: unknown, _args: unknown, context: I_Context) => authnCtr.logout(context),
         forgotPasswordRequest: (_parent: unknown, args: I_Input_ForgotPasswordRequest, context: I_Context) => authnCtr.forgotPasswordRequest(context, args),

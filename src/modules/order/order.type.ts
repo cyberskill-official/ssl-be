@@ -22,7 +22,7 @@ export interface I_Order extends I_GenericDocument {
     orderType?: E_OrderType; // SUBSCRIPTION or A_LA_CARTE_EVENT
     paymentTransactionId?: string;
     paymentTransaction?: I_PaymentTransaction;
-    clientOrderId?: string; // client's idempotency id
+    paymentRequestId?: string; // Link to PaymentRequest for tracking payment attempts
     customerDetails?: Record<string, unknown>;
     meta?: Record<string, unknown>;
     pricingId?: string;

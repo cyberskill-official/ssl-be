@@ -602,6 +602,10 @@ export const UserModel = mongo.createModel<I_User>({
             type: Date,
             default: null,
         },
+        membershipCancelled: {
+            type: Boolean,
+            default: false,
+        },
         freeEventCount: {
             type: Number,
             default: 0,

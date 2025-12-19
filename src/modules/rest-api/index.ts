@@ -1,4 +1,6 @@
 import { express, Router } from '@cyberskill/shared/node/express';
+import { log } from '@cyberskill/shared/node/log';
+import { addHours } from 'date-fns';
 
 import type {
     E_NetvalvePaymentType,
@@ -23,7 +25,11 @@ import type {
 } from '#modules/payment/netvalve/netvalve.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { roleCtr } from '#modules/authz/index.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import orderCtr from '#modules/order/order.controller.js';
+import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
+import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { isNetvalvePaymentType, NETVALVE_PAYMENT_TYPES } from '#modules/payment/netvalve/netvalve.constant.js';
 import { netvalveCtr } from '#modules/payment/netvalve/netvalve.controller.js';
 import { resolveThreeDSFlow } from '#modules/payment/netvalve/netvalve.handler.js';
@@ -36,7 +42,8 @@ import {
     E_PaymentStatus,
 } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paymentRouter } from '#modules/payment/payment.handler.js';
-import { pricingCtr } from '#modules/pricing/pricing.controller.js';
+import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
+import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
@@ -147,7 +154,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         const {
             amount,
             currency,
-            clientOrderId,
             successUrl,
             cancelUrl,
             failedUrl,
@@ -170,12 +176,18 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         let resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
 
         // If amount not provided or invalid, derive price from pricing controller using user's persisted geo
+        // Calculate amount (price + tax) from pricing
         if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
             try {
                 const context: I_Context = { req };
+                // getSubscriptionPrice returns price and taxRate, calculate amount with tax
                 const priceRes = await pricingCtr.getSubscriptionPrice(context);
                 if (priceRes.success && priceRes.result) {
-                    resolvedAmount = priceRes.result.price ?? resolvedAmount;
+                    // Calculate amount from price and taxRate
+                    const basePrice = priceRes.result.price ?? 0;
+                    const taxRate = priceRes.result.taxRate ?? 0;
+                    const taxPortion = basePrice * (taxRate / 100);
+                    resolvedAmount = Number((basePrice + taxPortion).toFixed(2));
                     resolvedCurrency = priceRes.result.currency ?? resolvedCurrency;
                 }
             }
@@ -191,11 +203,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         if (!resolvedCurrency) {
             errors.push('currency is required');
-        }
-
-        const resolvedClientOrderId = typeof clientOrderId === 'string' ? clientOrderId.trim() : '';
-        if (!resolvedClientOrderId) {
-            errors.push('clientOrderId is required');
         }
 
         const resolvedSuccessUrl = typeof successUrl === 'string' ? successUrl.trim() : '';
@@ -253,11 +260,37 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         const normalizedPayload: Record<string, unknown> = { ...restPayload };
 
+        const context: I_Context = { req };
+
+        const orderDoc: Record<string, unknown> = {
+            amount: resolvedAmount,
+            currency: resolvedCurrency,
+            successUrl: resolvedSuccessUrl,
+            cancelUrl: resolvedCancelUrl,
+            pendingUrl: resolvedPendingUrl,
+        };
+
+        if (normalizedCustomerDetails) {
+            (orderDoc as any)['customerDetails'] = normalizedCustomerDetails;
+        }
+
+        const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
+        if (!orderRes.success) {
+            res.status(typeof orderRes.code === 'number' ? orderRes.code : 500).json({ success: false, message: orderRes.message ?? 'Failed to create order' });
+            return;
+        }
+
+        const createdOrder = orderRes.result ?? null;
+        if (!createdOrder || !createdOrder.id) {
+            res.status(500).json({ success: false, message: 'Failed to create order: order ID missing' });
+            return;
+        }
+
         const payload: I_NetvalveHppOrderPayload = {
             ...normalizedPayload,
             amount: resolvedAmount,
             currency: resolvedCurrency,
-            clientOrderId: resolvedClientOrderId,
+            clientOrderId: createdOrder.id, // Always use order.id
             successUrl: resolvedSuccessUrl,
             cancelUrl: resolvedCancelUrl,
             failedUrl: resolvedFailedUrl,
@@ -279,40 +312,14 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
             payload.customerDetails = normalizedCustomerDetails;
         }
 
-        const context: I_Context = { req };
-
-        // 1) persist an Order record for this request
-        const orderDoc: Record<string, unknown> = {
-            amount: resolvedAmount,
-            currency: resolvedCurrency,
-            successUrl: resolvedSuccessUrl,
-            cancelUrl: resolvedCancelUrl,
-            pendingUrl: resolvedPendingUrl,
-            clientOrderId: resolvedClientOrderId,
-        };
-
-        if (normalizedCustomerDetails) {
-            (orderDoc as any)['customerDetails'] = normalizedCustomerDetails;
-        }
-
-        const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
-        if (!orderRes.success) {
-            res.status(typeof orderRes.code === 'number' ? orderRes.code : 500).json({ success: false, message: orderRes.message ?? 'Failed to create order' });
-            return;
-        }
-
-        const createdOrder = orderRes.result ?? null;
-
-        // 2) idempotent PaymentRequest: try reuse WAITING by checking meta.clientOrderId
-        // Note: Since clientOrderId is now in meta, we need to query differently
+        // 2) idempotent PaymentRequest: try reuse WAITING by checking meta.orderId
         // For now, create new PaymentRequest each time (idempotency handled by Order)
         const prDoc: Record<string, unknown> = {
             gateway: 'NETVALVE',
             status: E_PaymentRequestStatus.WAITING,
             attempts: 0,
             meta: {
-                orderId: createdOrder?._id ?? createdOrder?.id,
-                clientOrderId: resolvedClientOrderId,
+                orderId: createdOrder.id,
                 amount: resolvedAmount,
                 currencyId: resolvedCurrency,
             },
@@ -666,7 +673,6 @@ mainRouter.post('/payment/netvalve/rebill', async (req, res, next) => {
             errors.push('amount must be a positive number');
         }
 
-        const resolvedClientOrderId = typeof clientOrderId === 'string' ? clientOrderId.trim() : '';
         const resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
 
         if (errors.length > 0) {
@@ -681,10 +687,6 @@ mainRouter.post('/payment/netvalve/rebill', async (req, res, next) => {
             transactionID: rawTransactionId,
             amount: resolvedAmount,
         };
-
-        if (resolvedClientOrderId) {
-            payload.clientOrderId = resolvedClientOrderId;
-        }
 
         if (resolvedCurrency) {
             payload.currency = resolvedCurrency;
@@ -1299,12 +1301,11 @@ mainRouter.post('/payment/netvalve/3ds/authentication', async (req, res, next) =
                 };
 
                 const id = normalizeString(query['id']);
-                const clientOrderId = normalizeString(query['clientOrderId']);
                 const netvalveMidId = normalizeString(query['netvalveMidId']);
                 const transactionId = normalizeString(query['transactionId']);
 
-                if (!id && !clientOrderId && !netvalveMidId && !transactionId) {
-                    errors.push('Provide at least one identifier: id, clientOrderId, netvalveMidId, or transactionId');
+                if (!id && !netvalveMidId && !transactionId) {
+                    errors.push('Provide at least one identifier: id, netvalveMidId, or transactionId');
                 }
 
                 const collectBillingInfo = normalizeBooleanQuery(query['collectBillingInfo'], 'collectBillingInfo', errors);
@@ -1319,9 +1320,6 @@ mainRouter.post('/payment/netvalve/3ds/authentication', async (req, res, next) =
 
                 if (id) {
                     payload.id = id;
-                }
-                if (clientOrderId) {
-                    payload.clientOrderId = clientOrderId;
                 }
                 if (netvalveMidId) {
                     payload.netvalveMidId = netvalveMidId;
@@ -1573,5 +1571,719 @@ mainRouter.post('/payment/netvalve/3ds/result', async (req, res, next) => {
 
 // Mount payment router
 mainRouter.use(paymentRouter);
+
+// Test endpoint to setup rebill test data
+// POST /test/rebill/setup
+// Body: { userId?: string, username?: string, hoursUntilExpiry?: number } (optional - will create new user if not provided)
+mainRouter.post('/test/rebill/setup', async (req, res, next) => {
+    try {
+        const { userId, username, hoursUntilExpiry = 12 } = req.body ?? {};
+        const context: I_Context = { req };
+
+        // Get PAID_MEMBER role
+        const paidRoleRes = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
+        if (!paidRoleRes.success || !paidRoleRes.result) {
+            res.status(500).json({ success: false, message: 'PAID_MEMBER role not found' });
+            return;
+        }
+        const paidRoleId = paidRoleRes.result.id;
+
+        let user;
+        let testUserId = userId;
+
+        if (testUserId || username) {
+            // Find user by userId or username
+            let userRes;
+            if (testUserId) {
+                userRes = await userCtr.getUser(context, { filter: { id: testUserId } });
+            }
+            else if (username) {
+                userRes = await userCtr.getUser(context, { filter: { username } });
+            }
+
+            if (!userRes || !userRes.success || !userRes.result) {
+                res.status(404).json({
+                    success: false,
+                    message: `User not found${username ? ` with username: ${username}` : ` with userId: ${testUserId}`}`,
+                });
+                return;
+            }
+            user = userRes.result;
+            testUserId = user.id;
+
+            // Update user to have PAID_MEMBER role and membership expiring soon
+            const expiryDate = addHours(new Date(), hoursUntilExpiry);
+            const updateRes = await userCtr.updateUser(context, {
+                filter: { id: testUserId },
+                update: {
+                    rolesIds: [paidRoleId],
+                    membershipExpiresAt: expiryDate,
+                    membershipCancelled: false,
+                },
+            });
+
+            if (!updateRes.success || !updateRes.result) {
+                res.status(500).json({ success: false, message: 'Failed to update user', error: updateRes.message });
+                return;
+            }
+            user = updateRes.result;
+        }
+        else {
+            // Create new test user
+            const testEmail = `test-rebill-${Date.now()}@test.com`;
+            const testUsername = `test-rebill-${Date.now()}`;
+            const expiryDate = addHours(new Date(), hoursUntilExpiry);
+
+            const createRes = await userCtr.createUser(context, {
+                doc: {
+                    username: testUsername,
+                    email: testEmail,
+                    password: 'Test123!@#',
+                    rolesIds: [paidRoleId],
+                    registerStep: 'COMPLETE' as any,
+                    isEmailVerified: true,
+                    membershipExpiresAt: expiryDate,
+                    membershipCancelled: false,
+                },
+            });
+
+            if (!createRes.success || !createRes.result) {
+                res.status(500).json({ success: false, message: 'Failed to create test user', error: createRes.message });
+                return;
+            }
+            user = createRes.result;
+            testUserId = user.id;
+        }
+
+        // Get pricing for subscription - use real pricing from database
+        const pricingRes = await pricingCtr.getPricings(context, {
+            filter: {
+                type: 'MEMBERSHIP' as any,
+                isActive: true, // Only get active pricing
+            },
+            options: {
+                pagination: false,
+                limit: 1,
+                populate: [{ path: 'currency' }], // Populate currency for accurate amount
+            },
+        });
+
+        if (!pricingRes.success || !pricingRes.result?.docs?.[0]) {
+            res.status(500).json({
+                success: false,
+                message: 'No active MEMBERSHIP pricing found. Please create a pricing in the database first.',
+            });
+            return;
+        }
+
+        const pricing = pricingRes.result.docs[0];
+        const pricingId = pricing.id;
+
+        // Calculate amount from pricing (price + tax)
+        const amount = calculateAmountFromPricing(pricing);
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            res.status(500).json({
+                success: false,
+                message: 'Pricing has no amount or price field. Please check pricing configuration.',
+            });
+            return;
+        }
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            res.status(500).json({
+                success: false,
+                message: `Invalid pricing amount: ${amount}. Please check pricing configuration.`,
+            });
+            return;
+        }
+
+        log.info(`[TEST] Using real pricing: pricingId=${pricingId}, amount=${amount}, price=${(pricing as any).price}, taxRate=${(pricing as any).taxRate}`);
+
+        // Create a test payment transaction (simulating a successful payment)
+        // NetValve requires transactionID to be a number (Long), so we use timestamp as numeric ID
+        const testTransactionId = String(Date.now()); // Use timestamp as numeric transaction ID
+        const paymentTransactionRes = await paymentCtr.recordGatewayTransaction(context, {
+            provider: E_PaymentProvider.NETVALVE,
+            operation: E_PaymentGatewayOperation.SALE,
+            transactionId: testTransactionId,
+            status: E_PaymentStatus.SUCCESS,
+            success: true,
+            responsePayload: { test: true },
+            performedAt: new Date(),
+        });
+
+        if (!paymentTransactionRes.success || !paymentTransactionRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to create payment transaction',
+                error: paymentTransactionRes.message,
+            });
+            return;
+        }
+
+        // Create a test order (PAID status) - this simulates the initial payment
+        const orderRes = await orderCtr.createOrder(context, {
+            doc: {
+                userId: testUserId,
+                amount,
+                pricingId,
+                orderType: E_OrderType.SUBSCRIPTION,
+                paymentTransactionId: paymentTransactionRes.result.id,
+                status: E_OrderStatus.PAID,
+            },
+        });
+
+        if (!orderRes.success || !orderRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to create test order',
+                error: orderRes.message,
+            });
+            return;
+        }
+
+        log.info(`[TEST] Rebill test data created: userId=${testUserId}, membershipExpiresAt=${user.membershipExpiresAt}, orderId=${orderRes.result.id}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Rebill test data created successfully',
+            result: {
+                userId: testUserId,
+                userEmail: user.email,
+                username: user.username,
+                membershipExpiresAt: user.membershipExpiresAt,
+                membershipCancelled: user.membershipCancelled,
+                orderId: orderRes.result.id,
+                transactionId: testTransactionId,
+                hoursUntilExpiry,
+                note: `Cron job will rebill this user when membership expires within 24 hours (currently ${hoursUntilExpiry} hours away)`,
+            },
+        });
+    }
+    catch (error) {
+        log.error('[TEST] Error setting up rebill test data:', error);
+        next(error);
+    }
+});
+
+// Test endpoint to convert PENDING order to PAID for rebill testing
+// POST /test/rebill/convert-order
+// Body: { orderId: string } - converts a PENDING order to PAID with SALE transaction
+mainRouter.post('/test/rebill/convert-order', async (req, res, next) => {
+    try {
+        const { orderId } = req.body ?? {};
+        if (!orderId || typeof orderId !== 'string') {
+            res.status(400).json({ success: false, message: 'orderId is required' });
+            return;
+        }
+
+        const context: I_Context = { req };
+
+        // Get the order
+        const orderRes = await orderCtr.getOrder(context, {
+            filter: { id: orderId },
+            populate: [{ path: 'pricing', populate: ['currency'] }],
+        });
+
+        if (!orderRes.success || !orderRes.result) {
+            res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+
+        const order = orderRes.result;
+
+        // Check if order is already PAID
+        if (order.status === E_OrderStatus.PAID) {
+            res.status(200).json({
+                success: true,
+                message: 'Order is already PAID',
+                result: {
+                    orderId: order.id,
+                    status: order.status,
+                    paymentTransactionId: order.paymentTransactionId,
+                    note: 'Order is already in PAID status, no conversion needed',
+                },
+            });
+            return;
+        }
+
+        // Try to find existing PaymentTransaction for this order
+        let existingPaymentTransaction = null;
+        let transactionId: string | undefined;
+
+        // Method 1: Check if order already has paymentTransactionId
+        if (order.paymentTransactionId) {
+            const existingPtRes = await paymentCtr.getPaymentTransaction(context, {
+                filter: { id: order.paymentTransactionId },
+            });
+            if (existingPtRes.success && existingPtRes.result) {
+                existingPaymentTransaction = existingPtRes.result;
+                transactionId = existingPaymentTransaction.transactionId;
+                log.info(`[TEST] Found existing PaymentTransaction via order.paymentTransactionId: ${existingPaymentTransaction.id}`);
+            }
+        }
+
+        // Method 2: Try to find via paymentRequestId -> PaymentRequest -> transactionID
+        if (!existingPaymentTransaction && order.paymentRequestId) {
+            const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+                filter: { id: order.paymentRequestId },
+            });
+
+            if (paymentRequestRes.success && paymentRequestRes.result) {
+                const paymentRequest = paymentRequestRes.result;
+                // Try externalOrderId first (NetValve orderId)
+                const externalOrderId = paymentRequest.externalOrderId;
+                if (externalOrderId) {
+                    // Find PaymentTransaction with this transactionId, regardless of operation
+                    // This will find HPP_ORDER transaction created during order creation
+                    const ptRes = await paymentCtr.getPaymentTransaction(context, {
+                        filter: { transactionId: externalOrderId, provider: E_PaymentProvider.NETVALVE },
+                    });
+                    if (ptRes.success && ptRes.result) {
+                        existingPaymentTransaction = ptRes.result;
+                        transactionId = existingPaymentTransaction.transactionId;
+                        log.info(`[TEST] Found existing PaymentTransaction via PaymentRequest.externalOrderId: ${existingPaymentTransaction.id}, operation: ${existingPaymentTransaction.operation}, status: ${existingPaymentTransaction.status}`);
+                    }
+                }
+
+                // Try gatewayResponse.transactionID if not found
+                if (!existingPaymentTransaction && paymentRequest.gatewayResponse) {
+                    const gatewayResponse = paymentRequest.gatewayResponse as Record<string, unknown>;
+                    const gatewayTransactionId = gatewayResponse['transactionID'] || gatewayResponse['transactionId'];
+                    if (gatewayTransactionId && typeof gatewayTransactionId === 'string') {
+                        const ptRes = await paymentCtr.getPaymentTransaction(context, {
+                            filter: { transactionId: gatewayTransactionId, provider: E_PaymentProvider.NETVALVE },
+                        });
+                        if (ptRes.success && ptRes.result) {
+                            existingPaymentTransaction = ptRes.result;
+                            transactionId = existingPaymentTransaction.transactionId;
+                            log.info(`[TEST] Found existing PaymentTransaction via PaymentRequest.gatewayResponse.transactionID: ${existingPaymentTransaction.id}, operation: ${existingPaymentTransaction.operation}, status: ${existingPaymentTransaction.status}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Method 3: Try to find any PaymentTransaction related to this order via orderId in PaymentRequest
+        // This is a fallback to find HPP_ORDER transactions that might have been created
+        if (!existingPaymentTransaction) {
+            // Find PaymentRequest by orderId in meta
+            const paymentRequestsRes = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: { 'meta.orderId': order.id },
+                options: { pagination: false, sort: { createdAt: -1 }, limit: 1 },
+            });
+
+            if (paymentRequestsRes.success && paymentRequestsRes.result?.docs?.length) {
+                const paymentRequest = paymentRequestsRes.result.docs[0];
+                if (!paymentRequest) {
+                    return;
+                }
+                const externalOrderId = paymentRequest.externalOrderId;
+                if (externalOrderId) {
+                    const ptRes = await paymentCtr.getPaymentTransaction(context, {
+                        filter: { transactionId: externalOrderId, provider: E_PaymentProvider.NETVALVE },
+                    });
+                    if (ptRes.success && ptRes.result) {
+                        existingPaymentTransaction = ptRes.result;
+                        transactionId = existingPaymentTransaction.transactionId;
+                        log.info(`[TEST] Found existing PaymentTransaction via PaymentRequest.meta.orderId: ${existingPaymentTransaction.id}, operation: ${existingPaymentTransaction.operation}, status: ${existingPaymentTransaction.status}`);
+                    }
+                }
+            }
+        }
+
+        // Update existing PaymentTransaction to SUCCESS, or create new one
+        let paymentTransactionRes;
+        if (existingPaymentTransaction) {
+            // Update existing transaction to SUCCESS
+            // IMPORTANT: Use the SAME operation and transactionId to ensure it updates, not creates a new one
+            const existingOperation = existingPaymentTransaction.operation || E_PaymentGatewayOperation.HPP_ORDER;
+            const existingTransactionId = transactionId || existingPaymentTransaction.transactionId;
+
+            if (!existingTransactionId) {
+                log.warn(`[TEST] Existing PaymentTransaction ${existingPaymentTransaction.id} has no transactionId, creating new one instead`);
+                // Set to null so it will create new one below
+                paymentTransactionRes = { success: false } as any;
+            }
+            else {
+                log.info(`[TEST] Updating existing PaymentTransaction ${existingPaymentTransaction.id} from ${existingPaymentTransaction.status} to SUCCESS (operation: ${existingOperation}, transactionId: ${existingTransactionId})`);
+                paymentTransactionRes = await paymentCtr.recordGatewayTransaction(context, {
+                    provider: E_PaymentProvider.NETVALVE,
+                    operation: existingOperation, // Keep the same operation (HPP_ORDER) to ensure update, not create
+                    transactionId: existingTransactionId, // Keep the same transactionId to ensure update
+                    status: E_PaymentStatus.SUCCESS,
+                    success: true,
+                    responsePayload: {
+                        ...(existingPaymentTransaction.responsePayload as Record<string, unknown> || {}),
+                        status: 'SUCCESS',
+                        test: true,
+                        updatedAt: new Date().toISOString(),
+                    },
+                    performedAt: new Date(),
+                });
+            }
+        }
+
+        // If update failed or no existing transaction found, create new one
+        if (!existingPaymentTransaction || !paymentTransactionRes?.success) {
+            // Create new PaymentTransaction (fallback if none found)
+            // NetValve requires transactionID to be a number (Long), so we use timestamp as numeric ID
+            const testTransactionId = String(Date.now());
+            log.info(`[TEST] No existing PaymentTransaction found, creating new one with transactionId=${testTransactionId}`);
+            paymentTransactionRes = await paymentCtr.recordGatewayTransaction(context, {
+                provider: E_PaymentProvider.NETVALVE,
+                operation: E_PaymentGatewayOperation.SALE,
+                transactionId: testTransactionId,
+                status: E_PaymentStatus.SUCCESS,
+                success: true,
+                responsePayload: {
+                    transactionId: testTransactionId,
+                    status: 'SUCCESS',
+                    test: true,
+                },
+                performedAt: new Date(),
+            });
+        }
+
+        if (!paymentTransactionRes.success || !paymentTransactionRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to create/update payment transaction',
+                error: paymentTransactionRes.message,
+            });
+            return;
+        }
+
+        // Update order to PAID status with paymentTransactionId
+        const updateOrderRes = await orderCtr.updateOrder(context, {
+            filter: { id: orderId },
+            update: {
+                status: E_OrderStatus.PAID,
+                paymentTransactionId: paymentTransactionRes.result.id,
+            },
+        });
+
+        if (!updateOrderRes.success || !updateOrderRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update order to PAID',
+                error: updateOrderRes.message,
+            });
+            return;
+        }
+
+        // Apply order paid effects (extend membership, update roles, etc.)
+        try {
+            const paidOrder = updateOrderRes.result;
+            await applyOrderPaidEffects(context, paidOrder);
+            log.info(`[TEST] Applied order paid effects for order ${orderId}`);
+        }
+        catch (error) {
+            log.error(`[TEST] Failed to apply order paid effects for order ${orderId}:`, error);
+            // Continue even if effects fail, order is still PAID
+        }
+
+        const finalTransactionId = paymentTransactionRes.result.transactionId || transactionId || String(Date.now());
+        const wasUpdated = existingPaymentTransaction !== null;
+
+        log.info(`[TEST] Converted order ${orderId} from ${order.status} to PAID. ${wasUpdated ? 'Updated' : 'Created'} PaymentTransaction ${paymentTransactionRes.result.id} with transactionId=${finalTransactionId}`);
+
+        res.status(200).json({
+            success: true,
+            message: `Order converted to PAID successfully. ${wasUpdated ? 'Updated existing' : 'Created new'} PaymentTransaction.`,
+            result: {
+                orderId: order.id,
+                previousStatus: order.status,
+                newStatus: E_OrderStatus.PAID,
+                paymentTransactionId: paymentTransactionRes.result.id,
+                transactionId: finalTransactionId,
+                wasUpdated,
+                note: 'This order can now be used for rebill testing. Make sure user has membershipExpiresAt within 24 hours.',
+            },
+        });
+    }
+    catch (error) {
+        log.error('[TEST] Error converting order:', error);
+        next(error);
+    }
+});
+
+// Test endpoint to set membershipExpiresAt within 24h for rebill testing
+// POST /test/rebill/set-expiry
+// Body: { orderId: string, hoursUntilExpiry?: number } - sets membershipExpiresAt for user of this order
+mainRouter.post('/test/rebill/set-expiry', async (req, res, next) => {
+    try {
+        const { orderId, hoursUntilExpiry = 12 } = req.body ?? {};
+        if (!orderId || typeof orderId !== 'string') {
+            res.status(400).json({ success: false, message: 'orderId is required' });
+            return;
+        }
+
+        const context: I_Context = { req };
+
+        // Get the order
+        const orderRes = await orderCtr.getOrder(context, {
+            filter: { id: orderId },
+        });
+
+        if (!orderRes.success || !orderRes.result) {
+            res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+
+        const order = orderRes.result;
+        if (!order.userId) {
+            res.status(400).json({ success: false, message: 'Order has no userId' });
+            return;
+        }
+
+        // Set membershipExpiresAt within 24h
+        const expiryDate = addHours(new Date(), hoursUntilExpiry);
+
+        const updateRes = await userCtr.updateUser(context, {
+            filter: { id: order.userId },
+            update: {
+                membershipExpiresAt: expiryDate,
+            },
+        });
+
+        if (!updateRes.success || !updateRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update membershipExpiresAt',
+                error: updateRes.message,
+            });
+            return;
+        }
+
+        log.info(`[TEST] Set membershipExpiresAt for user ${order.userId} to ${expiryDate.toISOString()} (${hoursUntilExpiry} hours from now)`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Membership expiry set successfully',
+            result: {
+                userId: order.userId,
+                membershipExpiresAt: expiryDate.toISOString(),
+                hoursUntilExpiry,
+                note: `User is now eligible for rebill. Cronjob will process within 24h.`,
+            },
+        });
+    }
+    catch (error) {
+        log.error('[TEST] Error setting membership expiry:', error);
+        next(error);
+    }
+});
+
+// Test endpoint to cancel membership for any user
+// POST /test/membership/cancel
+// Body: { username?: string, userId?: string } - cancels membership for the specified user
+mainRouter.post('/test/membership/cancel', async (req, res, next) => {
+    try {
+        const { username, userId } = req.body ?? {};
+        if (!username && !userId) {
+            res.status(400).json({ success: false, message: 'username or userId is required' });
+            return;
+        }
+
+        const context: I_Context = { req };
+
+        // Find user
+        let userRes;
+        if (userId) {
+            userRes = await userCtr.getUser(context, { filter: { id: userId } });
+        }
+        else if (username) {
+            userRes = await userCtr.getUser(context, { filter: { username } });
+        }
+
+        if (!userRes || !userRes.success || !userRes.result) {
+            res.status(404).json({
+                success: false,
+                message: `User not found${username ? ` with username: ${username}` : ` with userId: ${userId}`}`,
+            });
+            return;
+        }
+
+        const user = userRes.result;
+
+        // Check if user has active membership
+        const isActive = user.membershipExpiresAt && new Date(user.membershipExpiresAt) > new Date();
+        if (!isActive) {
+            res.status(400).json({
+                success: false,
+                message: 'User does not have an active paid membership to cancel',
+                membershipExpiresAt: user.membershipExpiresAt,
+            });
+            return;
+        }
+
+        // Try to cancel in NetValve (similar to cancelMembership)
+        let netvalveCancelSuccess = false;
+        try {
+            const ordersRes = await orderCtr.getOrders(context, {
+                filter: {
+                    userId: user.id,
+                    status: E_OrderStatus.PAID,
+                    orderType: E_OrderType.SUBSCRIPTION,
+                },
+                options: {
+                    pagination: false,
+                    sort: { createdAt: -1 },
+                    limit: 1,
+                    populate: [{ path: 'paymentTransaction' }],
+                },
+            } as any);
+
+            const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
+            let transactionId: string | undefined;
+
+            if (lastOrder) {
+                transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
+                if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
+                    const ptRes = await paymentCtr.getPaymentTransaction(context, {
+                        filter: { id: (lastOrder as any).paymentTransactionId },
+                    } as any);
+                    if (ptRes.success && ptRes.result?.transactionId) {
+                        transactionId = ptRes.result.transactionId;
+                    }
+                }
+            }
+
+            if (transactionId) {
+                const pricing = (lastOrder as any)?.pricing;
+                const currency = pricing?.currency?.code || 'EUR';
+
+                const cancelRes = await netvalveCtr.cancel(context, {
+                    transactionID: String(transactionId),
+                    currency,
+                } as any);
+
+                if (cancelRes.success) {
+                    netvalveCancelSuccess = true;
+                    log.info(`[TEST] NetValve cancel called successfully for user ${user.id}, transactionId=${transactionId}`);
+                }
+                else {
+                    log.warn(`[TEST] NetValve cancel failed for user ${user.id}, transactionId=${transactionId}: ${cancelRes.message}`);
+                }
+            }
+        }
+        catch (error) {
+            log.error(`[TEST] Error calling NetValve cancel for user ${user.id}:`, error);
+        }
+
+        // Set membershipCancelled = true
+        const updateRes = await userCtr.updateUser(context, {
+            filter: { id: user.id },
+            update: {
+                membershipCancelled: true,
+            },
+        });
+
+        if (!updateRes.success || !updateRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to cancel membership',
+                error: updateRes.message,
+            });
+            return;
+        }
+
+        log.info(`[TEST] Membership cancelled for user ${user.id}. Access until ${user.membershipExpiresAt}. NetValve cancel: ${netvalveCancelSuccess ? 'success' : 'skipped/failed'}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Membership cancelled successfully',
+            result: {
+                userId: user.id,
+                username: user.username,
+                email: user.email,
+                membershipCancelled: true,
+                membershipExpiresAt: user.membershipExpiresAt,
+                netvalveCancelSuccess,
+                note: 'User will keep access until membershipExpiresAt. Future rebills will be skipped.',
+            },
+        });
+    }
+    catch (error) {
+        log.error('[TEST] Error cancelling membership:', error);
+        next(error);
+    }
+});
+
+// Test endpoint to set membershipExpiresAt for any user (for testing rebill after cancel)
+// POST /test/membership/set-expiry
+// Body: { username?: string, userId?: string, hoursUntilExpiry?: number } - sets membershipExpiresAt for the specified user
+mainRouter.post('/test/membership/set-expiry', async (req, res, next) => {
+    try {
+        const { username, userId, hoursUntilExpiry = 12 } = req.body ?? {};
+        if (!username && !userId) {
+            res.status(400).json({ success: false, message: 'username or userId is required' });
+            return;
+        }
+
+        const context: I_Context = { req };
+
+        // Find user
+        let userRes;
+        if (userId) {
+            userRes = await userCtr.getUser(context, { filter: { id: userId } });
+        }
+        else if (username) {
+            userRes = await userCtr.getUser(context, { filter: { username } });
+        }
+
+        if (!userRes || !userRes.success || !userRes.result) {
+            res.status(404).json({
+                success: false,
+                message: `User not found${username ? ` with username: ${username}` : ` with userId: ${userId}`}`,
+            });
+            return;
+        }
+
+        const user = userRes.result;
+
+        // Set membershipExpiresAt within 24h
+        const expiryDate = addHours(new Date(), hoursUntilExpiry);
+
+        const updateRes = await userCtr.updateUser(context, {
+            filter: { id: user.id },
+            update: {
+                membershipExpiresAt: expiryDate,
+            },
+        });
+
+        if (!updateRes.success || !updateRes.result) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update membershipExpiresAt',
+                error: updateRes.message,
+            });
+            return;
+        }
+
+        log.info(`[TEST] Set membershipExpiresAt for user ${user.id} to ${expiryDate.toISOString()} (${hoursUntilExpiry} hours from now). membershipCancelled: ${user.membershipCancelled}`);
+
+        res.status(200).json({
+            success: true,
+            message: 'Membership expiry set successfully',
+            result: {
+                userId: user.id,
+                username: user.username,
+                membershipExpiresAt: expiryDate.toISOString(),
+                membershipCancelled: user.membershipCancelled,
+                hoursUntilExpiry,
+                note: user.membershipCancelled
+                    ? 'User has cancelled membership. Cronjob will skip rebill even if membershipExpiresAt is within 24h.'
+                    : `User is now eligible for rebill. Cronjob will process within 24h.`,
+            },
+        });
+    }
+    catch (error) {
+        log.error('[TEST] Error setting membership expiry:', error);
+        next(error);
+    }
+});
 
 export { mainRouter };
