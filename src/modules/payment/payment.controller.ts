@@ -16,6 +16,7 @@ import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
+import { applyHppMerchantRouting, ensureCredentials } from '#modules/payment/netvalve/netvalve.handler.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
@@ -475,7 +476,19 @@ export const paymentController = {
             hppPayload['customerDetails'] = customerDetails;
         }
 
-        const hppResponse = await netvalveCtr.createOrder(context, hppPayload as I_NetvalveHppOrderPayload);
+        // Apply merchant routing to get netvalveMidId from request payload
+        // This ensures we save the correct merchant ID to Order for rebill
+        const { credentials } = ensureCredentials();
+        const hppPayloadWithRouting = credentials
+            ? applyHppMerchantRouting(hppPayload as I_NetvalveHppOrderPayload, credentials)
+            : hppPayload;
+
+        // Get netvalveMidId from request payload (set by applyHppMerchantRouting)
+        const netvalveMidIdFromRequest = typeof hppPayloadWithRouting['netvalveMidId'] === 'string'
+            ? hppPayloadWithRouting['netvalveMidId']
+            : undefined;
+
+        const hppResponse = await netvalveCtr.createOrder(context, hppPayloadWithRouting as I_NetvalveHppOrderPayload);
 
         if (!hppResponse.success || !hppResponse.result) {
             throwError({
@@ -516,12 +529,20 @@ export const paymentController = {
             },
         });
 
+        // Extract netvalveMidId: priority 1 = response, priority 2 = request payload
+        const netvalveMidId = typeof hppPayloadResult?.['netvalveMidId'] === 'string'
+            ? hppPayloadResult['netvalveMidId']
+            : typeof hppPayloadResult?.['midId'] === 'string'
+                ? hppPayloadResult['midId']
+                : netvalveMidIdFromRequest; // Fallback to request payload (set by applyHppMerchantRouting)
+
         await orderCtr.updateOrder(context, {
             filter: { id: createdOrder.id },
             update: {
                 $set: {
                     status: E_OrderStatus.PENDING,
                     externalOrderId: externalOrderId ?? undefined,
+                    ...(netvalveMidId && { netvalveMidId }),
                 },
             },
         });

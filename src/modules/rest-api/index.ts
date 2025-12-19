@@ -1925,25 +1925,17 @@ mainRouter.post('/test/rebill/convert-order', async (req, res, next) => {
             }
         }
 
-        // If update failed or no existing transaction found, create new one
+        // If update failed or no existing transaction found, return error
+        // We should NOT create/modify NetValve data - only update existing PaymentTransaction
         if (!existingPaymentTransaction || !paymentTransactionRes?.success) {
-            // Create new PaymentTransaction (fallback if none found)
-            // NetValve requires transactionID to be a number (Long), so we use timestamp as numeric ID
-            const testTransactionId = String(Date.now());
-            log.info(`[TEST] No existing PaymentTransaction found, creating new one with transactionId=${testTransactionId}`);
-            paymentTransactionRes = await paymentCtr.recordGatewayTransaction(context, {
-                provider: E_PaymentProvider.NETVALVE,
-                operation: E_PaymentGatewayOperation.SALE,
-                transactionId: testTransactionId,
-                status: E_PaymentStatus.SUCCESS,
-                success: true,
-                responsePayload: {
-                    transactionId: testTransactionId,
-                    status: 'SUCCESS',
-                    test: true,
-                },
-                performedAt: new Date(),
+            res.status(400).json({
+                success: false,
+                message: 'Cannot convert order to PAID: No PaymentTransaction found from NetValve. Order must have a PaymentTransaction created by NetValve HPP flow.',
+                error: 'PaymentTransaction is required to convert order to PAID. This endpoint only updates existing PaymentTransaction status, it does not create new ones.',
+                orderId: order.id,
+                note: 'To test rebill, use an order that was created through the normal payment flow (HPP), which will have a PaymentTransaction with NetValve transactionId.',
             });
+            return;
         }
 
         if (!paymentTransactionRes.success || !paymentTransactionRes.result) {
@@ -1984,8 +1976,8 @@ mainRouter.post('/test/rebill/convert-order', async (req, res, next) => {
             // Continue even if effects fail, order is still PAID
         }
 
-        const finalTransactionId = paymentTransactionRes.result.transactionId || transactionId || String(Date.now());
         const wasUpdated = existingPaymentTransaction !== null;
+        const finalTransactionId = paymentTransactionRes.result.transactionId || transactionId || 'N/A';
 
         log.info(`[TEST] Converted order ${orderId} from ${order.status} to PAID. ${wasUpdated ? 'Updated' : 'Created'} PaymentTransaction ${paymentTransactionRes.result.id} with transactionId=${finalTransactionId}`);
 

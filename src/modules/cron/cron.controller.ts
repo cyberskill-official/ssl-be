@@ -545,19 +545,35 @@ export const cron = {
                             return false;
                         }
 
+                        // Get transactionId from PaymentTransaction
                         let transactionId: string | undefined = (lastOrder as any)?.paymentTransaction?.transactionId;
+                        let paymentTransactionOperation: string | undefined = (lastOrder as any)?.paymentTransaction?.operation;
+
                         if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
                             const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
                                 filter: { id: (lastOrder as any).paymentTransactionId },
                             } as any);
-                            if (ptRes.success && ptRes.result?.transactionId) {
+                            if (ptRes.success && ptRes.result) {
                                 transactionId = ptRes.result.transactionId;
+                                paymentTransactionOperation = ptRes.result.operation;
                             }
                         }
 
                         if (!transactionId) {
                             log.warn(`[CRON] No transaction ID found for user ${userId}`);
                             return false;
+                        }
+
+                        // Validate transaction ID: NetValve transaction IDs are typically numeric (Long type)
+                        // Test transaction IDs from /test/rebill/convert-order are timestamps (13 digits)
+                        // Real NetValve transaction IDs from HPP_ORDER are usually shorter numeric strings
+                        // Check if this looks like a test transaction ID (timestamp-based)
+                        const isTestTransactionId = /^\d{13}$/.test(transactionId) && Number(transactionId) > 1000000000000;
+                        const isFromHppOrder = paymentTransactionOperation === E_PaymentGatewayOperation.HPP_ORDER;
+
+                        if (isTestTransactionId && !isFromHppOrder) {
+                            log.warn(`[CRON] ⚠️  Transaction ID ${transactionId} appears to be a test transaction ID (timestamp-based). Rebill will likely fail with "Invalid Merchant ID" because NetValve doesn't recognize this transaction. To test rebill properly, use an order created through the real NetValve HPP flow.`);
+                            // Continue anyway - let NetValve reject it, but log the warning
                         }
 
                         const amount = typeof lastOrder.amount === 'number' ? lastOrder.amount : Number(lastOrder.amount);
@@ -569,45 +585,162 @@ export const cron = {
                         const currency = (lastOrder as any)?.pricing?.currency?.code || 'EUR';
                         const pricing = (lastOrder as any)?.pricing;
 
-                        // Try to get netvalveMidId from PaymentRequest of the original order
+                        // Try to get netvalveMidId from Order (highest priority - stored directly)
                         // This ensures we use the same Merchant ID that was used successfully before
                         let netvalveMidIdFromRequest: string | undefined;
+
+                        // Method 1: Try Order.netvalveMidId (stored directly in Order)
+                        if ((lastOrder as any)?.netvalveMidId && typeof (lastOrder as any).netvalveMidId === 'string') {
+                            netvalveMidIdFromRequest = (lastOrder as any).netvalveMidId;
+                            log.info(`[CRON] ✅ Found netvalveMidId from Order.netvalveMidId: ${netvalveMidIdFromRequest}`);
+                        }
+
+                        // Method 2: Try PaymentRequest.gatewayResponse.netvalveMidId
                         if (lastOrder.paymentRequestId) {
                             try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentRequest: ${lastOrder.paymentRequestId}`);
                                 const prRes = await paymentRequestCtr.getPaymentRequest(ctx, {
                                     filter: { id: lastOrder.paymentRequestId },
                                 });
-                                if (prRes.success && prRes.result?.gatewayResponse) {
-                                    const gatewayResponse = prRes.result.gatewayResponse as Record<string, unknown>;
-                                    const midId = gatewayResponse['netvalveMidId'];
-                                    if (midId && typeof midId === 'string') {
-                                        netvalveMidIdFromRequest = midId;
-                                        log.info(`[CRON] Found netvalveMidId from PaymentRequest: ${netvalveMidIdFromRequest}`);
+                                if (prRes.success && prRes.result) {
+                                    log.info(`[CRON] PaymentRequest found. Has gatewayResponse: ${!!prRes.result.gatewayResponse}`);
+                                    if (prRes.result.gatewayResponse) {
+                                        const gatewayResponse = prRes.result.gatewayResponse as Record<string, unknown>;
+                                        log.info(`[CRON] PaymentRequest.gatewayResponse keys: ${Object.keys(gatewayResponse).join(', ')}`);
+                                        const midId = gatewayResponse['netvalveMidId'];
+                                        log.info(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                        if (midId && typeof midId === 'string') {
+                                            netvalveMidIdFromRequest = midId;
+                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentRequest.gatewayResponse: ${netvalveMidIdFromRequest}`);
+                                        }
+                                        else {
+                                            log.warn(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId is not a valid string: ${midId}`);
+                                        }
                                     }
+                                    else {
+                                        log.warn(`[CRON] PaymentRequest has no gatewayResponse`);
+                                    }
+                                }
+                                else {
+                                    log.warn(`[CRON] PaymentRequest not found: ${prRes.message || 'unknown error'}`);
                                 }
                             }
                             catch (error) {
                                 log.warn(`[CRON] Failed to get PaymentRequest for netvalveMidId: ${error}`);
                             }
                         }
-
-                        const rebillOrderRes = await orderCtr.createOrder(ctx, {
-                            doc: {
-                                userId,
-                                amount,
-                                pricingId: lastOrder.pricingId,
-                                orderType: E_OrderType.SUBSCRIPTION,
-                                status: E_OrderStatus.PENDING, // Will be updated to PAID after successful rebill
-                            },
-                        });
-
-                        if (!rebillOrderRes.success || !rebillOrderRes.result) {
-                            log.error(`[CRON] Failed to create rebill order: ${rebillOrderRes.message}`);
-                            return false;
+                        else {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no paymentRequestId`);
                         }
 
-                        const rebillOrder = rebillOrderRes.result;
+                        // Method 3: Try PaymentTransaction.responsePayload (if Order and PaymentRequest don't have it)
+                        if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransaction) {
+                            try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (populated): ${(lastOrder as any).paymentTransaction.id}`);
+                                const paymentTransaction = (lastOrder as any).paymentTransaction;
+                                const responsePayload = paymentTransaction.responsePayload as Record<string, unknown> | null | undefined;
 
+                                if (responsePayload && typeof responsePayload === 'object') {
+                                    log.info(`[CRON] PaymentTransaction.responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
+                                    // Try response.netvalveMidId (from NetValve response)
+                                    const response = responsePayload['response'] as Record<string, unknown> | undefined;
+                                    if (response && typeof response === 'object') {
+                                        log.info(`[CRON] PaymentTransaction.responsePayload.response keys: ${Object.keys(response).join(', ')}`);
+                                        const midId = response['netvalveMidId'];
+                                        log.info(`[CRON] PaymentTransaction.responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                        if (midId && typeof midId === 'string') {
+                                            netvalveMidIdFromRequest = midId;
+                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.response: ${netvalveMidIdFromRequest}`);
+                                        }
+                                    }
+
+                                    // Try request.netvalveMidId (from original request)
+                                    if (!netvalveMidIdFromRequest) {
+                                        const request = responsePayload['request'] as Record<string, unknown> | undefined;
+                                        if (request && typeof request === 'object') {
+                                            log.info(`[CRON] PaymentTransaction.responsePayload.request keys: ${Object.keys(request).join(', ')}`);
+                                            const midId = request['netvalveMidId'];
+                                            log.info(`[CRON] PaymentTransaction.responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                            if (midId && typeof midId === 'string') {
+                                                netvalveMidIdFromRequest = midId;
+                                                log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.request: ${netvalveMidIdFromRequest}`);
+                                            }
+                                        }
+                                    }
+                                }
+                                else {
+                                    log.warn(`[CRON] PaymentTransaction has no responsePayload or it's not an object`);
+                                }
+                            }
+                            catch (error) {
+                                log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction: ${error}`);
+                            }
+                        }
+                        else if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no populated paymentTransaction`);
+                        }
+
+                        // Method 4: Try PaymentTransaction directly (if not populated)
+                        if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransactionId) {
+                            try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (direct query): ${(lastOrder as any).paymentTransactionId}`);
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (lastOrder as any).paymentTransactionId },
+                                } as any);
+
+                                if (ptRes.success && ptRes.result) {
+                                    log.info(`[CRON] PaymentTransaction found (direct query). Has responsePayload: ${!!ptRes.result.responsePayload}`);
+                                    if (ptRes.result.responsePayload) {
+                                        const responsePayload = ptRes.result.responsePayload as Record<string, unknown>;
+                                        log.info(`[CRON] PaymentTransaction (direct query).responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
+
+                                        // Try response.netvalveMidId
+                                        const response = responsePayload['response'] as Record<string, unknown> | undefined;
+                                        if (response && typeof response === 'object') {
+                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response keys: ${Object.keys(response).join(', ')}`);
+                                            const midId = response['netvalveMidId'];
+                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                            if (midId && typeof midId === 'string') {
+                                                netvalveMidIdFromRequest = midId;
+                                                log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.response: ${netvalveMidIdFromRequest}`);
+                                            }
+                                        }
+
+                                        // Try request.netvalveMidId
+                                        if (!netvalveMidIdFromRequest) {
+                                            const request = responsePayload['request'] as Record<string, unknown> | undefined;
+                                            if (request && typeof request === 'object') {
+                                                log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request keys: ${Object.keys(request).join(', ')}`);
+                                                const midId = request['netvalveMidId'];
+                                                log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                                if (midId && typeof midId === 'string') {
+                                                    netvalveMidIdFromRequest = midId;
+                                                    log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.request: ${netvalveMidIdFromRequest}`);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        log.warn(`[CRON] PaymentTransaction (direct query) has no responsePayload`);
+                                    }
+                                }
+                                else {
+                                    log.warn(`[CRON] PaymentTransaction (direct query) not found: ${ptRes.message || 'unknown error'}`);
+                                }
+                            }
+                            catch (error) {
+                                log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction (direct query): ${error}`);
+                            }
+                        }
+                        else if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no paymentTransactionId`);
+                        }
+
+                        if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] ⚠️  No netvalveMidId found for user ${userId}. Rebill will use currency-based merchant routing, which may fail if merchant ID changed.`);
+                        }
+
+                        // Prepare rebill payload
                         const payload = {
                             transactionID: String(transactionId),
                             amount,
@@ -620,7 +753,8 @@ export const cron = {
                             log.info(`[CRON] Using netvalveMidId from original PaymentRequest: ${netvalveMidIdFromRequest}`);
                         }
 
-                        log.info(`[CRON] Attempting rebill for user ${userId}: amount=${amount} ${currency}, transactionId=${transactionId}, orderId=${rebillOrder.id}`);
+                        // Call NetValve rebill API FIRST - only create order/payment transaction if successful
+                        log.info(`[CRON] Attempting rebill for user ${userId}: amount=${amount} ${currency}, transactionId=${transactionId}`);
                         log.info(`[CRON] Rebill payload before merchant routing:`, {
                             transactionID: payload.transactionID,
                             amount: payload.amount,
@@ -628,6 +762,7 @@ export const cron = {
                             netvalveMidId: (payload as any).netvalveMidId,
                             siteId: (payload as any).siteId,
                         });
+
                         const rebillRes = await netvalveCtr.rebill(ctx, payload);
                         if (!rebillRes.success) {
                             log.warn('[CRON] Rebill failed', { userId, transactionId, message: rebillRes.message });
@@ -652,7 +787,7 @@ export const cron = {
                                 responseMessage,
                                 fullResponse: rebillResponse,
                             });
-                            return false;
+                            return false; // Don't create any records
                         }
 
                         // If responseCodeType is SOFT_DECLINE or HARD_DECLINE, it's a failure
@@ -664,10 +799,31 @@ export const cron = {
                                 responseMessage,
                                 fullResponse: rebillResponse,
                             });
+                            return false; // Don't create any records
+                        }
+
+                        // Rebill successful - NOW create order and payment transaction
+                        log.info(`[CRON] ✅ Rebill successful for user ${userId} (responseCode: ${responseCode || 'N/A'})`);
+
+                        const rebillOrderRes = await orderCtr.createOrder(ctx, {
+                            doc: {
+                                userId,
+                                amount,
+                                pricingId: lastOrder.pricingId,
+                                orderType: E_OrderType.SUBSCRIPTION,
+                                status: E_OrderStatus.PENDING, // Will be updated to PAID after creating payment transaction
+                                // Copy netvalveMidId from lastOrder if available (for future rebills)
+                                ...(netvalveMidIdFromRequest && { netvalveMidId: netvalveMidIdFromRequest }),
+                            },
+                        });
+
+                        if (!rebillOrderRes.success || !rebillOrderRes.result) {
+                            log.error(`[CRON] Failed to create rebill order after successful rebill: ${rebillOrderRes.message}`);
+                            // Rebill succeeded but order creation failed - this is a critical error
                             return false;
                         }
 
-                        log.info(`[CRON] ✅ Rebill successful for user ${userId} (responseCode: ${responseCode || 'N/A'})`);
+                        const rebillOrder = rebillOrderRes.result;
 
                         // Log full rebill response for debugging
                         // NetValve rebill response structure: { traceID, responseTimestamp, responseCode, responseMessage, responseCodeType, transactionID? }
