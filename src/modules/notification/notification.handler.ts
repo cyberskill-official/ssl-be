@@ -13,6 +13,14 @@ const USER_APP_BASE_URL = (() => {
     return raw.replace(/\/+$/, '');
 })();
 
+const EMAIL_LOGO_URL = (() => {
+    const raw = env.EMAIL_LOGO_URL?.trim();
+    if (raw) {
+        return raw;
+    }
+    return `${USER_APP_BASE_URL}/images/Logo_secretswingerlust_white.png`;
+})();
+
 export function sanitizeSlug(value?: string | null): string | undefined {
     if (!value)
         return undefined;
@@ -36,9 +44,7 @@ export function buildMediaLikedEmailHtml(input: {
     thumbnailUrl?: string;
 }) {
     const greetingName = input.targetDisplayName?.trim() || 'there';
-    const thumbnailBlock = input.thumbnailUrl
-        ? `<div style="margin:20px 0;text-align:center;"><img src="${input.thumbnailUrl}" alt="Liked ${input.mediaKindLabel}" style="max-width:100%;border-radius:8px;" /></div>`
-        : '';
+    // Remove thumbnail and actorDisplayName to comply with Postmark (no images, no usernames)
     return `
 <!DOCTYPE html>
 <html>
@@ -54,7 +60,7 @@ export function buildMediaLikedEmailHtml(input: {
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${USER_APP_BASE_URL}/images/Logo_secretswingerlust_white.png" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${EMAIL_LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -63,8 +69,7 @@ export function buildMediaLikedEmailHtml(input: {
                             <h1 style="font-size:28px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Hi ${greetingName},</h1>
                             <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:0 0 16px;text-align:center;font-family:Myanmar Text;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
                             <div style="font-size:16px;color:#000000;margin:0 0 20px;text-align:center;line-height:1.6;font-family:Myanmar Text;">
-                                <p style="margin:0 0 16px;color:#000000;"><strong>${input.actorDisplayName}</strong> just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.</p>
-                                ${thumbnailBlock}
+                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.</p>
                             </div>
                             <!-- Button -->
                             <div style="text-align:center;margin:30px 0;">
@@ -131,7 +136,8 @@ export function sendMediaLikedEmail(input: {
     mediaLink: string;
     thumbnailUrl?: string;
 }) {
-    const subject = `[Secret Swinger Lust] ${input.actorDisplayName} liked your ${input.mediaKindLabel}`;
+    // Remove username from subject to comply with Postmark (no usernames in emails)
+    const subject = `[Secret Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
     const html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,

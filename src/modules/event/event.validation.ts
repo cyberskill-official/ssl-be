@@ -256,13 +256,6 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
     }
 
     // Case 4: Creator is PAID_MEMBER verified → show normal
-    log.info('[EVENT][signEventImage] return normal (creator paid or verified)', {
-        viewerId,
-        eventCreatedById,
-        viewerIsFreeMember,
-        isCreatorFreeMember,
-        isCreatorAgeVerified,
-    });
     return bunnyCtr.generateSignedUrl({
         fullUrl,
         extraQueryParams: { class: 'normal' },

@@ -107,10 +107,12 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
 
     // Use MongoDB atomic operators to ensure safe concurrent updates
     // MEMBERSHIP flow: +1 tháng membership (không cộng freeEventCount)
+    // Reset membershipCancelled to false when user purchases a new subscription
     const updatePayload: Record<string, unknown> = {
         $set: {
             membershipExpiresAt: newExpiry, // Cộng +1 tháng vào membership
             rolesIds: updatedRoles, // Update rolesIds with processed array
+            membershipCancelled: false, // Reset cancellation flag when user purchases a new subscription
         },
     };
 
@@ -151,6 +153,10 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         }
         if (updatedUserRes.success && typeof updatedUserRes.result?.freeEventCount === 'number') {
             context.req.session.user.freeEventCount = updatedUserRes.result.freeEventCount;
+        }
+        // Reset membershipCancelled in session
+        if (updatedUserRes.success && updatedUserRes.result) {
+            context.req.session.user.membershipCancelled = false;
         }
     }
 

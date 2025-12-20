@@ -19,18 +19,35 @@ export function applyMerchantRouting<T extends I_NetvalveRoutingPayload & Record
 ): T {
     const resolved: T = { ...payload };
 
-    if (!resolved.siteId && credentials.siteId) {
-        resolved.siteId = credentials.siteId;
-    }
+    // Priority 1: Use netvalveMidId from payload if provided (highest priority)
+    // Priority 2: Set netvalveMidId from currency if not provided
+    // Priority 3: Use siteId as fallback only if netvalveMidId is not available
 
-    if (!resolved.siteId && !resolved.netvalveMidId) {
+    if (!resolved.netvalveMidId) {
         const currency = typeof resolved.currency === 'string'
             ? resolved.currency.toUpperCase()
             : '';
         const fallbackMid = currency ? credentials.midByCurrency[currency] : undefined;
         if (fallbackMid) {
             resolved.netvalveMidId = fallbackMid;
+            log.info(`[NetValve] Applied merchant routing: currency=${currency}, netvalveMidId=${fallbackMid}`);
         }
+        else {
+            // Only use siteId if netvalveMidId is not available from currency
+            if (!resolved.siteId && credentials.siteId) {
+                resolved.siteId = credentials.siteId;
+                log.info(`[NetValve] Using siteId as fallback: ${resolved.siteId}`);
+            }
+            log.warn(`[NetValve] No merchant ID found for currency=${currency}. Available currencies: ${Object.keys(credentials.midByCurrency).join(', ')}. Using siteId: ${resolved.siteId || 'none'}. This may cause "Invalid Merchant ID" error.`);
+        }
+    }
+    else {
+        log.info(`[NetValve] Using provided netvalveMidId: ${resolved.netvalveMidId}`);
+    }
+
+    // Set siteId if not already set (for APIs that require both)
+    if (!resolved.siteId && credentials.siteId) {
+        resolved.siteId = credentials.siteId;
     }
 
     return resolved;
@@ -280,12 +297,10 @@ export async function recordNetvalveTransaction(
 
     let transactionId = extractTransactionId({ ...requestPayload, ...(resultPayload ?? {}) });
 
-    // For HPP_ORDER, if transactionId is not found, use clientOrderId or orderId as fallback
     if (!transactionId && operation === E_PaymentGatewayOperation.HPP_ORDER) {
         // Try orderId from response first (Netvalve's order ID)
         transactionId = asString(resultPayload?.['orderId']);
 
-        // If still not found, use clientOrderId from request (our internal order ID)
         if (!transactionId) {
             transactionId = asString(requestPayload['clientOrderId']);
         }

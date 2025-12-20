@@ -9,6 +9,7 @@ export enum E_PricingType {
 }
 
 export interface I_Pricing extends I_GenericDocument {
+    amount: number;
     type?: E_PricingType;
     price?: number;
     taxRate?: number;

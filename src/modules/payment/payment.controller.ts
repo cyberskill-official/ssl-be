@@ -16,10 +16,11 @@ import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { netvalveCtr } from '#modules/payment/netvalve/index.js';
+import { applyHppMerchantRouting, ensureCredentials } from '#modules/payment/netvalve/netvalve.handler.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
-import { pricingCtr } from '#modules/pricing/pricing.controller.js';
+import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 
@@ -312,17 +313,15 @@ export const paymentController = {
             }
         }
 
-        const baseAmount = typeof pricing.price === 'number' ? pricing.price : Number.NaN;
-        const taxRate = typeof pricing.taxRate === 'number' ? pricing.taxRate : 0;
+        // Calculate amount from pricing (price + tax)
+        const resolvedAmount = calculateAmountFromPricing(pricing);
 
-        if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: 'Pricing amount is invalid',
             });
         }
-        const taxPortion = baseAmount * (taxRate / 100);
-        const resolvedAmount = Number((baseAmount + taxPortion).toFixed(2));
 
         // Get currency code from pricing - MUST use the exact currency configured in pricing
         // We do NOT fallback to other currencies (EUR/USD) - must use the exact currencyId in pricing
@@ -402,7 +401,6 @@ export const paymentController = {
             });
         }
 
-        // Create order first - clientOrderId will be set to order.id after creation
         // userId is automatically set from currentUser (BE), not from FE input
         // Determine orderType based on pricingType: MEMBERSHIP = SUBSCRIPTION, ANNOUNCEMENT = A_LA_CARTE_EVENT
         const orderType = pricingType === E_PricingType.MEMBERSHIP
@@ -427,18 +425,7 @@ export const paymentController = {
         }
         const createdOrder = orderRes.result;
 
-        // clientOrderId is the order ID in our system (used for Netvalve HPP)
         const clientOrderId = createdOrder.id;
-
-        // Update order with clientOrderId
-        await orderCtr.updateOrder(context, {
-            filter: { id: createdOrder.id },
-            update: {
-                $set: {
-                    clientOrderId,
-                },
-            },
-        });
 
         const prDoc = {
             gateway: E_PaymentProvider.NETVALVE,
@@ -446,7 +433,6 @@ export const paymentController = {
             attempts: 0,
             meta: {
                 orderId: createdOrder.id,
-                clientOrderId,
                 amount: resolvedAmount,
                 currencyId: pricing.currencyId,
                 pricingId: pricing.id,
@@ -490,7 +476,19 @@ export const paymentController = {
             hppPayload['customerDetails'] = customerDetails;
         }
 
-        const hppResponse = await netvalveCtr.createOrder(context, hppPayload as I_NetvalveHppOrderPayload);
+        // Apply merchant routing to get netvalveMidId from request payload
+        // This ensures we save the correct merchant ID to Order for rebill
+        const { credentials } = ensureCredentials();
+        const hppPayloadWithRouting = credentials
+            ? applyHppMerchantRouting(hppPayload as I_NetvalveHppOrderPayload, credentials)
+            : hppPayload;
+
+        // Get netvalveMidId from request payload (set by applyHppMerchantRouting)
+        const netvalveMidIdFromRequest = typeof hppPayloadWithRouting['netvalveMidId'] === 'string'
+            ? hppPayloadWithRouting['netvalveMidId']
+            : undefined;
+
+        const hppResponse = await netvalveCtr.createOrder(context, hppPayloadWithRouting as I_NetvalveHppOrderPayload);
 
         if (!hppResponse.success || !hppResponse.result) {
             throwError({
@@ -531,12 +529,20 @@ export const paymentController = {
             },
         });
 
+        // Extract netvalveMidId: priority 1 = response, priority 2 = request payload
+        const netvalveMidId = typeof hppPayloadResult?.['netvalveMidId'] === 'string'
+            ? hppPayloadResult['netvalveMidId']
+            : typeof hppPayloadResult?.['midId'] === 'string'
+                ? hppPayloadResult['midId']
+                : netvalveMidIdFromRequest; // Fallback to request payload (set by applyHppMerchantRouting)
+
         await orderCtr.updateOrder(context, {
             filter: { id: createdOrder.id },
             update: {
                 $set: {
                     status: E_OrderStatus.PENDING,
                     externalOrderId: externalOrderId ?? undefined,
+                    ...(netvalveMidId && { netvalveMidId }),
                 },
             },
         });

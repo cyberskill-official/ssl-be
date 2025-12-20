@@ -23,8 +23,7 @@ type T_Order {
     orderType: E_OrderType
     paymentTransactionId: String
     paymentTransaction: T_PaymentTransaction
-    clientOrderId: String
-    customerDetails: JSON
+    netvalveMidId: String
     meta: JSON
     pricingId: String
     pricing: T_Pricing
@@ -40,7 +39,7 @@ input Input_QueryOrder {
     status: E_OrderStatus
     orderType: E_OrderType
     paymentTransactionId: String
-    clientOrderId: String
+    netvalveMidId: String
     customerDetails: JSON
     meta: JSON
     pricingId: String
@@ -52,7 +51,7 @@ input Input_CreateOrder {
     status: E_OrderStatus
     orderType: E_OrderType
     paymentTransactionId: String
-    clientOrderId: String
+    netvalveMidId: String
     customerDetails: JSON
     meta: JSON
     pricingId: String
@@ -64,7 +63,7 @@ input Input_UpdateOrder {
     status: E_OrderStatus
     orderType: E_OrderType
     paymentTransactionId: String
-    clientOrderId: String
+    netvalveMidId: String
     customerDetails: JSON
     meta: JSON
     pricingId: String

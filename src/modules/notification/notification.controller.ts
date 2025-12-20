@@ -1046,10 +1046,6 @@ export const notificationCtr = {
                     try {
                         const userRes = await userCtr.getUser({}, { filter: { id: result.result.targetId } });
                         const targetEmail = userRes.success && userRes.result ? userRes.result.email : '';
-                        const targetDisplayName = userRes.success && userRes.result
-                            ? (userRes.result.username
-                                || undefined)
-                            : undefined;
                         if (!targetEmail) {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                             return;
@@ -1083,19 +1079,20 @@ export const notificationCtr = {
                             case E_NotificationType.MEDIA_LIKED: {
                                 templateKey = '';
                                 const presentation = (result.result.presentation ?? doc.presentation) as I_NotificationPresentation | undefined;
-                                const actorDisplayName = presentation?.actor?.username || 'Someone';
+                                const actorDisplayName = 'Someone'; // Placeholder, not used in email
                                 const isVideo = Boolean((presentation?.context as any)?.isVideo);
                                 const mediaKindLabel = isVideo ? 'video' : 'picture';
                                 const ownerUsername = (presentation?.context as any)?.profileOwnerUsername;
                                 const mediaLink = buildMediaLikedLink(ownerUsername, result.result.entityId ?? doc.entityId);
-                                const thumbnailUrl = presentation?.thumbnailUrl;
+                                // Don't pass thumbnailUrl to comply with Postmark (no images)
+                                // Don't pass targetDisplayName to comply with Postmark (no usernames)
                                 sendRes = await sendMediaLikedEmail({
                                     targetEmail,
-                                    targetDisplayName,
+                                    targetDisplayName: undefined, // Don't pass username to comply with Postmark rules
                                     actorDisplayName,
                                     mediaKindLabel,
                                     mediaLink,
-                                    thumbnailUrl,
+                                    thumbnailUrl: undefined, // No images in emails
                                 });
                                 break;
                             }

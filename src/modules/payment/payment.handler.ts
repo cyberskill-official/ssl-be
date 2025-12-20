@@ -405,14 +405,46 @@ mainRouter.get('/payment', async (req, res, next) => {
             }
         }
 
-        // Update order status and paymentTransactionId
-        log.info('[Payment Handler] Updating order status:', { orderId: order.id, orderStatus, paymentTransactionId });
+        // Extract netvalveMidId from PaymentRequest.gatewayResponse or NetValve API response
+        let netvalveMidId: string | undefined;
+
+        // Try PaymentRequest.gatewayResponse first
+        if (paymentRequest.gatewayResponse) {
+            const gatewayResponse = paymentRequest.gatewayResponse as Record<string, unknown>;
+            netvalveMidId = typeof gatewayResponse['netvalveMidId'] === 'string'
+                ? gatewayResponse['netvalveMidId']
+                : typeof gatewayResponse['midId'] === 'string'
+                    ? gatewayResponse['midId']
+                    : undefined;
+        }
+
+        // Fallback: Try NetValve API response if available
+        if (!netvalveMidId && paymentRequest.externalOrderId) {
+            try {
+                const netvalveOrderRes = await netvalveCtr.getOrder(context, { orderId: paymentRequest.externalOrderId });
+                if (netvalveOrderRes.success && netvalveOrderRes.result) {
+                    const netvalveOrder = netvalveOrderRes.result as Record<string, unknown>;
+                    netvalveMidId = typeof netvalveOrder['netvalveMidId'] === 'string'
+                        ? netvalveOrder['netvalveMidId']
+                        : typeof netvalveOrder['midId'] === 'string'
+                            ? netvalveOrder['midId']
+                            : undefined;
+                }
+            }
+            catch (error) {
+                log.warn('[Payment Handler] Failed to get netvalveMidId from NetValve API:', error);
+            }
+        }
+
+        // Update order status, paymentTransactionId, and netvalveMidId
+        log.info('[Payment Handler] Updating order status:', { orderId: order.id, orderStatus, paymentTransactionId, netvalveMidId });
         const updateOrderRes = await orderCtr.updateOrder(context, {
             filter: { id: order.id },
             update: {
                 $set: {
                     status: orderStatus,
                     ...(paymentTransactionId && { paymentTransactionId }),
+                    ...(netvalveMidId && { netvalveMidId }), // Save netvalveMidId to Order for rebill
                 },
             },
         });
@@ -543,6 +575,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 paymentMethod,
                                 transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
                                 membershipPeriod: membershipPeriod || 'N/A',
+                                isRebill: false, // This is a manual payment, not an automatic rebill
                             };
 
                             // Send email directly (no notification)

@@ -36,7 +36,7 @@ import {
     E_PaymentStatus,
 } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paymentRouter } from '#modules/payment/payment.handler.js';
-import { pricingCtr } from '#modules/pricing/pricing.controller.js';
+import { pricingCtr } from '#modules/pricing/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 const env = getEnv();
@@ -147,7 +147,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         const {
             amount,
             currency,
-            clientOrderId,
             successUrl,
             cancelUrl,
             failedUrl,
@@ -170,12 +169,18 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
         let resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
 
         // If amount not provided or invalid, derive price from pricing controller using user's persisted geo
+        // Calculate amount (price + tax) from pricing
         if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
             try {
                 const context: I_Context = { req };
+                // getSubscriptionPrice returns price and taxRate, calculate amount with tax
                 const priceRes = await pricingCtr.getSubscriptionPrice(context);
                 if (priceRes.success && priceRes.result) {
-                    resolvedAmount = priceRes.result.price ?? resolvedAmount;
+                    // Calculate amount from price and taxRate
+                    const basePrice = priceRes.result.price ?? 0;
+                    const taxRate = priceRes.result.taxRate ?? 0;
+                    const taxPortion = basePrice * (taxRate / 100);
+                    resolvedAmount = Number((basePrice + taxPortion).toFixed(2));
                     resolvedCurrency = priceRes.result.currency ?? resolvedCurrency;
                 }
             }
@@ -191,11 +196,6 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         if (!resolvedCurrency) {
             errors.push('currency is required');
-        }
-
-        const resolvedClientOrderId = typeof clientOrderId === 'string' ? clientOrderId.trim() : '';
-        if (!resolvedClientOrderId) {
-            errors.push('clientOrderId is required');
         }
 
         const resolvedSuccessUrl = typeof successUrl === 'string' ? successUrl.trim() : '';
@@ -253,11 +253,37 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
 
         const normalizedPayload: Record<string, unknown> = { ...restPayload };
 
+        const context: I_Context = { req };
+
+        const orderDoc: Record<string, unknown> = {
+            amount: resolvedAmount,
+            currency: resolvedCurrency,
+            successUrl: resolvedSuccessUrl,
+            cancelUrl: resolvedCancelUrl,
+            pendingUrl: resolvedPendingUrl,
+        };
+
+        if (normalizedCustomerDetails) {
+            (orderDoc as any)['customerDetails'] = normalizedCustomerDetails;
+        }
+
+        const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
+        if (!orderRes.success) {
+            res.status(typeof orderRes.code === 'number' ? orderRes.code : 500).json({ success: false, message: orderRes.message ?? 'Failed to create order' });
+            return;
+        }
+
+        const createdOrder = orderRes.result ?? null;
+        if (!createdOrder || !createdOrder.id) {
+            res.status(500).json({ success: false, message: 'Failed to create order: order ID missing' });
+            return;
+        }
+
         const payload: I_NetvalveHppOrderPayload = {
             ...normalizedPayload,
             amount: resolvedAmount,
             currency: resolvedCurrency,
-            clientOrderId: resolvedClientOrderId,
+            clientOrderId: createdOrder.id, // Always use order.id
             successUrl: resolvedSuccessUrl,
             cancelUrl: resolvedCancelUrl,
             failedUrl: resolvedFailedUrl,
@@ -279,40 +305,14 @@ mainRouter.post('/payment/netvalve/hpp/order', async (req, res, next) => {
             payload.customerDetails = normalizedCustomerDetails;
         }
 
-        const context: I_Context = { req };
-
-        // 1) persist an Order record for this request
-        const orderDoc: Record<string, unknown> = {
-            amount: resolvedAmount,
-            currency: resolvedCurrency,
-            successUrl: resolvedSuccessUrl,
-            cancelUrl: resolvedCancelUrl,
-            pendingUrl: resolvedPendingUrl,
-            clientOrderId: resolvedClientOrderId,
-        };
-
-        if (normalizedCustomerDetails) {
-            (orderDoc as any)['customerDetails'] = normalizedCustomerDetails;
-        }
-
-        const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
-        if (!orderRes.success) {
-            res.status(typeof orderRes.code === 'number' ? orderRes.code : 500).json({ success: false, message: orderRes.message ?? 'Failed to create order' });
-            return;
-        }
-
-        const createdOrder = orderRes.result ?? null;
-
-        // 2) idempotent PaymentRequest: try reuse WAITING by checking meta.clientOrderId
-        // Note: Since clientOrderId is now in meta, we need to query differently
+        // 2) idempotent PaymentRequest: try reuse WAITING by checking meta.orderId
         // For now, create new PaymentRequest each time (idempotency handled by Order)
         const prDoc: Record<string, unknown> = {
             gateway: 'NETVALVE',
             status: E_PaymentRequestStatus.WAITING,
             attempts: 0,
             meta: {
-                orderId: createdOrder?._id ?? createdOrder?.id,
-                clientOrderId: resolvedClientOrderId,
+                orderId: createdOrder.id,
                 amount: resolvedAmount,
                 currencyId: resolvedCurrency,
             },
@@ -666,7 +666,6 @@ mainRouter.post('/payment/netvalve/rebill', async (req, res, next) => {
             errors.push('amount must be a positive number');
         }
 
-        const resolvedClientOrderId = typeof clientOrderId === 'string' ? clientOrderId.trim() : '';
         const resolvedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : '';
 
         if (errors.length > 0) {
@@ -681,10 +680,6 @@ mainRouter.post('/payment/netvalve/rebill', async (req, res, next) => {
             transactionID: rawTransactionId,
             amount: resolvedAmount,
         };
-
-        if (resolvedClientOrderId) {
-            payload.clientOrderId = resolvedClientOrderId;
-        }
 
         if (resolvedCurrency) {
             payload.currency = resolvedCurrency;
@@ -1299,12 +1294,11 @@ mainRouter.post('/payment/netvalve/3ds/authentication', async (req, res, next) =
                 };
 
                 const id = normalizeString(query['id']);
-                const clientOrderId = normalizeString(query['clientOrderId']);
                 const netvalveMidId = normalizeString(query['netvalveMidId']);
                 const transactionId = normalizeString(query['transactionId']);
 
-                if (!id && !clientOrderId && !netvalveMidId && !transactionId) {
-                    errors.push('Provide at least one identifier: id, clientOrderId, netvalveMidId, or transactionId');
+                if (!id && !netvalveMidId && !transactionId) {
+                    errors.push('Provide at least one identifier: id, netvalveMidId, or transactionId');
                 }
 
                 const collectBillingInfo = normalizeBooleanQuery(query['collectBillingInfo'], 'collectBillingInfo', errors);
@@ -1319,9 +1313,6 @@ mainRouter.post('/payment/netvalve/3ds/authentication', async (req, res, next) =
 
                 if (id) {
                     payload.id = id;
-                }
-                if (clientOrderId) {
-                    payload.clientOrderId = clientOrderId;
                 }
                 if (netvalveMidId) {
                     payload.netvalveMidId = netvalveMidId;

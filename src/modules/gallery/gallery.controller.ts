@@ -21,6 +21,7 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
@@ -409,6 +410,14 @@ export const galleryCtr = {
                     populate: [
                         { path: 'ageVerify' },
                         { path: 'roles' },
+                        {
+                            path: 'partner1',
+                            populate: [{ path: 'gallery' }],
+                        },
+                        {
+                            path: 'partner2',
+                            populate: [{ path: 'gallery' }],
+                        },
                     ],
                 },
             ],
@@ -567,6 +576,22 @@ export const galleryCtr = {
             }
             if (galleryResult.thumbnailUrl) {
                 galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? undefined;
+            }
+
+            // Hydrate uploadedBy user media (sign/blur profile images)
+            if (galleryResult.uploadedBy) {
+                let viewer: any = null;
+                try {
+                    if (isLoggedIn) {
+                        viewer = await authnCtr.getUserFromSession(context);
+                    }
+                }
+                catch {
+                    viewer = null;
+                }
+
+                const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(viewer);
+                hydrateUserMedia(galleryResult.uploadedBy, viewerMediaOptions);
             }
 
             return galleryResult;

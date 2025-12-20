@@ -129,6 +129,7 @@ export interface I_User extends I_GenericDocument {
     hasUpcomingEvent?: boolean;
     membershipExpiresAt?: Date;
     membershipEndDate?: Date; // legacy field support
+    membershipCancelled?: boolean; // User has cancelled subscription - no more rebills
     freeEventCount?: number; // Số lần tạo event miễn phí còn lại (mỗi tháng membership = +1)
     inactivityDeletionWarning30SentAt?: Date | null;
     inactivityDeletionWarning10SentAt?: Date | null;

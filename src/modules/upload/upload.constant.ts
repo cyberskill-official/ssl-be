@@ -14,7 +14,7 @@ export const UPLOAD_CONFIG = createUploadConfig({
     },
     [E_UploadType.AUDIO]: {
         allowedExtensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac'],
-        sizeLimit: 60 * 1024 * 1024, // 60MB
+        sizeLimit: 100 * 1024 * 1024, // 100MB
     },
     [E_UploadType.DOCUMENT]: {
         allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'rtf'],

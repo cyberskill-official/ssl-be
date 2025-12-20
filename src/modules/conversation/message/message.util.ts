@@ -323,8 +323,23 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const plainSender = (sender as any).toObject ? (sender as any).toObject() : sender;
             let transformedSender = { ...plainSender };
 
-            // Ensure ageVerify and roles are populated for blur logic to work correctly
-            if ((!transformedSender.ageVerify || !transformedSender.roles || !transformedSender.rolesIds || transformedSender.membershipExpiresAt === undefined || (transformedSender as any).membershipEndDate === undefined) && transformedSender.id) {
+            // Ensure ageVerify, roles, and galleries are populated for blur logic to work correctly
+            // Always check if galleries are missing, even if other fields are present
+            // Check if gallery objects exist but are null (not populated) or if gallery.url is missing
+            const partner1GalleryMissing = !transformedSender.partner1?.gallery
+                || (transformedSender.partner1?.gallery && !transformedSender.partner1.gallery.url);
+            const partner2GalleryMissing = !transformedSender.partner2?.gallery
+                || (transformedSender.partner2?.gallery && !transformedSender.partner2.gallery.url);
+
+            const needsPopulate = !transformedSender.ageVerify
+                || !transformedSender.roles
+                || !transformedSender.rolesIds
+                || transformedSender.membershipExpiresAt === undefined
+                || (transformedSender as any).membershipEndDate === undefined
+                || partner1GalleryMissing
+                || partner2GalleryMissing;
+
+            if (needsPopulate && transformedSender.id) {
                 try {
                     const mongooseCtr = new MongooseController(UserModel);
                     const senderPopulated = await mongooseCtr.findOne(
@@ -355,13 +370,27 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                     );
                     if (senderPopulated.success && senderPopulated.result) {
                         // Merge ageVerify, roles, and galleries into sender
+                        // Always use populated galleries if available, otherwise keep existing
+                        // Prioritize populated data to ensure gallery.url is correctly populated
+                        const populatedPartner1 = senderPopulated.result.partner1;
+                        const populatedPartner2 = senderPopulated.result.partner2;
+
                         transformedSender = {
                             ...transformedSender,
-                            ageVerify: senderPopulated.result.ageVerify,
+                            ageVerify: senderPopulated.result.ageVerify || transformedSender.ageVerify,
                             roles: senderPopulated.result.roles || transformedSender.roles,
-                            membershipEndDate: (senderPopulated.result as any).membershipEndDate,
-                            partner1: senderPopulated.result.partner1 || transformedSender.partner1,
-                            partner2: senderPopulated.result.partner2 || transformedSender.partner2,
+                            membershipEndDate: (senderPopulated.result as any).membershipEndDate || (transformedSender as any).membershipEndDate,
+                            // Use populated partner if it has gallery with URL, otherwise keep existing
+                            partner1: (populatedPartner1?.gallery?.url)
+                                ? populatedPartner1
+                                : (transformedSender.partner1?.gallery?.url
+                                        ? transformedSender.partner1
+                                        : populatedPartner1 || transformedSender.partner1),
+                            partner2: (populatedPartner2?.gallery?.url)
+                                ? populatedPartner2
+                                : (transformedSender.partner2?.gallery?.url
+                                        ? transformedSender.partner2
+                                        : populatedPartner2 || transformedSender.partner2),
                         };
                     }
                 }
