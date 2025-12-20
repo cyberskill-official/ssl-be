@@ -1050,6 +1050,7 @@ export const cron = {
                                     paymentMethod: 'Card',
                                     transactionId: rebillTransactionIdString || 'N/A',
                                     membershipPeriod: membershipPeriod || 'N/A',
+                                    isRebill: true, // Indicate this is an automatic rebill
                                 };
 
                                 // Send receipt email

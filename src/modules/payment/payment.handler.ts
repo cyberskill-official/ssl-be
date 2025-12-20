@@ -575,6 +575,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 paymentMethod,
                                 transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
                                 membershipPeriod: membershipPeriod || 'N/A',
+                                isRebill: false, // This is a manual payment, not an automatic rebill
                             };
 
                             // Send email directly (no notification)

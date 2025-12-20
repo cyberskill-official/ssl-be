@@ -1,6 +1,7 @@
 import type { E_Environment } from '@cyberskill/shared/typescript';
 
 export interface I_Environment {
+    EMAIL_LOGO_URL?: string;
     AWS_BUCKET_NAME: string;
     NODE_ENV: E_Environment.DEVELOPMENT | E_Environment.PRODUCTION;
     NODE_ENV_MODE: E_Environment;

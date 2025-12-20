@@ -31,6 +31,9 @@ import {
     E_NotificationType,
     E_RedirectType,
 } from '#modules/notification/notification.type.js';
+import orderCtr from '#modules/order/order.controller.js';
+import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
+import { netvalveCtr, paymentCtr } from '#modules/payment/index.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
@@ -1277,10 +1280,6 @@ export const authnCtr = {
         let netvalveCancelSuccess = false;
         try {
             // Find the last paid subscription order to get transaction ID
-            const { orderCtr } = await import('#modules/order/order.controller.js');
-            const { paymentCtr } = await import('#modules/payment/payment-transaction/index.js');
-            const { netvalveCtr } = await import('#modules/payment/netvalve/netvalve.controller.js');
-            const { E_OrderStatus, E_OrderType } = await import('#modules/order/order.type.js');
 
             const ordersRes = await orderCtr.getOrders(context, {
                 filter: {

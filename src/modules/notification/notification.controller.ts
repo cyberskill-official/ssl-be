@@ -1083,19 +1083,19 @@ export const notificationCtr = {
                             case E_NotificationType.MEDIA_LIKED: {
                                 templateKey = '';
                                 const presentation = (result.result.presentation ?? doc.presentation) as I_NotificationPresentation | undefined;
-                                const actorDisplayName = presentation?.actor?.username || 'Someone';
+                                const actorDisplayName = 'Someone'; // Placeholder, not used in email
                                 const isVideo = Boolean((presentation?.context as any)?.isVideo);
                                 const mediaKindLabel = isVideo ? 'video' : 'picture';
                                 const ownerUsername = (presentation?.context as any)?.profileOwnerUsername;
                                 const mediaLink = buildMediaLikedLink(ownerUsername, result.result.entityId ?? doc.entityId);
-                                const thumbnailUrl = presentation?.thumbnailUrl;
+                                // Don't pass thumbnailUrl to omply with Postmark (no images)
                                 sendRes = await sendMediaLikedEmail({
                                     targetEmail,
                                     targetDisplayName,
                                     actorDisplayName,
                                     mediaKindLabel,
                                     mediaLink,
-                                    thumbnailUrl,
+                                    thumbnailUrl: undefined, // No images in emails
                                 });
                                 break;
                             }
