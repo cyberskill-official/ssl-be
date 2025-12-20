@@ -50,7 +50,7 @@ export async function up(db: C_Db) {
                     <tr>
                         <td style="padding:40px 30px;background-color:#ffffff;">
                             <h1 style="font-size:24px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Payment receipt</h1>
-                            <p style="margin:0 0 16px;font-size:14px;color:#000000;font-family:Myanmar Text;">Hi <%= userEmail %>,</p>
+                            <p style="margin:0 0 16px;font-size:14px;color:#000000;font-family:Myanmar Text;">Hi there,</p>
                             <% if (typeof isRebill !== 'undefined' && isRebill) { %>
                             <p style="margin:0 0 16px;font-size:14px;color:#000000;font-family:Myanmar Text;font-weight:bold;color:#631B1C;">Your membership has been automatically renewed for another month. Here are your receipt details:</p>
                             <% } else { %>
