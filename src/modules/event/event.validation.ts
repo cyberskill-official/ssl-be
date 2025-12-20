@@ -233,13 +233,6 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
 
     // Case 2: Viewer is FREE_MEMBER → always blur others' event images
     if (viewerIsFreeMember) {
-        log.info('[EVENT][signEventImage] blur because viewer is free', {
-            viewerId,
-            eventCreatedById,
-            viewerIsFreeMember,
-            isCreatorFreeMember,
-            isCreatorAgeVerified,
-        });
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
 

@@ -459,9 +459,8 @@ export const cron = {
         });
     },
     rebillExpiringMemberships: () => {
-        // TODO: Change back to EVERYDAY_MIDNIGHT after testing
-        // Currently set to EVERY_5_MINUTES for testing purposes
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_3_MINUTES, async () => {
+        // Run every night at midnight to rebill expiring memberships
+        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
             try {
                 log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS STARTED ==========');
                 const now = new Date();
