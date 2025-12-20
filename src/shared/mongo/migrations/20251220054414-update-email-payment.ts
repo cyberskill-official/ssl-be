@@ -1,11 +1,21 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
 
 fileURLToPath(import.meta.url); // keep for consistency with other migrations
+const USER_APP_BASE_URL = (() => {
+    const raw = process.env['USER_APP_URL']?.trim();
+    if (!raw) {
+        return 'https://secretswingerlust.com/home';
+    }
+    return raw.replace(/\/+$/, '');
+})();
+const EMAIL_LOGO_URL = process.env['EMAIL_LOGO_URL']?.trim();
+const LOGO_URL = EMAIL_LOGO_URL || `${USER_APP_BASE_URL}/images/Logo_secretswingerlust_white.png`;
 
 export async function up(db: C_Db) {
     const collection = db.collection('emailtemplates');
@@ -33,9 +43,7 @@ export async function up(db: C_Db) {
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <!-- Logo image not included to comply with Postmark (no images) - using text instead -->
-                            <!-- <img src="https://secretswingerlust.com/home/images/Logo_secretswingerlust_white.png" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" /> -->
-                            <h1 style="color:#ffffff;font-size:24px;font-weight:bold;margin:0;font-family:Myanmar Text;">Secret SwingerLust</h1>
+                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
