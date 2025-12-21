@@ -63,8 +63,11 @@ export const pushChatCtr = {
         // Get all users in the target group
         let recipientUserIds: string[] = [];
         try {
-            const freeMemberRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
-            const paidMemberRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
+            const [freeMemberRole, paidMemberRole, promoRole] = await Promise.all([
+                roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } }),
+                roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
+                roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+            ]);
 
             const matchFilter: Record<string, any> = {
                 isAdminBlocked: { $ne: true },
@@ -72,13 +75,13 @@ export const pushChatCtr = {
             };
 
             if (targetAudience === E_PushChatAudience.MEMBERS) {
-                if (!paidMemberRole.success) {
+                if (!paidMemberRole.success || !promoRole.success) {
                     throwError({
                         message: 'Paid member role not found',
                         status: RESPONSE_STATUS.NOT_FOUND,
                     });
                 }
-                matchFilter['rolesIds'] = { $in: [paidMemberRole.result.id] };
+                matchFilter['rolesIds'] = { $in: [paidMemberRole.result.id, promoRole.result.id] };
             }
             else if (targetAudience === E_PushChatAudience.NON_MEMBERS) {
                 if (!freeMemberRole.success) {

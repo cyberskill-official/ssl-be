@@ -786,7 +786,7 @@ export const userCtr = {
             },
         };
 
-        // Validate rolesIds: ensure FREE_MEMBER and PAID_MEMBER are mutually exclusive
+        // Validate rolesIds: enforce single membership role (PAID_MEMBER > PROMO_MEMBER > FREE_MEMBER)
         let sanitizedRolesIds = doc.rolesIds;
         if (Array.isArray(doc.rolesIds) && doc.rolesIds.length > 0) {
             sanitizedRolesIds = Array.from(new Set(
@@ -801,20 +801,45 @@ export const userCtr = {
                     .filter(roleId => roleId.length > 0),
             ));
 
-            // Get FREE_MEMBER and PAID_MEMBER role IDs for validation
+            // Get FREE_MEMBER, PAID_MEMBER, PROMO_MEMBER role IDs for validation
             const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
             const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+            const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
 
             const paidRoleId = paidRole.success ? paidRole.result.id : null;
             const freeRoleId = freeRole.success ? freeRole.result.id : null;
+            const promoRoleId = promoRole.success ? promoRole.result.id : null;
 
-            // Enforce mutual exclusivity: FREE_MEMBER and PAID_MEMBER cannot coexist
-            // If both are present, PAID_MEMBER takes priority (remove FREE_MEMBER)
-            if (paidRoleId && freeRoleId && sanitizedRolesIds.includes(paidRoleId) && sanitizedRolesIds.includes(freeRoleId)) {
-                log.warn(`[USER] createUser: User being created has both FREE_MEMBER and PAID_MEMBER roles. Removing FREE_MEMBER (PAID_MEMBER takes priority).`);
-                const index = sanitizedRolesIds.indexOf(freeRoleId);
-                if (index > -1) {
-                    sanitizedRolesIds.splice(index, 1);
+            const hasPromo = promoRoleId ? sanitizedRolesIds.includes(promoRoleId) : false;
+            const hasPaid = paidRoleId ? sanitizedRolesIds.includes(paidRoleId) : false;
+            const hasFree = freeRoleId ? sanitizedRolesIds.includes(freeRoleId) : false;
+
+            if (hasPaid) {
+                if (hasPromo || hasFree) {
+                    log.warn('[USER] createUser: PAID_MEMBER set; removing PROMO_MEMBER/FREE_MEMBER to enforce exclusivity.');
+                }
+                if (promoRoleId) {
+                    const index = sanitizedRolesIds.indexOf(promoRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
+                    }
+                }
+                if (freeRoleId) {
+                    const index = sanitizedRolesIds.indexOf(freeRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
+                    }
+                }
+            }
+            else if (hasPromo) {
+                if (hasFree) {
+                    log.warn('[USER] createUser: PROMO_MEMBER set; removing FREE_MEMBER to enforce exclusivity.');
+                }
+                if (freeRoleId) {
+                    const index = sanitizedRolesIds.indexOf(freeRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
+                    }
                 }
             }
         }
@@ -1012,16 +1037,29 @@ export const userCtr = {
 
         let paidRoleId: string | null = null;
         let freeRoleId: string | null = null;
-        let shouldSendMembershipDowngrade = false;
+        let promoRoleId: string | null = null;
+        let shouldSendPromoExpiryNotice = false;
+        const updateHasMembershipExpiresAt = hasAtomicOperators
+            ? Object.prototype.hasOwnProperty.call((update as any).$set ?? {}, 'membershipExpiresAt')
+            : Object.prototype.hasOwnProperty.call(update, 'membershipExpiresAt');
+        const updateHasMembershipEndDate = hasAtomicOperators
+            ? Object.prototype.hasOwnProperty.call((update as any).$set ?? {}, 'membershipEndDate')
+            : Object.prototype.hasOwnProperty.call(update, 'membershipEndDate');
+        const nextExpiry = updateHasMembershipExpiresAt
+            ? (hasAtomicOperators ? (update as any).$set?.membershipExpiresAt : (update as any).membershipExpiresAt)
+            : updateHasMembershipEndDate
+                ? (hasAtomicOperators ? (update as any).$set?.membershipEndDate : (update as any).membershipEndDate)
+                : undefined;
+        const previousExpiry = userFound.result.membershipExpiresAt !== undefined
+            ? userFound.result.membershipExpiresAt
+            : (userFound.result as any).membershipEndDate;
+        const now = new Date();
 
-        // Get FREE_MEMBER and PAID_MEMBER role IDs for validation
+        // Get FREE_MEMBER, PAID_MEMBER, PROMO_MEMBER role IDs for validation
         if (sanitizedRolesIds) {
             const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
             if (paidRole.success) {
                 paidRoleId = paidRole.result.id;
-                const previouslyPaid = existingRoles.includes(paidRoleId);
-                const willRemainPaid = sanitizedRolesIds.includes(paidRoleId);
-                shouldSendMembershipDowngrade = previouslyPaid && !willRemainPaid;
             }
 
             const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
@@ -1029,23 +1067,71 @@ export const userCtr = {
                 freeRoleId = freeRole.result.id;
             }
 
-            // Enforce mutual exclusivity: FREE_MEMBER and PAID_MEMBER cannot coexist
-            // If both are present, PAID_MEMBER takes priority (remove FREE_MEMBER)
-            if (paidRoleId && freeRoleId && sanitizedRolesIds.includes(paidRoleId) && sanitizedRolesIds.includes(freeRoleId)) {
-                log.warn(`[USER] User ${userFound.result.id} has both FREE_MEMBER and PAID_MEMBER roles. Removing FREE_MEMBER (PAID_MEMBER takes priority).`);
-                const index = sanitizedRolesIds.indexOf(freeRoleId);
-                if (index > -1) {
-                    sanitizedRolesIds.splice(index, 1);
+            const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
+            if (promoRole.success) {
+                promoRoleId = promoRole.result.id;
+            }
+
+            const hasPromo = promoRoleId ? sanitizedRolesIds.includes(promoRoleId) : false;
+            const hasPaid = paidRoleId ? sanitizedRolesIds.includes(paidRoleId) : false;
+            const hasFree = freeRoleId ? sanitizedRolesIds.includes(freeRoleId) : false;
+
+            if (hasPaid) {
+                if (hasPromo || hasFree) {
+                    log.warn(`[USER] User ${userFound.result.id} has PAID_MEMBER with other membership roles. Removing PROMO_MEMBER/FREE_MEMBER.`);
                 }
-                // Update the source (either direct or $set)
-                if (hasAtomicOperators) {
-                    if (!(update as any).$set) {
-                        (update as any).$set = {};
+                if (promoRoleId) {
+                    const index = sanitizedRolesIds.indexOf(promoRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
                     }
-                    (update as any).$set.rolesIds = sanitizedRolesIds;
                 }
-                else {
-                    update.rolesIds = sanitizedRolesIds;
+                if (freeRoleId) {
+                    const index = sanitizedRolesIds.indexOf(freeRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
+                    }
+                }
+            }
+            else if (hasPromo) {
+                if (hasFree) {
+                    log.warn(`[USER] User ${userFound.result.id} has PROMO_MEMBER with FREE_MEMBER. Removing FREE_MEMBER.`);
+                }
+                if (freeRoleId) {
+                    const index = sanitizedRolesIds.indexOf(freeRoleId);
+                    if (index > -1) {
+                        sanitizedRolesIds.splice(index, 1);
+                    }
+                }
+            }
+
+            // Update the source (either direct or $set) if we mutated roles
+            if (hasAtomicOperators) {
+                if (!(update as any).$set) {
+                    (update as any).$set = {};
+                }
+                (update as any).$set.rolesIds = sanitizedRolesIds;
+            }
+            else {
+                update.rolesIds = sanitizedRolesIds;
+            }
+        }
+
+        if (updateHasMembershipExpiresAt || updateHasMembershipEndDate) {
+            const hadPreviousExpiry = previousExpiry !== null && previousExpiry !== undefined;
+            const expiryIsNull = nextExpiry === null;
+            const expiryDate = nextExpiry ? new Date(nextExpiry) : null;
+            const nextExpired = expiryIsNull || (expiryDate ? expiryDate <= now : false);
+
+            if (hadPreviousExpiry && nextExpired) {
+                if (!promoRoleId) {
+                    const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
+                    if (promoRole.success) {
+                        promoRoleId = promoRole.result.id;
+                    }
+                }
+                if (promoRoleId && existingRoles.includes(promoRoleId)) {
+                    shouldSendPromoExpiryNotice = true;
                 }
             }
         }
@@ -1106,13 +1192,10 @@ export const userCtr = {
             }
         }
 
-        if (shouldSendMembershipDowngrade && paidRoleId && targetEmail) {
-            const stillHasPaidRole = Boolean(updatedUser?.rolesIds?.includes(paidRoleId));
-            if (!stillHasPaidRole) {
-                const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
-                if (!emailResponse.success) {
-                    console.error('[USER] Failed to queue membership downgrade email:', emailResponse.message);
-                }
+        if (shouldSendPromoExpiryNotice && promoRoleId && targetEmail) {
+            const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
+            if (!emailResponse.success) {
+                console.error('[USER] Failed to queue membership downgrade email:', emailResponse.message);
             }
         }
 
@@ -1402,11 +1485,14 @@ export const userCtr = {
             }
 
             case E_UserGroup.PAID_MEMBERS: {
-                const paidMember = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
-                if (!paidMember.success) {
+                const [paidMember, promoMember] = await Promise.all([
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+                ]);
+                if (!paidMember.success || !promoMember.success) {
                     throwError({ message: 'Paid member role not found.', status: RESPONSE_STATUS.NOT_FOUND });
                 }
-                matchStage = { ...matchStage, rolesIds: { $in: [paidMember.result.id] } };
+                matchStage = { ...matchStage, rolesIds: { $in: [paidMember.result.id, promoMember.result.id] } };
                 break;
             }
 

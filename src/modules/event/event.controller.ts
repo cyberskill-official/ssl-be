@@ -181,7 +181,9 @@ export const eventCtr = {
 
             // Check creator's membership status (not viewer's)
             const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const creatorHasPaidRole = creatorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+            const creatorHasPaidRole = creatorRoles.some((role: any) =>
+                role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
+            ) ?? false;
             let creatorMembershipActive = false;
             try {
                 creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
@@ -220,7 +222,7 @@ export const eventCtr = {
                         p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                     }
                 }
-                // Case 4: Creator is PAID_MEMBER verified or owner/admin → show normal
+                // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified or owner/admin → show normal
                 else {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -359,7 +361,9 @@ export const eventCtr = {
 
                 // Check creator's membership status (not viewer's)
                 const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                const creatorHasPaidRole = creatorRoles.some((role: any) => role.name === 'PAID_MEMBER') ?? false;
+                const creatorHasPaidRole = creatorRoles.some((role: any) =>
+                    role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
+                ) ?? false;
                 let creatorMembershipActive = false;
                 try {
                     creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
@@ -398,7 +402,7 @@ export const eventCtr = {
                             p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
                         }
                     }
-                    // Case 4: Creator is PAID_MEMBER verified or owner/admin → show normal
+                    // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified or owner/admin → show normal
                     else {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -452,7 +456,7 @@ export const eventCtr = {
 
         // Event creation rules:
         // 1. CLUB_VISIT events: always allowed (no restrictions)
-        // 2. PAID_MEMBER users (with active membership): can create events freely
+        // 2. PAID_MEMBER/PROMO_MEMBER users (with active membership): can create events freely
         // 3. FREE_MEMBER users: cannot create any events (except CLUB_VISIT)
         if (!isClubVisit && !isPaidMember) {
             throwError({
@@ -672,7 +676,9 @@ export const eventCtr = {
         // Only decrement for non-paid members (paid members have unlimited event creation)
         try {
             const isPaidMember = Array.isArray(currentUser.roles)
-                && currentUser.roles.some((r: any) => r?.name === E_Role_User.PAID_MEMBER);
+                && currentUser.roles.some((r: any) =>
+                    r?.name === E_Role_User.PAID_MEMBER || r?.name === E_Role_User.PROMO_MEMBER,
+                );
 
             if (!isPaidMember) {
                 await userCtr.updateUser(context, {
