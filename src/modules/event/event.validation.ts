@@ -212,7 +212,9 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
 
     // Check if creator is FREE_MEMBER (blur based on creator's status)
     const creatorHasFreeRole = creatorRoles.some((role: { name?: string }) => role.name === 'FREE_MEMBER') ?? false;
-    const creatorHasPaidRole = creatorRoles.some((role: { name?: string }) => role.name === 'PAID_MEMBER') ?? false;
+    const creatorHasPaidRole = creatorRoles.some((role: { name?: string }) =>
+        role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
+    ) ?? false;
     const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
 
     // Apply blur/sign logic
@@ -248,7 +250,7 @@ export async function signEventImage(fullUrl: string, context?: I_Context, event
         return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
     }
 
-    // Case 4: Creator is PAID_MEMBER verified → show normal
+    // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified → show normal
     return bunnyCtr.generateSignedUrl({
         fullUrl,
         extraQueryParams: { class: 'normal' },

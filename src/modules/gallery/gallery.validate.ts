@@ -39,7 +39,7 @@ export async function assertCanUploadVideo(context: I_Context, uploadedById?: st
         .filter((name): name is E_Role_User => Boolean(name));
 
     const hasFreeRole = roleNames.includes(E_Role_User.FREE_MEMBER);
-    const hasPaidRole = roleNames.includes(E_Role_User.PAID_MEMBER);
+    const hasPaidRole = roleNames.includes(E_Role_User.PAID_MEMBER) || roleNames.includes(E_Role_User.PROMO_MEMBER);
 
     if (hasFreeRole && !hasPaidRole) {
         throwError({

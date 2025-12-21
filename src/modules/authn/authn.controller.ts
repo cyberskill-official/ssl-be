@@ -620,9 +620,10 @@ export const authnCtr = {
     isPaidMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const paidMemberRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_User.PAID_MEMBER },
-        });
+        const [paidMemberRole, promoRole] = await Promise.all([
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        ]);
 
         if (!paidMemberRole.success) {
             throwError({
@@ -632,15 +633,22 @@ export const authnCtr = {
         }
 
         const paidMemberRoleId = paidMemberRole.result.id;
+        const promoRoleId = promoRole.success ? promoRole.result.id : null;
 
         const hasPaidRole = !!currentUser.roles?.some(role =>
             (role.id === paidMemberRoleId)
             || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
         );
+        const hasPromoRole = promoRoleId
+            ? !!currentUser.roles?.some(role =>
+                    (role.id === promoRoleId)
+                    || (role.ancestorsIds && role.ancestorsIds.includes(promoRoleId)),
+                )
+            : false;
 
         // Even if user has PAID_MEMBER role, check if membership has expired
         // If expired, treat as free member
-        if (hasPaidRole) {
+        if (hasPaidRole || hasPromoRole) {
             return authnCtr.isMembershipActive(currentUser);
         }
 
@@ -671,11 +679,13 @@ export const authnCtr = {
     isFreeMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const freeMemberRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_User.FREE_MEMBER },
-        });
+        const [freeMemberRole, paidMemberRole, promoRole] = await Promise.all([
+            roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } }),
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        ]);
 
-        if (!freeMemberRole.success) {
+        if (!freeMemberRole.success || !paidMemberRole.success) {
             throwError({
                 message: 'Free member role not found.',
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -683,33 +693,32 @@ export const authnCtr = {
         }
 
         const freeMemberRoleId = freeMemberRole.result.id;
+        const paidMemberRoleId = paidMemberRole.result.id;
+        const promoRoleId = promoRole.success ? promoRole.result.id : null;
 
         const hasFreeRole = !!currentUser.roles?.some(role =>
             (role.id === freeMemberRoleId)
             || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
         );
+        const hasPaidRole = !!currentUser.roles?.some(role =>
+            (role.id === paidMemberRoleId)
+            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
+        );
+        const hasPromoRole = promoRoleId
+            ? !!currentUser.roles?.some(role =>
+                    (role.id === promoRoleId)
+                    || (role.ancestorsIds && role.ancestorsIds.includes(promoRoleId)),
+                )
+            : false;
 
         // If user has FREE_MEMBER role, they are free
         if (hasFreeRole) {
             return true;
         }
 
-        // Check if user has PAID_MEMBER role
-        const paidMemberRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role_User.PAID_MEMBER },
-        });
-
-        if (paidMemberRole.success) {
-            const paidMemberRoleId = paidMemberRole.result.id;
-            const hasPaidRole = !!currentUser.roles?.some(role =>
-                (role.id === paidMemberRoleId)
-                || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
-            );
-
-            // If user has PAID_MEMBER role but membership expired, treat as free
-            if (hasPaidRole && !authnCtr.isMembershipActive(currentUser)) {
-                return true;
-            }
+        // If user has PAID_MEMBER or PROMO_MEMBER role but membership expired, treat as free
+        if ((hasPaidRole || hasPromoRole) && !authnCtr.isMembershipActive(currentUser)) {
+            return true;
         }
 
         // If no free role and no expired paid membership, user is not free
@@ -1149,7 +1158,7 @@ export const authnCtr = {
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {
-                        name: E_Role_User.PAID_MEMBER,
+                        name: E_Role_User.PROMO_MEMBER,
                     },
                 });
 
@@ -1188,21 +1197,36 @@ export const authnCtr = {
         const currentRoles = currentUser.rolesIds || [];
         const updatedRoles = [...currentRoles];
 
-        // If upgrading to PAID_MEMBER (PROMO or PAID), remove FREE_MEMBER role
-        // PAID_MEMBER replaces FREE_MEMBER - user should only have one membership role at a time
-        if (type === E_MembershipType.PROMO || type === E_MembershipType.PAID) {
-            // Get FREE_MEMBER role ID to remove it
-            const freeMemberRole = await roleCtr.getRole(context, {
-                filter: { name: E_Role_User.FREE_MEMBER },
-            });
-            if (freeMemberRole.success && freeMemberRole.result?.id) {
-                const freeMemberRoleId = freeMemberRole.result.id;
-                // Remove FREE_MEMBER role if exists
-                if (updatedRoles.includes(freeMemberRoleId)) {
-                    const index = updatedRoles.indexOf(freeMemberRoleId);
-                    updatedRoles.splice(index, 1);
-                }
+        const [freeMemberRole, paidMemberRole, promoRole] = await Promise.all([
+            roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } }),
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
+            roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        ]);
+
+        const freeMemberRoleId = freeMemberRole.success ? freeMemberRole.result.id : null;
+        const paidMemberRoleId = paidMemberRole.success ? paidMemberRole.result.id : null;
+        const promoRoleId = promoRole.success ? promoRole.result.id : null;
+
+        const removeRole = (roleId?: string | null) => {
+            if (!roleId)
+                return;
+            const index = updatedRoles.indexOf(roleId);
+            if (index > -1) {
+                updatedRoles.splice(index, 1);
             }
+        };
+
+        if (type === E_MembershipType.PROMO) {
+            removeRole(freeMemberRoleId);
+            removeRole(paidMemberRoleId);
+        }
+        else if (type === E_MembershipType.PAID) {
+            removeRole(freeMemberRoleId);
+            removeRole(promoRoleId);
+        }
+        else if (type === E_MembershipType.FREE) {
+            removeRole(paidMemberRoleId);
+            removeRole(promoRoleId);
         }
 
         // Add new role if not already present
@@ -2415,11 +2439,18 @@ export const authnCtr = {
     },
     isMembershipActive: (user: I_User): boolean => {
         // Support legacy field names (membershipEndDate) in addition to membershipExpiresAt
-        const expiresAt = user.membershipExpiresAt ?? (user as any).membershipEndDate;
+        const expiresAt = user.membershipExpiresAt !== undefined
+            ? user.membershipExpiresAt
+            : (user as any).membershipEndDate;
 
-        // If missing expiry, assume active to avoid misclassifying paid members with missing data
-        if (!expiresAt) {
+        // If missing expiry (undefined), assume active to avoid misclassifying paid members with missing data
+        if (expiresAt === undefined) {
             return true;
+        }
+
+        // If expiry is explicitly null, treat as inactive
+        if (expiresAt === null) {
+            return false;
         }
 
         // Check if membership has expired

@@ -382,7 +382,10 @@ export const cron = {
                 log.info('[CRON] Checking for expired memberships...');
 
                 const now = new Date();
-                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                const [paidRole, promoRole] = await Promise.all([
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+                ]);
 
                 if (!paidRole.success) {
                     log.warn('[CRON] Paid member role not found; skipping membership downgrade check.');
@@ -390,6 +393,7 @@ export const cron = {
                 }
 
                 const paidRoleId = paidRole.result.id;
+                const promoRoleId = promoRole.success ? promoRole.result.id : null;
                 const expirationFilter = {
                     $or: [
                         { membershipExpiresAt: { $exists: true, $ne: null, $lte: now } },
@@ -397,11 +401,12 @@ export const cron = {
                     ],
                 };
 
+                const paidRoleIds = promoRoleId ? [paidRoleId, promoRoleId] : [paidRoleId];
                 const candidatesRes = await userCtr.getUsers({}, {
                     filter: {
                         isDel: { $ne: true },
                         isAdminBlocked: { $ne: true },
-                        rolesIds: { $in: [paidRoleId] },
+                        rolesIds: { $in: paidRoleIds },
                         ...expirationFilter,
                     },
                     options: { pagination: false },
@@ -419,7 +424,9 @@ export const cron = {
 
                 for (const user of candidatesRes.result.docs) {
                     try {
-                        const nextRoles = (user.rolesIds ?? []).filter(roleId => roleId !== paidRoleId);
+                        const nextRoles = (user.rolesIds ?? []).filter(roleId =>
+                            roleId !== paidRoleId && (!promoRoleId || roleId !== promoRoleId),
+                        );
 
                         if (freeRoleId && !nextRoles.includes(freeRoleId)) {
                             nextRoles.push(freeRoleId);
@@ -1117,8 +1124,12 @@ export const cron = {
                 const warning10Cutoff = addDays(deletionCutoff, 10);
                 const tenDaysAgo = addDays(now, -10);
 
-                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                const [paidRole, promoRole] = await Promise.all([
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
+                    roleCtr.getRole({}, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+                ]);
                 const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+                const promoRoleId = promoRole.success ? promoRole.result.id : undefined;
 
                 const sharedConditions: Record<string, any>[] = [
                     {
@@ -1130,8 +1141,9 @@ export const cron = {
                     },
                 ];
 
-                if (paidRoleId) {
-                    sharedConditions.unshift({ rolesIds: { $nin: [paidRoleId] } });
+                const excludedPaidRoles = [paidRoleId, promoRoleId].filter(Boolean);
+                if (excludedPaidRoles.length > 0) {
+                    sharedConditions.unshift({ rolesIds: { $nin: excludedPaidRoles } });
                 }
 
                 const buildInactivityFilter = (threshold: Date) => ({

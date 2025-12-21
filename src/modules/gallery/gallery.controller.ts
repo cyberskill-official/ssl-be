@@ -99,9 +99,13 @@ export const galleryCtr = {
                     : context.req?.session?.user;
 
                 // Resolve paid/free role ids for robust detection (some sessions may lack populated roles)
-                const paidRole = await roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } });
-                const freeRole = await roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } });
+                const [paidRole, promoRole, freeRole] = await Promise.all([
+                    roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } }),
+                    roleCtr.getRole(context, { filter: { name: 'PROMO_MEMBER' } }),
+                    roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } }),
+                ]);
                 const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+                const promoRoleId = promoRole.success ? promoRole.result.id : undefined;
                 const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
 
                 const roles = Array.isArray(mergedViewer?.roles) ? mergedViewer.roles : [];
@@ -112,8 +116,9 @@ export const galleryCtr = {
 
                 const hasFreeRole = roleNames.some(n => n.includes('FREE_MEMBER'))
                     || (freeRoleId ? roleIds.includes(freeRoleId) : false);
-                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER'))
-                    || (paidRoleId ? roleIds.includes(paidRoleId) : false);
+                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER') || n.includes('PROMO_MEMBER'))
+                    || (paidRoleId ? roleIds.includes(paidRoleId) : false)
+                    || (promoRoleId ? roleIds.includes(promoRoleId) : false);
 
                 const membershipActive = mergedViewer ? authnCtr.isMembershipActive(mergedViewer) : false;
 
@@ -335,9 +340,13 @@ export const galleryCtr = {
                     : context.req?.session?.user;
 
                 // Resolve paid/free role ids for robust detection (some sessions may lack populated roles)
-                const paidRole = await roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } });
-                const freeRole = await roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } });
+                const [paidRole, promoRole, freeRole] = await Promise.all([
+                    roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } }),
+                    roleCtr.getRole(context, { filter: { name: 'PROMO_MEMBER' } }),
+                    roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } }),
+                ]);
                 const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
+                const promoRoleId = promoRole.success ? promoRole.result.id : undefined;
                 const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
 
                 const roles = Array.isArray(mergedViewer?.roles) ? mergedViewer.roles : [];
@@ -348,8 +357,9 @@ export const galleryCtr = {
 
                 const hasFreeRole = roleNames.some(n => n.includes('FREE_MEMBER'))
                     || (freeRoleId ? roleIds.includes(freeRoleId) : false);
-                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER'))
-                    || (paidRoleId ? roleIds.includes(paidRoleId) : false);
+                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER') || n.includes('PROMO_MEMBER'))
+                    || (paidRoleId ? roleIds.includes(paidRoleId) : false)
+                    || (promoRoleId ? roleIds.includes(promoRoleId) : false);
 
                 const membershipActive = mergedViewer ? authnCtr.isMembershipActive(mergedViewer) : false;
 

@@ -41,6 +41,14 @@ async function getFreeMemberRoleId(context: I_Context): Promise<string | null> {
     return freeRole.result.id;
 }
 
+async function getPromoRoleId(context: I_Context): Promise<string | null> {
+    const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
+    if (!promoRole.success) {
+        return null;
+    }
+    return promoRole.result.id;
+}
+
 async function extendMembershipByOneMonth(context: I_Context, order: I_Order): Promise<Date | null> {
     if (!order.userId) {
         throwError({ message: 'Missing userId on order when extending membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -81,7 +89,10 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const newExpiry = addMonths(baseDate, 1);
 
     const paidRoleId = await ensurePaidRole(context, user);
-    const freeMemberRoleId = await getFreeMemberRoleId(context);
+    const [freeMemberRoleId, promoRoleId] = await Promise.all([
+        getFreeMemberRoleId(context),
+        getPromoRoleId(context),
+    ]);
 
     if (!paidRoleId) {
         throwError({
@@ -94,9 +105,13 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const currentRoles = user.rolesIds ?? [];
     const updatedRoles = [...currentRoles];
 
-    // Remove FREE_MEMBER role if exists (PAID_MEMBER replaces FREE_MEMBER)
+    // Remove FREE_MEMBER and PROMO_MEMBER roles if exist (PAID_MEMBER replaces them)
     if (freeMemberRoleId && updatedRoles.includes(freeMemberRoleId)) {
         const index = updatedRoles.indexOf(freeMemberRoleId);
+        updatedRoles.splice(index, 1);
+    }
+    if (promoRoleId && updatedRoles.includes(promoRoleId)) {
+        const index = updatedRoles.indexOf(promoRoleId);
         updatedRoles.splice(index, 1);
     }
 

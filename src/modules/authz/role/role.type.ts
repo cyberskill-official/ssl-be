@@ -33,4 +33,5 @@ export enum E_Role_Staff {
 export enum E_Role_User {
     FREE_MEMBER = 'FREE_MEMBER',
     PAID_MEMBER = 'PAID_MEMBER',
+    PROMO_MEMBER = 'PROMO_MEMBER',
 }

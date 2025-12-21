@@ -26,6 +26,7 @@ const roles: I_RoleExtended[] = [
         children: [
             { name: 'FREE_MEMBER' },
             { name: 'PAID_MEMBER' },
+            { name: 'PROMO_MEMBER' },
         ],
     },
 ];

@@ -183,7 +183,9 @@ export function getViewerMediaContext(user?: I_User | null): {
     // Check if user has paid member role (supports legacy name PAID_MEM, case-insensitive)
     const hasPaidRole = roles.some((role) => {
         const name = typeof role?.name === 'string' ? role.name.toLowerCase() : '';
-        return name === E_Role_User.PAID_MEMBER.toLowerCase() || name === 'paid_mem';
+        return name === E_Role_User.PAID_MEMBER.toLowerCase()
+            || name === E_Role_User.PROMO_MEMBER.toLowerCase()
+            || name === 'paid_member';
     });
     // Check if user has free member role (supports legacy name FREE_MEM, case-insensitive)
     const hasFreeRole = roles.some((role) => {
@@ -192,11 +194,16 @@ export function getViewerMediaContext(user?: I_User | null): {
     });
 
     // Membership active detection (treat missing expiry as active for paid members)
-    const expiresAt = user?.membershipExpiresAt ?? (user as any)?.membershipEndDate ?? null;
+    const expiresAt = user?.membershipExpiresAt !== undefined
+        ? user?.membershipExpiresAt
+        : (user as any)?.membershipEndDate;
     let isMembershipActive = false;
     if (hasPaidRole) {
-        if (!expiresAt) {
+        if (expiresAt === undefined) {
             isMembershipActive = true;
+        }
+        else if (expiresAt === null) {
+            isMembershipActive = false;
         }
         else {
             try {
