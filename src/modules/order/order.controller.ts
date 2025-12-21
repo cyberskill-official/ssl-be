@@ -7,6 +7,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { authnCtr } from '#modules/authn/authn.controller.js';
 import { paymentCtr } from '#modules/payment/index.js';
 import { getNetvalveCredentials } from '#modules/payment/netvalve/index.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
@@ -27,6 +28,21 @@ export const orderCtr = {
     },
 
     async createOrder(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!doc.userId) {
+            doc.userId = currentUser.id;
+        }
+        else if (doc.userId !== currentUser.id) {
+            const isAdmin = await authnCtr.isAdmin(context);
+            if (!isAdmin) {
+                throwError({
+                    message: 'Unauthorized: You cannot create orders for other users',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
         // If paymentTransactionId is provided, validate that it exists and is NETVALVE
         if (doc.paymentTransactionId) {
             const paymentTransactionRes = await paymentCtr.getPaymentTransaction(context, {
