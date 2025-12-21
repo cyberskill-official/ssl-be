@@ -23,6 +23,7 @@ enum E_NotificationType {
     AGE_VERIFICATION_APPROVED
     AGE_VERIFICATION_SUBMITTED
     AGE_VERIFICATION_SKIPPED
+    MEMBERSHIP_EXPIRED
 }
 
 enum E_NotificationChannel {
