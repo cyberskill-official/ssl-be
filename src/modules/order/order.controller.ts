@@ -7,7 +7,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/authn.controller.js';
 import { paymentCtr } from '#modules/payment/index.js';
 import { getNetvalveCredentials } from '#modules/payment/netvalve/index.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
