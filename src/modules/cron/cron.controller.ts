@@ -455,8 +455,9 @@ export const cron = {
                                             targetId: user.id,
                                             type: [E_NotificationType.MEMBERSHIP_EXPIRED],
                                             channels: [E_NotificationChannel.IN_APP],
+                                            body: 'Renew now to keep full access to all features.',
                                             presentation: {
-                                                headline: 'Your promo membership has expired.',
+                                                headline: 'Your membership is about to expire.',
                                                 redirect: {
                                                     kind: E_RedirectType.PROFILE,
                                                     id: user.username || user.id,

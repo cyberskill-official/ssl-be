@@ -14,7 +14,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
+import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
@@ -412,11 +412,29 @@ export const galleryCtr = {
 
         // Debug log removed to reduce noise
 
+        const uploaderPopulateMatch = (isStaff || isAdmin)
+            ? undefined
+            : (sessionUserId
+                    ? {
+                            $or: [
+                                { registerStep: E_RegisterStep.COMPLETE },
+                                { registerStep: { $exists: false } }, // treat legacy users as completed
+                                { id: sessionUserId }, // owner can still see their own galleries
+                            ],
+                        }
+                    : {
+                            $or: [
+                                { registerStep: E_RegisterStep.COMPLETE },
+                                { registerStep: { $exists: false } }, // treat legacy users as completed
+                            ],
+                        });
+
         const galleries = await mongooseCtr.findPaging(mongoFilter, {
             ...options,
             populate: [
                 {
                     path: 'uploadedBy',
+                    match: uploaderPopulateMatch,
                     populate: [
                         { path: 'ageVerify' },
                         { path: 'roles' },
@@ -456,8 +474,21 @@ export const galleryCtr = {
                     return { gallery, shouldInclude: false };
                 }
 
-                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
+                // Only show galleries from users who completed registration (except owner/staff/admin)
                 const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
+                if (!isOwner) {
+                    const uploader = (gallery as any)?.uploadedBy as { registerStep?: E_RegisterStep } | null | undefined;
+                    // If populate match filtered out uploader, hide the gallery
+                    if (!uploader) {
+                        return { gallery, shouldInclude: false };
+                    }
+                    // Hide non-complete (legacy users may not have registerStep)
+                    if (uploader.registerStep && uploader.registerStep !== E_RegisterStep.COMPLETE) {
+                        return { gallery, shouldInclude: false };
+                    }
+                }
+
+                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
                 if (!isOwner) {
                     // Free members (membership expired) can see galleries but they will be blurred or show default image
                     // Don't filter out galleries - they will show default image (null URL) or be blurred in the transform step

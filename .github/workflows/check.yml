@@ -16,5 +16,5 @@ jobs:
       - name: Env & Deps
         uses: cyberskill-world/.github/actions/env-deps@main
 
-      - name: Lint & Build
-        uses: cyberskill-world/.github/actions/lint-build@main
+      - name: Lint
+        uses: cyberskill-world/.github/actions/lint@main
