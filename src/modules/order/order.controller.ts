@@ -23,7 +23,12 @@ export const orderCtr = {
     },
 
     async getOrders(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryOrder>): Promise<I_Return<T_PaginateResult<I_Order>>> {
-        return mongooseCtr.findPaging(filter, options);
+        // Ensure FE always gets user/pricing/paymentTransaction populated for reporting
+        const safeOptions = {
+            ...options,
+            populate: options?.populate ?? ['user', 'pricing', 'paymentTransaction'],
+        };
+        return mongooseCtr.findPaging(filter, safeOptions);
     },
 
     async createOrder(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
