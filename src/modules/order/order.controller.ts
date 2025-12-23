@@ -1,5 +1,6 @@
 import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_DeleteResult, T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
+import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -24,9 +25,82 @@ export const orderCtr = {
 
     async getOrders(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryOrder>): Promise<I_Return<T_PaginateResult<I_Order>>> {
         // Ensure FE always gets user/pricing/paymentTransaction populated for reporting
+        // Also ensure pricing.country and pricing.currency are populated
+        const pricingNestedPopulate: PopulateOptions[] = [
+            { path: 'currency' },
+            { path: 'country' },
+        ];
+
+        const defaultPopulate: PopulateOptions[] = [
+            { path: 'user' },
+            { path: 'pricing', populate: pricingNestedPopulate },
+            { path: 'paymentTransaction' },
+        ];
+
+        let finalPopulate: PopulateOptions[] = defaultPopulate;
+        if (options?.populate) {
+            // Normalize populate to array format
+            const incomingPopulate = Array.isArray(options.populate)
+                ? options.populate
+                : [options.populate];
+
+            const normalizedPopulate: PopulateOptions[] = incomingPopulate.map(
+                (it: unknown) => (typeof it === 'string' ? ({ path: it } as PopulateOptions) : (it as PopulateOptions)),
+            );
+
+            // Check if pricing is already in populate
+            const pricingIdx = normalizedPopulate.findIndex(
+                (p: PopulateOptions) => p.path === 'pricing',
+            );
+
+            if (pricingIdx === -1) {
+                // pricing not in populate, add it with nested fields
+                normalizedPopulate.push({ path: 'pricing', populate: pricingNestedPopulate });
+            }
+            else {
+                // pricing exists, ensure it has nested populate
+                const pricingPopulate = normalizedPopulate[pricingIdx]!;
+                if (!pricingPopulate.populate) {
+                    // Replace with nested version
+                    normalizedPopulate[pricingIdx] = { path: 'pricing', populate: pricingNestedPopulate };
+                }
+                else {
+                    // Already has populate, ensure currency and country are included
+                    const existingPopulate = Array.isArray(pricingPopulate.populate)
+                        ? pricingPopulate.populate.map(
+                                (n: unknown) => (typeof n === 'string' ? ({ path: n } as PopulateOptions) : (n as PopulateOptions)),
+                            )
+                        : [typeof pricingPopulate.populate === 'string'
+                                ? ({ path: pricingPopulate.populate } as PopulateOptions)
+                                : (pricingPopulate.populate as PopulateOptions)];
+
+                    const hasCurrency = existingPopulate.some((p: PopulateOptions) => p.path === 'currency');
+                    const hasCountry = existingPopulate.some((p: PopulateOptions) => p.path === 'country');
+
+                    const nestedPopulate = [...existingPopulate];
+                    if (!hasCurrency)
+                        nestedPopulate.push({ path: 'currency' });
+                    if (!hasCountry)
+                        nestedPopulate.push({ path: 'country' });
+                    normalizedPopulate[pricingIdx] = { path: 'pricing', populate: nestedPopulate };
+                }
+            }
+
+            // Ensure user and paymentTransaction are included
+            const hasUser = normalizedPopulate.some((p: PopulateOptions) => p.path === 'user');
+            const hasPaymentTransaction = normalizedPopulate.some((p: PopulateOptions) => p.path === 'paymentTransaction');
+
+            if (!hasUser)
+                normalizedPopulate.push({ path: 'user' });
+            if (!hasPaymentTransaction)
+                normalizedPopulate.push({ path: 'paymentTransaction' });
+
+            finalPopulate = normalizedPopulate;
+        }
+
         const safeOptions = {
             ...options,
-            populate: options?.populate ?? ['user', 'pricing', 'paymentTransaction'],
+            populate: finalPopulate,
         };
         return mongooseCtr.findPaging(filter, safeOptions);
     },
