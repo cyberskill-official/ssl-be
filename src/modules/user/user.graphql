@@ -234,6 +234,7 @@ input Input_QueryUser {
     username: String
     email: String
     rolesIds: [String]
+    rolesNames: [String]
     registerStep: E_RegisterStep
     isEmailVerified: Boolean
     ageVerify: Input_AgeVerify
