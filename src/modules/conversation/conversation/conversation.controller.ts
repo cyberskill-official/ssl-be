@@ -335,16 +335,23 @@ export const conversationCtr = {
             E_ConversationType.PRIVATE,
         );
 
+        const pushChatConversationIds = await participantCtr.getConversationIdsByUserId(
+            currentUser.id,
+            E_ConversationType.PUSH_CHAT,
+        );
+
         const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
             currentUser.id,
             E_ConversationType.ADMIN_BROADCAST,
         );
 
-        const supportConversationIds = Array.from(new Set([...(privateConversationIds || []), ...(adminBroadcastIds || [])]));
+        const supportConversationIds = Array.from(
+            new Set([...(privateConversationIds || []), ...(pushChatConversationIds || []), ...(adminBroadcastIds || [])]),
+        );
 
         const supportFilter: Record<string, any> = {
             ...(supportConversationIds.length ? { id: { $in: supportConversationIds } } : {}),
-            type: { $in: [E_ConversationType.PRIVATE, E_ConversationType.ADMIN_BROADCAST] },
+            type: { $in: [E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT, E_ConversationType.ADMIN_BROADCAST] },
         };
 
         const res = await mongooseCtr.findPaging(supportFilter, options);
@@ -393,11 +400,15 @@ export const conversationCtr = {
             E_ConversationType.PRIVATE,
 
         );
+        const pushChatConversationIds = await participantCtr.getConversationIdsByUserId(
+            currentUser.id,
+            E_ConversationType.PUSH_CHAT,
+        );
         const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
             currentUser.id,
             E_ConversationType.ADMIN_BROADCAST,
         );
-        const userConversationIds = Array.from(new Set([...privateConversationIds, ...adminBroadcastIds]));
+        const userConversationIds = Array.from(new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds]));
 
         const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
         if (!result.success || !result.result)
@@ -649,11 +660,25 @@ export const conversationCtr = {
         const isFreeMember = await authnCtr.isFreeMember(context);
 
         // FREE_MEMBER cannot create any new conversations (GROUP or PRIVATE)
-        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE].includes(type) && isFreeMember) {
+        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT].includes(type) && isFreeMember) {
             throwError({
                 message: 'Free users cannot initiate new chats. Please upgrade your membership.',
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
+        }
+
+        // Only staff/admin can create PUSH_CHAT conversations.
+        if (type === E_ConversationType.PUSH_CHAT) {
+            const [isAdmin, isStaff] = await Promise.all([
+                authnCtr.isAdmin(context),
+                authnCtr.isStaff(context),
+            ]);
+            if (!isAdmin && !isStaff) {
+                throwError({
+                    message: 'Only admins and staff can create push chat conversations',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
         }
 
         const conversationResult = await mongooseCtr.createOne(doc);
@@ -1910,6 +1935,7 @@ export const conversationCtr = {
 
             switch (conversation.type) {
                 case E_ConversationType.PRIVATE:
+                case E_ConversationType.PUSH_CHAT:
                     break;
                 case E_ConversationType.GROUP:
                     if (isOpenPublicThread(conversation)) {
@@ -2003,6 +2029,10 @@ export const conversationCtr = {
                         const participants = conversation.participants || [];
                         return isPrivateConversationParticipant(participants, userId);
                     }
+                    case E_ConversationType.PUSH_CHAT: {
+                        const participants = conversation.participants || [];
+                        return isPrivateConversationParticipant(participants, userId);
+                    }
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
                         if (conversation.lastMessage?.senderId === userId)
@@ -2069,6 +2099,10 @@ export const conversationCtr = {
                         const participants = conversation.participants || [];
                         return isPrivateConversationParticipant(participants, userId);
                     }
+                    case E_ConversationType.PUSH_CHAT: {
+                        const participants = conversation.participants || [];
+                        return isPrivateConversationParticipant(participants, userId);
+                    }
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
                         if (isOpen)
@@ -2096,6 +2130,7 @@ export const conversationCtr = {
         recipientId: string,
         content: I_MessageContent,
         statusMedia?: E_ModerationMediaStatus,
+        conversationType: E_ConversationType = E_ConversationType.PRIVATE,
     ): Promise<I_Return<I_Conversation>> => {
         let isFreeMember = false;
         let isAdminUser = false;
@@ -2109,7 +2144,7 @@ export const conversationCtr = {
         }
 
         try {
-            const directMessageResult = await participantCtr.directMessageBetween(context, recipientId);
+            const directMessageResult = await participantCtr.directMessageBetweenUsers(context, senderId, recipientId, [conversationType]);
 
             if (isFreeMember && !isAdminUser && !directMessageResult.exists && !directMessageResult.conversationId) {
                 throwError({
@@ -2120,7 +2155,7 @@ export const conversationCtr = {
 
             if (!directMessageResult.conversationId && !directMessageResult.exists) {
                 const newConversationResult = await conversationCtr.createConversationInternal(context, {
-                    doc: { type: E_ConversationType.PRIVATE, createdById: senderId },
+                    doc: { type: conversationType, createdById: senderId },
                 });
                 if (!newConversationResult.success) {
                     throwError({ message: 'Failed to create conversation', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -2209,7 +2244,7 @@ export const conversationCtr = {
                             avatarUrl: avatar,
                             gender: senderUser?.partner1?.gender ?? senderUser?.partner2?.gender,
                         },
-                        context: { conversationType: E_ConversationType.PRIVATE, isOpenComment: false, participantCount: 2 },
+                        context: { conversationType, isOpenComment: false, participantCount: 2 },
                     },
                 },
             });
@@ -2246,7 +2281,7 @@ export const conversationCtr = {
         }
         catch (error) {
             throwError({
-                message: `Failed to create private conversation: ${(error as Error).message}`,
+                message: `Failed to create conversation: ${(error as Error).message}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
@@ -2277,6 +2312,16 @@ export const conversationCtr = {
             let isParticipant = false;
             let isOwner = false;
             if (conversation.type === E_ConversationType.PRIVATE) {
+                const participants = conversation.participants || [];
+                isParticipant = isPrivateConversationParticipant(participants, senderId);
+                if (!isParticipant) {
+                    throwError({
+                        message: 'You are not a participant in this private conversation',
+                        status: RESPONSE_STATUS.FORBIDDEN,
+                    });
+                }
+            }
+            else if (conversation.type === E_ConversationType.PUSH_CHAT) {
                 const participants = conversation.participants || [];
                 isParticipant = isPrivateConversationParticipant(participants, senderId);
                 if (!isParticipant) {
@@ -2328,7 +2373,7 @@ export const conversationCtr = {
             const blockedUserIds = await getBlockedUserIds(context);
             if (blockedUserIds.size > 0) {
                 // For PRIVATE conversations, check if the other participant is blocked
-                if (conversation.type === E_ConversationType.PRIVATE) {
+                if (conversation.type && [E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT].includes(conversation.type)) {
                     const participants = conversation.participants || [];
                     const otherParticipantId = getOtherParticipantId(participants, senderId);
                     if (otherParticipantId && blockedUserIds.has(otherParticipantId)) {
@@ -2370,6 +2415,7 @@ export const conversationCtr = {
             const isParticipantInGroup = conversation.participants?.some(p => p.userId === senderId) ?? false;
             if (
                 conversation.type === E_ConversationType.PRIVATE
+                || conversation.type === E_ConversationType.PUSH_CHAT
                 || (conversation.type === E_ConversationType.GROUP && isParticipantInGroup)
             ) {
                 await participantCtr.updateLastReadMessage(conversationId, senderId, messageResult.result.id);
@@ -2660,7 +2706,8 @@ export const conversationCtr = {
             { populate: ['participants'] },
         );
 
-        if (!conversation.success || conversation.result.type !== E_ConversationType.PRIVATE) {
+        const conversationType = conversation.success ? conversation.result?.type : undefined;
+        if (!conversation.success || !conversationType || ![E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT].includes(conversationType)) {
             throwError({ message: 'Not a private conversation', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -2677,8 +2724,9 @@ export const conversationCtr = {
             await participantCtr.deleteParticipants(context, { filter: { conversationId } });
             await mongooseCtr.deleteOne({ id: conversationId });
 
+            const deletedType = conversationType as E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT;
             const payload: I_ConversationEventPayload = {
-                conversationEvent: { conversationId, type: E_ConversationType.PRIVATE, action: E_ConversationAction.DELETED },
+                conversationEvent: { conversationId, type: deletedType, action: E_ConversationAction.DELETED },
             };
             pubsub.publish(E_CONVERSATION_EVENTS.CONVERSATION_DELETED, payload);
 

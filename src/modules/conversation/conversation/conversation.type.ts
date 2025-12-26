@@ -73,6 +73,7 @@ export enum E_Device {
 
 export enum E_ConversationType {
     PRIVATE = 'PRIVATE',
+    PUSH_CHAT = 'PUSH_CHAT',
     GROUP = 'GROUP',
     PROFILE_COMMENT = 'PROFILE_COMMENT',
     BLOG_COMMENT = 'BLOG_COMMENT',
@@ -265,7 +266,7 @@ export interface I_MessageReadPayload {
 export interface I_ConversationEventPayload {
     conversationEvent: {
         conversationId: string;
-        type: E_ConversationType.PRIVATE | E_ConversationType.GROUP;
+        type: E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT | E_ConversationType.GROUP;
         action: E_ConversationAction;
         // Có thể mở rộng thêm các trường cho các action khác:
         // conversation?: I_Conversation;  // cho CREATED/UPDATED

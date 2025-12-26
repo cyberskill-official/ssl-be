@@ -36,6 +36,62 @@ const mongooseCtr = new MongooseController<I_Participant>(ParticipantModel);
 const userMongooseCtr = new MongooseController<I_User>(UserModel);
 
 export const participantCtr = {
+    /**
+     * Return the direct-message conversation ID between two users, or `null` if none exists.
+     * Pure lookup — does NOT create any documents.
+     */
+    async directMessageBetweenUsers(
+        _context: I_Context,
+        userAId: string,
+        userBId: string,
+        conversationTypes: E_ConversationType[] = [E_ConversationType.PRIVATE],
+    ): Promise<I_DirectMessageBetweenResult> {
+        if (!userAId || !userBId) {
+            throwError({
+                message: 'User IDs are required',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (userAId === userBId) {
+            throwError({
+                message: 'Cannot find a direct message conversation with yourself',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const pipeline: PipelineStage[] = [
+            { $match: { userId: { $in: [userAId, userBId] } } },
+            { $group: { _id: '$conversationId', members: { $addToSet: '$userId' } } },
+            { $match: { $expr: { $and: [
+                { $eq: [{ $size: '$members' }, 2] },
+                { $setEquals: ['$members', [userAId, userBId]] },
+            ] } } },
+            {
+                $lookup: {
+                    from: 'conversations',
+                    localField: '_id',
+                    foreignField: 'id',
+                    as: 'conversation',
+                    pipeline: [
+                        { $match: { type: { $in: conversationTypes }, isDel: { $ne: true } } },
+                    ],
+                },
+            },
+            { $unwind: '$conversation' },
+            { $limit: 1 },
+            { $project: { _id: 0, conversationId: '$_id' } },
+        ];
+
+        const agg = await mongooseCtr.aggregate(pipeline) as I_Return<{ conversationId: string }[]>;
+        if (!agg.success || !agg.result?.length) {
+            return { exists: false };
+        }
+        return {
+            exists: true,
+            conversationId: agg.result[0]?.conversationId,
+        };
+    },
     getParticipant: async (
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryParticipant>,
@@ -558,7 +614,7 @@ export const participantCtr = {
     },
     getConversationIdsByUserId: async (
         userId: string,
-        conversationType: E_ConversationType.PRIVATE | E_ConversationType.GROUP | E_ConversationType.ADMIN_BROADCAST,
+        conversationType: E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT | E_ConversationType.GROUP | E_ConversationType.ADMIN_BROADCAST,
         search?: string,
     ): Promise<string[]> => {
         const hasSearch = !!(search && search.trim());
@@ -578,7 +634,7 @@ export const participantCtr = {
             { $match: { 'conversation.type': conversationType } },
         ];
 
-        if (conversationType === E_ConversationType.PRIVATE) {
+        if ([E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT].includes(conversationType)) {
             // always resolve the "other" user to enforce deleted/isDel filter even when no search term
             pipeline.push(
                 {
@@ -670,45 +726,6 @@ export const participantCtr = {
         userId: string,
     ): Promise<I_DirectMessageBetweenResult> {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const userAId = currentUser.id;
-        const userBId = userId;
-
-        if (userAId === userBId) {
-            throwError({
-                message: 'Cannot find a direct message conversation with yourself',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const pipeline: PipelineStage[] = [
-            { $match: { userId: { $in: [userAId, userBId] } } },
-            { $group: { _id: '$conversationId', members: { $addToSet: '$userId' } } },
-            { $match: { $expr: { $and: [
-                { $eq: [{ $size: '$members' }, 2] },
-                { $setEquals: ['$members', [userAId, userBId]] },
-            ] } } },
-            {
-                $lookup: {
-                    from: 'conversations',
-                    localField: '_id',
-                    foreignField: 'id',
-                    as: 'conversation',
-                    pipeline: [
-                        { $match: { type: E_ConversationType.PRIVATE } },
-                    ],
-                },
-            },
-            { $unwind: '$conversation' },
-            { $limit: 1 },
-            { $project: { _id: 0, conversationId: '$_id' } },
-        ];
-        const agg = await mongooseCtr.aggregate(pipeline) as I_Return<{ conversationId: string }[]>;
-        if (!agg.success || !agg.result?.length) {
-            return { exists: false };
-        }
-        return {
-            exists: true,
-            conversationId: agg.result[0]?.conversationId,
-        };
+        return participantCtr.directMessageBetweenUsers(context, currentUser.id, userId);
     },
 };
