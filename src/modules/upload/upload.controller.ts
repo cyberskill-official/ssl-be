@@ -197,7 +197,7 @@ export const uploadCtr = {
                 };
             }
 
-            const directFileStream = await getFileWebStream(type, await file);
+            const directFileStream = await getFileWebStream(type, await file, UPLOAD_CONFIG);
 
             if (!directFileStream.success) {
                 return directFileStream;
@@ -344,14 +344,14 @@ export const uploadCtr = {
         }
 
         // Get file stream for upload
-        const fileWebStream = await getFileWebStream(type, await file);
+        const fileWebStream = await getFileWebStream(type, await file, UPLOAD_CONFIG);
 
         if (!fileWebStream.success) {
             return fileWebStream;
         }
 
         // Get file stream again for AI moderation (read file twice to avoid stream consumption issues)
-        const moderationFileStream = await getFileWebStream(type, await file);
+        const moderationFileStream = await getFileWebStream(type, await file, UPLOAD_CONFIG);
 
         if (!moderationFileStream.success) {
             return moderationFileStream;
