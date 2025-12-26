@@ -11,6 +11,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -804,9 +805,11 @@ export const galleryCtr = {
     ): Promise<I_Return<I_Gallery>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const galleryFound = await galleryCtr.getGallery(context, {
-            filter: { id },
-        });
+        // Fetch directly to allow deleting even hidden (PENDING/REJECTED) galleries.
+        let galleryFound = await mongooseCtr.findOne({ id, isDel: { $ne: true } });
+        if (!galleryFound.success && isValidObjectId(id)) {
+            galleryFound = await mongooseCtr.findOne({ _id: new Types.ObjectId(id), isDel: { $ne: true } } as any);
+        }
 
         if (!galleryFound.success) {
             throwError({
@@ -815,6 +818,10 @@ export const galleryCtr = {
             });
         }
 
+        const galleryId = typeof galleryFound.result.id === 'string' && galleryFound.result.id.trim()
+            ? galleryFound.result.id.trim()
+            : id.trim();
+
         if (galleryFound.result.uploadedById !== currentUser.id) {
             throwError({
                 status: RESPONSE_STATUS.FORBIDDEN,
@@ -822,20 +829,63 @@ export const galleryCtr = {
             });
         }
 
-        const userUsingGallery = await userCtr.getUser(context, {
+        const otherUserUsingGallery = await userCtr.getUser(context, {
             filter: {
+                id: { $ne: currentUser.id },
                 $or: [
-                    { 'partner1.galleryId': id },
-                    { 'partner2.galleryId': id },
+                    { 'partner1.galleryId': galleryId },
+                    { 'partner2.galleryId': galleryId },
                 ],
             },
         });
 
-        if (userUsingGallery.success) {
+        if (otherUserUsingGallery.success) {
             throwError({
                 status: RESPONSE_STATUS.BAD_REQUEST,
                 message: 'Cannot delete gallery: It is being used by a user partner.',
             });
+        }
+
+        // If the current user is using this gallery as their avatar, unlink it first.
+        let partner1GalleryId = currentUser.partner1?.galleryId;
+        let partner2GalleryId = currentUser.partner2?.galleryId;
+        try {
+            const currentUserFromDb = await userCtr.getUser(context, {
+                filter: { id: currentUser.id },
+                projection: { id: 1, partner1: 1, partner2: 1 } as any,
+            });
+            if (currentUserFromDb.success) {
+                partner1GalleryId = currentUserFromDb.result.partner1?.galleryId ?? partner1GalleryId;
+                partner2GalleryId = currentUserFromDb.result.partner2?.galleryId ?? partner2GalleryId;
+            }
+        }
+        catch {
+            // best-effort; fall back to session user fields
+        }
+
+        const setFields: Record<string, null> = {};
+        if (partner1GalleryId === galleryId) {
+            setFields['partner1.galleryId'] = null;
+        }
+        if (partner2GalleryId === galleryId) {
+            setFields['partner2.galleryId'] = null;
+        }
+        if (Object.keys(setFields).length > 0) {
+            await userCtr.updateUser(context, {
+                filter: { id: currentUser.id },
+                update: { $set: setFields } as any,
+            });
+
+            // Keep session in sync (best-effort).
+            if (context?.req?.session?.user?.id === currentUser.id) {
+                const sessionUser = context.req.session.user as any;
+                if (setFields['partner1.galleryId'] !== undefined) {
+                    sessionUser.partner1 = { ...(sessionUser.partner1 ?? {}), galleryId: null, gallery: null };
+                }
+                if (setFields['partner2.galleryId'] !== undefined) {
+                    sessionUser.partner2 = { ...(sessionUser.partner2 ?? {}), galleryId: null, gallery: null };
+                }
+            }
         }
 
         if (galleryFound.result.url) {
@@ -852,6 +902,9 @@ export const galleryCtr = {
             }
         }
 
-        return mongooseCtr.deleteOne({ id });
+        if (typeof galleryFound.result.id === 'string' && galleryFound.result.id.trim()) {
+            return mongooseCtr.deleteOne({ id: galleryFound.result.id.trim() });
+        }
+        return mongooseCtr.deleteOne({ _id: galleryFound.result._id } as any);
     },
 };

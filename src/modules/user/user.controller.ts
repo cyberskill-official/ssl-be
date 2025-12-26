@@ -531,7 +531,7 @@ export const userCtr = {
             const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
             const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
 
-            const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded);
+            const fileStream = await getFileWebStream(E_UploadType.IMAGE, uploaded, UPLOAD_CONFIG);
             if (!fileStream.success || !fileStream.result) {
                 return {
                     success: false,
