@@ -1,5 +1,6 @@
 enum E_ConversationType {
     PRIVATE
+    PUSH_CHAT
     GROUP
     PROFILE_COMMENT
     BLOG_COMMENT

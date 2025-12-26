@@ -10,7 +10,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr, E_RegisterStep } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
-import { conversationCtr, E_MessageType } from '#modules/conversation/index.js';
+import { conversationCtr, E_ConversationType, E_MessageType } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Input_CreatePushChatMessage, I_Input_QueryPushChatMessage, I_PushChatMessage, I_SendPushChatResult } from './push-chat.type.js';
@@ -150,6 +150,8 @@ export const pushChatCtr = {
                                     type: E_MessageType.TEXT,
                                     value: content,
                                 },
+                                undefined,
+                                E_ConversationType.PUSH_CHAT,
                             );
 
                             if (conversationResult.success && conversationResult.result) {
