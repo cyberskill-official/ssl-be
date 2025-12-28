@@ -31,8 +31,8 @@ function signProfileImage(
     const viewerIsAdmin = options?.viewerIsAdmin ?? false;
     const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
-    // FREE_MEMBER check
-    const viewerIsFreeMember = options?.viewerIsFreeMember ?? false;
+    // Membership checks
+    const viewerIsPaidMember = options?.viewerIsPaidMember ?? false;
 
     // Case 1: Owner chưa xác thực tuổi → owner thấy blur, người khác thấy null (default image)
     if (!ownerAgeVerified) {
@@ -46,15 +46,17 @@ function signProfileImage(
         }
     }
 
-    // Case 2: Viewer là FREE_MEMBER → luôn thấy ảnh người khác ở trạng thái blur
-    if (viewerIsFreeMember && !isOwner && !viewerExempt) {
-        return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
-    }
+    // Case 2: All logged-in users (free or paid) can see profile pictures clearly
+    // This allows free users to browse the platform and see who's available
+    // Gallery photos remain blurred for free members (handled in gallery.controller.ts)
+    // Business requirement: Free users must see profile pictures to encourage platform exploration
+    const membershipClass = isOwner
+        ? 'normal'
+        : (viewerIsPaidMember ? 'premium' : 'free');
 
-    // Case 3: Còn lại (MEMBERSHIP hoặc owner/staff/admin) → hiển thị ảnh rõ
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
-        extraQueryParams: { class: 'normal' },
+        extraQueryParams: { class: membershipClass },
     });
 }
 
@@ -81,11 +83,11 @@ export function hydrateUserMedia(
 
         // If there's a URL, sign/blur it based on age verification
         if (rawGalleryUrl) {
-            // Blur/unblur based on membership rules
-            // - Nếu owner chưa xác thực tuổi (PENDING hoặc không có): owner thấy ảnh của họ bị blur
-            // - Nếu owner chưa xác thực tuổi: người khác sẽ thấy null (default image)
-            // - FREE_MEMBER sẽ thấy ảnh người khác ở trạng thái blur
-            // - MEMBERSHIP sẽ thấy ảnh rõ
+            // Profile picture visibility rules:
+            // - Owner not age-verified: owner sees blurred, others see null (default image)
+            // - Owner age-verified: ALL logged-in users (free or paid) see profile pictures clearly
+            // - Gallery photos remain blurred for free members (handled in gallery.controller.ts)
+            // Business requirement: Free users must see profile pictures to explore the platform
             const signedGallery = signProfileImage(rawGalleryUrl, user, options);
 
             if (partner.gallery) {
