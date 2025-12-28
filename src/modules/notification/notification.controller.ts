@@ -1147,19 +1147,40 @@ export const notificationCtr = {
         return result;
     },
     deleteNotification: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryNotification>,
-    ): Promise<I_Return<I_Notification>> => {
-        const result = await mongooseCtr.deleteOne(filter, options);
+    ): Promise<I_Return<I_Notification | null>> => {
+        const notificationId = typeof filter?.id === 'string'
+            ? filter.id.trim()
+            : '';
+        if (!notificationId) {
+            throwError({ message: 'Filter.id is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
 
-        if (result.success && hasInApp(result.result)) {
+        const userId = context.req?.session?.user?.id;
+        if (!userId) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+
+        const result = await mongooseCtr.deleteOne({ id: notificationId, targetId: userId }, options);
+
+        // Idempotent delete: treat "not found" as success to avoid forcing users to click twice.
+        if (!result.success) {
+            const message = (result.message ?? '').toLowerCase();
+            if (message.includes('not found') || message.includes('no document')) {
+                return { success: true, message: 'Notification already deleted', result: null };
+            }
+            return result as unknown as I_Return<I_Notification | null>;
+        }
+
+        if (hasInApp(result.result)) {
             const payload: I_NotificationDeletedPayload = {
-                notificationId: filter.id!,
+                notificationId,
                 targetId: result.result.targetId!,
             };
             pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, payload);
         }
-        return result;
+        return result as unknown as I_Return<I_Notification | null>;
     },
     markNotificationRead: async (
         context: I_Context,

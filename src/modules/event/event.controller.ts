@@ -26,7 +26,6 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { E_Role_User } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
 import { destinationCtr } from '#modules/destination/index.js';
@@ -450,6 +449,10 @@ export const eventCtr = {
 
         // membership / paid logic
         const isClubVisit = type === E_EventType.CLUB_VISIT;
+        const freeEventCount = typeof currentUser.freeEventCount === 'number'
+            ? currentUser.freeEventCount
+            : 0;
+        const hasAnnouncementCredit = freeEventCount > 0;
         // Use authnCtr.isPaidMember to check if user has active paid membership
         // This ensures users with expired memberships are treated as free members
         const isPaidMember = await authnCtr.isPaidMember(context);
@@ -457,10 +460,10 @@ export const eventCtr = {
         // Event creation rules:
         // 1. CLUB_VISIT events: always allowed (no restrictions)
         // 2. PAID_MEMBER/PROMO_MEMBER users (with active membership): can create events freely
-        // 3. FREE_MEMBER users: cannot create any events (except CLUB_VISIT)
-        if (!isClubVisit && !isPaidMember) {
+        // 3. FREE_MEMBER users: can create events only if they have a paid announcement credit (freeEventCount > 0)
+        if (!isClubVisit && !isPaidMember && !hasAnnouncementCredit) {
             throwError({
-                message: 'Free users cannot create events. Please upgrade your membership.',
+                message: 'Only members can post announcements. Please subscribe or pay for a one-time announcement.',
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
         }
@@ -672,16 +675,12 @@ export const eventCtr = {
             });
         }
 
-        // Decrease freeEventCount by 1 after successful event creation and all related operations
-        // Only decrement for non-paid members (paid members have unlimited event creation)
+        // Consume one announcement credit after successful event creation and all related operations.
+        // Only decrement for non-paid members (paid members have unlimited event creation).
+        // CLUB_VISIT is intentionally excluded (always allowed).
         try {
-            const isPaidMember = Array.isArray(currentUser.roles)
-                && currentUser.roles.some((r: any) =>
-                    r?.name === E_Role_User.PAID_MEMBER || r?.name === E_Role_User.PROMO_MEMBER,
-                );
-
-            if (!isPaidMember) {
-                await userCtr.updateUser(context, {
+            if (!isClubVisit && !isPaidMember) {
+                const updated = await userCtr.updateUser(context, {
                     filter: { id: currentUser.id },
                     update: {
                         $inc: {
@@ -689,6 +688,14 @@ export const eventCtr = {
                         },
                     },
                 });
+
+                if (updated.success && context.req?.session?.user?.id === currentUser.id) {
+                    const nextCount = typeof context.req.session.user.freeEventCount === 'number'
+                        ? context.req.session.user.freeEventCount - 1
+                        : undefined;
+                    if (typeof nextCount === 'number')
+                        context.req.session.user.freeEventCount = nextCount;
+                }
             }
         }
         catch {
