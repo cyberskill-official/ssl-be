@@ -490,15 +490,19 @@ export const galleryCtr = {
                 }
 
                 // Hide galleries from non-age-verified uploaders (except owner viewing their own)
+                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
+                const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
+                if (!isOwner && !isUploaderVerified) {
+                    return { gallery, shouldInclude: false };
+                }
+
                 if (!isOwner) {
                     // Free members (membership expired) can see galleries but they will be blurred or show default image
-                    // Don't filter out galleries - they will show default image (null URL) or be blurred in the transform step
                     // Paid members (membership active) can see galleries even if not age-verified
                     // Non-verified viewers who are not paid members cannot see galleries of others
                     if (!viewerAgeVerified && !isPaidMember && !isFreeMember) {
                         return { gallery, shouldInclude: false }; // Hide all galleries from non-verified non-paid viewers (not free members)
                     }
-                    // Don't filter out galleries from non-age-verified uploaders - they will show default image (null URL) in transform step
                 }
 
                 // Hide videos completely for users who are not age-verified paid members (or owner)
