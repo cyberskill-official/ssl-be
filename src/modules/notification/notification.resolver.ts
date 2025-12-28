@@ -1,5 +1,6 @@
 import type {
     I_Input_CreateOne,
+    I_Input_DeleteOne,
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateOne,
@@ -48,7 +49,7 @@ const notificationResolver = {
         ) => notificationCtr.updateNotification(context, args),
         deleteNotification: (
             _parent: unknown,
-            args: I_Input_UpdateOne<I_Input_UpdateNotification>,
+            args: I_Input_DeleteOne<I_Input_QueryNotification>,
             context: I_Context,
         ) => notificationCtr.deleteNotification(context, args),
         markNotificationRead: (
