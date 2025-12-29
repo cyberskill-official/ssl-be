@@ -36,6 +36,8 @@ export interface I_Input_QueryGallery extends Omit<I_Gallery, T_Gallery_Populate
 export interface I_Input_QueryGalleryByUserId {
     userIds?: string[];
     type?: E_GalleryType;
+    status?: E_ModerationMediaStatus;
+    isDel?: boolean;
 }
 
 export interface I_Input_CreateGallery extends Omit<I_Gallery, T_Omit_Create | T_Gallery_Populate> {
