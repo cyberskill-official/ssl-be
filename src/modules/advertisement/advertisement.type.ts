@@ -8,6 +8,8 @@ export enum E_AdvertisementSlot {
     SLOT_2 = 'SLOT_2',
     SLOT_3 = 'SLOT_3',
     SLOT_4 = 'SLOT_4',
+    SLOT_5 = 'SLOT_5',
+    SLOT_6 = 'SLOT_6',
 }
 
 export interface I_Advertisement extends I_GenericDocument {
@@ -33,7 +35,7 @@ export interface I_Input_CreateAdvertisement extends Omit<I_Advertisement, T_Omi
     targetURL: string;
 }
 
-export interface I_Input_UpdateAdvertisement extends Omit<I_Advertisement, T_Omit_Update> {}
+export interface I_Input_UpdateAdvertisement extends Omit<I_Advertisement, T_Omit_Update> { }
 
 export interface I_Input_UpdateClickCount {
     id: string;

@@ -81,9 +81,8 @@ export const advertisementCtr = {
             if (!activeCount.success) {
                 throwError({ message: activeCount.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
-
-            if (activeCount.result.totalDocs >= 4) {
-                throwError({ message: 'Cannot have more than 4 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
+            if (activeCount.result.totalDocs >= 6) {
+                throwError({ message: 'Cannot have more than 6 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
@@ -131,9 +130,8 @@ export const advertisementCtr = {
             if (!activeCount.success) {
                 throwError({ message: activeCount.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
             }
-
-            if (activeCount.result.totalDocs >= 4) {
-                throwError({ message: 'Cannot have more than 4 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
+            if (activeCount.result.totalDocs >= 6) {
+                throwError({ message: 'Cannot have more than 6 active advertisements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
         }
 
