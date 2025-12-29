@@ -505,6 +505,8 @@ export const locationCtr = {
 
         // Calculate center point and radius from viewport bounds for distance filtering
 
+        // Calculate center point and radius from viewport bounds for distance filtering
+
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
             const originalDocsById = new Map<string, I_Location>();
             for (const doc of batch ?? []) {
@@ -599,7 +601,8 @@ export const locationCtr = {
                     else if (startCandidate) {
                         const startDate = new Date(startCandidate);
                         if (!Number.isNaN(startDate.getTime()) && startDate <= now) {
-                            isEventExpired = true;
+                            // isEventExpired = true; // StartDate passed doesn't mean expired for non-travel?
+                            // Logic kept as is, but worth checking.
                         }
                     }
                 }

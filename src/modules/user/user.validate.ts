@@ -35,15 +35,19 @@ function signProfileImage(
     const viewerIsPaidMember = options?.viewerIsPaidMember ?? false;
 
     // Case 1: Owner chưa xác thực tuổi → owner thấy blur, người khác thấy null (default image)
+    // Case 1: Owner not age-verified -> EVERYONE sees blurred image (not default)
     if (!ownerAgeVerified) {
-        if (isOwner) {
-            // Owner sees their own image blurred when not verified
-            return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
+        // Staff/admin can see clear images even if owner is not verified
+        if (viewerExempt) {
+            return bunnyCtr.generateSignedUrl({
+                fullUrl: url,
+                extraQueryParams: { class: 'normal' },
+            });
         }
-        if (!viewerExempt) {
-            // Others see default image (null)
-            return null;
-        }
+
+        // Everyone else (including owner) sees blurred image
+        // UX improvement: Show blurred image instead of default to encourage age verification
+        return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
 
     // Case 2: All logged-in users (free or paid) can see profile pictures clearly
@@ -74,20 +78,15 @@ export function hydrateUserMedia(
         }
 
         const rawGalleryUrl = partner.gallery?.url;
-        const ownerAgeVerified = user?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-        const viewerId = options?.viewerId;
-        const isOwner = viewerId && user?.id && viewerId === user.id;
-        const viewerIsStaff = options?.viewerIsStaff ?? false;
-        const viewerIsAdmin = options?.viewerIsAdmin ?? false;
-        const viewerExempt = viewerIsStaff || viewerIsAdmin;
 
         // If there's a URL, sign/blur it based on age verification
         if (rawGalleryUrl) {
             // Profile picture visibility rules:
-            // - Owner not age-verified: owner sees blurred, others see null (default image)
+            // - Owner not age-verified: EVERYONE (including owner) sees blurred image
             // - Owner age-verified: ALL logged-in users (free or paid) see profile pictures clearly
             // - Gallery photos remain blurred for free members (handled in gallery.controller.ts)
-            // Business requirement: Free users must see profile pictures to explore the platform
+            // - Staff/admin always see clear images
+            // Business requirement: Show blurred images instead of default to encourage age verification
             const signedGallery = signProfileImage(rawGalleryUrl, user, options);
 
             if (partner.gallery) {
@@ -99,20 +98,8 @@ export function hydrateUserMedia(
             }
         }
         else {
-            // Even if there's no URL, we need to ensure gallery object exists
-            // and URL is explicitly set to undefined for non-age-verified users
-            // Check if owner is not age-verified and viewer is not owner/staff/admin
-            // If owner is age-verified but no URL exists, keep it as undefined (user hasn't uploaded image yet)
-            // This is correct behavior - default image will be shown on frontend
-
-            // If owner is not age-verified and viewer is not owner/staff/admin, ensure URL is undefined
-            if (!ownerAgeVerified && !isOwner && !viewerExempt) {
-                if (partner.gallery) {
-                    partner.gallery.url = undefined;
-                }
-            }
-            // If owner is age-verified but no URL, keep it undefined (frontend will show default image)
-            // This is correct - user simply hasn't uploaded a profile picture yet
+            // No URL exists - user hasn't uploaded a profile picture yet
+            // Frontend will show default image
         }
     };
 

@@ -82,6 +82,23 @@ export const messageCtr = {
             });
         }
 
+        // CRITICAL: Check age verification for sending media (images/videos)
+        // Non-age-verified members can only send text messages, not media
+        if (content?.type === E_MessageType.IMAGE || content?.type === E_MessageType.VIDEO) {
+            const isAgeVerified = currentUser?.ageVerify?.status === 'APPROVED';
+
+            // Check if user is staff/admin (they are exempt)
+            const isStaff = await authnCtr.isStaff(context);
+            const isAdmin = await authnCtr.isAdmin(context);
+
+            if (!isAgeVerified && !isStaff && !isAdmin) {
+                throwError({
+                    message: 'You must be age-verified to send photos or videos. Please complete age verification in your profile settings.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
         // Keyword check - flag for moderation instead of blocking
         // This allows admins to review full context before taking action
         let matchedKeyword: { word?: string; category?: string } | null = null;
