@@ -54,11 +54,13 @@ export interface I_Input_Register {
 // Step 2
 export interface I_Input_Register_SendVerifyEmail {
     email: string;
+    ip?: string;
 }
 
 export interface I_Input_Register_VerifyEmail {
     email: string;
     otp: string;
+    ip?: string;
 }
 
 // Step 3
@@ -73,6 +75,7 @@ export interface I_Input_Register_PersonalInfo {
     nativeLanguageId: string;
     otherLanguagesIds?: string[];
     settings: I_Input_Register_Settings;
+    ip?: string;
 }
 
 // Step 4
@@ -98,6 +101,7 @@ export interface I_Input_Register_Preferences {
     rulesOfEngagementIds: string[];
     partner1: I_Input_Register_Preferences_Partner;
     partner2?: I_Input_Register_Preferences_Partner;
+    ip?: string;
 }
 
 // Step 5
@@ -110,6 +114,7 @@ export enum E_MembershipType {
 export interface I_Input_Register_Membership {
     type: E_MembershipType;
     promoCode?: string;
+    ip?: string;
 }
 
 // Verify Age

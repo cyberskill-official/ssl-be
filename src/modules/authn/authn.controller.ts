@@ -176,7 +176,17 @@ async function updateUserIpFromRequest(
     context: I_Context,
     userId: string,
     ipFromArgs?: string,
+    existingIp?: string,
 ): Promise<void> {
+    const clean = (ip: string | undefined): string => {
+        if (!ip || typeof ip !== 'string')
+            return '';
+        const trimmed = ip.trim();
+        if (trimmed === '::1')
+            return '127.0.0.1';
+        return trimmed.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim() || '';
+    };
+
     let clientIp: string | undefined;
 
     // Try to get IP from args first
@@ -197,28 +207,39 @@ async function updateUserIpFromRequest(
         if (!clientIp) {
             clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
         }
-        // Clean up IP (remove IPv6 prefix, port, etc.)
-        if (clientIp) {
-            clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
-        }
     }
 
-    // Update lastLoginIp if IP is found
-    if (clientIp) {
+    const newIpCleaned = clean(clientIp);
+    if (newIpCleaned) {
+        const oldIpCleaned = clean(existingIp);
+
+        // Smarter update: don't overwrite a "real" (public) IP with a "local" IP (127.0.0.1, 192.168.x.x, etc.)
+        const isNewLocal = newIpCleaned === '127.0.0.1' || newIpCleaned.startsWith('192.168.') || newIpCleaned.startsWith('10.') || newIpCleaned.startsWith('172.');
+        const isOldReal = oldIpCleaned && oldIpCleaned !== '127.0.0.1' && !oldIpCleaned.startsWith('192.168.') && !oldIpCleaned.startsWith('10.');
+
+        if (isNewLocal && isOldReal) {
+            log.info(`[Register] Preservation: Keeping real IP ${oldIpCleaned} instead of local IP ${newIpCleaned} for user: ${userId}`);
+            return;
+        }
+
         try {
+            // Use atomic operator for reliability
             await userCtr.updateUser(context, {
                 filter: { id: userId },
-                update: { lastLoginIp: clientIp },
+                update: { $set: { lastLoginIp: newIpCleaned } },
             });
-            log.info(`[Register] Updated lastLoginIp to: ${clientIp} for user: ${userId}`);
+
+            // Update session if it's the current user
+            if (context.req?.session?.user?.id === userId) {
+                context.req.session.user.lastLoginIp = newIpCleaned;
+            }
+
+            log.info(`[Register] Updated lastLoginIp to: ${newIpCleaned} for user: ${userId}`);
         }
         catch (error) {
             // Don't block registration if IP update fails
             log.warn(`[Register] Failed to update user IP: ${(error as Error).message}`);
         }
-    }
-    else {
-        log.warn(`[Register] No IP found to update for user: ${userId}`);
     }
 }
 
@@ -817,50 +838,24 @@ export const authnCtr = {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        log.info(`[Register] User created with ID: ${userCreated.result.id}, current lastLoginIp: ${userCreated.result.lastLoginIp || 'NOT SET'}`);
+        log.info(`[Register] User created with ID: ${userCreated.result.id}`);
 
-        // Update lastLoginIp if IP is provided from FE
-        if (clientIp) {
-            try {
-                log.info(`[Register] Updating lastLoginIp to: ${clientIp} for user: ${userCreated.result.id}`);
-                const updateResult = await userCtr.updateUser(context, {
-                    filter: { id: userCreated.result.id },
-                    update: { lastLoginIp: clientIp },
-                });
-                log.info(`[Register] Update result: success=${updateResult.success}, message=${updateResult.message || 'N/A'}`);
+        // Update lastLoginIp using robust helper (Step 1)
+        await updateUserIpFromRequest(context, userCreated.result.id, doc.ip);
 
-                // Refresh user to get updated lastLoginIp
-                const userUpdated = await userCtr.getUser(context, {
-                    filter: { id: userCreated.result.id },
-                });
-                if (userUpdated.success && userUpdated.result) {
-                    log.info(`[Register] User refreshed, new lastLoginIp: ${userUpdated.result.lastLoginIp || 'NOT SET'}`);
-                    userCreated.result = userUpdated.result;
-                }
-                else {
-                    log.warn(`[Register] Failed to refresh user after IP update: ${userUpdated.message || 'Unknown error'}`);
-                }
-            }
-            catch (error) {
-                // Don't block registration if IP update fails
-                log.warn(`[Register] Failed to update user IP during registration: ${(error as Error).message}`, error);
-            }
-        }
-        else {
-            log.warn(`[Register] No IP provided from FE, lastLoginIp will not be set`);
-        }
+        // Fetch updated user to ensure we have the correct lastLoginIp for the session
+        const updatedUser = await userCtr.getUser(context, { filter: { id: userCreated.result.id } });
+        const finalUser = updatedUser.success ? updatedUser.result : userCreated.result;
 
-        const sanitizedNewUser = omit(userCreated.result, 'password') as I_User;
+        const sanitizedNewUser = omit(finalUser, 'password') as I_User;
         await assignSessionUser(context.req.session, sanitizedNewUser);
-
-        // NOTE: removed server-side IP extraction; rely on FE-provided data if needed
 
         return { success: true, result: { user: sanitizedNewUser } };
     },
 
     registerSendVerifyEmail: async (
         context: I_Context,
-        { email }: I_Input_Register_SendVerifyEmail,
+        { email, ip }: I_Input_Register_SendVerifyEmail,
     ) => {
         const emailLowerCase = email.toLowerCase();
 
@@ -925,6 +920,9 @@ export const authnCtr = {
             });
         }
 
+        // Update IP when user visits/resends verify email
+        await updateUserIpFromRequest(context, userFound.result.id, ip, userFound.result.lastLoginIp);
+
         return {
             success: true,
             result: {
@@ -934,7 +932,7 @@ export const authnCtr = {
     },
     registerVerifyEmail: async (
         context: I_Context,
-        { email, otp }: I_Input_Register_VerifyEmail,
+        { email, otp, ip }: I_Input_Register_VerifyEmail,
     ): Promise<I_Return<I_Response_Auth>> => {
         const emailLowerCase = email.toLowerCase();
 
@@ -993,8 +991,7 @@ export const authnCtr = {
         }
 
         // Update IP when user continues registration
-        await updateUserIpFromRequest(context, userFound.result.id);
-
+        await updateUserIpFromRequest(context, userFound.result.id, ip, userFound.result.lastLoginIp);
         return {
             success: true,
             result: {
@@ -1004,7 +1001,7 @@ export const authnCtr = {
     },
     registerPersonalInfo: async (
         context: I_Context,
-        { update }: I_Input_UpdateOne<I_Input_Register_PersonalInfo>,
+        { update, ip }: I_Input_UpdateOne<I_Input_Register_PersonalInfo> & { ip?: string },
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
@@ -1057,8 +1054,7 @@ export const authnCtr = {
         }
 
         // Update IP when user continues registration
-        await updateUserIpFromRequest(context, currentUser.id);
-
+        await updateUserIpFromRequest(context, currentUser.id, ip, currentUser.lastLoginIp);
         return {
             success: true,
             result: {
@@ -1068,7 +1064,7 @@ export const authnCtr = {
     },
     registerPreferences: async (
         context: I_Context,
-        { update }: I_Input_UpdateOne<I_Input_Register_Preferences>,
+        { update, ip }: I_Input_UpdateOne<I_Input_Register_Preferences> & { ip?: string },
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
@@ -1097,7 +1093,7 @@ export const authnCtr = {
         }
 
         // Update IP when user continues registration
-        await updateUserIpFromRequest(context, currentUser.id);
+        await updateUserIpFromRequest(context, currentUser.id, ip, currentUser.lastLoginIp);
 
         return {
             success: true,
@@ -1108,7 +1104,7 @@ export const authnCtr = {
     },
     registerMembership: async (
         context: I_Context,
-        { type, promoCode }: I_Input_Register_Membership,
+        { type, promoCode, ip }: I_Input_Register_Membership,
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
@@ -1276,7 +1272,7 @@ export const authnCtr = {
         }
 
         // Update IP when user continues registration
-        await updateUserIpFromRequest(context, currentUser.id);
+        await updateUserIpFromRequest(context, currentUser.id, ip, currentUser.lastLoginIp);
 
         return {
             success: true,
@@ -1653,51 +1649,9 @@ export const authnCtr = {
             });
         }
 
-        // Get IP address: prefer FE-provided ip, fallback to request headers if invalid/localhost
+        // IP capture disabled as per requirements
         try {
-            let clientIp: string | undefined;
-
-            // Try to get IP from frontend first
-            if (args.ip && typeof args.ip === 'string') {
-                const feIp = args.ip.trim();
-                // Only use FE IP if it's not localhost
-                if (feIp && feIp !== '127.0.0.1' && feIp !== '::1' && feIp !== 'localhost') {
-                    clientIp = feIp;
-                }
-            }
-
-            // Fallback: Try to get IP from request headers if FE IP is invalid/localhost
-            if (!clientIp && context.req) {
-                const headers = context.req.headers || {};
-                const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
-                if (forwardedFor && typeof forwardedFor === 'string') {
-                    // x-forwarded-for can contain multiple IPs, take the first one
-                    clientIp = forwardedFor.split(',')[0]?.trim();
-                }
-                if (!clientIp) {
-                    clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
-                }
-                if (!clientIp) {
-                    clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
-                }
-                // Clean up IP (remove IPv6 prefix, port, etc.)
-                if (clientIp) {
-                    clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
-                }
-                // Don't use localhost IPs from headers either
-                if (clientIp && (clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === 'localhost')) {
-                    clientIp = undefined;
-                }
-            }
-
             const updatePayload: Partial<I_Input_UpdateUser> = {};
-            if (clientIp) {
-                updatePayload.lastLoginIp = clientIp;
-                log.info(`[Login] Updating lastLoginIp to: ${clientIp} for user: ${userFound.result.id}`);
-            }
-            else {
-                log.warn(`[Login] No valid IP found (FE IP: ${args.ip || 'NOT PROVIDED'}), lastLoginIp will not be updated`);
-            }
 
             if (userFound.result.inactivityDeletionWarning30SentAt || userFound.result.inactivityDeletionWarning10SentAt) {
                 updatePayload.inactivityDeletionWarning30SentAt = null;
@@ -1712,8 +1666,7 @@ export const authnCtr = {
             }
         }
         catch (error) {
-            // Don't block login if IP update fails
-            log.warn('Failed to update user IP:', error);
+            log.warn('Failed to update user inactivity warnings:', error);
         }
 
         const token = rememberMe

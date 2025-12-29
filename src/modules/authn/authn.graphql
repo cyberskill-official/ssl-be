@@ -96,11 +96,11 @@ type Query {
 type Mutation {
     sendOTPEmailForAdmin(email: String!): T_Response_Auth!
     register(doc: Input_Register!): T_Response_Auth!
-    registerSendVerifyEmail(email: String!): T_Response_Auth!
-    registerVerifyEmail(email: String!, otp: String!): T_Response_Auth!
-    registerPersonalInfo(update: Input_Register_PersonalInfo!): T_Response_Auth!
-    registerPreferences(update: Input_Register_Preferences!): T_Response_Auth!
-    registerMembership(type: E_MembershipType!, promoCode: String): T_Response_Auth!
+    registerSendVerifyEmail(email: String!, ip: String): T_Response_Auth!
+    registerVerifyEmail(email: String!, otp: String!, ip: String): T_Response_Auth!
+    registerPersonalInfo(update: Input_Register_PersonalInfo!, ip: String): T_Response_Auth!
+    registerPreferences(update: Input_Register_Preferences!, ip: String): T_Response_Auth!
+    registerMembership(type: E_MembershipType!, promoCode: String, ip: String): T_Response_Auth!
     cancelMembership: T_Response_Auth!
     login(identity: String!, password: String!, rememberMe: Boolean, tempOtp: String , ip: String): T_Response_Auth!
     logout: T_Response_Auth!

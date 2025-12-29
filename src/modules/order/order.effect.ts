@@ -5,6 +5,7 @@ import { addMonths } from 'date-fns';
 import type { I_Event } from '#modules/event/event.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
@@ -128,6 +129,7 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
             membershipExpiresAt: newExpiry, // Cộng +1 tháng vào membership
             rolesIds: updatedRoles, // Update rolesIds with processed array
             membershipCancelled: false, // Reset cancellation flag when user purchases a new subscription
+            ...(user.registerStep === E_RegisterStep.MEMBERSHIP && { registerStep: E_RegisterStep.COMPLETE }),
         },
     };
 
@@ -172,6 +174,9 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         // Reset membershipCancelled in session
         if (updatedUserRes.success && updatedUserRes.result) {
             context.req.session.user.membershipCancelled = false;
+            if (updatedUserRes.result.registerStep) {
+                context.req.session.user.registerStep = updatedUserRes.result.registerStep;
+            }
         }
     }
 
