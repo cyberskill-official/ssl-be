@@ -493,7 +493,6 @@ export const locationCtr = {
             blockedUserIds = new Set<string>();
         }
 
-        const travelEventOverrides = new Map<string, { location: I_Location; event?: I_Event }>();
         let forcedEntityInserted = false;
         const now = new Date();
 
@@ -574,23 +573,9 @@ export const locationCtr = {
 
                 // Nếu entity có vẻ là Event, kiểm tra startDate/endDate theo I_Event
                 let isEventExpired = false;
-                let shouldHideTravelEvent = false;
                 if (e && (filter.entityType === E_LocationEntityType.EVENT || isEventEntity(e))) {
                     const ev = e as I_Event | undefined;
                     const endCandidate = ev?.endDate ?? null;
-                    const startCandidate = ev?.startDate ?? null;
-
-                    if (ev?.type === E_EventType.TRAVEL) {
-                        const startDate = startCandidate ? new Date(startCandidate) : undefined;
-                        const endDate = endCandidate ? new Date(endCandidate) : undefined;
-                        const hasStarted = startDate ? !Number.isNaN(startDate.getTime()) && startDate <= now : false;
-                        const beforeDeparture = endDate ? !Number.isNaN(endDate.getTime()) && endDate > now : !endDate;
-
-                        if (hasStarted && beforeDeparture && ev?.createdById) {
-                            travelEventOverrides.set(ev.createdById, { location: d, event: ev });
-                            shouldHideTravelEvent = true;
-                        }
-                    }
 
                     if (endCandidate) {
                         const endDate = new Date(endCandidate);
@@ -598,17 +583,7 @@ export const locationCtr = {
                             isEventExpired = true;
                         }
                     }
-                    else if (startCandidate) {
-                        const startDate = new Date(startCandidate);
-                        if (!Number.isNaN(startDate.getTime()) && startDate <= now) {
-                            // isEventExpired = true; // StartDate passed doesn't mean expired for non-travel?
-                            // Logic kept as is, but worth checking.
-                        }
-                    }
                 }
-
-                if (shouldHideTravelEvent && filter.entityType === E_LocationEntityType.USER)
-                    return false;
 
                 let shouldHideUser = false;
                 if (d.entityType === E_LocationEntityType.USER || (!d.entityType && isUserEntity(e))) {
@@ -867,15 +842,12 @@ export const locationCtr = {
                 const tempLocationSource = tempLocationSourceByUser.get(user.id)
                     ?? (tempLoc?.location as I_Location | undefined)
                     ?? (tempLoc?.locationId ? originalDocsById.get(tempLoc.locationId) : undefined);
-                const travelOverride = travelEventOverrides.get(user.id);
-                const travelOverrideLocation = travelOverride?.location;
-                const travelOverrideEvent = travelOverride?.event;
+
+                const tempEndAtValid = isTempActive(tempLoc);
+                const hasTempLocationData = Boolean(tempLocationSource?.map || tempLoc?.locationId);
                 let finalSettings = user.settings;
                 let docOverride: Partial<I_Location> | undefined;
 
-                // Prefer Temporary Location if present and active (using the same isTempActive logic)
-                const tempEndAtValid = isTempActive(tempLoc);
-                const hasTempLocationData = Boolean(tempLocationSource?.map || tempLoc?.locationId);
                 if (tempLoc && tempEndAtValid && hasTempLocationData) {
                     const chosenTemp = tempLoc.location
                         ?? tempLocationSource
@@ -884,6 +856,7 @@ export const locationCtr = {
                     finalLocationId = tempLoc.locationId
                         ?? tempLocationSource?.id
                         ?? tempLoc.location?.id;
+
                     // reflect temporary location on the top-level doc for map pin
                     docOverride = {
                         map: tempLocationSource?.map ?? tempLoc.location?.map ?? d.map,
@@ -899,6 +872,7 @@ export const locationCtr = {
                         subRegionId: tempLocationSource?.subRegionId ?? tempLoc.location?.subRegionId ?? d.subRegionId,
                         address: tempLocationSource?.address ?? tempLoc.location?.address ?? d.address,
                     } as Partial<I_Location>;
+
                     finalSettings = {
                         ...(user.settings ?? {}),
                         temporaryLocation: {
@@ -907,56 +881,6 @@ export const locationCtr = {
                             locationId: finalLocationId ?? user.settings?.temporaryLocation?.locationId,
                         },
                     } as I_User['settings'];
-                }
-                else if (travelOverrideLocation) {
-                    const userPinStyle = resolveUserPinStyle(user);
-                    const locationId = travelOverrideLocation.id
-                        ?? user.settings?.temporaryLocation?.locationId
-                        ?? user.partner1?.locationId
-                        ?? '';
-                    const sanitizedTravelLocation = {
-                        id: locationId,
-                        map: travelOverrideLocation.map,
-                        country: travelOverrideLocation.country,
-                        countryId: travelOverrideLocation.countryId,
-                        state: travelOverrideLocation.state,
-                        stateId: travelOverrideLocation.stateId,
-                        city: travelOverrideLocation.city,
-                        cityId: travelOverrideLocation.cityId,
-                        region: travelOverrideLocation.region,
-                        regionId: travelOverrideLocation.regionId,
-                        subRegion: travelOverrideLocation.subRegion,
-                        subRegionId: travelOverrideLocation.subRegionId,
-                        address: travelOverrideLocation.address,
-                        pinStyle: userPinStyle,
-                        entityType: E_LocationEntityType.USER,
-                        entityId: user.id,
-                    } as I_Location;
-                    finalLocation = sanitizedTravelLocation;
-                    finalLocationId = locationId;
-                    finalSettings = {
-                        ...(user.settings ?? {}),
-                        temporaryLocation: {
-                            ...(user.settings?.temporaryLocation ?? {}),
-                            location: sanitizedTravelLocation,
-                            locationId: finalLocationId,
-                            endAt: travelOverrideEvent?.endDate ?? user.settings?.temporaryLocation?.endAt,
-                        },
-                    };
-                    // reflect travel override on top-level doc
-                    docOverride = {
-                        map: travelOverrideLocation.map ?? d.map,
-                        country: travelOverrideLocation.country ?? d.country,
-                        countryId: travelOverrideLocation.countryId ?? d.countryId,
-                        state: travelOverrideLocation.state ?? d.state,
-                        stateId: travelOverrideLocation.stateId ?? d.stateId,
-                        city: travelOverrideLocation.city ?? d.city,
-                        cityId: travelOverrideLocation.cityId ?? d.cityId,
-                        region: travelOverrideLocation.region ?? d.region,
-                        regionId: travelOverrideLocation.regionId ?? d.regionId,
-                        subRegion: travelOverrideLocation.subRegion ?? d.subRegion,
-                        subRegionId: travelOverrideLocation.subRegionId ?? d.subRegionId,
-                    } as Partial<I_Location>;
                 }
                 else {
                     finalLocation = user.partner1?.location;
@@ -982,11 +906,6 @@ export const locationCtr = {
             // Deduplicate users: ensure we only keep one pin per user.
             // Priority: active temporary location > travel override (sanitized) > partner/default location > first seen.
             const userBestMap = new Map<string, I_Location>();
-            const isSameMap = (a?: { latitude?: number; longitude?: number }, b?: { latitude?: number; longitude?: number }) => {
-                if (!a || !b)
-                    return false;
-                return a.latitude === b.latitude && a.longitude === b.longitude;
-            };
 
             for (const d of filtered) {
                 if (d.entityType !== E_LocationEntityType.USER) {
@@ -1010,12 +929,6 @@ export const locationCtr = {
 
                 if (tempActive && tempLocationId && d.id === tempLocationId) {
                     score += 100;
-                }
-
-                // travel override already reflected into docOverride earlier; prefer it
-                const travelOverride = travelEventOverrides.get(user.id);
-                if (travelOverride && travelOverride.location && isSameMap(d.map as any, travelOverride.location.map as any)) {
-                    score += 80;
                 }
 
                 // prefer partner1/default location if no active temp
@@ -1126,12 +1039,6 @@ export const locationCtr = {
             const perUserBest = new Map<string, { doc: I_Location; score: number }>();
             const nonUser: I_Location[] = [];
 
-            const mapEqual = (a?: { latitude?: number; longitude?: number }, b?: { latitude?: number; longitude?: number }) => {
-                if (!a || !b)
-                    return false;
-                return a.latitude === b.latitude && a.longitude === b.longitude;
-            };
-
             // Extract owner user id from a location doc if possible.
             const extractOwnerId = (doc: I_Location): string | null => {
                 try {
@@ -1185,10 +1092,6 @@ export const locationCtr = {
                 const tempActive = user ? isTempStillActive(user) : false;
                 if (tempActive && tempLocationId && d.id === tempLocationId)
                     score += 100;
-
-                const travelOverride = travelEventOverrides.get(ownerId);
-                if (travelOverride && travelOverride.location && mapEqual(d.map as any, travelOverride.location.map as any))
-                    score += 80;
 
                 if (!tempActive && user?.partner1?.locationId && d.id === user.partner1.locationId)
                     score += 60;
