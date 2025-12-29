@@ -17,7 +17,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
-import { roleCtr } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
@@ -207,17 +207,14 @@ export const galleryCtr = {
         // Check if uploader is age-verified
         const isUploaderVerified = await isUploaderAgeVerified(context, galleryFound.result);
 
-        // If uploader is not age-verified:
-        // - Owner sees their own image blurred
-        // - Others see default image (null)
-        const shouldShowDefaultImage = !isUploaderVerified && !isOwner && !isStaff && !isAdmin;
-        const shouldBlurOwner = !isUploaderVerified && isOwner; // Owner sees blurred when not verified
+        // If uploader is not age-verified: everyone (except staff/admin) sees blurred image
+        const shouldBlurUploaderNotVerified = !isUploaderVerified && !isStaff && !isAdmin;
 
         // Free members: blur all galleries of others (not their own)
         // Paid members (membership active) can see clearly even if not age-verified
         // Note: Free members always see blurred galleries of others, regardless of age verification
         let shouldBlur = false;
-        if (!isOwner && !shouldShowDefaultImage) {
+        if (!isOwner && !shouldBlurUploaderNotVerified) {
             if (isPaidMember && !isFreeMember) {
                 // Paid, active members see clear
                 shouldBlur = false;
@@ -235,12 +232,8 @@ export const galleryCtr = {
         const applyThumbnailPolicy = (url?: string | null) => {
             if (!url)
                 return url;
-            // If uploader is not age-verified, return null to show default image (for others)
-            if (shouldShowDefaultImage) {
-                return null;
-            }
-            // If owner and not verified, show blurred image
-            if (shouldBlurOwner) {
+            // If uploader is not age-verified: always show blurred (to avoid swapping to a placeholder)
+            if (shouldBlurUploaderNotVerified) {
                 return bunnyCtr.generateBlurredUrl({
                     fullUrl: url,
                     extraQueryParams: { class: 'blur' },
@@ -262,10 +255,6 @@ export const galleryCtr = {
         if (galleryFound.result.type === E_GalleryType.IMAGE) {
             if (galleryFound.result.url) {
                 galleryFound.result.url = applyThumbnailPolicy(galleryFound.result.url) ?? undefined;
-            }
-            // If shouldShowDefaultImage is true, explicitly set url to undefined even if it exists
-            if (shouldShowDefaultImage) {
-                galleryFound.result.url = undefined;
             }
         }
 
@@ -489,12 +478,7 @@ export const galleryCtr = {
                     }
                 }
 
-                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
-                // Hide galleries from non-age-verified uploaders (except owner viewing their own)
-                const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
-                if (!isOwner && !isUploaderVerified) {
-                    return { gallery, shouldInclude: false };
-                }
+                // Strict filter removed to allow blurred galleries (isUploaderVerified will be checked later)
 
                 if (!isOwner) {
                     // Free members (membership expired) can see galleries but they will be blurred or show default image
@@ -553,17 +537,14 @@ export const galleryCtr = {
             // Check if uploader is age-verified
             const isUploaderVerified = await isUploaderAgeVerified(context, gallery, uploaderAgeVerificationCache);
 
-            // If uploader is not age-verified:
-            // - Owner sees their own image blurred
-            // - Others see default image (null)
-            const shouldShowDefaultImage = !isUploaderVerified && !isGalleryOwner && !isStaff && !isAdmin;
-            const shouldBlurOwner = !isUploaderVerified && isGalleryOwner; // Owner sees blurred when not verified
+            // If uploader is not age-verified: everyone (except staff/admin) sees blurred image
+            const shouldBlurUploaderNotVerified = !isUploaderVerified && !isStaff && !isAdmin;
 
             // Free members: blur all galleries of others (not their own)
             // Paid members (membership active) can see clearly even if not age-verified
             // Note: Free members always see blurred galleries of others, regardless of age verification
             let shouldBlur = false;
-            if (!isGalleryOwner && !shouldShowDefaultImage) {
+            if (!isGalleryOwner && !shouldBlurUploaderNotVerified) {
                 if (isPaidMember && !isFreeMember) {
                     // Paid, active members see clear
                     shouldBlur = false;
@@ -580,12 +561,8 @@ export const galleryCtr = {
             const transformMediaUrl = (url?: string | null) => {
                 if (!url)
                     return url;
-                // If uploader is not age-verified, return null to show default image (for others)
-                if (shouldShowDefaultImage) {
-                    return null;
-                }
-                // If owner and not verified, show blurred image
-                if (shouldBlurOwner) {
+                // If uploader is not age-verified: always show blurred (to avoid swapping to a placeholder)
+                if (shouldBlurUploaderNotVerified) {
                     return bunnyCtr.generateBlurredUrl({
                         fullUrl: url,
                         extraQueryParams: { class: 'blur' },
@@ -607,10 +584,6 @@ export const galleryCtr = {
             if (gallery.type === E_GalleryType.IMAGE) {
                 if (galleryResult.url) {
                     galleryResult.url = transformMediaUrl(galleryResult.url) ?? undefined;
-                }
-                // If shouldShowDefaultImage is true, explicitly set url to undefined even if it exists
-                if (shouldShowDefaultImage) {
-                    galleryResult.url = undefined;
                 }
             }
             // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
@@ -710,6 +683,38 @@ export const galleryCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
     ): Promise<I_Return<I_Gallery>> => {
+        // CRITICAL: Check age verification for ALL uploads (images + videos)
+        // Only age-verified users can upload content to the platform
+        if (doc.uploadedById) {
+            const uploaderFound = await userCtr.getUser(context, {
+                filter: { id: doc.uploadedById },
+                populate: [{ path: 'ageVerify' }, { path: 'roles' }],
+            });
+
+            if (!uploaderFound.success) {
+                throwError({
+                    message: 'Uploader not found.',
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                });
+            }
+
+            const isAgeVerified = uploaderFound.result?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+            // Check if user is staff/admin (they are exempt from age verification)
+            const roles = uploaderFound.result.roles ?? [];
+            const roleNames = roles.map(role => role?.name).filter(Boolean) as string[];
+            const staffRoleNames = [...Object.values(E_Role_Staff), E_Role.STAFF] as string[];
+            const isStaffOrAdmin = roleNames.some(rn => staffRoleNames.includes(rn));
+
+            if (!isAgeVerified && !isStaffOrAdmin) {
+                throwError({
+                    message: 'You must be age-verified to upload photos or videos. Please complete age verification in your profile settings.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
+        // Additional check for videos: free members cannot upload videos
         if (doc.type === E_GalleryType.VIDEO) {
             await assertCanUploadVideo(context, doc.uploadedById);
         }
