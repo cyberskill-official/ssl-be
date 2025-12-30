@@ -125,7 +125,6 @@ export const eventCtr = {
         try {
             let viewerId: string | undefined;
             let viewerExempt = false;
-            let viewerIsFreeMember = false;
             let viewer = context?.req?.session?.user as I_User | undefined;
             if (!viewer) {
                 try {
@@ -142,7 +141,6 @@ export const eventCtr = {
                 const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
                 const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
                 viewerExempt = isAdmin || isStaff;
-                viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
             }
 
             const creator = (eventFound.result)?.createdBy;
@@ -158,40 +156,6 @@ export const eventCtr = {
                 isCreatorVerified = false;
             }
 
-            // Fetch creator roles if not populated
-            let creatorRoles = Array.isArray(creator?.roles) ? creator?.roles : [];
-            if (creatorRoles.length === 0 && creatorId) {
-                try {
-                    const creatorPopulated = await userCtr.getUser(context, {
-                        filter: { id: creatorId },
-                    } as any);
-                    if (creatorPopulated.success && creatorPopulated.result?.roles) {
-                        creatorRoles = creatorPopulated.result.roles;
-                        if (creator) {
-                            (creator as any).roles = creatorRoles;
-                            (creator as any).membershipEndDate = (creatorPopulated.result as any).membershipEndDate;
-                        }
-                    }
-                }
-                catch {
-                    // If fetch fails, continue with empty roles
-                }
-            }
-
-            // Check creator's membership status (not viewer's)
-            const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-            const creatorHasPaidRole = creatorRoles.some((role: any) =>
-                role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
-            ) ?? false;
-            let creatorMembershipActive = false;
-            try {
-                creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
-            }
-            catch {
-                creatorMembershipActive = false;
-            }
-            const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-
             if (creator) {
                 const p1 = creator.partner1;
                 const p2 = creator.partner2;
@@ -203,25 +167,7 @@ export const eventCtr = {
                     if (p2?.gallery?.url)
                         p2.gallery.url = null as any;
                 }
-                // Case 2: Viewer is FREE_MEMBER → blur creator avatar
-                else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
-                    if (p1?.gallery?.url) {
-                        p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
-                    if (p2?.gallery?.url) {
-                        p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
-                }
-                // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
-                else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
-                    if (p1?.gallery?.url) {
-                        p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
-                    if (p2?.gallery?.url) {
-                        p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
-                    }
-                }
-                // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified or owner/admin → show normal
+                // Case 2: Creator age-verified or owner/admin → show normal
                 else {
                     if (p1?.gallery?.url) {
                         p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -298,7 +244,6 @@ export const eventCtr = {
         // Blur/signed media according to creator's status and viewer's membership
         let viewerId: string | undefined;
         let viewerExempt = false;
-        let viewerIsFreeMember = false;
         let viewer = context?.req?.session?.user as I_User | undefined;
         if (!viewer) {
             try {
@@ -315,7 +260,6 @@ export const eventCtr = {
             const isAdmin = roles.some((role: any) => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
             const isStaff = roles.some((role: any) => role.name === 'STAFF' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('STAFF')));
             viewerExempt = isAdmin || isStaff;
-            viewerIsFreeMember = roles.some((role: any) => role.name === 'FREE_MEMBER');
         }
 
         filteredDocs = await Promise.all(filteredDocs.map(async (event) => {
@@ -338,40 +282,6 @@ export const eventCtr = {
                     isCreatorVerified = false;
                 }
 
-                // Fetch creator roles if not populated
-                let creatorRoles = Array.isArray(creator?.roles) ? creator?.roles : [];
-                if (creatorRoles.length === 0 && creatorId) {
-                    try {
-                        const creatorPopulated = await userCtr.getUser(context, {
-                            filter: { id: creatorId },
-                        } as any);
-                        if (creatorPopulated.success && creatorPopulated.result?.roles) {
-                            creatorRoles = creatorPopulated.result.roles;
-                            if (creator) {
-                                (creator as any).roles = creatorRoles;
-                                (creator as any).membershipEndDate = (creatorPopulated.result as any).membershipEndDate;
-                            }
-                        }
-                    }
-                    catch {
-                        // If fetch fails, continue with empty roles
-                    }
-                }
-
-                // Check creator's membership status (not viewer's)
-                const creatorHasFreeRole = creatorRoles.some((role: any) => role.name === 'FREE_MEMBER') ?? false;
-                const creatorHasPaidRole = creatorRoles.some((role: any) =>
-                    role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
-                ) ?? false;
-                let creatorMembershipActive = false;
-                try {
-                    creatorMembershipActive = creator ? authnCtr.isMembershipActive(creator) : false;
-                }
-                catch {
-                    creatorMembershipActive = false;
-                }
-                const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-
                 if (creator) {
                     const p1 = creator.partner1;
                     const p2 = creator.partner2;
@@ -383,25 +293,7 @@ export const eventCtr = {
                         if (p2?.gallery?.url)
                             p2.gallery.url = null as any;
                     }
-                    // Case 2: Viewer is FREE_MEMBER → blur creator avatar
-                    else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
-                        if (p1?.gallery?.url) {
-                            p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
-                        }
-                        if (p2?.gallery?.url) {
-                            p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
-                        }
-                    }
-                    // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
-                    else if (isCreatorFreeMember && !isOwner && !viewerExempt) {
-                        if (p1?.gallery?.url) {
-                            p1.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'blur' } });
-                        }
-                        if (p2?.gallery?.url) {
-                            p2.gallery.url = bunnyCtr.generateBlurredUrl({ fullUrl: p2.gallery.url, extraQueryParams: { class: 'blur' } });
-                        }
-                    }
-                    // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified or owner/admin → show normal
+                    // Case 2: Creator age-verified or owner/admin → show normal
                     else {
                         if (p1?.gallery?.url) {
                             p1.gallery.url = bunnyCtr.generateSignedUrl({ fullUrl: p1.gallery.url, extraQueryParams: { class: 'normal' } });
@@ -863,8 +755,9 @@ export const eventCtr = {
             let thumbnailUrl: string | undefined;
             try {
                 if (eventCreated.result.image) {
-                    thumbnailUrl = bunnyCtr.generateBlurredUrl({
+                    thumbnailUrl = bunnyCtr.generateSignedUrl({
                         fullUrl: eventCreated.result.image,
+                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }
@@ -878,8 +771,9 @@ export const eventCtr = {
                         ?? currentUser.partner2?.gallery?.url
                         ?? undefined;
                 if (rawAvatar) {
-                    actorAvatarUrl = bunnyCtr.generateBlurredUrl({
+                    actorAvatarUrl = bunnyCtr.generateSignedUrl({
                         fullUrl: rawAvatar,
+                        extraQueryParams: { class: 'normal' },
                     });
                 }
             }

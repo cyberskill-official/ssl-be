@@ -1207,31 +1207,17 @@ export const locationCtr = {
                 if (d.entityType === E_LocationEntityType.EVENT) {
                     const ev = e as I_Event;
 
-                    // Blur nếu viewer là FREE_MEMBER (trừ admin/staff)
-                    const shouldBlur = !((viewerMediaOptions.viewerIsAdmin ?? false) || (viewerMediaOptions.viewerIsStaff ?? false))
-                        && (viewerMediaOptions.viewerIsFreeMember ?? false);
-
                     if (ev?.image) {
-                        ev.image = shouldBlur
-                            ? bunnyCtr.generateBlurredUrl({ fullUrl: ev.image, extraQueryParams: { class: 'blur' } })
-                            : bunnyCtr.generateSignedUrl({ fullUrl: ev.image, extraQueryParams: { class: 'normal' } });
+                        ev.image = bunnyCtr.generateSignedUrl({
+                            fullUrl: ev.image,
+                            extraQueryParams: { class: 'normal' },
+                        });
                     }
-                    // Also ensure event creator's avatar/gallery is processed the same way
+                    // Also ensure event creator's avatar/gallery respects age verification rules
                     try {
                         const creator = ev.createdBy as I_User | undefined;
                         if (creator) {
-                            const c1 = creator.partner1;
-                            const c2 = creator.partner2;
-                            if (c1?.gallery?.url) {
-                                c1.gallery.url = shouldBlur
-                                    ? bunnyCtr.generateBlurredUrl({ fullUrl: c1.gallery.url, extraQueryParams: { class: 'blur' } })
-                                    : bunnyCtr.generateSignedUrl({ fullUrl: c1.gallery.url, extraQueryParams: { class: 'normal' } });
-                            }
-                            if (c2?.gallery?.url) {
-                                c2.gallery.url = shouldBlur
-                                    ? bunnyCtr.generateBlurredUrl({ fullUrl: c2.gallery.url, extraQueryParams: { class: 'blur' } })
-                                    : bunnyCtr.generateSignedUrl({ fullUrl: c2.gallery.url, extraQueryParams: { class: 'normal' } });
-                            }
+                            hydrateUserMedia(creator, viewerMediaOptions);
                         }
                     }
                     catch {

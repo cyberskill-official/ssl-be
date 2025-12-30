@@ -1,13 +1,11 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
-import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { E_Event_PinStyle } from '#modules/location/index.js';
-import { userCtr } from '#modules/user/user.controller.js';
 
 import type { I_Input_TimeBasedEventData, I_TimeBasedEventValidation } from './event.type.js';
 
@@ -139,118 +137,14 @@ export function validateTimeBasedEvent(
 }
 
 export function shouldBlurForContext(context?: I_Context, eventCreatedById?: string): boolean {
-    const viewer = context?.req?.session?.user;
-    if (!viewer) {
-        return true; // Not logged in, blur
-    }
-
-    // Check if viewer is the owner of the event
-    const isOwner = eventCreatedById && viewer.id && eventCreatedById === viewer.id;
-    if (isOwner) {
-        return false; // Owner can always see their own event images clearly
-    }
-
-    // Check if viewer is staff/admin
-    const viewerRoles = Array.isArray(viewer.roles) ? viewer.roles : [];
-    const isStaff = viewerRoles.some(role => role.name === 'STAFF');
-    const isAdmin = viewerRoles.some(role => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
-    if (isStaff || isAdmin) {
-        return false; // Staff/admin can always see clearly
-    }
-
-    // Check if viewer is FREE_MEMBER - chỉ FREE_MEMBER mới bị blur ảnh người khác
-    const isFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER');
-    if (isFreeMember) {
-        return true; // FREE_MEMBER should see blurred event images of others
-    }
-
-    // Safety: if roles are unknown and viewer is not owner/staff/admin, default to blur to avoid leaks
-    if (!isOwner && viewerRoles.length === 0) {
-        return true;
-    }
-
-    return false; // MEMBERSHIP hoặc owner/staff/admin → show clearly
+    void context;
+    void eventCreatedById;
+    return false;
 }
 
 export async function signEventImage(fullUrl: string, context?: I_Context, eventCreatedById?: string): Promise<string | null> {
-    const viewer = context?.req?.session?.user;
-    const viewerId = viewer?.id;
-    const isOwner = eventCreatedById && viewerId && eventCreatedById === viewerId;
-
-    // Check if viewer is staff/admin
-    const viewerRoles = Array.isArray(viewer?.roles) ? viewer?.roles : [];
-    const isStaff = viewerRoles.some(role => role.name === 'STAFF');
-    const isAdmin = viewerRoles.some(role => role.name === 'ADMIN' || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes('ADMIN')));
-    const viewerExempt = isStaff || isAdmin;
-    const viewerIsFreeMember = viewerRoles.some(role => role.name === 'FREE_MEMBER');
-
-    // Skip age-verify gating for creator (do not hide image for unverified creators)
-    const isCreatorAgeVerified = true;
-    let creatorRoles: Array<{ name?: string; ancestorsIds?: string[] }> = [];
-    let creatorMembershipActive = false;
-
-    if (eventCreatedById && !isOwner && !viewerExempt) {
-        try {
-            const creatorResult = await userCtr.getUser(context!, {
-                filter: { id: eventCreatedById },
-                projection: { roles: 1, membershipEndDate: 1 },
-            });
-            if (creatorResult.success && creatorResult.result) {
-                creatorRoles = Array.isArray(creatorResult.result.roles) ? creatorResult.result.roles : [];
-                try {
-                    creatorMembershipActive = creatorResult.result ? authnCtr.isMembershipActive(creatorResult.result) : false;
-                }
-                catch {
-                    creatorMembershipActive = false;
-                }
-            }
-        }
-        catch {
-            // ignore
-        }
-    }
-
-    // Check if creator is FREE_MEMBER (blur based on creator's status)
-    const creatorHasFreeRole = creatorRoles.some((role: { name?: string }) => role.name === 'FREE_MEMBER') ?? false;
-    const creatorHasPaidRole = creatorRoles.some((role: { name?: string }) =>
-        role.name === 'PAID_MEMBER' || role.name === 'PROMO_MEMBER',
-    ) ?? false;
-    const isCreatorFreeMember = creatorHasFreeRole || (creatorHasPaidRole && !creatorMembershipActive);
-
-    // Apply blur/sign logic
-    // Case 1: Owner or staff/admin can always see clearly
-    if (isOwner || viewerExempt) {
-        log.info('[EVENT][signEventImage] return normal (owner/admin)', {
-            viewerId,
-            eventCreatedById,
-            viewerIsFreeMember,
-            isCreatorFreeMember,
-            isCreatorAgeVerified,
-        });
-        return bunnyCtr.generateSignedUrl({
-            fullUrl,
-            extraQueryParams: { class: 'normal' },
-        });
-    }
-
-    // Case 2: Viewer is FREE_MEMBER → always blur others' event images
-    if (viewerIsFreeMember) {
-        return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
-    }
-
-    // Case 3: Creator is FREE_MEMBER (age-verified) → show blur
-    if (isCreatorFreeMember && isCreatorAgeVerified) {
-        log.info('[EVENT][signEventImage] blur because creator is free', {
-            viewerId,
-            eventCreatedById,
-            viewerIsFreeMember,
-            isCreatorFreeMember,
-            isCreatorAgeVerified,
-        });
-        return bunnyCtr.generateBlurredUrl({ fullUrl, extraQueryParams: { class: 'blur' } });
-    }
-
-    // Case 4: Creator is PAID_MEMBER/PROMO_MEMBER verified → show normal
+    void context;
+    void eventCreatedById;
     return bunnyCtr.generateSignedUrl({
         fullUrl,
         extraQueryParams: { class: 'normal' },
