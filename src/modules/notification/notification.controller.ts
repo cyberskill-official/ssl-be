@@ -489,11 +489,7 @@ export const notificationCtr = {
                             if (!isActorAgeVerified && !isActorOwner && !viewerExempt) {
                                 actor.avatarUrl = null as any;
                             }
-                            // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
-                            else if (viewerIsFreeMember && !isActorOwner && !viewerExempt) {
-                                actor.avatarUrl = bunnyCtr.generateBlurredUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'blur' } });
-                            }
-                            // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
+                            // Case 2: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
                             else {
                                 actor.avatarUrl = bunnyCtr.generateSignedUrl({ fullUrl: urlToUse, extraQueryParams: { class: 'normal' } });
                             }
@@ -559,53 +555,13 @@ export const notificationCtr = {
                                 }
                             }
                         }
-                        // For EVENT entity type (announcement), check event creator age verification
-                        else if (entityId && n.entityType === E_NotificationEntityType.EVENT) {
-                            // Check from batch-fetched map first
-                            const cachedAgeVerified = eventCreatorAgeVerifyMap.get(entityId);
-                            if (cachedAgeVerified !== undefined) {
-                                isThumbnailOwnerAgeVerified = cachedAgeVerified;
-                            }
-                            else {
-                                // If not in cache, fetch it now
-                                try {
-                                    const eventResult = await eventCtr.getEvent(_context, {
-                                        filter: { id: entityId },
-                                    });
-                                    if (eventResult.success && eventResult.result?.createdById) {
-                                        const creatorResult = await userCtr.getUser(_context, {
-                                            filter: { id: eventResult.result.createdById },
-                                            projection: { ageVerify: 1 },
-                                        });
-                                        if (creatorResult.success && creatorResult.result) {
-                                            isThumbnailOwnerAgeVerified = creatorResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                                        }
-
-                                        // Check if viewer is the creator
-                                        if (viewerId && eventResult.result.createdById === viewerId) {
-                                            isThumbnailOwner = true;
-                                        }
-                                    }
-                                }
-                                catch {
-                                    // If fetch fails, assume verified to avoid blocking
-                                }
-                            }
-
-                            // Check if viewer is the creator (if not already checked above)
-                            if (!isThumbnailOwner && viewerId) {
-                                try {
-                                    const eventResult = await eventCtr.getEvent(_context, {
-                                        filter: { id: entityId },
-                                    });
-                                    if (eventResult.success && eventResult.result?.createdById === viewerId) {
-                                        isThumbnailOwner = true;
-                                    }
-                                }
-                                catch {
-                                    // If fetch fails, assume not owner
-                                }
-                            }
+                        // For EVENT entity type (announcement), skip gating: visible to everyone
+                        else if (n.entityType === E_NotificationEntityType.EVENT) {
+                            pres.thumbnailUrl = bunnyCtr.generateSignedUrl({
+                                fullUrl: pres.thumbnailUrl,
+                                extraQueryParams: { class: 'normal' },
+                            });
+                            continue;
                         }
 
                         // Logic based on THUMBNAIL OWNER's age verification and VIEWER's membership status

@@ -103,8 +103,7 @@ export function hydrateUserMedia(
         }
     };
 
-    // Apply blur/unblur logic to both partner images based on owner's and viewer's age verification status
-    // Non-verified viewers see blurred images of everyone else, but can see their own images clearly
+    // Apply blur/unblur logic to both partner images based on owner's age verification status
     applyProfileMedia(user.partner1);
     applyProfileMedia(user.partner2);
 
