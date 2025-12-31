@@ -221,6 +221,16 @@ export const invitationCtr = {
 
         // Load conversation to include group name in notification context
         const conversationFound = await conversationCtr.getConversation({} as I_Context, { filter: { id: conversationId } });
+        const inviter = (populateInvitationResult.result as any)?.inviter;
+        const actorPresentation = inviter
+            ? {
+                    username: inviter.username,
+                    accountType: inviter.accountType,
+                    avatarUrl: inviter.partner1?.gallery?.url
+                        ?? inviter.partner2?.gallery?.url
+                        ?? undefined,
+                }
+            : undefined;
 
         try {
             await notificationCtr.createNotificationWithSettings({}, {
@@ -238,6 +248,7 @@ export const invitationCtr = {
                             groupName: conversationFound?.success ? (conversationFound.result?.name || '') : '',
                         },
                         headline: 'You have been invited to a group chat',
+                        ...(actorPresentation ? { actor: actorPresentation } : {}),
                     },
                 },
             });
@@ -486,14 +497,23 @@ export const invitationCtr = {
                         });
 
                         // Delete all old group invitation notifications for this user/conversation
-                        await notificationCtr.deleteNotification(context, {
+                        const inviteNotifs = await notificationCtr.getNotifications(context, {
                             filter: {
                                 targetId: currentUser.id,
                                 entityType: E_NotificationEntityType.CONVERSATION,
                                 entityId: invitation.result.entityId,
-                                type: E_NotificationType.CONVERSATION_INVITATION,
+                                type: [E_NotificationType.CONVERSATION_INVITATION],
+                                isDel: false,
                             },
+                            options: { pagination: false },
                         });
+                        if (inviteNotifs.success && inviteNotifs.result?.docs?.length) {
+                            await Promise.all(
+                                inviteNotifs.result.docs
+                                    .filter(n => n?.id)
+                                    .map(n => notificationCtr.deleteNotification(context, { filter: { id: n.id! } })),
+                            );
+                        }
 
                         // Notify inviter that the user accepted and joined the group
                         // Load conversation to include group name
