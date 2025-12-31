@@ -2,6 +2,8 @@ enum E_PushChatAudience {
     ALL
     MEMBERS
     NON_MEMBERS
+    AGE_VERIFIED
+    NOT_AGE_VERIFIED
 }
 
 type T_PushChatMessage {
@@ -107,4 +109,3 @@ type Mutation {
     sendPushChat(doc: Input_CreatePushChatMessage!): T_Response_SendPushChat!
     deletePushChatMessage(filter: Input_QueryPushChatMessage!, options: JSON): T_Response_PushChatMessage!
 }
-

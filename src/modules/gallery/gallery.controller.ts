@@ -808,6 +808,59 @@ export const galleryCtr = {
 
         return mongooseCtr.deleteOne(filter, options);
     },
+    deleteGalleriesByUserId: async (
+        context: I_Context,
+        userId: string,
+    ): Promise<void> => {
+        if (!userId) {
+            return;
+        }
+
+        const galleries = await mongooseCtr.findPaging(
+            { $or: [{ uploadedById: userId }, { createdById: userId }] },
+            { pagination: false },
+        );
+
+        if (!galleries.success || !galleries.result) {
+            return;
+        }
+
+        for (const gallery of galleries.result.docs) {
+            try {
+                if (gallery.url) {
+                    switch (gallery.type) {
+                        case E_GalleryType.VIDEO: {
+                            await bunnyCtr.deleteVideoUrl(context, gallery.url);
+                            break;
+                        }
+                        case E_GalleryType.IMAGE: {
+                            await bunnyCtr.deleteFile(
+                                context,
+                                gallery.url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''),
+                            );
+                            break;
+                        }
+                        default:
+                    }
+                }
+            }
+            catch (error) {
+                console.warn(`Failed to delete gallery asset ${gallery.id ?? 'unknown'}:`, error);
+            }
+
+            try {
+                if (gallery.id) {
+                    await mongooseCtr.deleteOne({ id: gallery.id });
+                }
+                else if ((gallery as { _id?: unknown })._id) {
+                    await mongooseCtr.deleteOne({ _id: (gallery as { _id?: unknown })._id } as unknown as never);
+                }
+            }
+            catch (error) {
+                console.warn(`Failed to delete gallery record ${gallery.id ?? 'unknown'}:`, error);
+            }
+        }
+    },
     deleteOwnGallery: async (
         context: I_Context,
         { id }: { id: string },

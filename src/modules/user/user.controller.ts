@@ -1401,21 +1401,12 @@ export const userCtr = {
                 }
             }
 
-            // Delete user's galleries
-            const galleries = await galleryCtr.getGalleries(context, {
-                filter: { createdById: userId },
-                options: { pagination: false },
-            });
-            if (galleries.success && galleries.result) {
-                for (const gallery of galleries.result.docs) {
-                    try {
-                        await galleryCtr.deleteGallery(context, { filter: { id: gallery.id } });
-                    }
-                    catch (error) {
-                        // Log but continue with other galleries
-                        log.warn(`Failed to delete gallery ${gallery.id}:`, error);
-                    }
-                }
+            // Delete user's galleries without visibility checks
+            try {
+                await galleryCtr.deleteGalleriesByUserId(context, userId);
+            }
+            catch (error) {
+                log.warn(`Failed to delete galleries for user ${userId}:`, error);
             }
 
             // Finally, delete the user

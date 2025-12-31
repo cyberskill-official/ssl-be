@@ -7,7 +7,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr, E_RegisterStep } from '#modules/authn/index.js';
+import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { conversationCtr, E_ConversationType, E_MessageType } from '#modules/conversation/index.js';
@@ -91,6 +91,12 @@ export const pushChatCtr = {
                     });
                 }
                 matchFilter['rolesIds'] = { $in: [freeMemberRole.result.id] };
+            }
+            else if (targetAudience === E_PushChatAudience.AGE_VERIFIED) {
+                matchFilter['ageVerify.status'] = E_AgeVerifyStatus.APPROVED;
+            }
+            else if (targetAudience === E_PushChatAudience.NOT_AGE_VERIFIED) {
+                matchFilter['ageVerify.status'] = { $ne: E_AgeVerifyStatus.APPROVED };
             }
             // For ALL, no additional filter needed
 
