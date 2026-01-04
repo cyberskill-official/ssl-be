@@ -2369,6 +2369,7 @@ export const authnCtr = {
             await bunnyCtr.deleteFile(context, userFound.result.ageVerify.preApproval?.selfiePic?.replace(`${getEnv().BUNNY_CDN_HOSTNAME}/`, '') || '');
         }
 
+        const trimmedReason = reason.trim();
         const userUpdated = await userCtr.updateUser(
             context,
             {
@@ -2376,7 +2377,7 @@ export const authnCtr = {
                 update: {
                     ageVerify: {
                         status: E_AgeVerifyStatus.REJECTED,
-                        reason: reason.trim(),
+                        reason: trimmedReason,
                         preApproval: undefined,
                     },
                 },
@@ -2386,6 +2387,34 @@ export const authnCtr = {
         // Sync session nếu user bị reject là chính user đang login
         if (userUpdated.success && context.req?.session?.user?.id === userId) {
             context.req.session.user.ageVerify = userUpdated.result.ageVerify;
+        }
+
+        // Create in-app notification for age verification rejection
+        if (userUpdated.success) {
+            try {
+                await notificationCtr.createNotificationWithSettings(context, {
+                    doc: {
+                        targetId: userId,
+                        actorId: currentUser.id,
+                        type: [E_NotificationType.AGE_VERIFICATION_REJECTED],
+                        entityType: E_NotificationEntityType.USER,
+                        entityId: userId,
+                        body: `Your age verification was rejected: ${trimmedReason}`,
+                        channels: [E_NotificationChannel.IN_APP],
+                        presentation: {
+                            headline: 'Age Verification Rejected',
+                            redirect: {
+                                kind: E_RedirectType.PROFILE,
+                                id: userId,
+                            },
+                        },
+                    },
+                });
+            }
+            catch (error) {
+                // Non-fatal: log but don't fail the rejection
+                log.error('Failed to create age verification rejection notification:', error);
+            }
         }
 
         return userUpdated;
