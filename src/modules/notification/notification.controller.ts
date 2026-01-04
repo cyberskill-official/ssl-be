@@ -661,7 +661,8 @@ export const notificationCtr = {
         const currentUserId = currentUser?.id;
         const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
             || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED)
-            || types.includes(E_NotificationType.AGE_VERIFICATION_SKIPPED);
+            || types.includes(E_NotificationType.AGE_VERIFICATION_SKIPPED)
+            || types.includes(E_NotificationType.AGE_VERIFICATION_REJECTED);
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }

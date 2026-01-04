@@ -165,4 +165,5 @@ export const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([
     E_NotificationType.AGE_VERIFICATION_APPROVED,
     E_NotificationType.AGE_VERIFICATION_SUBMITTED,
     E_NotificationType.AGE_VERIFICATION_SKIPPED,
+    E_NotificationType.AGE_VERIFICATION_REJECTED,
 ]);
