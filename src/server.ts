@@ -20,7 +20,7 @@ const env = getEnv();
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
     });
 
-    app.use(createSession({
+    const sessionParser = createSession({
         name: env.SESSION_NAME,
         secret: env.SESSION_SECRET,
         resave: false,
@@ -32,12 +32,14 @@ const env = getEnv();
             // maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
-    }));
+    });
+    app.use(sessionParser);
 
     const httpServer = createServer(app);
     const wsServer = createWSServer({
         server: httpServer,
         path: env.ENDPOINT_WS,
+        sessionParser,
     });
     const serverCleanup = initGraphQLWS({ schema, server: wsServer });
 
