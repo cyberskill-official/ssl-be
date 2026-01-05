@@ -13,15 +13,16 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { GraphQLError } from 'graphql';
 
+import type { I_Catalogue } from '#modules/catalogue/index.js';
+import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { catalogueCtr, E_CatalogueType } from '#modules/catalogue/index.js';
+import { catalogueCtr, CatalogueModel, E_CatalogueType } from '#modules/catalogue/index.js';
 import { E_MessageType, messageCtr, MessageModel } from '#modules/conversation/index.js';
-import { galleryCtr } from '#modules/gallery/gallery.controller.js';
-import { E_GalleryType } from '#modules/gallery/gallery.type.js';
+import { E_GalleryType, galleryCtr, GalleryModel } from '#modules/gallery/index.js';
 import { E_NoteType } from '#modules/note/note.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
@@ -106,7 +107,85 @@ export const moderationMediaCtr = {
             return moderationMedias;
         }
 
-        moderationMedias.result.docs = moderationMedias.result.docs.map((moderationMedia) => {
+        const moderationDocs = moderationMedias.result.docs ?? [];
+        const galleryEntityIds = new Set<string>();
+        const catalogueEntityIds = new Set<string>();
+
+        for (const moderationMedia of moderationDocs) {
+            const entityId = moderationMedia?.entityId;
+            if (!entityId) {
+                continue;
+            }
+
+            if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
+                galleryEntityIds.add(String(entityId));
+            }
+            else if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
+                catalogueEntityIds.add(String(entityId));
+            }
+        }
+
+        let existingGalleryIds: Set<string> | null = null;
+        let existingCatalogueIds: Set<string> | null = null;
+
+        if (galleryEntityIds.size > 0 || catalogueEntityIds.size > 0) {
+            const galleryMongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
+            const catalogueMongooseCtr = new MongooseController<I_Catalogue>(CatalogueModel);
+
+            const [galleriesResult, cataloguesResult] = await Promise.all([
+                galleryEntityIds.size > 0
+                    ? galleryMongooseCtr.findPaging(
+                            { id: { $in: Array.from(galleryEntityIds) }, isDel: { $ne: true } },
+                            { pagination: false },
+                        )
+                    : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Gallery>>),
+                catalogueEntityIds.size > 0
+                    ? catalogueMongooseCtr.findPaging(
+                            { id: { $in: Array.from(catalogueEntityIds) }, isDel: { $ne: true } },
+                            { pagination: false },
+                        )
+                    : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Catalogue>>),
+            ]);
+
+            if (galleriesResult.success && galleriesResult.result?.docs) {
+                existingGalleryIds = new Set(
+                    galleriesResult.result.docs
+                        .map(gallery => (gallery?.id ? String(gallery.id) : ''))
+                        .filter(Boolean),
+                );
+            }
+
+            if (cataloguesResult.success && cataloguesResult.result?.docs) {
+                existingCatalogueIds = new Set(
+                    cataloguesResult.result.docs
+                        .map(catalogue => (catalogue?.id ? String(catalogue.id) : ''))
+                        .filter(Boolean),
+                );
+            }
+        }
+
+        moderationMedias.result.docs = moderationDocs.filter((moderationMedia) => {
+            const entityId = moderationMedia?.entityId;
+            if (!entityId) {
+                return true;
+            }
+
+            if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
+                if (!existingGalleryIds) {
+                    return true;
+                }
+                return existingGalleryIds.has(String(entityId));
+            }
+
+            if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
+                if (!existingCatalogueIds) {
+                    return true;
+                }
+                return existingCatalogueIds.has(String(entityId));
+            }
+
+            return true;
+        }).map((moderationMedia) => {
             if (moderationMedia.url) {
                 const rawUrl = moderationMedia.url as string;
                 try {
