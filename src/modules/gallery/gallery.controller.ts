@@ -258,23 +258,11 @@ export const galleryCtr = {
             }
         }
 
-        // Video access control: paid members (membership active) can view videos even if not age-verified
-        // Hide video completely for unauthorized users
-        if (galleryFound.result.type === E_GalleryType.VIDEO) {
-            const canViewVideo = isOwner || isStaff || isAdmin || (isPaidMember && !isFreeMember) || (viewerAgeVerified && !isFreeMember);
-            if (!canViewVideo) {
-                // Hide video completely - return not found
-                throwError({
-                    message: 'Gallery not found',
-                    status: RESPONSE_STATUS.NOT_FOUND,
-                });
-            }
-            // Generate embed URL for authorized users
-            if (galleryFound.result.url) {
-                galleryFound.result.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
-                    fullUrl: galleryFound.result.url,
-                });
-            }
+        // Videos are always returned; frontend handles blur/visibility.
+        if (galleryFound.result.type === E_GalleryType.VIDEO && galleryFound.result.url) {
+            galleryFound.result.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
+                fullUrl: galleryFound.result.url,
+            });
         }
 
         if (galleryFound.result.thumbnailUrl) {
@@ -489,15 +477,6 @@ export const galleryCtr = {
                     }
                 }
 
-                // Hide videos completely for users who are not age-verified paid members (or owner)
-                // Paid members (membership active) can view videos even if not age-verified
-                if (gallery.type === E_GalleryType.VIDEO) {
-                    const canViewVideo = isOwner || (isPaidMember && !isFreeMember) || (viewerAgeVerified && !isFreeMember);
-                    if (!canViewVideo) {
-                        return { gallery, shouldInclude: false }; // Filter out video from results
-                    }
-                }
-
                 return { gallery, shouldInclude: true };
             }),
         )).filter(({ shouldInclude }) => shouldInclude).map(({ gallery }) => gallery);
@@ -586,8 +565,7 @@ export const galleryCtr = {
                     galleryResult.url = transformMediaUrl(galleryResult.url) ?? undefined;
                 }
             }
-            // Video access control: only age-verified paid members (or owner/staff/admin) can view videos
-            // Videos are already filtered out above, so we only process videos for authorized users here
+            // Videos are always returned; frontend handles blur/visibility.
             if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
                 galleryResult.url = bunnyCtr.generateEmbedIframeUrlFromUrl({
                     fullUrl: galleryResult.url,
@@ -616,7 +594,7 @@ export const galleryCtr = {
             return galleryResult;
         }));
 
-        // Update totalDocs after filtering out videos
+        // Update totalDocs after filtering
         const currentPage = galleries.result.page || 1;
         galleries.result.totalDocs = galleryDocs.length;
         galleries.result.totalPages = Math.ceil(galleryDocs.length / (galleries.result.limit || 1));
