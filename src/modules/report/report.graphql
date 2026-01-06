@@ -81,3 +81,14 @@ type T_Response_Reports {
     message: String
     result: T_Reports
 }
+
+type Query {
+    getReport(filter: Input_QueryReport!, projection: JSON, options: JSON, populate: JSON): T_Response_Report!
+    getReports(filter: Input_QueryReport, options: JSON): T_Response_Reports!
+}
+
+type Mutation {
+    createReport(doc: Input_CreateReport!): T_Response_Report!
+    updateReport(filter: Input_QueryReport!, update: Input_UpdateReport, options: JSON): T_Response_Report!
+    deleteReport(filter: Input_QueryReport!, options: JSON): T_Response_Report!
+}
