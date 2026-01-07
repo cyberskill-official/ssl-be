@@ -1245,7 +1245,59 @@ export const userCtr = {
         _: I_Context,
         { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
     ): Promise<I_Return<{ modifiedCount: number }>> => {
-        return mongooseCtr.updateMany(filter as T_QueryFilter<I_User>, update, options);
+        const hasAtomicOperators = Object.keys(update || {}).some(k => k.startsWith('$'));
+        const normalizeDateValue = (value: unknown): Date | null | undefined => {
+            if (value === null)
+                return null;
+            if (value instanceof Date)
+                return value;
+            if (typeof value === 'string' || typeof value === 'number') {
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+            }
+            return undefined;
+        };
+
+        const normalizedFilter = { ...(filter || {}) } as Record<string, unknown>;
+        const lastOnlineFilter = normalizedFilter['lastOnline'];
+        if (
+            lastOnlineFilter
+            && typeof lastOnlineFilter === 'object'
+            && !(lastOnlineFilter instanceof Date)
+            && Object.keys(lastOnlineFilter as Record<string, unknown>).length === 0
+        ) {
+            delete normalizedFilter['lastOnline'];
+        }
+
+        if (Object.prototype.hasOwnProperty.call(update, 'lastOnline')) {
+            const normalized = normalizeDateValue((update as any).lastOnline);
+            if (normalized === undefined) {
+                delete (update as any).lastOnline;
+            }
+            else {
+                (update as any).lastOnline = normalized;
+            }
+        }
+        if (hasAtomicOperators && (update as any).$set?.lastOnline !== undefined) {
+            const normalized = normalizeDateValue((update as any).$set.lastOnline);
+            if (normalized === undefined) {
+                delete (update as any).$set.lastOnline;
+            }
+            else {
+                (update as any).$set.lastOnline = normalized;
+            }
+        }
+        if (hasAtomicOperators && (update as any).$setOnInsert?.lastOnline !== undefined) {
+            const normalized = normalizeDateValue((update as any).$setOnInsert.lastOnline);
+            if (normalized === undefined) {
+                delete (update as any).$setOnInsert.lastOnline;
+            }
+            else {
+                (update as any).$setOnInsert.lastOnline = normalized;
+            }
+        }
+
+        return mongooseCtr.updateMany(normalizedFilter as T_QueryFilter<I_User>, update, options);
     },
 
     deleteUser: async (
