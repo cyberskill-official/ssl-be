@@ -173,7 +173,7 @@ export const advertisementCtr = {
     ): Promise<I_Return<I_Advertisement>> => {
         const existingAd = await advertisementCtr.getAdvertisement(
             _context,
-            { filter },
+            { filter: filter as I_Input_UpdateClickCount },
         );
 
         if (!existingAd.success) {
@@ -184,7 +184,7 @@ export const advertisementCtr = {
         }
 
         return mongooseCtr.updateOne(
-            filter,
+            filter as I_Input_UpdateClickCount,
             { $inc: { clickCount: 1 } },
             { new: true },
         );

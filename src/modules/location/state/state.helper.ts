@@ -1,4 +1,4 @@
-import type { T_FilterQuery } from '@cyberskill/shared/node/mongo';
+import type { T_QueryFilter } from '@cyberskill/shared/node/mongo';
 
 import type { I_State } from './state.type.js';
 
@@ -18,9 +18,9 @@ export function sanitizeFilter(rawFilter?: Record<string, unknown>) {
  * Merge two filters using $and operator
  */
 export function mergeFilters(
-    base?: T_FilterQuery<I_State>,
-    extra?: T_FilterQuery<I_State>,
-): T_FilterQuery<I_State> | undefined {
+    base?: T_QueryFilter<I_State>,
+    extra?: T_QueryFilter<I_State>,
+): T_QueryFilter<I_State> | undefined {
     const hasBase = !!base && Object.keys(base).length > 0;
     const hasExtra = !!extra && Object.keys(extra).length > 0;
 
@@ -36,7 +36,7 @@ export function mergeFilters(
         return base;
     }
 
-    return { $and: [base, extra] } as T_FilterQuery<I_State>;
+    return { $and: [base, extra] } as T_QueryFilter<I_State>;
 }
 
 /**
@@ -46,7 +46,7 @@ export function mergeFilters(
 export function buildCoordinateFilter(
     latitude?: string | null,
     longitude?: string | null,
-): T_FilterQuery<I_State> | undefined {
+): T_QueryFilter<I_State> | undefined {
     const trimmedLat = latitude?.trim();
     const trimmedLng = longitude?.trim();
 
@@ -54,19 +54,19 @@ export function buildCoordinateFilter(
         return undefined;
     }
 
-    const filters: T_FilterQuery<I_State>[] = [];
+    const filters: T_QueryFilter<I_State>[] = [];
 
     if (trimmedLat) {
-        filters.push({ latitude: { $regex: `^${trimmedLat}`, $options: 'i' } } as T_FilterQuery<I_State>);
+        filters.push({ latitude: { $regex: `^${trimmedLat}`, $options: 'i' } } as T_QueryFilter<I_State>);
     }
 
     if (trimmedLng) {
-        filters.push({ longitude: { $regex: `^${trimmedLng}`, $options: 'i' } } as T_FilterQuery<I_State>);
+        filters.push({ longitude: { $regex: `^${trimmedLng}`, $options: 'i' } } as T_QueryFilter<I_State>);
     }
 
     if (filters.length === 1) {
         return filters[0];
     }
 
-    return { $and: filters } as T_FilterQuery<I_State>;
+    return { $and: filters } as T_QueryFilter<I_State>;
 }

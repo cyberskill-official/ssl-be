@@ -59,13 +59,13 @@ export const blockCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_UnBlock>,
     ): Promise<I_Return<I_Block>> => {
-        const existed = await blockCtr.getBlock(context, { filter });
+        const existed = await blockCtr.getBlock(context, { filter: filter as I_Input_UnBlock });
 
         if (!existed.success) {
             throwError({ message: 'Block not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        return mongooseCtr.deleteOne(filter as I_Input_UnBlock, options);
     },
     deleteBlocks: async (
         _context: I_Context,

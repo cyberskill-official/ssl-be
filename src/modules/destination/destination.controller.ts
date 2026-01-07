@@ -4,8 +4,8 @@ import type {
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateOne,
-    T_FilterQuery,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
@@ -51,12 +51,12 @@ export const destinationCtr = {
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
         const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_FilterQuery<I_Destination>
+            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
         const combinedFilter = mergeFilters(baseFilter, countryFilter);
-        const effectiveFilter = (combinedFilter ?? baseFilter ?? {}) as T_FilterQuery<I_Destination>;
+        const effectiveFilter = (combinedFilter ?? baseFilter ?? {}) as T_QueryFilter<I_Destination>;
 
         const destinationFound = await mongooseCtr.findOne(effectiveFilter, projection, options, populate);
 
@@ -173,7 +173,7 @@ export const destinationCtr = {
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
         const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_FilterQuery<I_Destination>
+            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
@@ -245,7 +245,7 @@ export const destinationCtr = {
             context,
             {
                 filter: {
-                    id: { $in: destinationCountriesIds.result },
+                    id: { $in: destinationCountriesIds.result as string[] },
                 },
                 options: {
                     pagination: false,
@@ -617,9 +617,9 @@ export const destinationCtr = {
                 : undefined;
             delete sanitizedFilterObject['countryId'];
 
-            const baseFilter: T_FilterQuery<I_Destination> = {
+            const baseFilter: T_QueryFilter<I_Destination> = {
                 isDel: false,
-                ...(sanitizedFilterObject as T_FilterQuery<I_Destination>),
+                ...(sanitizedFilterObject as T_QueryFilter<I_Destination>),
             };
 
             const countryIdFilter = await buildCountryIdFilter(countryId);
@@ -629,7 +629,7 @@ export const destinationCtr = {
 
             const clubFilter = mergeFilters(
                 effectiveFilter,
-                { type: E_DestinationType.CLUB } as T_FilterQuery<I_Destination>,
+                { type: E_DestinationType.CLUB } as T_QueryFilter<I_Destination>,
             );
             const clubCountResult = await mongooseCtr.count(clubFilter ?? {});
             if (!clubCountResult.success) {
@@ -642,7 +642,7 @@ export const destinationCtr = {
 
             const resortFilter = mergeFilters(
                 effectiveFilter,
-                { type: E_DestinationType.RESORT } as T_FilterQuery<I_Destination>,
+                { type: E_DestinationType.RESORT } as T_QueryFilter<I_Destination>,
             );
             const resortCountResult = await mongooseCtr.count(resortFilter ?? {});
             if (!resortCountResult.success) {

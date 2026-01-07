@@ -272,6 +272,6 @@ export const likeCtr = {
             return new Set();
         }
 
-        return new Set((result.result as Array<{ _id: string }>).map(r => r._id));
+        return new Set((result.result as unknown as Array<{ _id: string }>).map(r => r._id));
     },
 };

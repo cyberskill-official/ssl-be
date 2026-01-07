@@ -6,8 +6,8 @@ import type {
     I_Input_FindPaging,
     I_Input_UpdateOne,
     T_DeleteResult,
-    T_FilterQuery,
     T_PaginateResult,
+    T_QueryFilter,
     T_QueryOptions,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
@@ -308,7 +308,7 @@ export const messageCtr = {
     },
 
     // Helper: Redact messages (soft delete)
-    redactMessages: async (filter: T_FilterQuery<I_Message>): Promise<I_Return<number>> => {
+    redactMessages: async (filter: T_QueryFilter<I_Message>): Promise<I_Return<number>> => {
         const now = new Date();
         // Get conversation to check type
         let conversationType: E_ConversationType | undefined;
@@ -445,7 +445,7 @@ export const messageCtr = {
 
         return deleteResult;
     },
-    _messageDistinct: async (key: string, filter?: T_FilterQuery<I_Message>, options?: T_QueryOptions<I_Message>) => {
+    _messageDistinct: async (key: string, filter?: T_QueryFilter<I_Message>, options?: T_QueryOptions<I_Message>) => {
         return mongooseCtr.distinct(key, filter, options);
     },
 };

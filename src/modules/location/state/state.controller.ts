@@ -1,4 +1,4 @@
-import type { I_Input_FindOne, I_Input_FindPaging, T_FilterQuery, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_FindOne, I_Input_FindPaging, T_PaginateResult, T_QueryFilter } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { MongooseController } from '@cyberskill/shared/node/mongo';
@@ -30,7 +30,7 @@ export const stateCtr = {
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
         const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_FilterQuery<I_State>
+            ? sanitizedFilterObject as T_QueryFilter<I_State>
             : undefined;
 
         const coordinateFilter = buildCoordinateFilter(rawLatitude, rawLongitude);
@@ -55,7 +55,7 @@ export const stateCtr = {
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
         const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_FilterQuery<I_State>
+            ? sanitizedFilterObject as T_QueryFilter<I_State>
             : undefined;
 
         const coordinateFilter = buildCoordinateFilter(rawLatitude, rawLongitude);

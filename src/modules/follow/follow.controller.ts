@@ -389,7 +389,9 @@ export const followCtr = {
 
         if (unfollowResult.success) {
             // Recompute counts to avoid denormalization drift/race conditions
-            await recomputeFollowerCount(context, filter.followId!);
+            if (typeof filter.followId === 'string') {
+                await recomputeFollowerCount(context, filter.followId);
+            }
             await recomputeFollowingCount(context, currentUser.id);
         }
 

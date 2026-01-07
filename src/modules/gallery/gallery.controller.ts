@@ -280,7 +280,7 @@ export const galleryCtr = {
         const sessionUserId = context.req?.session?.user?.id;
         const ownerFromSingle = sessionUserId === filter?.uploadedById;
         const ownerFromMultiple = Array.isArray(filter?.uploadedByIds)
-            && filter.uploadedByIds.some(id => id && typeof id === 'string' && id.trim() === sessionUserId);
+            && (filter.uploadedByIds as string[]).some((id: string) => id && typeof id === 'string' && id.trim() === sessionUserId);
         const isOwner = ownerFromSingle || ownerFromMultiple;
 
         // Default guests to FREE to avoid leaking clear images
@@ -354,10 +354,10 @@ export const galleryCtr = {
 
         // ép filter + status
         let modifiedFilter = { ...(filter || {}) };
-        if (filter?.uploadedByIds && filter.uploadedByIds.length > 0) {
+        if (filter?.uploadedByIds && (filter.uploadedByIds as string[]).length > 0) {
             modifiedFilter = {
                 ...filter,
-                uploadedById: { $in: filter.uploadedByIds },
+                uploadedById: { $in: filter.uploadedByIds as string[] },
             };
             delete modifiedFilter.uploadedByIds;
         }

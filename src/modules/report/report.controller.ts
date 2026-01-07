@@ -5,6 +5,7 @@ import type {
     I_Input_FindPaging,
     I_Input_UpdateOne,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
@@ -30,7 +31,7 @@ export const reportCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryReport>,
     ): Promise<I_Return<I_Report>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate || defaultPopulate);
+        return mongooseCtr.findOne(filter as T_QueryFilter<I_Report>, projection, options, populate || defaultPopulate);
     },
     getReports: async (
         _context: I_Context,
@@ -41,7 +42,7 @@ export const reportCtr = {
             populate: options?.populate || defaultPopulate,
         };
 
-        return mongooseCtr.findPaging(filter, populateOptions);
+        return mongooseCtr.findPaging(filter as T_QueryFilter<I_Report>, populateOptions);
     },
     createReport: async (
         { doc }: I_Input_CreateOne<I_Input_CreateReport>,
@@ -82,7 +83,7 @@ export const reportCtr = {
             });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_Report>, update, options);
     },
     deleteReport: async (
         context: I_Context,
@@ -97,6 +98,6 @@ export const reportCtr = {
             });
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        return mongooseCtr.deleteOne(filter as T_QueryFilter<I_Report>, options);
     },
 };

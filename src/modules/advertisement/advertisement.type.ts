@@ -1,6 +1,5 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-import type { I_Destination } from '#modules/destination/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 
 export enum E_AdvertisementSlot {
@@ -25,9 +24,9 @@ export interface I_Advertisement extends I_GenericDocument {
     isActive?: boolean;
 }
 
-export type T_Destination_Populate = 'createdBy';
+export type T_Advertisement_Populate = 'createdBy';
 
-export interface I_Input_QueryAdvertisement extends Omit<I_Destination, T_Destination_Populate> { }
+export interface I_Input_QueryAdvertisement extends Omit<I_Advertisement, T_Advertisement_Populate> { }
 
 export interface I_Input_CreateAdvertisement extends Omit<I_Advertisement, T_Omit_Create> {
     name: string;

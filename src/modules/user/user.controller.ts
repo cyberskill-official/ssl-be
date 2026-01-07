@@ -6,6 +6,7 @@ import type {
     I_Input_UpdateMany,
     I_Input_UpdateOne,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
@@ -1156,7 +1157,7 @@ export const userCtr = {
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
 
-        const updateResult = await mongooseCtr.updateOne(filter, payloadToPersist, options);
+        const updateResult = await mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, payloadToPersist, options);
 
         if (!updateResult.success) {
             return updateResult;
@@ -1206,7 +1207,7 @@ export const userCtr = {
         _: I_Context,
         { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
     ): Promise<I_Return<{ modifiedCount: number }>> => {
-        return mongooseCtr.updateMany(filter, update, options);
+        return mongooseCtr.updateMany(filter as T_QueryFilter<I_User>, update, options);
     },
 
     deleteUser: async (
@@ -1410,7 +1411,7 @@ export const userCtr = {
             }
 
             // Finally, delete the user
-            return mongooseCtr.deleteOne(filter, options);
+            return mongooseCtr.deleteOne(filter as T_QueryFilter<I_User>, options);
         }
         catch (error) {
             throwError({
@@ -1431,7 +1432,7 @@ export const userCtr = {
         }
 
         // Recover: clear isDel flag
-        return mongooseCtr.updateOne(filter, { isDel: false }, options);
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: false }, options);
     },
     softDeleteUser: async (
         context: I_Context,
@@ -1451,7 +1452,7 @@ export const userCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, { isDel: true }, options);
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true }, options);
     },
 
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {
