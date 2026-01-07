@@ -362,6 +362,7 @@ export const moderationMediaCtr = {
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
                         }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
+                        bypassAgeVerification: true,
                     });
 
                     if (galleryCreated.success && galleryCreated.result?.id) {

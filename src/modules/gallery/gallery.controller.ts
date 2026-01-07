@@ -44,6 +44,10 @@ const env = getEnv();
 
 const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
 
+type CreateGalleryInput = I_Input_CreateOne<I_Input_CreateGallery> & {
+    bypassAgeVerification?: boolean;
+};
+
 export const galleryCtr = {
     /**
      * Check if gallery exists in database without visibility restrictions
@@ -659,11 +663,12 @@ export const galleryCtr = {
 
     createGallery: async (
         context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
+        { doc, bypassAgeVerification = false }: CreateGalleryInput,
     ): Promise<I_Return<I_Gallery>> => {
         // CRITICAL: Check age verification for ALL uploads (images + videos)
         // Only age-verified users can upload content to the platform
-        if (doc.uploadedById) {
+        // Avatar uploads can bypass this check.
+        if (doc.uploadedById && !bypassAgeVerification) {
             const uploaderFound = await userCtr.getUser(context, {
                 filter: { id: doc.uploadedById },
                 populate: [{ path: 'ageVerify' }, { path: 'roles' }],

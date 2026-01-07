@@ -22,7 +22,7 @@ import path from 'node:path';
 import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
+import { ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
@@ -463,20 +463,7 @@ export const userCtr = {
             });
         }
 
-        // Skip age verification nếu: (1) đang trong quá trình đăng ký, hoặc (2) Admin/Staff
-        const isRegistering = currentUser.registerStep !== E_RegisterStep.COMPLETE;
-        const isAgeVerified = currentUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-        const [isAdmin, isStaff] = await Promise.all([
-            authnCtr.isAdmin(context),
-            authnCtr.isStaff(context),
-        ]);
-
-        if (!isRegistering && !isAgeVerified && !isAdmin && !isStaff) {
-            throwError({
-                message: 'Age verification is required before uploading an avatar.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
-        }
+        // Avatar uploads are allowed even if age verification is not completed.
 
         const { mediaOptions: currentUserMediaOptions } = getViewerMediaContext(currentUser);
 
@@ -698,11 +685,14 @@ export const userCtr = {
             }
         }
 
+        const primaryPartner = uploadedResults[0]?.partner ?? 'partner1';
+        const primaryPartnerData = updatedUser.result[primaryPartner];
+
         return {
             success: true,
             result: {
-                url: updatedUser.result.partner1?.gallery?.url ?? '',
-                galleryId: updatedUser.result.partner1?.galleryId ?? null,
+                url: primaryPartnerData?.gallery?.url ?? '',
+                galleryId: primaryPartnerData?.galleryId ?? null,
             },
         };
     },
