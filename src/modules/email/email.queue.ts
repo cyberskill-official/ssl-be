@@ -152,13 +152,7 @@ function initializeQueues(): void {
     bulkQueue = new Bull<I_BulkEmailJobData>('email-bulk', {
         redis: config.redis,
         defaultJobOptions: config.defaultJobOptions,
-        settings: {
-            // Tên các trường chính xác cho Bull v3:
-            lockDuration: 180000, // 3 phút
-            lockRenewTime: 30000, // Gia hạn mỗi 30s
-            stalledInterval: 30000, // Kiểm tra stalled mỗi 30s
-            maxStalledCount: 3, // Cho phép stalled 3 lần
-        },
+        settings: config.settings,
     });
 
     bulkQueue.on('error', (err) => {
