@@ -1,6 +1,7 @@
 export enum E_EmailJobStatus {
     WAITING = 'WAITING',
     ACTIVE = 'ACTIVE',
+    STALLED = 'STALLED',
     COMPLETED = 'COMPLETED',
     FAILED = 'FAILED',
     SCHEDULED = 'SCHEDULED',

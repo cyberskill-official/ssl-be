@@ -237,6 +237,15 @@ export const userCtr = {
             { ...(filter || {}) },
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
+        const lastOnlineFilter = (computedFilter as Record<string, unknown>)?.['lastOnline'];
+        if (
+            lastOnlineFilter
+            && typeof lastOnlineFilter === 'object'
+            && !(lastOnlineFilter instanceof Date)
+            && Object.keys(lastOnlineFilter as Record<string, unknown>).length === 0
+        ) {
+            delete (computedFilter as Record<string, unknown>)['lastOnline'];
+        }
 
         let effectiveFilter;
         if (isAdmin) {
@@ -312,6 +321,15 @@ export const userCtr = {
             { ...(filter || {}) },
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
+        const lastOnlineFilter = (computedFilter as Record<string, unknown>)?.['lastOnline'];
+        if (
+            lastOnlineFilter
+            && typeof lastOnlineFilter === 'object'
+            && !(lastOnlineFilter instanceof Date)
+            && Object.keys(lastOnlineFilter as Record<string, unknown>).length === 0
+        ) {
+            delete (computedFilter as Record<string, unknown>)['lastOnline'];
+        }
 
         // Get session user from session directly to avoid circular dependency
         let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
@@ -912,6 +930,36 @@ export const userCtr = {
         const hasAtomicOperators = Object.keys(update || {}).some(k => k.startsWith('$'));
         if (!hasAtomicOperators) {
             dedupArraysIterative(update);
+        }
+        const normalizeDateValue = (value: unknown): Date | null | undefined => {
+            if (value === null)
+                return null;
+            if (value instanceof Date)
+                return value;
+            if (typeof value === 'string' || typeof value === 'number') {
+                const parsed = new Date(value);
+                return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+            }
+            return undefined;
+        };
+
+        if (Object.prototype.hasOwnProperty.call(update, 'lastOnline')) {
+            const normalized = normalizeDateValue((update as any).lastOnline);
+            if (normalized === undefined) {
+                delete (update as any).lastOnline;
+            }
+            else {
+                (update as any).lastOnline = normalized;
+            }
+        }
+        if (hasAtomicOperators && (update as any).$set?.lastOnline !== undefined) {
+            const normalized = normalizeDateValue((update as any).$set.lastOnline);
+            if (normalized === undefined) {
+                delete (update as any).$set.lastOnline;
+            }
+            else {
+                (update as any).$set.lastOnline = normalized;
+            }
         }
 
         const { password } = update;
