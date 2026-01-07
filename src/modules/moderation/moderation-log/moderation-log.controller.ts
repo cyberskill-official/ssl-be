@@ -12,8 +12,10 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { E_Role_Staff, roleCtr } from '#modules/authz/index.js';
 import { messageCtr } from '#modules/conversation/message/index.js';
 import { E_MessageType } from '#modules/conversation/message/message.type.js';
+import { userCtr } from '#modules/user/index.js';
 
 import type {
     I_Input_CreateModerationLog,
@@ -26,6 +28,39 @@ import { ModerationLogModel } from './moderation-log.model.js';
 import { E_ModerationLogAction, E_ModerationLogType } from './moderation-log.type.js';
 
 const mongooseCtr = new MongooseController<I_ModerationLog>(ModerationLogModel);
+
+async function getAdminUserIds(context: I_Context): Promise<string[]> {
+    try {
+        const adminRole = await roleCtr.getRole(context, {
+            filter: { name: E_Role_Staff.ADMIN },
+        });
+        if (!adminRole.success || !adminRole.result?.id)
+            return [];
+
+        const roleIds = [adminRole.result.id];
+        const childRoles = await roleCtr.getRoles(context, {
+            filter: { ancestorsIds: adminRole.result.id },
+            options: { pagination: false, projection: { id: 1 } },
+        });
+        if (childRoles.success && childRoles.result?.docs?.length) {
+            roleIds.push(
+                ...childRoles.result.docs.map(role => role.id).filter(Boolean),
+            );
+        }
+
+        const admins = await userCtr.getUsers(context, {
+            filter: { rolesIds: { $in: roleIds } } as any,
+            options: { pagination: false, projection: { id: 1 } },
+        });
+        if (!admins.success || !admins.result?.docs?.length)
+            return [];
+
+        return admins.result.docs.map(user => user.id).filter(Boolean);
+    }
+    catch {
+        return [];
+    }
+}
 
 export const moderationLogCtr = {
     getModerationLog: async (
@@ -40,18 +75,41 @@ export const moderationLogCtr = {
         return mongooseCtr.findOne(filter, projection, options, populate || defaultPopulate);
     },
     getModerationLogs: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryModerationLog>,
     ): Promise<I_Return<T_PaginateResult<I_ModerationLog>>> => {
+        const optionsAny = { ...(options ?? {}) } as any;
+        const onlyAdminActions = optionsAny.onlyAdminActions === true;
+        if (onlyAdminActions) {
+            delete optionsAny.onlyAdminActions;
+        }
+
+        const effectiveFilter = { ...(filter ?? {}) } as any;
+        if (onlyAdminActions) {
+            const adminIds = await getAdminUserIds(context);
+            if (effectiveFilter.userId) {
+                if (!adminIds.includes(effectiveFilter.userId)) {
+                    effectiveFilter.userId = { $in: [] };
+                }
+            }
+            else {
+                effectiveFilter.userId = { $in: adminIds };
+            }
+            // Exclude AI/system logs even if userId matches.
+            if (effectiveFilter.aiResult === undefined) {
+                effectiveFilter.aiResult = null;
+            }
+        }
+
         const populateOptions = {
-            ...options,
-            populate: options?.populate || [
+            ...optionsAny,
+            populate: optionsAny?.populate || [
                 { path: 'user', select: 'id username email' },
                 { path: 'moderationMedia', select: 'id type url status' },
                 { path: 'message', select: 'id content' },
             ],
         };
-        return mongooseCtr.findPaging(filter, populateOptions);
+        return mongooseCtr.findPaging(effectiveFilter, populateOptions);
     },
     createModerationLog: async (
         context: I_Context,

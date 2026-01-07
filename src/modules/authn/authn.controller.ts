@@ -24,6 +24,8 @@ import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailService } from '#modules/email/email.service.js';
 import { emailCtr } from '#modules/email/index.js';
+import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationChannel,
@@ -2310,6 +2312,19 @@ export const authnCtr = {
                 // Non-fatal: log but don't fail the approval
                 log.error('Failed to create age verification approval notification:', error);
             }
+
+            try {
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.APPROVE,
+                        type: E_ModerationLogType.AGE_VERIFICATION,
+                        userId: currentUser.id,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: logging failure shouldn't block the response
+            }
         }
 
         return userUpdated;
@@ -2414,6 +2429,20 @@ export const authnCtr = {
             catch (error) {
                 // Non-fatal: log but don't fail the rejection
                 log.error('Failed to create age verification rejection notification:', error);
+            }
+
+            try {
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.DELETE,
+                        type: E_ModerationLogType.AGE_VERIFICATION,
+                        userId: currentUser.id,
+                        reason: `${trimmedReason}`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: logging failure shouldn't block the response
             }
         }
 

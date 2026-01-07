@@ -1,6 +1,7 @@
 enum E_ModerationLogAction {
     DELETE
     SUSPEND
+    UN_SUSPEND
     APPROVE
     WARN
     DEACTIVATE
@@ -9,6 +10,8 @@ enum E_ModerationLogAction {
 
 enum E_ModerationLogType {
     TEXT
+    ACCOUNT     
+    AGE_VERIFICATION
     IMAGE
     VIDEO
 }

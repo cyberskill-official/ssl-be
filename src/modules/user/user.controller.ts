@@ -36,7 +36,7 @@ import { FollowModel } from '#modules/follow/follow.model.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { likeCtr } from '#modules/like/index.js';
 import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
-import { E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
+import { E_ModerationLogAction, E_ModerationLogType, E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
@@ -1204,6 +1204,8 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
+        const isAdmin = await authnCtr.isAdmin(context);
+
         // Hard delete: completely remove user and all related data from the system
         // Silent deletion: no emails, no notifications, allows re-registration
         const userToDelete = await userCtr.getUser(context, { filter });
@@ -1401,7 +1403,24 @@ export const userCtr = {
             }
 
             // Finally, delete the user
-            return mongooseCtr.deleteOne(filter as T_QueryFilter<I_User>, options);
+            const deletedUser = await mongooseCtr.deleteOne(filter as T_QueryFilter<I_User>, options);
+
+            if (deletedUser.success && isAdmin) {
+                try {
+                    await moderationLogCtr.createModerationLog(context, {
+                        doc: {
+                            action: E_ModerationLogAction.DELETE,
+                            type: E_ModerationLogType.ACCOUNT,
+                            userId,
+                        },
+                    });
+                }
+                catch {
+                    // Non-fatal: logging failure shouldn't block the response
+                }
+            }
+
+            return deletedUser;
         }
         catch (error) {
             throwError({
@@ -1508,9 +1527,9 @@ export const userCtr = {
         { doc }: I_Input_CreateOne<I_Input_AdminBlockUser>,
     ): Promise<I_Return<I_User>> => {
         // Avoid circular dependency by checking session directly instead of calling isAdmin
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
         let isAdmin = false;
         try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
             if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
                 isAdmin = sessionUser.roles.some(role =>
                     role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
@@ -1540,10 +1559,27 @@ export const userCtr = {
 
         // Block user: set isAdminBlocked: true, soft delete, and send violation email
         // updateUser will automatically send ACCOUNT_SUSPENDED email when isDel changes to true
-        return userCtr.updateUser(context, {
+        const updateResult = await userCtr.updateUser(context, {
             filter: { id: userId },
             update: { isAdminBlocked: true, isDel: true },
         });
+
+        if (updateResult.success && sessionUser?.id) {
+            try {
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.SUSPEND,
+                        type: E_ModerationLogType.ACCOUNT,
+                        userId: sessionUser.id,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: logging failure shouldn't block the response
+            }
+        }
+
+        return updateResult;
     },
 
     adminUnBlockUser: async (
@@ -1551,9 +1587,9 @@ export const userCtr = {
         { filter }: I_Input_DeleteOne<I_Input_AdminUnBlockUser>,
     ): Promise<I_Return<I_User>> => {
         // Avoid circular dependency by checking session directly instead of calling isAdmin
+        const sessionUser = context?.req?.session?.user as I_User | undefined;
         let isAdmin = false;
         try {
-            const sessionUser = context?.req?.session?.user as I_User | undefined;
             if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
                 isAdmin = sessionUser.roles.some(role =>
                     role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
@@ -1583,10 +1619,29 @@ export const userCtr = {
         }
 
         // Unblock user: set isAdminBlocked: false and isDel: false to restore user access
-        return userCtr.updateUser(context, {
+        const updateResult = await userCtr.updateUser(context, {
             filter: { id: userId },
             update: { isAdminBlocked: false, isDel: false },
         });
+
+        if (updateResult.success && sessionUser?.id) {
+            try {
+                const targetLabel = userFound.result.username || userFound.result.email || userId;
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.UN_SUSPEND,
+                        type: E_ModerationLogType.ACCOUNT,
+                        userId: sessionUser.id,
+                        reason: `User unblocked: ${targetLabel}`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: logging failure shouldn't block the response
+            }
+        }
+
+        return updateResult;
     },
 
 };

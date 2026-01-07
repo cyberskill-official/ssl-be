@@ -315,9 +315,10 @@ export const uploadCtr = {
                                 doc: {
                                     action: logAction,
                                     type: E_ModerationLogType.VIDEO,
-                                    userId: currentUser.id,
+                                    userId: undefined,
                                     moderationMediaId: moderationId,
                                     aiResult,
+                                    reason: 'AI moderation (video)',
                                 },
                             });
                         }
@@ -488,9 +489,10 @@ export const uploadCtr = {
                         doc: {
                             action: logAction,
                             type: mediaType, // Set type to IMAGE or VIDEO
-                            userId: currentUser.id,
+                            userId: undefined,
                             moderationMediaId: moderationId,
                             aiResult: moderateImage.result,
+                            reason: 'AI moderation (image)',
                         },
                     });
                 }
