@@ -7,7 +7,6 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
-import { deepMerge } from '@cyberskill/shared/util';
 import bcrypt from 'bcryptjs';
 import ejs from 'ejs';
 import jwt from 'jsonwebtoken';
@@ -1070,20 +1069,28 @@ export const authnCtr = {
     ): Promise<I_Return<I_Response_Auth>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
         const stepsAfter = [E_RegisterStep.MEMBERSHIP, E_RegisterStep.COMPLETE];
-        const mergedPartner1 = deepMerge(currentUser.partner1, update.partner1);
+        const mergedPartner1 = {
+            ...(currentUser.partner1 ?? {}),
+            ...(update.partner1 ?? {}),
+        };
         const mergedPartner2 = update.partner2
-            ? deepMerge(currentUser.partner2, update.partner2)
+            ? {
+                    ...(currentUser.partner2 ?? {}),
+                    ...(update.partner2 ?? {}),
+                }
             : undefined;
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
             update: {
-                ...update,
-                partner1: mergedPartner1,
-                ...(mergedPartner2 && { partner2: mergedPartner2 }),
-                ...(!stepsAfter.includes(currentUser.registerStep!) && {
-                    registerStep: E_RegisterStep.MEMBERSHIP,
-                }),
+                $set: {
+                    ...update,
+                    partner1: mergedPartner1,
+                    ...(mergedPartner2 && { partner2: mergedPartner2 }),
+                    ...(!stepsAfter.includes(currentUser.registerStep!) && {
+                        registerStep: E_RegisterStep.MEMBERSHIP,
+                    }),
+                },
             },
         });
 

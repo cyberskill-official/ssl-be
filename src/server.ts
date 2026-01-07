@@ -28,6 +28,7 @@ const env = getEnv();
         saveUninitialized: false,
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
+            autoRemove: 'disabled',
         }),
         cookie: {
             // maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
@@ -82,12 +83,6 @@ const env = getEnv();
         updateUserActivity,
         expressMiddleware(apolloServer, {
             context: async (context) => {
-                const indexes = await mongoose.connection.db?.collection('sessions').indexes();
-
-                if (indexes?.some(idx => idx.name === 'expires_1')) {
-                    await mongoose.connection.db?.collection('sessions').dropIndex('expires_1');
-                }
-
                 // await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
 
                 return context;
