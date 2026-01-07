@@ -225,6 +225,7 @@ export const emailQueueRegistryService = {
             const byStatus = {
                 WAITING: 0,
                 ACTIVE: 0,
+                STALLED: 0,
                 COMPLETED: 0,
                 FAILED: 0,
                 SCHEDULED: 0,

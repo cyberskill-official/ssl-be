@@ -9,6 +9,7 @@ import type { I_ModerationMedia } from '../moderation-media/index.js';
 export enum E_ModerationLogAction {
     DELETE = 'DELETE',
     SUSPEND = 'SUSPEND',
+    UN_SUSPEND = 'UN_SUSPEND',
     APPROVE = 'APPROVE',
     WARN = 'WARN',
     DEACTIVATE = 'DEACTIVATE',
@@ -17,6 +18,8 @@ export enum E_ModerationLogAction {
 
 export enum E_ModerationLogType {
     TEXT = 'TEXT',
+    ACCOUNT = 'ACCOUNT',
+    AGE_VERIFICATION = 'AGE_VERIFICATION',
     IMAGE = 'IMAGE',
     VIDEO = 'VIDEO',
 }

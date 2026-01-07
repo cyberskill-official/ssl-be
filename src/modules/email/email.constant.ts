@@ -9,17 +9,23 @@ export const EMAIL_PRIORITY = {
 } as const;
 
 export const EMAIL_CONSTANTS = {
-    // Queue settings
     QUEUE: {
-        CONCURRENCY: 5,
-        DEFAULT_BATCH_SIZE: 300, // Default batch size for bulk email processing
+        CONCURRENCY: 3, // Giảm xuống 3 nếu server yếu để tránh nghẽn CPU
+        DEFAULT_BATCH_SIZE: 300,
         MAX_BATCH_SIZE: 1000,
-        PROCESSING_TIMEOUT: 30000, // 30 seconds
+        // Tăng thời gian timeout nếu bạn gửi email có template HTML nặng
+        PROCESSING_TIMEOUT: 60000, // Tăng lên 60 giây
+        LOCK_DURATION: 120000,
+        LOCK_RENEW_TIME: 60000,
+        STALLED_INTERVAL: 30000,
+        MAX_STALLED_COUNT: 3,
         DEFAULT_JOB_OPTIONS: {
-            ATTEMPTS: 3,
-            BACKOFF_DELAY: 5000,
+            ATTEMPTS: 5, // Tăng số lần thử lại cho email quan trọng
+            BACKOFF_DELAY: 10000, // Đợi 10s trước khi thử lại
             REMOVE_ON_COMPLETE: 100,
             REMOVE_ON_FAIL: 50,
+            // THÊM DÒNG NÀY VÀO TRONG WORKER KHI KHỞI TẠO:
+            // lockDuration: 60000
         },
     },
     // Template settings
@@ -50,6 +56,12 @@ export const EMAIL_CONFIG = {
             removeOnComplete: EMAIL_CONSTANTS.QUEUE.DEFAULT_JOB_OPTIONS.REMOVE_ON_COMPLETE,
             removeOnFail: EMAIL_CONSTANTS.QUEUE.DEFAULT_JOB_OPTIONS.REMOVE_ON_FAIL,
         },
+        settings: {
+            lockDuration: EMAIL_CONSTANTS.QUEUE.LOCK_DURATION,
+            lockRenewTime: EMAIL_CONSTANTS.QUEUE.LOCK_RENEW_TIME,
+            stalledInterval: EMAIL_CONSTANTS.QUEUE.STALLED_INTERVAL,
+            maxStalledCount: EMAIL_CONSTANTS.QUEUE.MAX_STALLED_COUNT,
+        },
     },
 
     // Transactional queue settings
@@ -70,6 +82,12 @@ export const EMAIL_CONFIG = {
             },
             removeOnComplete: 100,
             removeOnFail: 50,
+        },
+        settings: {
+            lockDuration: EMAIL_CONSTANTS.QUEUE.LOCK_DURATION,
+            lockRenewTime: EMAIL_CONSTANTS.QUEUE.LOCK_RENEW_TIME,
+            stalledInterval: EMAIL_CONSTANTS.QUEUE.STALLED_INTERVAL,
+            maxStalledCount: EMAIL_CONSTANTS.QUEUE.MAX_STALLED_COUNT,
         },
     },
 

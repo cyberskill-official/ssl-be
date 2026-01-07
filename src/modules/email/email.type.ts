@@ -37,6 +37,12 @@ export interface I_EmailQueueConfig {
         removeOnComplete?: number;
         removeOnFail?: number;
     };
+    settings?: {
+        lockDuration?: number;
+        lockRenewTime?: number;
+        stalledInterval?: number;
+        maxStalledCount?: number;
+    };
     retryOptions?: {
         attempts: number;
         backoffType: 'fixed' | 'exponential';
@@ -91,6 +97,7 @@ export type T_EmailEventType
         | 'job.processing'
         | 'job.completed'
         | 'job.failed'
+        | 'job.stalled'
         | 'job.retry'
         | 'queue.paused'
         | 'queue.resumed'

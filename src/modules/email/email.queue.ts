@@ -12,6 +12,7 @@ import type {
     T_EmailEventType,
     T_EmailJobStatus,
 } from './email.type.js';
+import type { I_EmailJobRegistryEntry } from './queue-registry/index.js';
 
 import { EMAIL_CONFIG, EMAIL_PRIORITY } from './email.constant.js';
 import { emailService } from './email.service.js';
@@ -37,6 +38,25 @@ function emitEvent(type: T_EmailEventType, jobId?: string, data?: any): void {
         timestamp: new Date(),
     };
     emitter.emit(type, event);
+}
+
+async function updateRegistryWithMeta(
+    jobId: string,
+    updates: Partial<I_EmailJobRegistryEntry>,
+    metaUpdates?: Record<string, any>,
+): Promise<void> {
+    if (!metaUpdates) {
+        await emailQueueRegistryService.updateJob(jobId, updates);
+        return;
+    }
+
+    const existing = await emailQueueRegistryService.getJob(jobId);
+    const mergedMeta = {
+        ...(existing?.meta ?? {}),
+        ...metaUpdates,
+    };
+
+    await emailQueueRegistryService.updateJob(jobId, { ...updates, meta: mergedMeta });
 }
 
 async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I_EmailJobResult> {
@@ -132,6 +152,7 @@ function initializeQueues(): void {
     bulkQueue = new Bull<I_BulkEmailJobData>('email-bulk', {
         redis: config.redis,
         defaultJobOptions: config.defaultJobOptions,
+        settings: config.settings,
     });
 
     bulkQueue.on('error', (err) => {
@@ -161,7 +182,8 @@ function setupEventListeners(): void {
     });
 
     bulkQueue.on('failed', (job, err) => {
-        emitEvent('job.failed', String(job.id), { job: job.data, error: err.message });
+        const jobId = String(job.id);
+        emitEvent('job.failed', jobId, { job: job.data, error: err.message });
 
         const recipients: string[] = Array.isArray(job.data.emailJob?.to)
             ? job.data.emailJob.to
@@ -169,12 +191,20 @@ function setupEventListeners(): void {
                 ? [job.data.emailJob.to]
                 : [];
 
-        emailQueueRegistryService.updateJob(String(job.id), {
+        const now = new Date();
+        const failedReason = err?.message || job.failedReason || 'Unknown error';
+
+        void updateRegistryWithMeta(jobId, {
             failed: recipients.length,
             sent: 0,
             failedRecipients: recipients,
             status: E_EmailJobStatus.FAILED,
-            updatedAt: new Date(),
+            updatedAt: now,
+        }, {
+            lastFailedAt: now.toISOString(),
+            lastFailedReason: failedReason,
+        }).catch((error) => {
+            log.error('Failed to update failed email job in registry:', { jobId, error });
         });
     });
 
@@ -188,7 +218,23 @@ function setupEventListeners(): void {
     });
 
     bulkQueue.on('stalled', (job) => {
-        console.warn(`Email job ${job.id} stalled`);
+        const jobId = String(job.id);
+        const stalledCount = (job as Bull.Job<I_BulkEmailJobData> & { stalledCounter?: number }).stalledCounter ?? 0;
+        const now = new Date();
+
+        log.warn(`Email job ${jobId} stalled`, { stalledCount });
+        emitEvent('job.stalled', jobId, { job: job.data, stalledCount });
+
+        void updateRegistryWithMeta(jobId, {
+            status: E_EmailJobStatus.STALLED,
+            updatedAt: now,
+        }, {
+            stalledCount,
+            lastStalledAt: now.toISOString(),
+            lastStalledReason: 'Job stalled (lock renewal failed or worker restart)',
+        }).catch((error) => {
+            log.error('Failed to update stalled email job in registry:', { jobId, error });
+        });
     });
 }
 

@@ -102,7 +102,16 @@ export const moderationMediaCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<T_PaginateResult<I_ModerationMedia>>> => {
-        const moderationMedias = await mongooseCtr.findPaging(filter as T_QueryFilter<I_ModerationMedia>, options);
+        const optionsAny = { ...(options ?? {}) } as any;
+        const includeDeletedEntities = optionsAny.includeDeletedEntities === true;
+        if (includeDeletedEntities) {
+            delete optionsAny.includeDeletedEntities;
+        }
+
+        const moderationMedias = await mongooseCtr.findPaging(
+            filter as T_QueryFilter<I_ModerationMedia>,
+            optionsAny,
+        );
 
         if (!moderationMedias.success) {
             return moderationMedias;
@@ -112,24 +121,26 @@ export const moderationMediaCtr = {
         const galleryEntityIds = new Set<string>();
         const catalogueEntityIds = new Set<string>();
 
-        for (const moderationMedia of moderationDocs) {
-            const entityId = moderationMedia?.entityId;
-            if (!entityId) {
-                continue;
-            }
+        if (!includeDeletedEntities) {
+            for (const moderationMedia of moderationDocs) {
+                const entityId = moderationMedia?.entityId;
+                if (!entityId) {
+                    continue;
+                }
 
-            if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
-                galleryEntityIds.add(String(entityId));
-            }
-            else if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
-                catalogueEntityIds.add(String(entityId));
+                if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
+                    galleryEntityIds.add(String(entityId));
+                }
+                else if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
+                    catalogueEntityIds.add(String(entityId));
+                }
             }
         }
 
         let existingGalleryIds: Set<string> | null = null;
         let existingCatalogueIds: Set<string> | null = null;
 
-        if (galleryEntityIds.size > 0 || catalogueEntityIds.size > 0) {
+        if (!includeDeletedEntities && (galleryEntityIds.size > 0 || catalogueEntityIds.size > 0)) {
             const galleryMongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
             const catalogueMongooseCtr = new MongooseController<I_Catalogue>(CatalogueModel);
 
@@ -165,28 +176,32 @@ export const moderationMediaCtr = {
             }
         }
 
-        moderationMedias.result.docs = moderationDocs.filter((moderationMedia) => {
-            const entityId = moderationMedia?.entityId;
-            if (!entityId) {
-                return true;
-            }
+        const filteredDocs = includeDeletedEntities
+            ? moderationDocs
+            : moderationDocs.filter((moderationMedia) => {
+                    const entityId = moderationMedia?.entityId;
+                    if (!entityId) {
+                        return true;
+                    }
 
-            if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
-                if (!existingGalleryIds) {
+                    if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
+                        if (!existingGalleryIds) {
+                            return true;
+                        }
+                        return existingGalleryIds.has(String(entityId));
+                    }
+
+                    if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
+                        if (!existingCatalogueIds) {
+                            return true;
+                        }
+                        return existingCatalogueIds.has(String(entityId));
+                    }
+
                     return true;
-                }
-                return existingGalleryIds.has(String(entityId));
-            }
+                });
 
-            if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
-                if (!existingCatalogueIds) {
-                    return true;
-                }
-                return existingCatalogueIds.has(String(entityId));
-            }
-
-            return true;
-        }).map((moderationMedia) => {
+        moderationMedias.result.docs = filteredDocs.map((moderationMedia) => {
             if (moderationMedia.url) {
                 const rawUrl = moderationMedia.url as string;
                 try {
@@ -914,7 +929,7 @@ export const moderationMediaCtr = {
                     doc: {
                         action: E_ModerationLogAction.APPROVE,
                         type: mediaType, // Set type to IMAGE or VIDEO
-                        userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                        userId: currentUser.id,
                         moderationMediaId: id,
                         reason: 'Approved by moderator (manual approval)',
                     },
@@ -943,37 +958,24 @@ export const moderationMediaCtr = {
             E_ModerationMediaStatus.APPROVED,
         );
 
-        // Create APPROVE log if it doesn't exist yet
+        // Always create APPROVE log when status changes to APPROVED (manual action)
         if (moderationMediaUpdated.success && moderationMediaUpdated.result) {
             try {
-                // Check again if log was created between the check and the update
-                const checkLogsAgain = await moderationLogCtr.getModerationLogs(context, {
-                    filter: {
-                        moderationMediaId: id,
+                const mediaType = currentModerationMedia.result.type
+                    ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                    : E_ModerationLogType.IMAGE;
+                const approveReason = currentModerationMedia.result.status === E_ModerationMediaStatus.REJECTED
+                    ? 'Approved by moderator (manual re-approval)'
+                    : 'Approved by moderator';
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
                         action: E_ModerationLogAction.APPROVE,
+                        type: mediaType, // Set type to IMAGE or VIDEO
+                        userId: currentUser.id,
+                        moderationMediaId: id,
+                        reason: approveReason,
                     },
-                    options: { pagination: false },
                 });
-
-                if (
-                    !checkLogsAgain.success
-                    || !checkLogsAgain.result?.docs
-                    || checkLogsAgain.result.docs.length === 0
-                ) {
-                    // No APPROVE log exists, create one
-                    const mediaType = currentModerationMedia.result.type
-                        ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
-                        : E_ModerationLogType.IMAGE;
-                    await moderationLogCtr.createModerationLog(context, {
-                        doc: {
-                            action: E_ModerationLogAction.APPROVE,
-                            type: mediaType, // Set type to IMAGE or VIDEO
-                            userId: currentModerationMedia.result.uploadedById || currentUser.id,
-                            moderationMediaId: id,
-                            reason: 'Approved by moderator',
-                        },
-                    });
-                }
             }
             catch {
                 // Log error but don't block - moderation log creation failure shouldn't prevent response
@@ -1042,7 +1044,7 @@ export const moderationMediaCtr = {
                     doc: {
                         action: E_ModerationLogAction.DELETE,
                         type: mediaType as any, // Set type to IMAGE or VIDEO
-                        userId: currentModerationMedia.result.uploadedById || currentUser.id,
+                        userId: currentUser.id,
                         moderationMediaId: id,
                         reason: reason || 'Rejected by moderator (manual rejection)',
                     },
@@ -1132,34 +1134,19 @@ export const moderationMediaCtr = {
                     }
                 }
 
-                // Check if DELETE log exists
-                const checkLogsAgain = await moderationLogCtr.getModerationLogs(context, {
-                    filter: {
-                        moderationMediaId: id,
+                // Always create DELETE log when status changes to REJECTED (manual action)
+                const mediaType = currentModerationMedia.result.type
+                    ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                    : E_ModerationLogType.IMAGE;
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
                         action: E_ModerationLogAction.DELETE,
+                        type: mediaType, // Set type to IMAGE or VIDEO
+                        userId: currentUser.id,
+                        moderationMediaId: id,
+                        reason: reason || 'Rejected by moderator',
                     },
-                    options: { pagination: false },
                 });
-
-                if (
-                    !checkLogsAgain.success
-                    || !checkLogsAgain.result?.docs
-                    || checkLogsAgain.result.docs.length === 0
-                ) {
-                    // No DELETE log exists, create one
-                    const mediaType = currentModerationMedia.result.type
-                        ? (currentModerationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
-                        : E_ModerationLogType.IMAGE;
-                    await moderationLogCtr.createModerationLog(context, {
-                        doc: {
-                            action: E_ModerationLogAction.DELETE,
-                            type: mediaType, // Set type to IMAGE or VIDEO
-                            userId: currentModerationMedia.result.uploadedById || currentUser.id,
-                            moderationMediaId: id,
-                            reason: reason || 'Rejected by moderator',
-                        },
-                    });
-                }
             }
             catch {
                 // Log error but don't block - moderation log creation failure shouldn't prevent response
