@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult, T_QueryFilter } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -129,7 +129,7 @@ export const settingCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateSettingGraphQL>,
     ): Promise<I_Return<I_Setting>> => {
-        const settingFound = await settingCtr.getSetting(context, { filter });
+        const settingFound = await settingCtr.getSetting(context, { filter: filter as T_QueryFilter<I_Setting> });
 
         if (!settingFound.success) {
             throwError({
@@ -173,7 +173,7 @@ export const settingCtr = {
             validateFaqBusinessRules(transformedUpdate.value as I_FAQ);
         }
 
-        return await mongooseCtr.updateOne(filter, transformedUpdate, options);
+        return await mongooseCtr.updateOne(filter as T_QueryFilter<I_Setting>, transformedUpdate, options);
     },
     deleteSetting: async (
         context: I_Context,

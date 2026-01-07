@@ -5,6 +5,7 @@ import type {
     I_Input_FindPaging,
     I_Input_UpdateOne,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
@@ -51,7 +52,7 @@ export const moderationMediaCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
-        const moderationMediaFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const moderationMediaFound = await mongooseCtr.findOne(filter as T_QueryFilter<I_ModerationMedia>, projection, options, populate);
 
         if (!moderationMediaFound.success) {
             return moderationMediaFound;
@@ -101,7 +102,7 @@ export const moderationMediaCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<T_PaginateResult<I_ModerationMedia>>> => {
-        const moderationMedias = await mongooseCtr.findPaging(filter, options);
+        const moderationMedias = await mongooseCtr.findPaging(filter as T_QueryFilter<I_ModerationMedia>, options);
 
         if (!moderationMedias.success) {
             return moderationMedias;
@@ -361,6 +362,7 @@ export const moderationMediaCtr = {
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
                         }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
+                        bypassAgeVerification: true,
                     });
 
                     if (galleryCreated.success && galleryCreated.result?.id) {
@@ -1172,7 +1174,7 @@ export const moderationMediaCtr = {
         { filter, options }: I_Input_DeleteOne<I_Input_QueryModerationMedia>,
     ): Promise<I_Return<I_ModerationMedia>> => {
         // Find the moderation media first
-        const moderationMedia = await mongooseCtr.findOne(filter);
+        const moderationMedia = await mongooseCtr.findOne(filter as T_QueryFilter<I_ModerationMedia>);
         if (!moderationMedia.success || !moderationMedia.result) {
             throwError({
                 message: 'ModerationMedia not found.',
@@ -1211,7 +1213,7 @@ export const moderationMediaCtr = {
             });
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        return mongooseCtr.deleteOne(filter as T_QueryFilter<I_ModerationMedia>, options);
     },
 };
 

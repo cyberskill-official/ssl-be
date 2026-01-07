@@ -44,6 +44,10 @@ const env = getEnv();
 
 const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
 
+type CreateGalleryInput = I_Input_CreateOne<I_Input_CreateGallery> & {
+    bypassAgeVerification?: boolean;
+};
+
 export const galleryCtr = {
     /**
      * Check if gallery exists in database without visibility restrictions
@@ -280,7 +284,7 @@ export const galleryCtr = {
         const sessionUserId = context.req?.session?.user?.id;
         const ownerFromSingle = sessionUserId === filter?.uploadedById;
         const ownerFromMultiple = Array.isArray(filter?.uploadedByIds)
-            && filter.uploadedByIds.some(id => id && typeof id === 'string' && id.trim() === sessionUserId);
+            && (filter.uploadedByIds as string[]).some((id: string) => id && typeof id === 'string' && id.trim() === sessionUserId);
         const isOwner = ownerFromSingle || ownerFromMultiple;
 
         // Default guests to FREE to avoid leaking clear images
@@ -354,10 +358,10 @@ export const galleryCtr = {
 
         // ép filter + status
         let modifiedFilter = { ...(filter || {}) };
-        if (filter?.uploadedByIds && filter.uploadedByIds.length > 0) {
+        if (filter?.uploadedByIds && (filter.uploadedByIds as string[]).length > 0) {
             modifiedFilter = {
                 ...filter,
-                uploadedById: { $in: filter.uploadedByIds },
+                uploadedById: { $in: filter.uploadedByIds as string[] },
             };
             delete modifiedFilter.uploadedByIds;
         }
@@ -659,11 +663,12 @@ export const galleryCtr = {
 
     createGallery: async (
         context: I_Context,
-        { doc }: I_Input_CreateOne<I_Input_CreateGallery>,
+        { doc, bypassAgeVerification = false }: CreateGalleryInput,
     ): Promise<I_Return<I_Gallery>> => {
         // CRITICAL: Check age verification for ALL uploads (images + videos)
         // Only age-verified users can upload content to the platform
-        if (doc.uploadedById) {
+        // Avatar uploads can bypass this check.
+        if (doc.uploadedById && !bypassAgeVerification) {
             const uploaderFound = await userCtr.getUser(context, {
                 filter: { id: doc.uploadedById },
                 populate: [{ path: 'ageVerify' }, { path: 'roles' }],

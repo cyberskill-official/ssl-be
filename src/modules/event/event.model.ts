@@ -1,4 +1,4 @@
-import type { T_MongooseHookNextFunction, T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
+import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
@@ -133,7 +133,7 @@ export const EventModel = mongo.createModel<I_Event>({
     ],
 });
 
-async function createMiddleware(this: I_Event, next: T_MongooseHookNextFunction) {
+async function createMiddleware(this: I_Event) {
     try {
         const mongooseCtr = new MongooseController<I_Event>(EventModel);
 
@@ -149,15 +149,16 @@ async function createMiddleware(this: I_Event, next: T_MongooseHookNextFunction)
 
             this.slug = newSlug.result;
         }
-
-        next();
     }
     catch (error) {
-        next(error as Error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error(String(error));
     }
 };
 
-async function updateMiddleware(this: T_QueryWithHelpers<I_Event>, next: T_MongooseHookNextFunction) {
+async function updateMiddleware(this: T_QueryWithHelpers<I_Event>) {
     try {
         const mongooseCtr = new MongooseController<I_Event>(EventModel);
         const newData = this.getUpdate() as I_Event;
@@ -184,10 +185,11 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Event>, next: T_Mongo
 
             newData.slug = newSlug.result;
         }
-
-        next();
     }
     catch (error) {
-        next(error as Error);
+        if (error instanceof Error) {
+            throw error;
+        }
+        throw new Error(String(error));
     }
 };

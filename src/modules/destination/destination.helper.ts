@@ -1,4 +1,4 @@
-import type { T_FilterQuery } from '@cyberskill/shared/node/mongo';
+import type { T_QueryFilter } from '@cyberskill/shared/node/mongo';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -30,9 +30,9 @@ export function sanitizeFilter(rawFilter?: Record<string, unknown>) {
 }
 
 export function mergeFilters(
-    base?: T_FilterQuery<I_Destination>,
-    extra?: T_FilterQuery<I_Destination>,
-): T_FilterQuery<I_Destination> | undefined {
+    base?: T_QueryFilter<I_Destination>,
+    extra?: T_QueryFilter<I_Destination>,
+): T_QueryFilter<I_Destination> | undefined {
     const hasBase = !!base && Object.keys(base).length > 0;
     const hasExtra = !!extra && Object.keys(extra).length > 0;
 
@@ -48,13 +48,13 @@ export function mergeFilters(
         return base;
     }
 
-    return { $and: [base, extra] } as T_FilterQuery<I_Destination>;
+    return { $and: [base, extra] } as T_QueryFilter<I_Destination>;
 }
 
 export async function buildCountryNameFilter(
     context: I_Context,
     countryName?: string | null,
-): Promise<T_FilterQuery<I_Destination> | undefined> {
+): Promise<T_QueryFilter<I_Destination> | undefined> {
     const trimmedName = countryName?.trim();
 
     if (!trimmedName) {
@@ -79,7 +79,7 @@ export async function buildCountryNameFilter(
         .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
 
     if (!countryIds.length) {
-        return { id: { $in: [] } } as T_FilterQuery<I_Destination>;
+        return { id: { $in: [] } } as T_QueryFilter<I_Destination>;
     }
 
     const destinationIdsResult = await locationCtr.distinct('entityId', {
@@ -106,12 +106,12 @@ export async function buildCountryNameFilter(
         id: {
             $in: uniqueDestinationIds,
         },
-    } as T_FilterQuery<I_Destination>;
+    } as T_QueryFilter<I_Destination>;
 }
 
 export async function buildCountryIdFilter(
     countryId?: string | null,
-): Promise<T_FilterQuery<I_Destination> | undefined> {
+): Promise<T_QueryFilter<I_Destination> | undefined> {
     const trimmedId = countryId?.trim();
 
     if (!trimmedId) {
@@ -143,5 +143,5 @@ export async function buildCountryIdFilter(
         id: {
             $in: destinationIds,
         },
-    } as T_FilterQuery<I_Destination>;
+    } as T_QueryFilter<I_Destination>;
 }

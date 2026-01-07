@@ -138,8 +138,8 @@ export const notificationCtr = {
             if (inputType === E_NotificationType.NEW_MESSAGE) {
                 f.type = E_NotificationType.NEW_MESSAGE;
             }
-            else if (OTHER_TYPES.includes(inputType)) {
-                f.type = inputType;
+            else if (typeof inputType === 'string' && OTHER_TYPES.includes(inputType as E_NotificationType)) {
+                f.type = inputType as E_NotificationType;
             }
             else {
                 // Loại không hợp lệ theo rule -> rỗng

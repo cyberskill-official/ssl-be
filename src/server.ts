@@ -18,6 +18,7 @@ const env = getEnv();
 (async () => {
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
+        isDev: !env.IS_PROD,
     });
 
     const sessionParser = createSession({
@@ -47,7 +48,9 @@ const env = getEnv();
     if (!env.IS_PROD) {
         mongoose.set('debug', true);
     }
-    await mongoose.connect(env.MONGO_URI);
+    await mongoose.connect(env.MONGO_URI, {
+        autoIndex: false,
+    });
     mongoose.connection.once('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
@@ -65,6 +68,9 @@ const env = getEnv();
     });
 
     await apolloServer.start();
+
+    log.info(`🚀 GraphQL ready at http://localhost:${env.PORT}${env.ENDPOINT_GRAPHQL}`);
+    log.info(`🔌 WebSocket ready at ws://localhost:${env.PORT}${env.ENDPOINT_WS}`);
 
     app.use(
         env.ENDPOINT_GRAPHQL,
@@ -93,6 +99,8 @@ const env = getEnv();
     await new Promise<void>(resolve =>
         httpServer.listen({ port: env.PORT }, resolve),
     );
+
+    log.info(`🔌 RestAPI ready at http://localhost:${env.PORT}${env.ENDPOINT_RESTAPI}`);
 
     app.use(
         env.ENDPOINT_RESTAPI,

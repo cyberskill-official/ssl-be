@@ -48,7 +48,7 @@ export const legalDocumentCtr = {
         return mongooseCtr.createOne(doc);
     },
     updateLegalDocument: async (_context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_PublishLegalDocument>): Promise<I_Return<I_LegalDocument>> => {
-        return mongooseCtr.updateOne(filter, update, options);
+        return mongooseCtr.updateOne(filter as I_Input_PublishLegalDocument, update, options);
     },
     saveDraftLegalDocument: async (context: I_Context, { doc }: { doc: I_Input_SaveDraftLegalDocument }): Promise<I_Return<I_LegalDocument>> => {
         const { type, content } = doc;

@@ -4,8 +4,8 @@ import type {
     I_Input_FindOne,
     I_Input_FindPaging,
     I_Input_UpdateOne,
-    T_FilterQuery,
     T_PaginateResult,
+    T_QueryFilter,
     T_QueryOptions,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
@@ -139,7 +139,7 @@ function dedupeUserLocationDocs(docs: I_Location[]): I_Location[] {
 export const locationCtr = {
     distinct: async (
         key: string,
-        filter?: T_FilterQuery<I_Location>,
+        filter?: T_QueryFilter<I_Location>,
         options?: T_QueryOptions<I_Location>,
     ): Promise<I_Return<unknown[]>> => {
         return mongooseCtr.distinct(key, filter, options);
@@ -231,16 +231,22 @@ export const locationCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
     ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
-        if (!filter) {
+        if (
+            !filter
+            || typeof filter.southWestLatitude !== 'number'
+            || typeof filter.southWestLongitude !== 'number'
+            || typeof filter.northEastLatitude !== 'number'
+            || typeof filter.northEastLongitude !== 'number'
+        ) {
             throwError({
-                message: 'Filter is required',
+                message: 'Filter (southWestLatitude, southWestLongitude, northEastLatitude, northEastLongitude) must be numbers',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
         const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
 
-        const locationBoundsFilter: T_FilterQuery<I_Location> = {
+        const locationBoundsFilter: T_QueryFilter<I_Location> = {
             'map.latitude': {
                 $gte: filter.southWestLatitude,
                 $lte: filter.northEastLatitude,
@@ -260,7 +266,7 @@ export const locationCtr = {
                     }),
         };
 
-        const baseFilter: T_FilterQuery<I_Location> = {
+        const baseFilter: T_QueryFilter<I_Location> = {
             ...locationBoundsFilter,
         };
 
@@ -398,7 +404,7 @@ export const locationCtr = {
         let syntheticClubVisitDocs: I_Location[] = [];
         if (shouldInjectClubVisits) {
             try {
-                const destinationFilter: T_FilterQuery<I_Location> = {
+                const destinationFilter: T_QueryFilter<I_Location> = {
                     ...locationBoundsFilter,
                     entityType: E_LocationEntityType.DESTINATION,
                     isDel: { $ne: true },
@@ -411,7 +417,7 @@ export const locationCtr = {
                     : [];
 
                 if (destinationIds.length > 0) {
-                    const eventFilter: T_FilterQuery<I_Event> = {
+                    const eventFilter: T_QueryFilter<I_Event> = {
                         type: E_EventType.CLUB_VISIT,
                         isActive: true,
                         isDel: { $ne: true },

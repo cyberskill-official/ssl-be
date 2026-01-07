@@ -6,6 +6,7 @@ import type {
     I_Input_UpdateMany,
     I_Input_UpdateOne,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
@@ -21,7 +22,7 @@ import path from 'node:path';
 import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_SUSPENDED, authnCtr, E_AgeVerifyStatus, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
+import { ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
@@ -462,20 +463,7 @@ export const userCtr = {
             });
         }
 
-        // Skip age verification nếu: (1) đang trong quá trình đăng ký, hoặc (2) Admin/Staff
-        const isRegistering = currentUser.registerStep !== E_RegisterStep.COMPLETE;
-        const isAgeVerified = currentUser.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-        const [isAdmin, isStaff] = await Promise.all([
-            authnCtr.isAdmin(context),
-            authnCtr.isStaff(context),
-        ]);
-
-        if (!isRegistering && !isAgeVerified && !isAdmin && !isStaff) {
-            throwError({
-                message: 'Age verification is required before uploading an avatar.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
-        }
+        // Avatar uploads are allowed even if age verification is not completed.
 
         const { mediaOptions: currentUserMediaOptions } = getViewerMediaContext(currentUser);
 
@@ -697,11 +685,14 @@ export const userCtr = {
             }
         }
 
+        const primaryPartner = uploadedResults[0]?.partner ?? 'partner1';
+        const primaryPartnerData = updatedUser.result[primaryPartner];
+
         return {
             success: true,
             result: {
-                url: updatedUser.result.partner1?.gallery?.url ?? '',
-                galleryId: updatedUser.result.partner1?.galleryId ?? null,
+                url: primaryPartnerData?.gallery?.url ?? '',
+                galleryId: primaryPartnerData?.galleryId ?? null,
             },
         };
     },
@@ -1156,7 +1147,7 @@ export const userCtr = {
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
 
-        const updateResult = await mongooseCtr.updateOne(filter, payloadToPersist, options);
+        const updateResult = await mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, payloadToPersist, options);
 
         if (!updateResult.success) {
             return updateResult;
@@ -1206,7 +1197,7 @@ export const userCtr = {
         _: I_Context,
         { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
     ): Promise<I_Return<{ modifiedCount: number }>> => {
-        return mongooseCtr.updateMany(filter, update, options);
+        return mongooseCtr.updateMany(filter as T_QueryFilter<I_User>, update, options);
     },
 
     deleteUser: async (
@@ -1410,7 +1401,7 @@ export const userCtr = {
             }
 
             // Finally, delete the user
-            return mongooseCtr.deleteOne(filter, options);
+            return mongooseCtr.deleteOne(filter as T_QueryFilter<I_User>, options);
         }
         catch (error) {
             throwError({
@@ -1431,7 +1422,7 @@ export const userCtr = {
         }
 
         // Recover: clear isDel flag
-        return mongooseCtr.updateOne(filter, { isDel: false }, options);
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: false }, options);
     },
     softDeleteUser: async (
         context: I_Context,
@@ -1451,7 +1442,7 @@ export const userCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, { isDel: true }, options);
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true }, options);
     },
 
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {
