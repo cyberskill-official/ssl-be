@@ -60,12 +60,18 @@ async function updateRegistryWithMeta(
 }
 
 async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I_EmailJobResult> {
+    const jobId = String(job.id); // Lấy ID để log cho dễ
     try {
         const startTime = Date.now();
         const { emailJob } = job.data;
 
+        // LOG 1: Kiểm tra kích thước nội dung khi bắt đầu
+        const htmlLength = emailJob.html?.length || 0;
+        log.info(`[JOB_START] Processing Job ${jobId} | Subject: ${emailJob.subject} | HTML Size: ${(htmlLength / 1024).toFixed(2)} KB`);
+
         const validation = emailService.validateEmailJob(emailJob);
         if (!validation.isValid) {
+            log.error(`[VALIDATION_FAILED] Job ${jobId}`, { errors: validation.errors });
             throw new Error(`Invalid email job data: ${validation.errors.join(', ')}`);
         }
 
@@ -73,6 +79,7 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
             = typeof emailJob.to === 'string' || (Array.isArray(emailJob.to) && emailJob.to.length === 1);
 
         if (isSingleRecipient && emailJob.type === 'transactional') {
+            log.info(`[SINGLE_SEND] Job ${jobId} sending to single recipient`);
             const result = await emailService.sendEmail(emailJob);
             return result;
         }
@@ -87,11 +94,14 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
         let totalFailed = 0;
         const failedEmails: string[] = [];
 
+        log.info(`[BULK_START] Job ${jobId} divided into ${batches.length} batches`);
+
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
             if (!batch || batch.length === 0)
                 continue;
 
+            const batchStartTime = Date.now();
             try {
                 const result = await emailService.sendBulkEmails({
                     ...emailJob,
@@ -103,18 +113,14 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
                 }
                 else {
                     totalFailed += batch.length;
-                    if (result.failedRecipients) {
-                        failedEmails.push(...result.failedRecipients);
-                    }
-                    else {
-                        failedEmails.push(...batch);
-                    }
+                    failedEmails.push(...(result.failedRecipients || batch));
                 }
 
                 const progress = Math.round(((i + 1) / batches.length) * 100);
-                job.progress(progress);
+                await job.progress(progress);
 
-                log.info(`Batch ${i + 1}/${batches.length} processed - Success: ${result.success}, Recipients: ${batch.length}`);
+                // LOG 2: Theo dõi thời gian xử lý từng Batch
+                log.info(`[BATCH_DONE] Job ${jobId} Batch ${i + 1}/${batches.length} | Time: ${Date.now() - batchStartTime}ms | Sent: ${batch.length}`);
 
                 if (i < batches.length - 1) {
                     await emailService.delay(100);
@@ -123,7 +129,7 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
             catch (error) {
                 totalFailed += batch.length;
                 failedEmails.push(...batch);
-                log.error(`Failed to send email batch ${i + 1}/${batches.length}:`, error);
+                log.error(`[BATCH_ERROR] Job ${jobId} Batch ${i + 1}:`, error);
             }
         }
 
@@ -138,12 +144,12 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
         };
 
         const duration = Date.now() - startTime;
-        log.info(`Bulk email job completed in ${duration}ms - Sent: ${totalSent}, Failed: ${totalFailed}`);
+        log.info(`[JOB_COMPLETE] Job ${jobId} in ${duration}ms | Total Sent: ${totalSent} | Failed: ${totalFailed}`);
 
         return result;
     }
     catch (error) {
-        log.error('Failed to process bulk email job:', error);
+        log.error(`[JOB_FATAL_ERROR] Job ${jobId}:`, error);
         throw error;
     }
 }
@@ -161,17 +167,17 @@ function initializeQueues(): void {
 
     // Thêm log để theo dõi khi có job bị stalled
     bulkQueue.on('stalled', (job) => {
-        log.warn(`Job ${job.id} bị STALLED. Có thể do Worker bị sập hoặc xử lý quá lâu.`);
+        log.warn(`[STALLED_WARNING] Job ${job.id} bị kẹt (Lock timeout). Kiểm tra độ trễ Event Loop hoặc kích thước HTML.`);
     });
 
     bulkQueue.process(config.concurrency!, async (job) => {
-        // Đảm bảo hàm này có try-catch và return Promise
         return processBulkEmailJob(job);
     });
 }
 
 function setupEventListeners(): void {
     bulkQueue.on('completed', async (job, result) => {
+        log.info(`[EVENT_COMPLETED] Job ${job.id} finished successfully`);
         emitEvent('job.completed', String(job.id), { job: job.data, result });
 
         emailQueueRegistryService.updateJob(String(job.id), {
@@ -183,19 +189,18 @@ function setupEventListeners(): void {
         });
 
         if (result?.success) {
-            await job.remove();
+            await job.remove().catch(e => log.error(`[REMOVE_FAILED] Job ${job.id}`, e));
         }
     });
 
     bulkQueue.on('failed', (job, err) => {
         const jobId = String(job.id);
+        log.error(`[EVENT_FAILED] Job ${jobId} | Reason: ${err.message}`);
         emitEvent('job.failed', jobId, { job: job.data, error: err.message });
 
         const recipients: string[] = Array.isArray(job.data.emailJob?.to)
             ? job.data.emailJob.to
-            : job.data.emailJob?.to
-                ? [job.data.emailJob.to]
-                : [];
+            : job.data.emailJob?.to ? [job.data.emailJob.to] : [];
 
         const now = new Date();
         const failedReason = err?.message || job.failedReason || 'Unknown error';
@@ -215,6 +220,7 @@ function setupEventListeners(): void {
     });
 
     bulkQueue.on('global:failed', async (jobId, err) => {
+        log.error(`[GLOBAL_FAILED] Job ${jobId}`, { error: err });
         const id = String(jobId);
         const now = new Date();
         const failedReason = err?.message || (typeof err === 'string' ? err : 'Unknown error');
@@ -266,6 +272,7 @@ function setupEventListeners(): void {
     });
 
     bulkQueue.on('active', (job) => {
+        log.info(`[EVENT_ACTIVE] Job ${job.id} is being processed by worker`);
         emitEvent('job.processing', String(job.id), { job: job.data });
 
         emailQueueRegistryService.updateJob(String(job.id), {
@@ -279,7 +286,7 @@ function setupEventListeners(): void {
         const stalledCount = (job as Bull.Job<I_BulkEmailJobData> & { stalledCounter?: number }).stalledCounter ?? 0;
         const now = new Date();
 
-        log.warn(`Email job ${jobId} stalled`, { stalledCount });
+        log.warn(`[EVENT_STALLED] Email job ${jobId} stalled alert`, { stalledCount });
         emitEvent('job.stalled', jobId, { job: job.data, stalledCount });
 
         void updateRegistryWithMeta(jobId, {
@@ -296,9 +303,6 @@ function setupEventListeners(): void {
 }
 
 export const emailQueue = {
-    /**
-     * Add a single transactional email to the queue
-     */
     addTransactionalEmail: async (data: I_EmailJobData, options?: Bull.JobOptions): Promise<Bull.Job<I_BulkEmailJobData>> => {
         const bulkData: I_BulkEmailJobData = {
             emailJob: { ...data, type: 'transactional' },
@@ -307,6 +311,7 @@ export const emailQueue = {
 
         const jobOptions = { ...options, priority: EMAIL_PRIORITY.HIGH };
         const job = await bulkQueue.add(bulkData, jobOptions);
+        log.info(`[QUEUE_ADD] Transactional job added: ${job.id}`);
 
         emailQueueRegistryService.addJob({
             jobId: String(job.id),
@@ -327,15 +332,14 @@ export const emailQueue = {
         return job;
     },
 
-    /**
-     * Add a bulk email to the queue (splits into batches)
-     */
     addBulkEmail: async (data: I_EmailJobData, options?: Bull.JobOptions): Promise<Bull.Job<I_BulkEmailJobData>[]> => {
         if (!Array.isArray(data.to))
             throw new Error('Bulk email must have an array of recipients');
         const batchSize = EMAIL_CONFIG.batch.defaultSize || 50;
         const batches = chunkArray(data.to, batchSize);
         const jobs: Bull.Job<I_BulkEmailJobData>[] = [];
+
+        log.info(`[QUEUE_ADD_BULK] Adding bulk email: ${batches.length} chunks`);
 
         for (const batch of batches) {
             const bulkData: I_BulkEmailJobData = {
@@ -368,9 +372,6 @@ export const emailQueue = {
         return jobs;
     },
 
-    /**
-     * Schedule an email to be sent at a specific time
-     */
     scheduleEmail: async (data: I_EmailJobData, sendAt: Date, options?: Bull.JobOptions): Promise<Bull.Job<I_BulkEmailJobData>> => {
         const delay = sendAt.getTime() - Date.now();
         let result;
@@ -383,18 +384,14 @@ export const emailQueue = {
         if (Array.isArray(result)) {
             if (result.length === 0)
                 throw new Error('No jobs were created for scheduleEmail');
-            if (!result[0])
-                throw new Error('No job was created for scheduleEmail');
-            return result[0];
+            const job = result[0];
+            if (!job)
+                throw new Error('First job is undefined');
+            return job;
         }
-        if (!result)
-            throw new Error('No job was created for scheduleEmail');
         return result;
     },
 
-    /**
-     * Schedule recurring emails
-     */
     scheduleRecurringEmail: async (
         data: I_EmailJobData,
         cronExpression: string,
@@ -414,20 +411,14 @@ export const emailQueue = {
             });
         }
         if (Array.isArray(result)) {
-            if (result.length === 0)
-                throw new Error('No jobs were created for scheduleRecurringEmail');
-            if (!result[0])
+            const job = result[0];
+            if (!job)
                 throw new Error('No job was created for scheduleRecurringEmail');
-            return result[0];
+            return job;
         }
-        if (!result)
-            throw new Error('No job was created for scheduleRecurringEmail');
         return result;
     },
 
-    /**
-     * Get queue metrics
-     */
     getMetrics: async (): Promise<I_EmailMetrics> => {
         const jobCounts = await bulkQueue.getJobCounts();
         return {
@@ -439,9 +430,6 @@ export const emailQueue = {
         };
     },
 
-    /**
-     * Get job information
-     */
     getJob: async (jobId: string): Promise<I_EmailJobInfo | null> => {
         const job = await bulkQueue.getJob(jobId);
         if (!job)
@@ -462,34 +450,22 @@ export const emailQueue = {
         };
     },
 
-    /**
-     * Pause the queue
-     */
     pause: async (): Promise<void> => {
         await bulkQueue.pause();
         emitEvent('queue.paused');
     },
 
-    /**
-     * Resume the queue
-     */
     resume: async (): Promise<void> => {
         await bulkQueue.resume();
         emitEvent('queue.resumed');
     },
 
-    /**
-     * Clean old jobs
-     */
     clean: async (grace: number = 24 * 60 * 60 * 1000): Promise<void> => {
         await bulkQueue.clean(grace, 'completed');
         await bulkQueue.clean(grace, 'failed');
         emitEvent('queue.cleaned');
     },
 
-    /**
-     * Remove a specific job
-     */
     removeJob: async (jobId: string): Promise<boolean> => {
         const job = await bulkQueue.getJob(jobId);
         if (job) {
@@ -499,9 +475,6 @@ export const emailQueue = {
         return false;
     },
 
-    /**
-     * Retry a failed job
-     */
     retryJob: async (jobId: string): Promise<void> => {
         const job = await bulkQueue.getJob(jobId);
         if (job) {
@@ -510,38 +483,24 @@ export const emailQueue = {
         }
     },
 
-    /**
-     * Get bulk queue instance (now the only queue)
-     */
     getQueue: (): Bull.Queue<I_BulkEmailJobData> => {
         return bulkQueue;
     },
 
-    /**
-     * Close the queue connections
-     */
     close: async (): Promise<void> => {
         await bulkQueue.close();
     },
 
-    /**
-     * Subscribe to queue events
-     */
     on: (event: T_EmailEventType, listener: (data: I_EmailEvent) => void): void => {
         emitter.on(event, listener);
     },
 
-    /**
-     * Unsubscribe from queue events
-     */
     off: (event: T_EmailEventType, listener: (data: I_EmailEvent) => void): void => {
         emitter.off(event, listener);
     },
 };
 
-// Initialize on creation
 initializeQueues();
-
 setupEventListeners();
 
 export default emailQueue;
