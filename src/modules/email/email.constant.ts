@@ -10,21 +10,23 @@ export const EMAIL_PRIORITY = {
 
 export const EMAIL_CONSTANTS = {
     QUEUE: {
-        CONCURRENCY: 2, // Giảm xuống 1-2 nếu server yếu để tránh nghẽn CPU
-        DEFAULT_BATCH_SIZE: 300,
-        MAX_BATCH_SIZE: 1000,
-        // Tăng thời gian timeout nếu bạn gửi email có template HTML nặng
-        PROCESSING_TIMEOUT: 60000, // Tăng lên 60 giây
-        LOCK_DURATION: 300000,
-        LOCK_RENEW_TIME: 150000,
-        STALLED_INTERVAL: 30000,
-        MAX_STALLED_COUNT: 5,
+        CONCURRENCY: 1, // GIẢM XUỐNG 1: Nếu server yếu, xử lý song song nhiều email nặng cùng lúc dễ gây STALLED
+        DEFAULT_BATCH_SIZE: 50, // GIẢM XUỐNG: 300 là quá lớn nếu HTML nặng, dễ gây nghẽn Event Loop
+        MAX_BATCH_SIZE: 100,
+
+        PROCESSING_TIMEOUT: 60000,
+
+        // --- ĐIỀU CHỈNH CHÍNH Ở ĐÂY ---
+        LOCK_DURATION: 60000, // Giảm xuống 60s (vừa đủ để an toàn)
+        LOCK_RENEW_TIME: 20000, // Gia hạn sau mỗi 20s
+        STALLED_INTERVAL: 60000, // TĂNG LÊN: Chỉ kiểm tra stalled sau mỗi 60s (bằng lock duration)
+        MAX_STALLED_COUNT: 2, // GIẢM XUỐNG: Thử lại tối đa 2 lần nếu kẹt thật sự
+
         DEFAULT_JOB_OPTIONS: {
-            ATTEMPTS: 5, // Tăng số lần thử lại cho email quan trọng
-            BACKOFF_DELAY: 10000, // Đợi 10s trước khi thử lại
+            ATTEMPTS: 3,
+            BACKOFF_DELAY: 10000,
             REMOVE_ON_COMPLETE: 100,
             REMOVE_ON_FAIL: 50,
-            // THÊM DÒNG NÀY VÀO TRONG WORKER KHI KHỞI TẠO:
         },
     },
     // Template settings
