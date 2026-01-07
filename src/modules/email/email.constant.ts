@@ -15,10 +15,10 @@ export const EMAIL_CONSTANTS = {
         MAX_BATCH_SIZE: 1000,
         // Tăng thời gian timeout nếu bạn gửi email có template HTML nặng
         PROCESSING_TIMEOUT: 60000, // Tăng lên 60 giây
-        LOCK_DURATION: 120000,
-        LOCK_RENEW_TIME: 60000,
+        LOCK_DURATION: 180000,
+        LOCK_RENEW_TIME: 90000,
         STALLED_INTERVAL: 30000,
-        MAX_STALLED_COUNT: 3,
+        MAX_STALLED_COUNT: 5,
         DEFAULT_JOB_OPTIONS: {
             ATTEMPTS: 5, // Tăng số lần thử lại cho email quan trọng
             BACKOFF_DELAY: 10000, // Đợi 10s trước khi thử lại

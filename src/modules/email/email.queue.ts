@@ -208,6 +208,57 @@ function setupEventListeners(): void {
         });
     });
 
+    bulkQueue.on('global:failed', async (jobId, err) => {
+        const id = String(jobId);
+        const now = new Date();
+        const failedReason = err?.message || (typeof err === 'string' ? err : 'Unknown error');
+        let recipients: string[] = [];
+
+        try {
+            const job = await bulkQueue.getJob(id);
+            const jobRecipients = job?.data?.emailJob?.to;
+            if (Array.isArray(jobRecipients)) {
+                recipients = jobRecipients;
+            }
+            else if (typeof jobRecipients === 'string') {
+                recipients = [jobRecipients];
+            }
+        }
+        catch (error) {
+            log.error('Failed to load email job for global:failed handler:', { jobId: id, error });
+        }
+
+        if (recipients.length === 0) {
+            try {
+                const existing = await emailQueueRegistryService.getJob(id);
+                if (existing?.recipients?.length) {
+                    recipients = existing.recipients;
+                }
+            }
+            catch (error) {
+                log.error('Failed to load registry job for global:failed handler:', { jobId: id, error });
+            }
+        }
+
+        const updates: Partial<I_EmailJobRegistryEntry> = {
+            status: E_EmailJobStatus.FAILED,
+            updatedAt: now,
+        };
+
+        if (recipients.length > 0) {
+            updates.failed = recipients.length;
+            updates.sent = 0;
+            updates.failedRecipients = recipients;
+        }
+
+        void updateRegistryWithMeta(id, updates, {
+            lastFailedAt: now.toISOString(),
+            lastFailedReason: failedReason,
+        }).catch((error) => {
+            log.error('Failed to update global failed email job in registry:', { jobId: id, error });
+        });
+    });
+
     bulkQueue.on('active', (job) => {
         emitEvent('job.processing', String(job.id), { job: job.data });
 
