@@ -25,7 +25,6 @@ export const EMAIL_CONSTANTS = {
             REMOVE_ON_COMPLETE: 100,
             REMOVE_ON_FAIL: 50,
             // THÊM DÒNG NÀY VÀO TRONG WORKER KHI KHỞI TẠO:
-            // lockDuration: 60000
         },
     },
     // Template settings

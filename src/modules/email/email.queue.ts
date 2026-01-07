@@ -152,14 +152,26 @@ function initializeQueues(): void {
     bulkQueue = new Bull<I_BulkEmailJobData>('email-bulk', {
         redis: config.redis,
         defaultJobOptions: config.defaultJobOptions,
-        settings: config.settings,
+        settings: {
+            // Tên các trường chính xác cho Bull v3:
+            lockDuration: 180000, // 3 phút
+            lockRenewTime: 30000, // Gia hạn mỗi 30s
+            stalledInterval: 30000, // Kiểm tra stalled mỗi 30s
+            maxStalledCount: 3, // Cho phép stalled 3 lần
+        },
     });
 
     bulkQueue.on('error', (err) => {
         log.error('Redis connection error in email queue:', err);
     });
 
+    // Thêm log để theo dõi khi có job bị stalled
+    bulkQueue.on('stalled', (job) => {
+        log.warn(`Job ${job.id} bị STALLED. Có thể do Worker bị sập hoặc xử lý quá lâu.`);
+    });
+
     bulkQueue.process(config.concurrency!, async (job) => {
+        // Đảm bảo hàm này có try-catch và return Promise
         return processBulkEmailJob(job);
     });
 }
