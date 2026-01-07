@@ -10,13 +10,13 @@ export const EMAIL_PRIORITY = {
 
 export const EMAIL_CONSTANTS = {
     QUEUE: {
-        CONCURRENCY: 3, // Giảm xuống 3 nếu server yếu để tránh nghẽn CPU
+        CONCURRENCY: 2, // Giảm xuống 1-2 nếu server yếu để tránh nghẽn CPU
         DEFAULT_BATCH_SIZE: 300,
         MAX_BATCH_SIZE: 1000,
         // Tăng thời gian timeout nếu bạn gửi email có template HTML nặng
         PROCESSING_TIMEOUT: 60000, // Tăng lên 60 giây
-        LOCK_DURATION: 180000,
-        LOCK_RENEW_TIME: 90000,
+        LOCK_DURATION: 300000,
+        LOCK_RENEW_TIME: 150000,
         STALLED_INTERVAL: 30000,
         MAX_STALLED_COUNT: 5,
         DEFAULT_JOB_OPTIONS: {
