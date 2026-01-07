@@ -54,6 +54,16 @@ import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './u
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
+const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+function resolveOnlineStatus(lastOnline: unknown, now: number): boolean {
+    if (!lastOnline)
+        return false;
+    const lastOnlineTime = new Date(lastOnline as string | number | Date).getTime();
+    if (Number.isNaN(lastOnlineTime))
+        return false;
+    return (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
+}
 
 type T_LocationPayload = Record<string, unknown> & {
     map?: {
@@ -292,21 +302,8 @@ export const userCtr = {
         if (!userFound.success)
             return userFound;
 
-        // Calculate isOnline dynamically based on lastOnline timestamp
-        // A user is considered online if lastOnline is within the last 15 minutes
-        if (userFound.result.isOnline && userFound.result.lastOnline) {
-            const lastOnlineTime = new Date(userFound.result.lastOnline).getTime();
-            const now = Date.now();
-            const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
-            const isActuallyOnline = (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
-            if (!isActuallyOnline) {
-                userFound.result.isOnline = false;
-            }
-        }
-        else if (userFound.result.isOnline && !userFound.result.lastOnline) {
-            // If isOnline is true but lastOnline is missing, mark as offline
-            userFound.result.isOnline = false;
-        }
+        const now = Date.now();
+        userFound.result.isOnline = resolveOnlineStatus(userFound.result.lastOnline, now);
 
         hydrateUserMedia(userFound.result, viewerMediaOptions);
 
@@ -415,24 +412,10 @@ export const userCtr = {
         if (!users.success)
             return users;
 
-        // Calculate isOnline dynamically based on lastOnline timestamp for each user
-        // A user is considered online if lastOnline is within the last 15 minutes
-        const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
         const now = Date.now();
 
         users.result.docs = users.result.docs.map((user) => {
-            // Calculate isOnline dynamically based on lastOnline timestamp
-            if (user.isOnline && user.lastOnline) {
-                const lastOnlineTime = new Date(user.lastOnline).getTime();
-                const isActuallyOnline = (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
-                if (!isActuallyOnline) {
-                    user.isOnline = false;
-                }
-            }
-            else if (user.isOnline && !user.lastOnline) {
-                // If isOnline is true but lastOnline is missing, mark as offline
-                user.isOnline = false;
-            }
+            user.isOnline = resolveOnlineStatus(user.lastOnline, now);
 
             hydrateUserMedia(user, viewerMediaOptions);
             return user;

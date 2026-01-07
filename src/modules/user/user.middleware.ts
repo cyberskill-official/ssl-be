@@ -1,6 +1,10 @@
 import type { NextFunction } from '@cyberskill/shared/node/express';
 
+import jwt from 'jsonwebtoken';
+
 import type { I_Request, I_Response } from '#shared/typescript/express.js';
+
+import { getEnv } from '#shared/env/index.js';
 
 import { userCtr } from './user.controller.js';
 
@@ -8,12 +12,60 @@ import { userCtr } from './user.controller.js';
 // Only update user activity if last update was more than ACTIVITY_UPDATE_INTERVAL_MS ago
 const ACTIVITY_UPDATE_INTERVAL_MS = 30 * 1000; // 30 seconds
 const lastUpdateMap = new Map<string, number>();
+const env = getEnv();
+
+function extractAuthToken(req: I_Request): string | undefined {
+    const headers = req.headers || {};
+    const authHeader = typeof headers.authorization === 'string'
+        ? headers.authorization
+        : typeof (headers as any).Authorization === 'string'
+            ? (headers as any).Authorization
+            : undefined;
+    if (authHeader) {
+        const trimmed = authHeader.trim();
+        if (trimmed.toLowerCase().startsWith('bearer ')) {
+            return trimmed.slice('bearer '.length).trim() || undefined;
+        }
+        return trimmed || undefined;
+    }
+
+    const directToken = (headers as any)['x-access-token']
+        || (headers as any)['x-token']
+        || (headers as any).token;
+    if (typeof directToken === 'string' && directToken.trim()) {
+        return directToken.trim();
+    }
+
+    const bodyToken = (req.body as any)?.variables?.token;
+    if (typeof bodyToken === 'string' && bodyToken.trim()) {
+        return bodyToken.trim();
+    }
+
+    return undefined;
+}
+
+function getUserIdFromToken(token: string): string | undefined {
+    try {
+        const decoded = jwt.verify(token, env.JWT_SECRET) as { userId?: string };
+        return typeof decoded?.userId === 'string' ? decoded.userId : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 
 export async function updateUserActivity(req: I_Request, _res: I_Response, next: NextFunction) {
     try {
         // Check if user is authenticated
-        if (req.session?.user?.id) {
-            const userId = req.session.user.id;
+        let userId = req.session?.user?.id;
+        if (!userId) {
+            const token = extractAuthToken(req);
+            if (token) {
+                userId = getUserIdFromToken(token);
+            }
+        }
+
+        if (userId) {
             const now = Date.now();
             const lastUpdate = lastUpdateMap.get(userId) || 0;
             const timeSinceLastUpdate = now - lastUpdate;
@@ -29,8 +81,10 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
                     await userCtr.updateUser({ req }, {
                         filter: { id: userId },
                         update: {
-                            isOnline: true,
-                            lastOnline: new Date(),
+                            $set: {
+                                isOnline: true,
+                                lastOnline: new Date(),
+                            },
                         },
                     }).catch((err) => {
                         // Don't block if update fails (user might have been deleted between check and update)
@@ -63,16 +117,18 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
             }
 
             // Always update session lastActivity timestamp (lightweight operation)
-            try {
-                // store as number (ms since epoch)
-                (req.session as any).lastActivity = now;
-                if (typeof (req.session as any).save === 'function') {
-                    (req.session as any).save(() => { /* best-effort */ });
+            if (req.session) {
+                try {
+                    // store as number (ms since epoch)
+                    (req.session as any).lastActivity = now;
+                    if (typeof (req.session as any).save === 'function') {
+                        (req.session as any).save(() => { /* best-effort */ });
+                    }
                 }
-            }
-            catch (err) {
-                // don't block if session save fails
-                console.warn('Failed to update session lastActivity:', err);
+                catch (err) {
+                    // don't block if session save fails
+                    console.warn('Failed to update session lastActivity:', err);
+                }
             }
         }
 
