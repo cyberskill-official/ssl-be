@@ -17,6 +17,52 @@ import { isValidReadableStream } from './bunny.util.js';
 
 const env = getEnv();
 
+const canonicalCdn = (() => {
+    const raw = env.BUNNY_CDN_HOSTNAME?.trim();
+    if (!raw)
+        return null;
+    const sanitized = raw.replace(/\/+$/u, '');
+    try {
+        const url = new URL(sanitized);
+        return { origin: url.origin, host: url.hostname.toLowerCase() };
+    }
+    catch {
+        try {
+            const url = new URL(`https://${sanitized}`);
+            return { origin: url.origin, host: url.hostname.toLowerCase() };
+        }
+        catch {
+            return null;
+        }
+    }
+})();
+
+function resolveCdnOrigin(url: URL): string {
+    if (!canonicalCdn)
+        return url.origin;
+    const host = url.hostname.toLowerCase();
+    if (host === canonicalCdn.host)
+        return url.origin;
+    if (host.endsWith('bunnyinfra.net'))
+        return canonicalCdn.origin;
+    return url.origin;
+}
+
+function normalizeStoragePath(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed)
+        return trimmed;
+    const withoutHash = trimmed.split('#')[0] ?? '';
+    const withoutQuery = withoutHash.split('?')[0] ?? '';
+    try {
+        const parsed = new URL(withoutQuery);
+        return parsed.pathname.replace(/^\/+/u, '');
+    }
+    catch {
+        return withoutQuery.replace(/^\/+/u, '');
+    }
+}
+
 export const bunnyCtr = {
     createVideo: async (_context: I_Context, title: string): Promise<I_Return<string>> => {
         const url = `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos`;
@@ -170,7 +216,8 @@ export const bunnyCtr = {
         };
     },
     deleteFile: async (_context: I_Context, fileUrl: string): Promise<I_Return<void>> => {
-        const url = `https://storage.bunnycdn.com/${env.BUNNY_STORAGE_ZONE_NAME}/${fileUrl}`;
+        const storagePath = normalizeStoragePath(fileUrl);
+        const url = `https://storage.bunnycdn.com/${env.BUNNY_STORAGE_ZONE_NAME}/${storagePath}`;
         const options = {
             method: 'DELETE',
             headers: {
@@ -224,7 +271,7 @@ export const bunnyCtr = {
         try {
             const url = new URL(fullUrl);
 
-            const domain = url.origin;
+            const domain = resolveCdnOrigin(url);
             const path = url.pathname;
 
             const expires = Math.floor(Date.now() / 1000) + expiresInSec;
