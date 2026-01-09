@@ -374,7 +374,7 @@ export const locationCtr = {
 
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
             ...(options ?? {}),
-            ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
+            ...(options?.pagination === undefined ? { pagination: false, limit: 20 } : {}),
             populate: populates,
         });
 
