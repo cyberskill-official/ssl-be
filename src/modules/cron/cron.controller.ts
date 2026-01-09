@@ -237,6 +237,55 @@ export const cron = {
                                 );
                             }
                         }
+
+                        try {
+                            const flaggedUsers = await userCtr.getUsers({}, {
+                                filter: { hasUpcomingEvent: true },
+                                options: {
+                                    pagination: false,
+                                    projection: { id: 1 },
+                                },
+                            });
+                            const flaggedIds = flaggedUsers.success
+                                ? flaggedUsers.result?.docs?.map(u => u.id).filter(Boolean) ?? []
+                                : [];
+
+                            if (flaggedIds.length > 0) {
+                                const activeEvents = await eventCtr.getEvents({}, {
+                                    filter: {
+                                        createdById: { $in: flaggedIds },
+                                        isActive: true,
+                                    },
+                                    options: {
+                                        pagination: false,
+                                        projection: { createdById: 1 },
+                                    },
+                                });
+
+                                if (activeEvents.success) {
+                                    const ownersWithActive = new Set<string>();
+                                    activeEvents.result?.docs?.forEach((event) => {
+                                        const ownerId = event.createdById ?? event.createdBy?.id;
+                                        if (ownerId) {
+                                            ownersWithActive.add(ownerId);
+                                        }
+                                    });
+
+                                    const ownersToReset = flaggedIds.filter(
+                                        id => !ownersWithActive.has(id),
+                                    );
+                                    if (ownersToReset.length > 0) {
+                                        await userCtr.updateUsers({}, {
+                                            filter: { id: { $in: ownersToReset } },
+                                            update: { hasUpcomingEvent: false },
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        catch (flagError) {
+                            log.error('[CRON] Failed to refresh flagged users after expiring events:', flagError);
+                        }
                     }
                     else {
                         log.error('Failed to update expired events:', updateResult.message);
