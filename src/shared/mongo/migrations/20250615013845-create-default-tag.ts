@@ -3,10 +3,8 @@ import type { C_Db } from '@cyberskill/shared/node/mongo';
 import { log } from '@cyberskill/shared/node/log';
 import { mongo, MongoController } from '@cyberskill/shared/node/mongo';
 
-import type { I_Role } from '#modules/authz/role/role.type.js';
 import type { I_Tag } from '#modules/tag/tag.type.js';
 
-import { E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { E_TagType } from '#modules/tag/tag.type.js';
 
 const tags = [
@@ -121,7 +119,6 @@ const tags = [
     { name: 'Soft', type: E_TagType.CATALOGUE },
     { name: 'Chemistry', type: E_TagType.CATALOGUE },
     { name: 'Drinks', type: E_TagType.CATALOGUE },
-    { name: 'Spontaneous' },
     { name: 'Passion', type: E_TagType.CATALOGUE },
     { name: 'Orgy', type: E_TagType.CATALOGUE },
     { name: 'Masquerade', type: E_TagType.CATALOGUE },
@@ -132,18 +129,11 @@ const tags = [
 
 export async function up(db: C_Db) {
     const tagCtr = new MongoController<I_Tag>(db, 'tags');
-    const roleCtr = new MongoController<I_Role>(db, 'roles');
-    const admin = await roleCtr.findOne({ name: E_Role_Staff.ADMIN });
-
-    if (!admin.success) {
-        return log.error('Admin role not found.');
-    }
-
-    const tagsToCreate = tags.map(tag => ({ ...tag, createdById: admin.result.id }));
+    const tagsToCreate = tags.map(tag => ({ ...tag, createdById: null }));
 
     const filteredTags = await mongo.getNewRecords(
         tagCtr,
-        tagsToCreate as I_Tag[],
+        tagsToCreate as unknown as I_Tag[],
         (existingTag, newTag) =>
             existingTag.name === newTag.name && existingTag.type === newTag.type,
     );

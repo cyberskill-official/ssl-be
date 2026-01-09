@@ -85,6 +85,7 @@ export const uploadCtr = {
 
         const isInRegistration = !isGuest && currentUser.registerStep !== E_RegisterStep.COMPLETE;
         const isGallery = entity === E_UploadEntity.GALLERY;
+        const isEventEntity = entity === E_UploadEntity.EVENT;
 
         // FREE_MEMBER restrictions:
         // 1. Can only upload images, not videos (applies to all entities including GALLERY)
@@ -176,7 +177,7 @@ export const uploadCtr = {
         // Bypass moderation if:
         // - Admin/Staff
         // - Client explicitly requests skipModeration on this request
-        const shouldBypassModeration = isStaff || isAdmin || !!skipModeration;
+        const shouldBypassModeration = isStaff || isAdmin || !!skipModeration || isEventEntity;
 
         if (shouldBypassModeration) {
             if (type === E_UploadType.VIDEO) {
