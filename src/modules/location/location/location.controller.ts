@@ -376,7 +376,6 @@ export const locationCtr = {
             ...(options ?? {}),
             ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
             populate: populates,
-            sort: options?.sort ?? { createdAt: -1 },
         });
 
         if (!pagingResult.success || !pagingResult.result) {
@@ -507,10 +506,6 @@ export const locationCtr = {
         const hasIsDel = (o: unknown): o is { isDel?: boolean } => typeof o === 'object' && o !== null && 'isDel' in o;
         const isEventEntity = (o: unknown): o is I_Event => typeof o === 'object' && o !== null && ('startDate' in o || 'endDate' in o);
         const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
-
-        // Calculate center point and radius from viewport bounds for distance filtering
-
-        // Calculate center point and radius from viewport bounds for distance filtering
 
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
             const originalDocsById = new Map<string, I_Location>();

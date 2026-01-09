@@ -73,6 +73,8 @@ export interface I_Input_CreateLocation extends Omit<I_Location, T_Omit_Create |
 
 export interface I_Input_UpdateLocation extends Omit<I_Location, T_Omit_Update | T_Location_Populate> { }
 
+export type T_ViewportSortDirection = 'asc' | 'desc';
+
 export interface I_Input_GetLocationInViewport {
     southWestLatitude: number;
     southWestLongitude: number;
@@ -81,4 +83,5 @@ export interface I_Input_GetLocationInViewport {
     entityType?: E_LocationEntityType;
     eventType?: E_EventType;
     entityId?: string;
+    sortByViewportDistance?: T_ViewportSortDirection;
 }
