@@ -991,7 +991,6 @@ export const locationCtr = {
                     ...options,
                     page: nextPageToFetch,
                     populate: populates,
-                    sort: options?.sort ?? { createdAt: -1 },
                 });
                 if (!nextPageResult.success || !nextPageResult.result)
                     break;
