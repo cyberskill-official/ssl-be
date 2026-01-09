@@ -374,8 +374,9 @@ export const locationCtr = {
 
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
             ...(options ?? {}),
-            ...(options?.pagination === undefined ? { pagination: false, limit: 20 } : {}),
+            ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
             populate: populates,
+            sort: options?.sort ?? { createdAt: -1 },
         });
 
         if (!pagingResult.success || !pagingResult.result) {
@@ -995,6 +996,7 @@ export const locationCtr = {
                     ...options,
                     page: nextPageToFetch,
                     populate: populates,
+                    sort: options?.sort ?? { createdAt: -1 },
                 });
                 if (!nextPageResult.success || !nextPageResult.result)
                     break;
