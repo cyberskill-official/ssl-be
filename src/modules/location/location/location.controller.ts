@@ -376,7 +376,6 @@ export const locationCtr = {
             ...(options ?? {}),
             ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
             populate: populates,
-            sort: options?.sort ?? { createdAt: -1 },
         });
 
         if (!pagingResult.success || !pagingResult.result) {
@@ -507,19 +506,6 @@ export const locationCtr = {
         const hasIsDel = (o: unknown): o is { isDel?: boolean } => typeof o === 'object' && o !== null && 'isDel' in o;
         const isEventEntity = (o: unknown): o is I_Event => typeof o === 'object' && o !== null && ('startDate' in o || 'endDate' in o);
         const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
-
-        const toRadians = (value: number): number => (value * Math.PI) / 180;
-        const toDegrees = (value: number): number => (value * 180) / Math.PI;
-        const viewportCenter = (() => {
-            const latitude = (filter.southWestLatitude + filter.northEastLatitude) / 2;
-            const lonRadiansSouthWest = toRadians(filter.southWestLongitude);
-            const lonRadiansNorthEast = toRadians(filter.northEastLongitude);
-            const longitude = toDegrees(Math.atan2(
-                Math.sin(lonRadiansSouthWest) + Math.sin(lonRadiansNorthEast),
-                Math.cos(lonRadiansSouthWest) + Math.cos(lonRadiansNorthEast),
-            ));
-            return { latitude, longitude };
-        })();
 
         const preprocessBatch = (batch: I_Location[]): I_Location[] => {
             const originalDocsById = new Map<string, I_Location>();
@@ -1158,70 +1144,6 @@ export const locationCtr = {
                 }
             }
             docs = docs.slice(0, requestedLimit);
-        }
-
-        if (filter.sortByViewportDistance) {
-            const sortDirectionFactor = filter.sortByViewportDistance === 'desc' ? -1 : 1;
-            const forcedEntityId = filter.entityId;
-
-            const haversineDistanceMeters = (
-                lat1: number,
-                lon1: number,
-                lat2: number,
-                lon2: number,
-            ): number => {
-                const earthRadius = 6371000;
-                const dLat = toRadians(lat2 - lat1);
-                const dLon = toRadians(lon2 - lon1);
-                const radLat1 = toRadians(lat1);
-                const radLat2 = toRadians(lat2);
-                const a = Math.sin(dLat / 2) ** 2
-                    + Math.cos(radLat1) * Math.cos(radLat2) * Math.sin(dLon / 2) ** 2;
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                return earthRadius * c;
-            };
-
-            const getDocDistanceToCenter = (doc: I_Location): number => {
-                const coordinates = doc.map;
-                if (
-                    !coordinates
-                    || typeof coordinates.latitude !== 'number'
-                    || typeof coordinates.longitude !== 'number'
-                ) {
-                    return Number.POSITIVE_INFINITY;
-                }
-                return haversineDistanceMeters(
-                    viewportCenter.latitude,
-                    viewportCenter.longitude,
-                    coordinates.latitude,
-                    coordinates.longitude,
-                );
-            };
-
-            docs.sort((a, b) => {
-                if (forcedEntityId) {
-                    const aIsForced = a.entityId === forcedEntityId;
-                    const bIsForced = b.entityId === forcedEntityId;
-                    if (aIsForced && !bIsForced)
-                        return -1;
-                    if (bIsForced && !aIsForced)
-                        return 1;
-                }
-
-                const distA = getDocDistanceToCenter(a);
-                const distB = getDocDistanceToCenter(b);
-                const hasFiniteA = Number.isFinite(distA);
-                const hasFiniteB = Number.isFinite(distB);
-                if (!hasFiniteA && !hasFiniteB)
-                    return 0;
-                if (!hasFiniteA)
-                    return 1;
-                if (!hasFiniteB)
-                    return -1;
-                if (distA === distB)
-                    return 0;
-                return sortDirectionFactor * (distA - distB);
-            });
         }
 
         // --- Post-process: blur or sign media URLs according to viewer age verification ---
