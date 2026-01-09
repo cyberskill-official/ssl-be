@@ -127,6 +127,13 @@ export const cron = {
 
                 const currentTime = new Date();
                 const expiredEventIds = new Set<string>();
+                const expiredEventOwnerIds = new Set<string>();
+                const registerExpiredEventOwner = (event?: I_Event | null) => {
+                    const ownerId = event?.createdById ?? event?.createdBy?.id;
+                    if (ownerId) {
+                        expiredEventOwnerIds.add(ownerId);
+                    }
+                };
 
                 const timeBasedEvents = await eventCtr.getEvents({}, {
                     filter: {
@@ -145,6 +152,7 @@ export const cron = {
                         const eventEndDateTime = computeEventEndDateTime(event as I_Event);
                         if (eventEndDateTime && isAfter(currentTime, eventEndDateTime)) {
                             expiredEventIds.add(event.id);
+                            registerExpiredEventOwner(event);
                         }
                     }
                 }
@@ -161,6 +169,7 @@ export const cron = {
                 if (eventsWithEndDate.success && eventsWithEndDate.result?.docs) {
                     for (const event of eventsWithEndDate.result.docs) {
                         expiredEventIds.add(event.id);
+                        registerExpiredEventOwner(event);
                     }
                 }
 
@@ -187,6 +196,95 @@ export const cron = {
                         }
                         catch (locationError) {
                             log.error('Expired events updated, but failed to mark locations as deleted:', locationError);
+                        }
+
+                        const ownerIds = Array.from(expiredEventOwnerIds);
+                        if (ownerIds.length > 0) {
+                            const ownerEvents = await eventCtr.getEvents({}, {
+                                filter: {
+                                    createdById: { $in: ownerIds },
+                                    isActive: true,
+                                },
+                                options: {
+                                    pagination: false,
+                                    projection: { createdById: 1 },
+                                },
+                            });
+
+                            if (ownerEvents.success) {
+                                const ownersWithActiveEvents = new Set<string>();
+                                ownerEvents.result?.docs?.forEach((event) => {
+                                    const ownerId = event.createdById ?? event.createdBy?.id;
+                                    if (ownerId) {
+                                        ownersWithActiveEvents.add(ownerId);
+                                    }
+                                });
+
+                                const ownersToClear = ownerIds.filter(
+                                    id => !ownersWithActiveEvents.has(id),
+                                );
+                                if (ownersToClear.length > 0) {
+                                    await userCtr.updateUsers({}, {
+                                        filter: { id: { $in: ownersToClear } },
+                                        update: { hasUpcomingEvent: false },
+                                    });
+                                }
+                            }
+                            else {
+                                log.error(
+                                    'Failed to refresh owner event state after expiring events:',
+                                    ownerEvents.message,
+                                );
+                            }
+                        }
+
+                        try {
+                            const flaggedUsers = await userCtr.getUsers({}, {
+                                filter: { hasUpcomingEvent: true },
+                                options: {
+                                    pagination: false,
+                                    projection: { id: 1 },
+                                },
+                            });
+                            const flaggedIds = flaggedUsers.success
+                                ? flaggedUsers.result?.docs?.map(u => u.id).filter(Boolean) ?? []
+                                : [];
+
+                            if (flaggedIds.length > 0) {
+                                const activeEvents = await eventCtr.getEvents({}, {
+                                    filter: {
+                                        createdById: { $in: flaggedIds },
+                                        isActive: true,
+                                    },
+                                    options: {
+                                        pagination: false,
+                                        projection: { createdById: 1 },
+                                    },
+                                });
+
+                                if (activeEvents.success) {
+                                    const ownersWithActive = new Set<string>();
+                                    activeEvents.result?.docs?.forEach((event) => {
+                                        const ownerId = event.createdById ?? event.createdBy?.id;
+                                        if (ownerId) {
+                                            ownersWithActive.add(ownerId);
+                                        }
+                                    });
+
+                                    const ownersToReset = flaggedIds.filter(
+                                        id => !ownersWithActive.has(id),
+                                    );
+                                    if (ownersToReset.length > 0) {
+                                        await userCtr.updateUsers({}, {
+                                            filter: { id: { $in: ownersToReset } },
+                                            update: { hasUpcomingEvent: false },
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        catch (flagError) {
+                            log.error('[CRON] Failed to refresh flagged users after expiring events:', flagError);
                         }
                     }
                     else {
