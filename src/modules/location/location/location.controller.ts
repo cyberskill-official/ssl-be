@@ -374,7 +374,7 @@ export const locationCtr = {
 
         const defaultViewportOptions: T_QueryOptions<I_Location> = {
             pagination: true,
-            limit: 20,
+            limit: 10,
             page: 1,
         };
 
