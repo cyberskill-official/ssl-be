@@ -372,17 +372,9 @@ export const locationCtr = {
             },
         ];
 
-        const defaultViewportOptions: T_QueryOptions<I_Location> = {
-            pagination: true,
-            limit: 20,
-            page: 1,
-        };
-
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
-            ...defaultViewportOptions,
             ...(options ?? {}),
             populate: populates,
-            lean: undefined,
         });
 
         if (!pagingResult.success || !pagingResult.result) {
