@@ -46,7 +46,7 @@ export const ContextSchema = mongo.createSchema<I_NotificationContext>({
     standalone: true,
     mongoose,
     schema: {
-        conversationType: { type: String, enum: Object.values(E_ConversationType) },
+        conversationType: { type: String, enum: Object.values(E_ConversationType || {}) },
         groupName: { type: String },
         isOpenComment: { type: Boolean },
         parentMessageId: { type: String },
