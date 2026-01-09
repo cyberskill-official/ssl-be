@@ -55,6 +55,9 @@ export interface I_Environment {
     NETVALVE_SITE_ID: string;
     NETVALVE_MID_EUR: string;
     NETVALVE_MID_USD: string;
+    PAYPAL_API_BASE_URL: string;
+    PAYPAL_CLIENT_ID: string;
+    PAYPAL_CLIENT_SECRET: string;
     USER_APP_URL: string;
     PAYMENT_REDIRECT_URL: string;
     MEDIA_VIEWER_DEBUG: string;

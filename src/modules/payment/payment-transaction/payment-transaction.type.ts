@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 export enum E_PaymentProvider {
     NETVALVE = 'NETVALVE',
+    PAYPAL = 'PAYPAL',
 }
 
 export enum E_PaymentStatus {
@@ -17,6 +18,7 @@ export enum E_PaymentGatewayOperation {
     THREE_DS_AUTHENTICATION = 'THREE_DS_AUTHENTICATION',
     THREE_DS_RESULT = 'THREE_DS_RESULT',
     HPP_ORDER = 'HPP_ORDER',
+    CREATE_ORDER = 'CREATE_ORDER',
     TOKEN_CREATE = 'TOKEN_CREATE',
     SALE = 'SALE',
     REFUND = 'REFUND',
