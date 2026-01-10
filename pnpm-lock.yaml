@@ -83,6 +83,9 @@ importers:
       graphql:
         specifier: 16.12.0
         version: 16.12.0
+      graphql-redis-subscriptions:
+        specifier: 2.7.0
+        version: 2.7.0(graphql-subscriptions@3.0.0(graphql@16.12.0))
       graphql-scalars:
         specifier: 1.25.0
         version: 1.25.0(graphql@16.12.0)
@@ -3977,6 +3980,11 @@ packages:
     peerDependenciesMeta:
       cosmiconfig-toml-loader:
         optional: true
+
+  graphql-redis-subscriptions@2.7.0:
+    resolution: {integrity: sha512-IK4uCKx1UNhkcnG9lIqFWz9PpltSbuM8RygwGoB/e1HZMuKpAGeqqfHFeLKkQjjubvk4tAdUdx48AUkTAXJ17Q==}
+    peerDependencies:
+      graphql-subscriptions: ^1.0.0 || ^2.0.0 || ^3.0.0
 
   graphql-scalars@1.25.0:
     resolution: {integrity: sha512-b0xyXZeRFkne4Eq7NAnL400gStGqG/Sx9VqX0A05nHyEbv57UJnWKsjNnrpVqv5e/8N1MUxkt0wwcRXbiyKcFg==}
@@ -11091,6 +11099,14 @@ snapshots:
       - typescript
       - uWebSockets.js
       - utf-8-validate
+
+  graphql-redis-subscriptions@2.7.0(graphql-subscriptions@3.0.0(graphql@16.12.0)):
+    dependencies:
+      graphql-subscriptions: 3.0.0(graphql@16.12.0)
+    optionalDependencies:
+      ioredis: 5.9.0
+    transitivePeerDependencies:
+      - supports-color
 
   graphql-scalars@1.25.0(graphql@16.12.0):
     dependencies:
