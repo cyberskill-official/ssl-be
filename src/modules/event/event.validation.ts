@@ -1,6 +1,6 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
-import { differenceInMinutes, isAfter, isValid, parse, set } from 'date-fns';
+import { differenceInMinutes, isAfter, isSameDay, isValid, parse, set } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/express.js';
 
@@ -72,7 +72,21 @@ export function validateTimeBasedEvent(
 
     // If endDate is provided, use it for multi-day events
     if (endDate) {
-        endDateTime = set(endDate, {
+        let actualEndDate = endDate;
+
+        // For BOOTY_CALL, if endDate is same as startDate but endTime < startTime,
+        // it logically means the next day (overnight).
+        if (eventType === E_EventType.BOOTY_CALL && isSameDay(startDate, endDate)) {
+            const isOvernight = endTimeHours < startTimeHours
+                || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+
+            if (isOvernight) {
+                actualEndDate = new Date(endDate);
+                actualEndDate.setDate(actualEndDate.getDate() + 1);
+            }
+        }
+
+        endDateTime = set(actualEndDate, {
             hours: endTimeParsed.getHours(),
             minutes: endTimeParsed.getMinutes(),
             seconds: 0,
@@ -80,7 +94,7 @@ export function validateTimeBasedEvent(
         });
     }
     else {
-        // Original logic for same-day events
+        // Original logic for same-day events (backward compatibility if endDate not provided)
         const isOvernight = endTimeHours < startTimeHours
             || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
