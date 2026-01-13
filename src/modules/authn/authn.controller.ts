@@ -1726,16 +1726,33 @@ export const authnCtr = {
             });
         }
 
-        await assignSessionUser(context.req.session, sanitizedLoginUser);
-
         // Configure session cookie based on "Remember Me" preference
+        // This must be done AFTER session regeneration and BEFORE assignSessionUser
         if (rememberMe) {
             // Remember me: Set cookie to expire in 30 days
             context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
         }
         else {
             // Don't remember: Make it a session cookie (expires when browser closes)
-            delete context.req.session.cookie.maxAge;
+            // Setting maxAge to null makes it a session cookie
+            context.req.session.cookie.maxAge = null as any;
+        }
+
+        await assignSessionUser(context.req.session, sanitizedLoginUser);
+
+        // Explicitly save the session to ensure cookie configuration is persisted
+        if (context.req?.session?.save) {
+            await new Promise<void>((resolve, reject) => {
+                context.req?.session?.save((err) => {
+                    if (err) {
+                        log.error('Session save error after login:', err);
+                        reject(err);
+                    }
+                    else {
+                        resolve();
+                    }
+                });
+            });
         }
 
         return {
