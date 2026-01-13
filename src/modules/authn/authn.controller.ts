@@ -593,6 +593,7 @@ export const authnCtr = {
             success: true,
             result: {
                 user: sanitizedUser,
+                rememberMe: !!(context.req.session as any)?.rememberMe,
             },
         };
     },
@@ -849,9 +850,18 @@ export const authnCtr = {
         const finalUser = updatedUser.success ? updatedUser.result : userCreated.result;
 
         const sanitizedNewUser = omit(finalUser, 'password') as I_User;
+        if (context.req?.session) {
+            (context.req.session as any).rememberMe = false;
+        }
         await assignSessionUser(context.req.session, sanitizedNewUser);
 
-        return { success: true, result: { user: sanitizedNewUser } };
+        return {
+            success: true,
+            result: {
+                user: sanitizedNewUser,
+                rememberMe: false,
+            },
+        };
     },
 
     registerSendVerifyEmail: async (
@@ -1504,10 +1514,15 @@ export const authnCtr = {
             issuedAt: Date.now(),
         };
 
+        if (context.req?.session) {
+            (context.req.session as any).rememberMe = false;
+        }
+
         return {
             success: true,
             result: {
                 user: sanitizedUser,
+                rememberMe: false,
             },
         };
     },
@@ -1734,12 +1749,14 @@ export const authnCtr = {
         if (rememberMe) {
             // Remember me: Set cookie to expire in 30 days
             context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+            (context.req.session as any).rememberMe = true;
             log.info(`[LOGIN] Cookie maxAge set to: ${context.req.session.cookie.maxAge} (30 days)`);
         }
         else {
             // Don't remember: Make it a session cookie (expires when browser closes)
             // Setting maxAge to null makes it a session cookie
             context.req.session.cookie.maxAge = null as any;
+            (context.req.session as any).rememberMe = false;
             log.info(`[LOGIN] Cookie maxAge set to: null (session cookie)`);
         }
 
@@ -1765,6 +1782,7 @@ export const authnCtr = {
             result: {
                 user: context.req.session.user,
                 ...(token && { token }),
+                rememberMe: !!rememberMe,
             },
         };
     },

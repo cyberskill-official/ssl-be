@@ -75,6 +75,7 @@ enum E_AgeVerifyMethod {
 type T_Auth {
     user: T_User
     token: String
+    rememberMe: Boolean
 }
 
 type T_Response_Auth {

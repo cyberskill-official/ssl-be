@@ -40,6 +40,7 @@ export interface I_Input_GuardianLogin {
 export interface I_Response_Auth {
     user?: Omit<I_User, 'password'>;
     token?: string;
+    rememberMe?: boolean;
 }
 
 // Step 1
