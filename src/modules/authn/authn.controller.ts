@@ -1532,6 +1532,9 @@ export const authnCtr = {
 
         const { identity, password, rememberMe } = args;
 
+        // Debug logging for Remember Me feature
+        log.info(`[LOGIN] User: ${identity}, RememberMe: ${rememberMe} (type: ${typeof rememberMe})`);
+
         const userFound = await userCtr.getUser(context, {
             filter: {
                 $or: [{ email: identity }, { username: identity }],
@@ -1731,11 +1734,13 @@ export const authnCtr = {
         if (rememberMe) {
             // Remember me: Set cookie to expire in 30 days
             context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+            log.info(`[LOGIN] Cookie maxAge set to: ${context.req.session.cookie.maxAge} (30 days)`);
         }
         else {
             // Don't remember: Make it a session cookie (expires when browser closes)
             // Setting maxAge to null makes it a session cookie
             context.req.session.cookie.maxAge = null as any;
+            log.info(`[LOGIN] Cookie maxAge set to: null (session cookie)`);
         }
 
         await assignSessionUser(context.req.session, sanitizedLoginUser);
