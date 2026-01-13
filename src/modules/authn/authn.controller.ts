@@ -1772,11 +1772,27 @@ export const authnCtr = {
         }
 
         const sessionUser = context.req.session.user;
-        if (sessionUser?.id && sessionUser.isGuardianView) {
+
+        // Set user offline when logging out
+        if (sessionUser?.id) {
+            const updatePayload: Record<string, unknown> = {
+                isOnline: false,
+                lastOnline: new Date(),
+            };
+
+            // If guardian view, also clear guardian flags
+            if (sessionUser.isGuardianView) {
+                updatePayload['isGuardianView'] = false;
+                updatePayload['guardianOwnerId'] = null;
+            }
+
             await userCtr.updateUser(context, {
                 filter: { id: sessionUser.id },
-                update: { isGuardianView: false, guardianOwnerId: null },
-            }).catch(() => { /* best-effort */ });
+                update: updatePayload,
+            }).catch((err) => {
+                log.error('Failed to set user offline during logout:', err);
+                // Continue with logout even if update fails
+            });
         }
 
         delete context.req.session.guardianView;
