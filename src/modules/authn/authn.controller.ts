@@ -1728,6 +1728,16 @@ export const authnCtr = {
 
         await assignSessionUser(context.req.session, sanitizedLoginUser);
 
+        // Configure session cookie based on "Remember Me" preference
+        if (rememberMe) {
+            // Remember me: Set cookie to expire in 30 days
+            context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+        }
+        else {
+            // Don't remember: Make it a session cookie (expires when browser closes)
+            delete context.req.session.cookie.maxAge;
+        }
+
         return {
             success: true,
             result: {
