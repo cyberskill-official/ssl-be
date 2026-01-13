@@ -493,7 +493,10 @@ export const eventCtr = {
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-            validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.BOOTY_CALL);
+            const validation = validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.BOOTY_CALL);
+            doc.startDate = validation.startDateTime;
+            doc.endDate = validation.endDateTime;
+
             if (!location) {
                 throwError({ message: 'Location is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
@@ -505,7 +508,9 @@ export const eventCtr = {
                 throwError({ message: 'Event location is required for Event Announcements.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (startDate && startTime && endTime && endDate) {
-                validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.PRIVATE);
+                const validation = validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.PRIVATE);
+                doc.startDate = validation.startDateTime;
+                doc.endDate = validation.endDateTime;
             }
             else {
                 throwError({
@@ -515,9 +520,11 @@ export const eventCtr = {
             }
         }
 
-        // Date logic
-        if (startDate && endDate && isAfter(startOfDay(startDate), startOfDay(endDate))) {
-            throwError({ message: 'Start date cannot be after end date.', status: RESPONSE_STATUS.BAD_REQUEST });
+        // Date logic (handled by validateTimeBasedEvent for time-based types)
+        if (type !== E_EventType.BOOTY_CALL && type !== E_EventType.PRIVATE) {
+            if (startDate && endDate && isAfter(startOfDay(startDate), startOfDay(endDate))) {
+                throwError({ message: 'Start date cannot be after end date.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
 
         // Coordinate format check if client sent location.map (preserve previous strictness)
