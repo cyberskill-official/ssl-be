@@ -58,6 +58,8 @@ export function validateTimeBasedEvent(
         });
     }
 
+    // Use startDate as the base for building startDateTime
+    // We important ensure we use the same reference day for both initially
     const startDateTime = set(startDate, {
         hours: startTimeParsed.getHours(),
         minutes: startTimeParsed.getMinutes(),
@@ -70,52 +72,72 @@ export function validateTimeBasedEvent(
 
     let endDateTime: Date;
 
-    // If endDate is provided, use it for multi-day events
+    // If endDate is provided, we calculate the potential difference in days
     if (endDate) {
-        let actualEndDate = endDate;
+        // We use the difference in calendar days between startDate and endDate
+        // However, because of UTC shifts, isSameDay(startDate, endDate) might be false.
+        // We calculate the endDateTime by taking the startDate's date part
+        // and adding the "logical" day difference, then setting the time.
 
-        // For time-based events, if endDate is same as startDate but endTime < startTime,
-        // it logically means the next day (overnight).
-        if (isSameDay(startDate, endDate)) {
-            const isOvernightTime = endTimeHours < startTimeHours
-                || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+        // Start with the same day as startDate
+        endDateTime = new Date(startDateTime);
 
-            if (isOvernightTime) {
-                actualEndDate = new Date(endDate);
-                actualEndDate.setDate(actualEndDate.getDate() + 1);
-            }
+        // Logical "overnight" condition: startTime is later than endTime
+        const isOvernightTime = endTimeHours < startTimeHours
+            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
+
+        // If they are different days in the client's payload, or if it's an overnight event,
+        // we add the appropriate number of days to our anchor (startDateTime).
+        if (isOvernightTime && differenceInMinutes(endDateTime, startDateTime) <= 0) {
+            // It's local "same day" in UI but midnight wrap
+            endDateTime.setDate(endDateTime.getDate() + 1);
         }
 
-        endDateTime = set(actualEndDate, {
+        // Apply hours to our adjusted endDateTime
+        endDateTime = set(endDateTime, {
             hours: endTimeParsed.getHours(),
             minutes: endTimeParsed.getMinutes(),
             seconds: 0,
             milliseconds: 0,
         });
+
+        // Handle cases where endDate was intended to be more than 1 day later
+        // We only do this if the distance between startDate and endDate is significant (> 12h)
+        // to avoid UTC jitter for same-day events.
+        const dayDiff = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (dayDiff > 0 && !isSameDay(startDate, endDate)) {
+            // If the user actually picked a date further in the future, honor that.
+            // But we add it to our start-based anchor to keep timezone consistency.
+            const candidateEnd = new Date(startDateTime);
+            candidateEnd.setDate(candidateEnd.getDate() + dayDiff);
+            const candidateEndWithTime = set(candidateEnd, {
+                hours: endTimeParsed.getHours(),
+                minutes: endTimeParsed.getMinutes(),
+                seconds: 0,
+                milliseconds: 0,
+            });
+
+            if (candidateEndWithTime > startDateTime) {
+                endDateTime = candidateEndWithTime;
+            }
+        }
     }
     else {
-        // Original logic for same-day events (backward compatibility if endDate not provided)
+        // Backward compatibility logic
         const isOvernight = endTimeHours < startTimeHours
             || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
+        endDateTime = new Date(startDateTime);
         if (isOvernight) {
-            const nextDay = new Date(startDate);
-            nextDay.setDate(nextDay.getDate() + 1);
-            endDateTime = set(nextDay, {
-                hours: endTimeParsed.getHours(),
-                minutes: endTimeParsed.getMinutes(),
-                seconds: 0,
-                milliseconds: 0,
-            });
+            endDateTime.setDate(endDateTime.getDate() + 1);
         }
-        else {
-            endDateTime = set(startDate, {
-                hours: endTimeParsed.getHours(),
-                minutes: endTimeParsed.getMinutes(),
-                seconds: 0,
-                milliseconds: 0,
-            });
-        }
+
+        endDateTime = set(endDateTime, {
+            hours: endTimeParsed.getHours(),
+            minutes: endTimeParsed.getMinutes(),
+            seconds: 0,
+            milliseconds: 0,
+        });
     }
 
     const durationInHours = differenceInMinutes(endDateTime, startDateTime) / 60;
