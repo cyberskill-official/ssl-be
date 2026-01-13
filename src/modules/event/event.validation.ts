@@ -74,13 +74,13 @@ export function validateTimeBasedEvent(
     if (endDate) {
         let actualEndDate = endDate;
 
-        // For BOOTY_CALL, if endDate is same as startDate but endTime < startTime,
+        // For time-based events, if endDate is same as startDate but endTime < startTime,
         // it logically means the next day (overnight).
-        if (eventType === E_EventType.BOOTY_CALL && isSameDay(startDate, endDate)) {
-            const isOvernight = endTimeHours < startTimeHours
+        if (isSameDay(startDate, endDate)) {
+            const isOvernightTime = endTimeHours < startTimeHours
                 || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
-            if (isOvernight) {
+            if (isOvernightTime) {
                 actualEndDate = new Date(endDate);
                 actualEndDate.setDate(actualEndDate.getDate() + 1);
             }
@@ -141,11 +141,10 @@ export function validateTimeBasedEvent(
             status: RESPONSE_STATUS.BAD_REQUEST,
         });
     }
-
     return {
         startDateTime,
         endDateTime,
-        isOvernight: endDate ? false : (endTimeHours < startTimeHours || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes())),
+        isOvernight: !isSameDay(startDateTime, endDateTime),
         durationInHours,
     };
 }
