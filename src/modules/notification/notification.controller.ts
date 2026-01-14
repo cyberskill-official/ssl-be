@@ -710,7 +710,7 @@ export const notificationCtr = {
             5: 500,
             4: 1000,
         };
-        const DEFAULT_RADIUS_KM = 50;
+        const DEFAULT_RADIUS_KM = 25;
 
         const convertLevelToRadius = (level?: number): number => {
             if (!level || Number.isNaN(level))
@@ -726,8 +726,7 @@ export const notificationCtr = {
                 return null;
             if (typeof lng !== 'number' || Number.isNaN(lng))
                 return null;
-            if (typeof level !== 'number' || Number.isNaN(level))
-                return null;
+            // level can be undefined, convertLevelToRadius handles it
 
             const radiusKm = convertLevelToRadius(level);
             const radiusMeters = radiusKm * 1000;
@@ -776,11 +775,18 @@ export const notificationCtr = {
         };
 
         const isTempActive = (tempLoc?: NonNullable<any>) => {
+            if (!tempLoc)
+                return false;
+            if (!tempLoc.endAt)
+                return true;
             try {
-                if (!tempLoc?.endAt)
-                    return false;
                 const end = new Date(tempLoc.endAt);
-                const isMidnight = end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0;
+                if (Number.isNaN(end.getTime()))
+                    return false;
+                const isMidnight = end.getHours() === 0
+                    && end.getMinutes() === 0
+                    && end.getSeconds() === 0
+                    && end.getMilliseconds() === 0;
                 const normalizedEnd = isMidnight ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1) : end;
                 return normalizedEnd > new Date();
             }
@@ -793,8 +799,14 @@ export const notificationCtr = {
             if (!u)
                 return null;
             const temp = u.settings?.temporaryLocation;
-            if (temp && isTempActive(temp) && temp.location?.map) {
-                return temp.location.map;
+            if (temp && isTempActive(temp)) {
+                if (temp.location?.map) {
+                    return temp.location.map;
+                }
+                // If Temp Location is ACTIVE but map data is missing,
+                // assume user is 'somewhere else' (unknown) but NOT at home.
+                // Do NOT fallback to partner location.
+                return null;
             }
             if (u.partner1?.location?.map)
                 return u.partner1.location.map;
