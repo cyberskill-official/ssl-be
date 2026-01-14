@@ -503,7 +503,11 @@ mainRouter.get('/payment', async (req, res, next) => {
         }
 
         // Update payment request status
-        await paymentRequestCtr.updatePaymentRequest(context, {
+        log.info('[Payment Handler] Updating payment request status:', {
+            paymentRequestId: paymentRequest.id,
+            paymentRequestStatus,
+        });
+        const updatePaymentRequestRes = await paymentRequestCtr.updatePaymentRequest(context, {
             filter: { id: paymentRequest.id },
             update: {
                 $set: {
@@ -511,11 +515,21 @@ mainRouter.get('/payment', async (req, res, next) => {
                 },
             },
         });
+        if (!updatePaymentRequestRes.success) {
+            log.error('[Payment Handler] Failed to update payment request status:', {
+                paymentRequestId: paymentRequest.id,
+                error: updatePaymentRequestRes.message,
+            });
+        }
 
         let paidEffectsResult: Awaited<ReturnType<typeof applyOrderPaidEffects>> | undefined;
 
         // Only apply order paid effects if payment is successful
         if (paymentStatus === 'SUCCESS') {
+            log.info('[Payment Handler] Payment success - applying paid effects:', {
+                orderId: order.id,
+                paymentTransactionId,
+            });
             // Reload order to get updated status
             const updatedOrderRes = await orderCtr.getOrder(context, {
                 filter: { id: order.id },
@@ -528,6 +542,10 @@ mainRouter.get('/payment', async (req, res, next) => {
                 // Apply order paid effects (membership extension or event creation)
                 try {
                     paidEffectsResult = await applyOrderPaidEffects(context, updatedOrderRes.result);
+                    log.info('[Payment Handler] Paid effects applied:', {
+                        orderId: updatedOrderRes.result.id,
+                        hasResult: Boolean(paidEffectsResult),
+                    });
                 }
                 catch (error) {
                     log.error('[Payment Handler] Error applying order paid effects:', {
@@ -637,6 +655,12 @@ mainRouter.get('/payment', async (req, res, next) => {
                         // Non-blocking: payment still succeeds even if email fails
                     }
                 }
+            }
+            else {
+                log.error('[Payment Handler] Failed to reload order for paid effects:', {
+                    orderId: order.id,
+                    error: updatedOrderRes.message,
+                });
             }
         }
 
