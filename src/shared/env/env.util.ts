@@ -20,12 +20,17 @@ import {
     MONGO_BACKUP_FOLDER,
     MONGO_HOST,
     MONGO_PORT,
+    PAYPAL_BRAND_NAME,
+    PAYPAL_INVOICING_BASE,
+    PAYPAL_WEBHOOK_ID,
     PORT,
     REDIS_HOST,
     REDIS_PORT,
+    SERVICE_NAME,
     SESSION_INACTIVITY_MINUTES,
     STATIC_FOLDER,
     UPLOAD_FOLDER,
+    USER_APP_NAME,
 } from './env.constant.js';
 
 export function getEnv(): I_Environment {
