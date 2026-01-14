@@ -412,6 +412,7 @@ export const paymentController = {
             amount: resolvedAmount,
             pricingId: pricing.id, // From auto-detected pricing
             orderType, // SUBSCRIPTION or A_LA_CARTE_EVENT
+            ...(input.event ? { meta: { event: input.event } } : {}),
         };
 
         const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
