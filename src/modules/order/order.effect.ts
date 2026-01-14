@@ -2,12 +2,14 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 import { addMonths } from 'date-fns';
 
-import type { I_Event } from '#modules/event/event.type.js';
+import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
+import { eventCtr } from '#modules/event/event.controller.js';
+import orderCtr from '#modules/order/order.controller.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
@@ -232,6 +234,55 @@ async function addFreeEventCountForAnnouncement(context: I_Context, order: I_Ord
     }
 }
 
+function getEventFromOrderMeta(order: I_Order): I_Input_CreateEvent | null {
+    const meta = order.meta as Record<string, unknown> | null | undefined;
+    if (!meta || typeof meta !== 'object') {
+        return null;
+    }
+    const event = meta['event'];
+    if (!event || typeof event !== 'object') {
+        return null;
+    }
+    return event as I_Input_CreateEvent;
+}
+
+async function createEventFromOrder(context: I_Context, order: I_Order): Promise<I_Event | null> {
+    const meta = order.meta as Record<string, unknown> | null | undefined;
+    const existingEventId = meta && typeof meta === 'object' && typeof meta['eventCreatedId'] === 'string'
+        ? meta['eventCreatedId']
+        : null;
+    if (existingEventId) {
+        return null;
+    }
+
+    const event = getEventFromOrderMeta(order);
+    if (!event) {
+        return null;
+    }
+
+    const sessionUserId = context.req?.session?.user?.id;
+    if (!sessionUserId || (order.userId && sessionUserId !== order.userId)) {
+        return null;
+    }
+
+    const created = await eventCtr.createEvent(context, { doc: event });
+    if (!created.success || !created.result?.id) {
+        return null;
+    }
+
+    try {
+        await orderCtr.updateOrder(context, {
+            filter: { id: order.id },
+            update: { $set: { 'meta.eventCreatedId': created.result.id } },
+        });
+    }
+    catch {
+        // Non-blocking; event already created.
+    }
+
+    return created.result;
+}
+
 export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
     const result: I_OrderPaidEffectsResult = {};
     if (!order || order.status !== E_OrderStatus.PAID) {
@@ -256,6 +307,15 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
     if (pricingType === E_PricingType.ANNOUNCEMENT) {
         // ANNOUNCEMENT: Add +1 freeEventCount when user pays for announcement
         await addFreeEventCountForAnnouncement(context, order);
+        try {
+            const createdEvent = await createEventFromOrder(context, order);
+            if (createdEvent) {
+                result.event = createdEvent;
+            }
+        }
+        catch {
+            // Non-blocking: payment still succeeds even if event creation fails
+        }
     }
     else if (pricingType === E_PricingType.MEMBERSHIP) {
         // MEMBERSHIP: +1 tháng membership (không cộng freeEventCount)
