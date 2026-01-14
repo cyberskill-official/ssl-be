@@ -541,6 +541,8 @@ mainRouter.get('/payment', async (req, res, next) => {
 
         let paidEffectsResult: Awaited<ReturnType<typeof applyOrderPaidEffects>> | undefined;
 
+        let paidEffectsResult: Awaited<ReturnType<typeof applyOrderPaidEffects>> | undefined;
+
         // Only apply order paid effects if payment is successful
         if (paymentStatus === 'SUCCESS') {
             log.info('[Payment Handler] Payment success - applying paid effects:', {
@@ -559,10 +561,6 @@ mainRouter.get('/payment', async (req, res, next) => {
                 // Apply order paid effects (membership extension or event creation)
                 try {
                     paidEffectsResult = await applyOrderPaidEffects(context, updatedOrderRes.result);
-                    log.info('[Payment Handler] Paid effects applied:', {
-                        orderId: updatedOrderRes.result.id,
-                        hasResult: Boolean(paidEffectsResult),
-                    });
                 }
                 catch (error) {
                     log.error('[Payment Handler] Error applying order paid effects:', {
