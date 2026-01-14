@@ -648,9 +648,11 @@ export const locationCtr = {
                     : end;
                 return normalizedEnd > now;
             };
-            const userTempLocationMap = new Map<string, {
+
+            const userLocationMap = new Map<string, {
                 tempLocationId?: string;
-                defaultLocationId?: string;
+                p1LocationId?: string;
+                p2LocationId?: string;
                 hasActiveTemp: boolean;
                 userId: string;
             }>();
@@ -665,8 +667,6 @@ export const locationCtr = {
                     continue;
 
                 const tempLoc = user?.settings?.temporaryLocation;
-                // FIX: Active when endAt exists and is strictly in the future.
-                // If endAt is a date-only at midnight, we extend it to end-of-day to avoid early expiry on the same day.
                 const tempEndAtValid = isTempActive(tempLoc);
                 const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
                 const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
@@ -674,22 +674,20 @@ export const locationCtr = {
                 const tempLocationId = tempLoc?.locationId
                     ?? tempLoc?.location?.id
                     ?? (tempLoc?.location?.map ? `temp:${user.id}` : undefined);
-                const defaultLocationId = user.partner1?.locationId ?? user.partner2?.locationId;
 
-                userTempLocationMap.set(user.id, {
+                const p1LocationId = user.partner1?.locationId;
+                const p2LocationId = user.partner2?.locationId;
+
+                userLocationMap.set(user.id, {
                     tempLocationId,
-                    defaultLocationId,
+                    p1LocationId,
+                    p2LocationId,
                     hasActiveTemp,
                     userId: user.id,
                 });
             }
 
-            // FILTER OUT partner location nếu user có active temp location
-            // Logic ưu tiên:
-            // - Nếu temporary location còn hiệu lực (chưa hết hạn) → CHỈ hiển thị temporary, KHÔNG hiển thị partner location
-            // - Nếu temporary location đã hết hạn (outdated) → hiển thị location mặc định trong partner
-            // - Nếu temporary location đã hết hạn và có document location riêng (locationId) → LOẠI BỎ document temporary đó
-            //   để tránh hiển thị 2 pin (temp expired + partner)
+            // FILTER OUT user locations based on active references
             filtered = filtered.filter((d) => {
                 if (d.entityType !== E_LocationEntityType.USER)
                     return true;
@@ -698,49 +696,53 @@ export const locationCtr = {
                 if (!user?.id)
                     return true;
 
-                const tempInfo = userTempLocationMap.get(user.id);
-                if (!tempInfo)
-                    return true;
-
-                const tempLoc = user?.settings?.temporaryLocation;
-                const tempLocationSource = (tempLoc?.location as I_Location | undefined)
-                    ?? (tempInfo.tempLocationId ? originalDocsById.get(tempInfo.tempLocationId) : undefined);
-                if (tempLocationSource?.map) {
-                    tempLocationSourceByUser.set(user.id, tempLocationSource);
-                }
-
-                // If temporary exists but is NOT active, and there's a tempLocationId that is different
-                // from the default partner location, remove the temp location document to avoid duplicate pins.
-                if (!tempInfo.hasActiveTemp && tempInfo.tempLocationId) {
-                    const isTempLocationDoc = d.id === tempInfo.tempLocationId && d.entityType === E_LocationEntityType.USER;
-                    const isDefaultLocation = d.id === tempInfo.defaultLocationId;
-                    // keep when tempLocationId === defaultLocationId to avoid dropping the only location
-                    if (isTempLocationDoc && !isDefaultLocation) {
-                        return false;
-                    }
-                }
-
-                // Temporary location còn hiệu lực → loại bỏ partner/default location
-                // Chỉ giữ document này nếu:
-                // - Document này KHÔNG phải là default/partner location, HOẶC
-                // - Document này chính là temp location
-                if (!tempInfo.hasActiveTemp)
-                    return true;
-
-                const isDefaultLocationActive = d.id === tempInfo.defaultLocationId;
-                const isTempLocationActive = tempInfo.tempLocationId ? d.id === tempInfo.tempLocationId : false;
-
-                // Nếu tempLocationId và defaultLocationId trùng nhau (duplicate) → giữ lại document duy nhất
-                if (tempInfo.tempLocationId && tempInfo.tempLocationId === tempInfo.defaultLocationId) {
-                    return isTempLocationActive;
-                }
-
-                // Nếu đây là default location và KHÔNG phải temp location → luôn loại bỏ
-                if (isDefaultLocationActive && !isTempLocationActive)
+                const locInfo = userLocationMap.get(user.id);
+                // If we scanned the doc, it must be in the map. If not, safe default keep? or drop?
+                // Should be in map.
+                if (!locInfo)
                     return false;
 
-                // Các trường hợp khác → giữ lại
-                return true;
+                const matchesP1 = d.id === locInfo.p1LocationId;
+                const matchesP2 = d.id === locInfo.p2LocationId;
+                const matchesTemp = d.id === locInfo.tempLocationId;
+
+                // 1. ORPHAN CHECK: If doc doesn't match any known location pointer, hide it.
+                if (!matchesP1 && !matchesP2 && !matchesTemp) {
+                    return false;
+                }
+
+                // Temporary location source handling for synthetic generation later
+                if (locInfo.tempLocationId && d.id === locInfo.tempLocationId) {
+                    // Cache the source doc if it's the temp location
+                    tempLocationSourceByUser.set(user.id, d);
+                }
+                else {
+                    // Also check if temporaryLocation setting provides a cached source via originalDocsById
+                    // (This logic was partially present before, preserving it via explicit lookups later if needed)
+                    // Actually, if we are filtering, we just decide to keep or drop THIS doc.
+                    // The Map population for Synthetic generation happens later using userLocationMap.
+                }
+
+                // 2. ACTIVE TEMP LOGIC
+                if (locInfo.hasActiveTemp) {
+                    // User has active temporary location.
+                    // ONLY show the temporary location document.
+                    // Hide default/partner locations (unless they ARE the temp location)
+                    if (matchesTemp)
+                        return true;
+
+                    return false; // Hide p1/p2
+                }
+                else {
+                    // User does NOT have active temporary location.
+                    // Show standard partner locations (p1/p2).
+                    // HIDE inactive temporary location document if it's distinct.
+                    if (matchesP1 || matchesP2)
+                        return true;
+
+                    // If matchesTemp (but inactive) and NOT p1/p2 -> Hide it
+                    return false;
+                }
             });
 
             // Collect users cần synthetic location
@@ -758,7 +760,7 @@ export const locationCtr = {
                 if (!user?.id)
                     continue;
 
-                const tempInfo = userTempLocationMap.get(user.id);
+                const tempInfo = userLocationMap.get(user.id);
                 if (!tempInfo?.hasActiveTemp)
                     continue;
 
@@ -922,7 +924,7 @@ export const locationCtr = {
 
                 // temporary location info from user.settings
                 const tempLoc = user.settings?.temporaryLocation;
-                const tempInfo = userTempLocationMap.get(user.id);
+                const tempInfo = userLocationMap.get(user.id);
                 const tempLocationId = tempLoc?.locationId
                     ?? tempLoc?.location?.id
                     ?? tempInfo?.tempLocationId;
