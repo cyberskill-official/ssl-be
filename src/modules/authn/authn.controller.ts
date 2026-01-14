@@ -593,6 +593,7 @@ export const authnCtr = {
             success: true,
             result: {
                 user: sanitizedUser,
+                rememberMe: !!(context.req.session as any)?.rememberMe,
             },
         };
     },
@@ -849,9 +850,18 @@ export const authnCtr = {
         const finalUser = updatedUser.success ? updatedUser.result : userCreated.result;
 
         const sanitizedNewUser = omit(finalUser, 'password') as I_User;
+        if (context.req?.session) {
+            (context.req.session as any).rememberMe = false;
+        }
         await assignSessionUser(context.req.session, sanitizedNewUser);
 
-        return { success: true, result: { user: sanitizedNewUser } };
+        return {
+            success: true,
+            result: {
+                user: sanitizedNewUser,
+                rememberMe: false,
+            },
+        };
     },
 
     registerSendVerifyEmail: async (
@@ -1504,10 +1514,15 @@ export const authnCtr = {
             issuedAt: Date.now(),
         };
 
+        if (context.req?.session) {
+            (context.req.session as any).rememberMe = false;
+        }
+
         return {
             success: true,
             result: {
                 user: sanitizedUser,
+                rememberMe: false,
             },
         };
     },
@@ -1531,6 +1546,9 @@ export const authnCtr = {
         delete context.req.session.guardianView;
 
         const { identity, password, rememberMe } = args;
+
+        // Debug logging for Remember Me feature
+        log.info(`[LOGIN] User: ${identity}, RememberMe: ${rememberMe} (type: ${typeof rememberMe})`);
 
         const userFound = await userCtr.getUser(context, {
             filter: {
@@ -1726,13 +1744,45 @@ export const authnCtr = {
             });
         }
 
+        // Configure session cookie based on "Remember Me" preference
+        // This must be done AFTER session regeneration and BEFORE assignSessionUser
+        if (rememberMe) {
+            // Remember me: Set cookie to expire in 30 days
+            context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+            (context.req.session as any).rememberMe = true;
+            log.info(`[LOGIN] Cookie maxAge set to: ${context.req.session.cookie.maxAge} (30 days)`);
+        }
+        else {
+            // Don't remember: Make it a session cookie (expires when browser closes)
+            // Setting maxAge to null makes it a session cookie
+            context.req.session.cookie.maxAge = null as any;
+            (context.req.session as any).rememberMe = false;
+            log.info(`[LOGIN] Cookie maxAge set to: null (session cookie)`);
+        }
+
         await assignSessionUser(context.req.session, sanitizedLoginUser);
+
+        // Explicitly save the session to ensure cookie configuration is persisted
+        if (context.req?.session?.save) {
+            await new Promise<void>((resolve, reject) => {
+                context.req?.session?.save((err) => {
+                    if (err) {
+                        log.error('Session save error after login:', err);
+                        reject(err);
+                    }
+                    else {
+                        resolve();
+                    }
+                });
+            });
+        }
 
         return {
             success: true,
             result: {
                 user: context.req.session.user,
                 ...(token && { token }),
+                rememberMe: !!rememberMe,
             },
         };
     },
@@ -1745,11 +1795,27 @@ export const authnCtr = {
         }
 
         const sessionUser = context.req.session.user;
-        if (sessionUser?.id && sessionUser.isGuardianView) {
+
+        // Set user offline when logging out
+        if (sessionUser?.id) {
+            const updatePayload: Record<string, unknown> = {
+                isOnline: false,
+                lastOnline: new Date(),
+            };
+
+            // If guardian view, also clear guardian flags
+            if (sessionUser.isGuardianView) {
+                updatePayload['isGuardianView'] = false;
+                updatePayload['guardianOwnerId'] = null;
+            }
+
             await userCtr.updateUser(context, {
                 filter: { id: sessionUser.id },
-                update: { isGuardianView: false, guardianOwnerId: null },
-            }).catch(() => { /* best-effort */ });
+                update: updatePayload,
+            }).catch((err) => {
+                log.error('Failed to set user offline during logout:', err);
+                // Continue with logout even if update fails
+            });
         }
 
         delete context.req.session.guardianView;

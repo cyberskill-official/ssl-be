@@ -221,7 +221,7 @@ export const uploadCtr = {
         }
 
         if (type === E_UploadType.VIDEO) {
-        // Read stream once → buffer
+            // Read stream once → buffer
             const src = createReadStream();
             const bufChunks: Buffer[] = [];
             await new Promise<void>((resolve, reject) => {
@@ -462,52 +462,55 @@ export const uploadCtr = {
         let finalStatus = moderationCreated.result!.status;
 
         try {
-            // Use image buffer directly for AI moderation to avoid CDN 404 issues
-            const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: imageBuffer });
+            // Only run secondary AI moderation if not already approved
+            if (finalStatus !== E_ModerationMediaStatus.APPROVED) {
+                // Use image buffer directly for AI moderation to avoid CDN 404 issues
+                const moderateImage = await aiModerationCtr.moderateImage(context, { imageUrl: imageBuffer });
 
-            if (moderateImage.success && moderationCreated.success && moderationCreated.result?.id) {
-                const moderationId = moderationCreated.result.id;
-                const autoRejected = await applyAiModerationDecision(context, moderationId, moderateImage.result);
+                if (moderateImage.success && moderationCreated.success && moderationCreated.result?.id) {
+                    const moderationId = moderationCreated.result.id;
+                    const autoRejected = await applyAiModerationDecision(context, moderationId, moderateImage.result);
 
-                // Always create moderation log regardless of rejection status
-                try {
-                    // Get moderation media to determine type (IMAGE or VIDEO)
-                    const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+                    // Always create moderation log regardless of rejection status
+                    try {
+                        // Get moderation media to determine type (IMAGE or VIDEO)
+                        const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+                            filter: { id: moderationId },
+                        });
+                        const mediaType = moderationMedia.success && moderationMedia.result?.type
+                            ? (moderationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
+                            : E_ModerationLogType.IMAGE;
+
+                        // Always create moderation log for both approved and rejected to track AI decisions
+                        const logAction = autoRejected
+                            ? E_ModerationLogAction.DELETE
+                            : (moderateImage.result?.decision === E_ModerationMediaStatus.APPROVED
+                                    ? E_ModerationLogAction.APPROVE
+                                    : E_ModerationLogAction.WARN);
+
+                        await moderationLogCtr.createModerationLog(context, {
+                            doc: {
+                                action: logAction,
+                                type: mediaType, // Set type to IMAGE or VIDEO
+                                userId: undefined,
+                                moderationMediaId: moderationId,
+                                aiResult: moderateImage.result,
+                                reason: 'AI moderation (image)',
+                            },
+                        });
+                    }
+                    catch (logError) {
+                        // Silent fail - moderation log creation failure shouldn't prevent response
+                        log.error('Failed to create moderation log:', logError);
+                    }
+
+                    // Fetch updated status after AI moderation decision
+                    const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
                         filter: { id: moderationId },
                     });
-                    const mediaType = moderationMedia.success && moderationMedia.result?.type
-                        ? (moderationMedia.result.type === E_ModerationMediaType.VIDEO ? E_ModerationLogType.VIDEO : E_ModerationLogType.IMAGE)
-                        : E_ModerationLogType.IMAGE;
-
-                    // Always create moderation log for both approved and rejected to track AI decisions
-                    const logAction = autoRejected
-                        ? E_ModerationLogAction.DELETE
-                        : (moderateImage.result?.decision === E_ModerationMediaStatus.APPROVED
-                                ? E_ModerationLogAction.APPROVE
-                                : E_ModerationLogAction.WARN);
-
-                    await moderationLogCtr.createModerationLog(context, {
-                        doc: {
-                            action: logAction,
-                            type: mediaType, // Set type to IMAGE or VIDEO
-                            userId: undefined,
-                            moderationMediaId: moderationId,
-                            aiResult: moderateImage.result,
-                            reason: 'AI moderation (image)',
-                        },
-                    });
-                }
-                catch (logError) {
-                    // Silent fail - moderation log creation failure shouldn't prevent response
-                    log.error('Failed to create moderation log:', logError);
-                }
-
-                // Fetch updated status after AI moderation decision
-                const updatedModeration = await moderationMediaCtr.getModerationMedia(context, {
-                    filter: { id: moderationId },
-                });
-                if (updatedModeration.success && updatedModeration.result) {
-                    finalStatus = updatedModeration.result.status;
+                    if (updatedModeration.success && updatedModeration.result) {
+                        finalStatus = updatedModeration.result.status;
+                    }
                 }
             }
         }

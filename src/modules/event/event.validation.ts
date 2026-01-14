@@ -72,24 +72,22 @@ export function validateTimeBasedEvent(
 
     let endDateTime: Date;
 
-    // If endDate is provided, we calculate the potential difference in days
     if (endDate) {
-        // We use the difference in calendar days between startDate and endDate
-        // However, because of UTC shifts, isSameDay(startDate, endDate) might be false.
+        // Use the calendar day difference between startDate and endDate
         // We calculate the endDateTime by taking the startDate's date part
         // and adding the "logical" day difference, then setting the time.
+        const dayDiff = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
 
-        // Start with the same day as startDate
+        // Start with the same day as startDate and add the day difference
         endDateTime = new Date(startDateTime);
+        endDateTime.setDate(endDateTime.getDate() + dayDiff);
 
         // Logical "overnight" condition: startTime is later than endTime
+        // If they entered the same day but times wrap around midnight, we add 1 day
         const isOvernightTime = endTimeHours < startTimeHours
             || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
-        // If they are different days in the client's payload, or if it's an overnight event,
-        // we add the appropriate number of days to our anchor (startDateTime).
-        if (isOvernightTime && differenceInMinutes(endDateTime, startDateTime) <= 0) {
-            // It's local "same day" in UI but midnight wrap
+        if (isOvernightTime && dayDiff === 0) {
             endDateTime.setDate(endDateTime.getDate() + 1);
         }
 
@@ -100,27 +98,6 @@ export function validateTimeBasedEvent(
             seconds: 0,
             milliseconds: 0,
         });
-
-        // Handle cases where endDate was intended to be more than 1 day later
-        // We only do this if the distance between startDate and endDate is significant (> 12h)
-        // to avoid UTC jitter for same-day events.
-        const dayDiff = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (dayDiff > 0 && !isSameDay(startDate, endDate)) {
-            // If the user actually picked a date further in the future, honor that.
-            // But we add it to our start-based anchor to keep timezone consistency.
-            const candidateEnd = new Date(startDateTime);
-            candidateEnd.setDate(candidateEnd.getDate() + dayDiff);
-            const candidateEndWithTime = set(candidateEnd, {
-                hours: endTimeParsed.getHours(),
-                minutes: endTimeParsed.getMinutes(),
-                seconds: 0,
-                milliseconds: 0,
-            });
-
-            if (candidateEndWithTime > startDateTime) {
-                endDateTime = candidateEndWithTime;
-            }
-        }
     }
     else {
         // Backward compatibility logic
