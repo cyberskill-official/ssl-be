@@ -70,6 +70,7 @@ export interface I_PricingDefault {
     currency: string;
     price: number;
     taxRate?: number;
+    paypalPlanId?: string;
 }
 
 export interface I_Setting extends I_GenericDocument {

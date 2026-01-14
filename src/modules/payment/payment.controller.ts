@@ -22,6 +22,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { E_PayPalIntent, E_PayPalShippingPreference, E_PayPalUserAction } from '#modules/payment/paypal/paypal.type.js';
 import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
@@ -476,7 +477,7 @@ export const paymentController = {
             });
 
             const paypalPayload: I_PayPalCreateOrderPayload = {
-                intent: 'CAPTURE',
+                intent: E_PayPalIntent.CAPTURE,
                 purchase_units: [
                     {
                         amount: {
@@ -489,8 +490,8 @@ export const paymentController = {
                 application_context: {
                     return_url: returnUrl,
                     cancel_url: cancelUrl,
-                    user_action: 'PAY_NOW',
-                    shipping_preference: 'NO_SHIPPING',
+                    user_action: E_PayPalUserAction.PAY_NOW,
+                    shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
                 },
             };
 

@@ -58,7 +58,12 @@ export interface I_Environment {
     PAYPAL_API_BASE_URL: string;
     PAYPAL_CLIENT_ID: string;
     PAYPAL_CLIENT_SECRET: string;
+    PAYPAL_BRAND_NAME: string;
+    PAYPAL_WEBHOOK_ID: string;
+    PAYPAL_INVOICING_BASE: string;
     USER_APP_URL: string;
     PAYMENT_REDIRECT_URL: string;
+    SERVICE_NAME: string;
+    USER_APP_NAME: string;
     MEDIA_VIEWER_DEBUG: string;
 }

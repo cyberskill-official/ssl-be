@@ -78,10 +78,20 @@ async function fetchPayPal<T>(url: string, options: RequestInit, action: string)
             };
         }
 
-        const data = await response.json() as T;
+        const text = await response.text();
+        let data: T | undefined;
+        if (text) {
+            try {
+                data = JSON.parse(text) as T;
+            }
+            catch {
+                // Some PayPal endpoints might return empty/non-JSON responses; fall back to raw text
+                data = text as unknown as T;
+            }
+        }
         return {
             success: true,
-            result: data,
+            result: data ?? ({} as T),
         };
     }
     catch (error) {

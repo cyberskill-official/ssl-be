@@ -28,17 +28,40 @@ export interface I_PayPalPurchaseUnit {
     description?: string;
 }
 
+export enum E_PayPalLandingPage {
+    LOGIN = 'LOGIN',
+    BILLING = 'BILLING',
+    NO_PREFERENCE = 'NO_PREFERENCE',
+}
+
+export enum E_PayPalUserAction {
+    PAY_NOW = 'PAY_NOW',
+    CONTINUE = 'CONTINUE',
+    SUBSCRIBE_NOW = 'SUBSCRIBE_NOW',
+}
+
+export enum E_PayPalShippingPreference {
+    NO_SHIPPING = 'NO_SHIPPING',
+    GET_FROM_FILE = 'GET_FROM_FILE',
+    SET_PROVIDED_ADDRESS = 'SET_PROVIDED_ADDRESS',
+}
+
 export interface I_PayPalApplicationContext {
     return_url?: string;
     cancel_url?: string;
     brand_name?: string;
-    landing_page?: 'LOGIN' | 'BILLING' | 'NO_PREFERENCE';
-    user_action?: 'PAY_NOW' | 'CONTINUE';
-    shipping_preference?: 'NO_SHIPPING' | 'GET_FROM_FILE' | 'SET_PROVIDED_ADDRESS';
+    landing_page?: E_PayPalLandingPage;
+    user_action?: E_PayPalUserAction;
+    shipping_preference?: E_PayPalShippingPreference;
+}
+
+export enum E_PayPalIntent {
+    CAPTURE = 'CAPTURE',
+    AUTHOR = 'AUTHORIZE',
 }
 
 export interface I_PayPalCreateOrderPayload {
-    intent: 'CAPTURE' | 'AUTHORIZE';
+    intent: E_PayPalIntent;
     purchase_units: I_PayPalPurchaseUnit[];
     application_context?: I_PayPalApplicationContext;
 }
@@ -78,11 +101,26 @@ export interface I_PayPalErrorResponse {
     details?: I_PayPalErrorDetail[];
 }
 
+export enum E_PayPalProductType {
+    PHYSICAL = 'PHYSICAL',
+    DIGITAL = 'DIGITAL',
+    SERVICE = 'SERVICE',
+}
+
+export enum E_PayPalProductCategory {
+    SOFTWARE = 'SOFTWARE',
+    SUBSCRIPTION = 'SUBSCRIPTION',
+    CONSULTING = 'CONSULTING',
+    SELLER_SUBSCRIPTION = 'SELLER_SUBSCRIPTION',
+    OTHER = 'OTHER',
+    ADULT = 'ADULT',
+}
+
 export interface I_PayPalProductPayload {
     name: string;
     description?: string;
-    type?: 'PHYSICAL' | 'DIGITAL' | 'SERVICE';
-    category?: 'SOFTWARE' | 'SUBSCRIPTION' | 'CONSULTING' | 'SELLER_SUBSCRIPTION' | 'OTHER';
+    type?: E_PayPalProductType;
+    category?: E_PayPalProductCategory;
     image_url?: string;
     home_url?: string;
 }
@@ -97,8 +135,15 @@ export interface I_PayPalProductResponse {
     links?: I_PayPalOrderLink[];
 }
 
+export enum E_PayPalIntervalUnit {
+    DAY = 'DAY',
+    WEEK = 'WEEK',
+    MONTH = 'MONTH',
+    YEAR = 'YEAR',
+}
+
 export interface I_PayPalFrequency {
-    interval_unit: 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
+    interval_unit: E_PayPalIntervalUnit;
     interval_count: number;
 }
 
@@ -107,9 +152,16 @@ export interface I_PayPalFixedPrice {
     currency_code: string;
 }
 
+export enum E_PayPalTenureType {
+    REGULAR = 'REGULAR',
+    TRIAL = 'TRIAL',
+    TRIAL_PERIOD = 'TRIAL_PERIOD',
+    FINAL = 'FINAL',
+}
+
 export interface I_PayPalBillingCycle {
     frequency: I_PayPalFrequency;
-    tenure_type: 'REGULAR' | 'TRIAL' | 'TRIAL_PERIOD' | 'FINAL';
+    tenure_type: E_PayPalTenureType;
     sequence: number;
     total_cycles: number;
     pricing_scheme: {
@@ -117,18 +169,28 @@ export interface I_PayPalBillingCycle {
     };
 }
 
+export enum E_PayPalPaymentFailureAction {
+    CONTINUE = 'CONTINUE',
+    CANCEL = 'CANCEL',
+}
+
 export interface I_PayPalPaymentPreferences {
     auto_bill_outstanding?: boolean;
     setup_fee?: I_PayPalFixedPrice;
-    setup_fee_failure_action?: 'CONTINUE' | 'CANCEL';
+    setup_fee_failure_action?: E_PayPalPaymentFailureAction;
     payment_failure_threshold?: number;
+}
+
+export enum E_PayPalProductStatus {
+    ACTIVE = 'ACTIVE',
+    INACTIVE = 'INACTIVE',
 }
 
 export interface I_PayPalPlanPayload {
     product_id: string;
     name: string;
     description?: string;
-    status?: 'ACTIVE' | 'INACTIVE';
+    status?: E_PayPalProductStatus;
     billing_cycles: I_PayPalBillingCycle[];
     payment_preferences?: I_PayPalPaymentPreferences;
     taxes?: {
@@ -152,6 +214,7 @@ export interface I_PayPalSubscriptionPayload {
     shipping_amount?: I_PayPalFixedPrice;
     custom_id?: string;
     application_context?: I_PayPalApplicationContext;
+    subscriber?: Record<string, unknown>;
 }
 
 export interface I_PayPalSubscriptionResponse {

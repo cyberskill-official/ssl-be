@@ -1,12 +1,14 @@
 import type { NextFunction, Request, Response } from '@cyberskill/shared/node/express';
+import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { Router } from '@cyberskill/shared/node/express';
 import { log } from '@cyberskill/shared/node/log';
 
-import type { I_PayPalCaptureOrderResponse } from '#modules/payment/paypal/paypal.type.js';
+import type { I_PayPalCaptureOrderResponse, I_PayPalPlanPayload, I_PayPalPlanResponse, I_PayPalProductPayload, I_PayPalProductResponse, I_PayPalSubscriptionPayload } from '#modules/payment/paypal/paypal.type.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
 import { PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
+import { authnCtr } from '#modules/authn/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import orderCtr from '#modules/order/order.controller.js';
@@ -17,6 +19,14 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import {
+    E_PayPalProductCategory,
+    E_PayPalProductStatus,
+    E_PayPalProductType,
+    E_PayPalShippingPreference,
+    E_PayPalUserAction,
+} from '#modules/payment/paypal/paypal.type.js';
+import { paypalWebhookHandler } from '#modules/payment/paypal/paypal.webhook.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
@@ -24,6 +34,8 @@ import { netvalveCtr } from './netvalve/netvalve.controller.js';
 import { E_PaymentStatus } from './payment.type.js';
 
 const mainRouter = Router();
+
+mainRouter.post('/webhook/paypal', paypalWebhookHandler);
 
 export function getPaymentUrls() {
     const env = getEnv();
@@ -47,12 +59,6 @@ export function getPaymentRedirectBase() {
     return env.PAYMENT_REDIRECT_URL ?? `${baseUrl}/payment`;
 }
 
-// Payment processing endpoint - called by frontend after receiving transactionID from Netvalve redirect
-// URL: /rest/payment?status=SUCCESS&transactionID=64592
-// URL: /rest/payment?status=FAILED&transactionID=64592
-// URL: /rest/payment?status=PENDING&transactionID=64592
-// URL: /rest/payment?status=CANCEL&transactionID=64592
-// Processes membership extension or event creation, then returns JSON response
 mainRouter.get('/payment', async (req, res, next) => {
     try {
         const query = req.query as Record<string, unknown>;
@@ -1021,5 +1027,168 @@ async function handlePayPalCapture(req: Request, res: Response, next: NextFuncti
 
 mainRouter.post('/payment/paypal/capture', handlePayPalCapture);
 mainRouter.get('/payment/paypal/capture', handlePayPalCapture);
+
+interface I_SubscriptionSetupBody {
+    product?: I_PayPalProductPayload;
+    plan?: Omit<I_PayPalPlanPayload, 'product_id'>;
+    plan_id?: string;
+    subscription?: Partial<I_PayPalSubscriptionPayload>;
+}
+
+function appendQueryParams(url: string, params: Record<string, string>): string {
+    const query = new URLSearchParams(params).toString();
+    if (!query)
+        return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${query}`;
+}
+
+mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => {
+    try {
+        const context: I_Context = { req };
+        const currentUser = await authnCtr.getUserFromSession(context);
+        if (!currentUser) {
+            res.status(401).json({ success: false, message: 'Authentication required' });
+            return;
+        }
+
+        const env = getEnv();
+        const envValues = env as unknown as Record<string, string | undefined>;
+        const body = (req.body ?? {}) as I_SubscriptionSetupBody;
+        const subscriptionInput = body.subscription ?? {};
+
+        let planId = typeof body.plan_id === 'string' && body.plan_id.trim()
+            ? body.plan_id.trim()
+            : undefined;
+        const planFromSubscription = typeof subscriptionInput.plan_id === 'string' && subscriptionInput.plan_id.trim()
+            ? subscriptionInput.plan_id.trim()
+            : undefined;
+        planId = planId ?? planFromSubscription;
+
+        let productResult: I_Return<I_PayPalProductResponse> | undefined;
+        let planResult: I_Return<I_PayPalPlanResponse> | undefined;
+
+        if (!planId) {
+            if (!body.plan || !Array.isArray(body.plan.billing_cycles) || body.plan.billing_cycles.length === 0) {
+                res.status(400).json({ success: false, message: 'billing_cycles is required when creating a PayPal plan' });
+                return;
+            }
+
+            const productPayload: I_PayPalProductPayload = {
+                name: 'Subscription Product',
+                type: E_PayPalProductType.SERVICE,
+                category: E_PayPalProductCategory.ADULT,
+                ...body.product,
+            };
+
+            productResult = await paypalCtr.createProduct(context, productPayload);
+            if (!productResult.success || !productResult.result?.id) {
+                res.status(400).json({ success: false, message: productResult.message ?? 'Failed to create PayPal product' });
+                return;
+            }
+
+            const planTemplate = body.plan;
+            const planPayload: I_PayPalPlanPayload = {
+                product_id: productResult.result.id,
+                name: (planTemplate.name && planTemplate.name.trim()) || 'Subscription plan',
+                description: planTemplate.description,
+                billing_cycles: planTemplate.billing_cycles,
+                payment_preferences: planTemplate.payment_preferences,
+                taxes: planTemplate.taxes,
+                status: planTemplate.status ?? E_PayPalProductStatus.ACTIVE,
+            };
+
+            planResult = await paypalCtr.createPlan(context, planPayload);
+            if (!planResult.success || !planResult.result?.id) {
+                res.status(400).json({ success: false, message: planResult.message ?? 'Failed to create PayPal plan' });
+                return;
+            }
+
+            planId = planResult.result.id;
+
+            if (planResult.result.status === 'CREATED') {
+                const activateRes = await paypalCtr.activatePlan(context, { planId });
+                if (!activateRes.success) {
+                    res.status(400).json({ success: false, message: activateRes.message ?? 'Failed to activate PayPal plan' });
+                    return;
+                }
+            }
+        }
+
+        if (!planId) {
+            res.status(400).json({ success: false, message: 'plan_id is required to create a subscription' });
+            return;
+        }
+
+        const subscriptionPayload: I_PayPalSubscriptionPayload = {
+            ...subscriptionInput,
+            plan_id: planId,
+            custom_id: subscriptionInput.custom_id ?? currentUser.id,
+        };
+
+        if (!subscriptionPayload.subscriber) {
+            const subscriber: Record<string, unknown> = {};
+            if (currentUser.email) {
+                subscriber['email_address'] = currentUser.email;
+            }
+
+            if (currentUser.username) {
+                subscriber['name'] = {
+                    given_name: currentUser.username,
+                };
+            }
+
+            if (Object.keys(subscriber).length > 0) {
+                subscriptionPayload.subscriber = subscriber;
+            }
+        }
+
+        const redirectBase = getPaymentRedirectBase();
+        const brandName = envValues['PAYPAL_BRAND_NAME'] ?? envValues['SERVICE_NAME'] ?? envValues['USER_APP_NAME'] ?? 'CyberSkill';
+        const defaultAppContext = {
+            brand_name: brandName,
+            user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
+            return_url: appendQueryParams(redirectBase, { status: 'SUCCESS', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),
+            cancel_url: appendQueryParams(redirectBase, { status: 'CANCEL', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),
+            shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
+        };
+
+        subscriptionPayload.application_context = {
+            ...defaultAppContext,
+            ...(subscriptionInput.application_context ?? {}),
+        };
+
+        const subscriptionRes = await paypalCtr.createSubscription(context, subscriptionPayload);
+        if (!subscriptionRes.success || !subscriptionRes.result) {
+            res.status(400).json({ success: false, message: subscriptionRes.message ?? 'Failed to create PayPal subscription' });
+            return;
+        }
+
+        const approvalUrl = subscriptionRes.result.links?.find(link => link.rel === 'approve')?.href
+            ?? subscriptionRes.result.links?.find(link => link.rel === 'payer-action')?.href;
+
+        if (!approvalUrl) {
+            res.status(400).json({ success: false, message: 'PayPal subscription response missing approval URL' });
+            return;
+        }
+
+        const createdProduct = productResult?.success ? productResult.result : null;
+        const createdPlan = planResult?.success ? planResult.result : null;
+
+        res.status(200).json({
+            success: true,
+            result: {
+                product: createdProduct,
+                plan: createdPlan,
+                subscription: subscriptionRes.result,
+                approvalUrl,
+            },
+        });
+    }
+    catch (error) {
+        log.error('[PayPal Subscription Setup] Unexpected error', error);
+        next(error);
+    }
+});
 
 export { mainRouter as paymentRouter };

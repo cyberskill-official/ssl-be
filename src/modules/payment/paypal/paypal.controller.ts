@@ -17,6 +17,7 @@ import type {
 } from './paypal.type.js';
 
 import { ensurePayPalCredentials, getPayPalRequest, postPayPalRequest } from './paypal.handler.js';
+import { getBillingCyclesValidationError } from './paypal.validate.js';
 
 export const paypalCtr = {
     createOrder: async (
@@ -101,7 +102,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalProductResponse>(
             credentials,
-            '/v1/catalogs/products',
+            '/v2/catalogs/products',
             payload as unknown as Record<string, unknown>,
             'create-product',
         );
@@ -120,11 +121,43 @@ export const paypalCtr = {
             };
         }
 
+        const billingCyclesError = getBillingCyclesValidationError(payload.billing_cycles);
+        if (billingCyclesError) {
+            return {
+                success: false,
+                message: billingCyclesError,
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
         return postPayPalRequest<I_PayPalPlanResponse>(
             credentials,
-            '/v1/billing/plans',
+            '/v2/billing/plans',
             payload as unknown as Record<string, unknown>,
             'create-plan',
+        );
+    },
+    activatePlan: async (
+        _context: I_Context,
+        { planId }: { planId: string },
+    ): Promise<I_Return<void>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        const safePlanId = encodeURIComponent(planId);
+
+        return postPayPalRequest<void>(
+            credentials,
+            `/v2/billing/plans/${safePlanId}/activate`,
+            null,
+            'activate-plan',
         );
     },
     createSubscription: async (
@@ -143,7 +176,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalSubscriptionResponse>(
             credentials,
-            '/v1/billing/subscriptions',
+            '/v2/billing/subscriptions',
             payload as unknown as Record<string, unknown>,
             'create-subscription',
         );
@@ -166,8 +199,37 @@ export const paypalCtr = {
 
         return getPayPalRequest<I_PayPalSubscriptionResponse>(
             credentials,
-            `/v1/billing/subscriptions/${safeSubscriptionId}`,
+            `/v2/billing/subscriptions/${safeSubscriptionId}`,
             'get-subscription',
+        );
+    },
+    verifyWebhookSignature: async (
+        _context: I_Context,
+        payload: {
+            auth_algo: string;
+            cert_url: string;
+            transmission_id: string;
+            transmission_sig: string;
+            transmission_time: string;
+            webhook_id: string;
+            webhook_event: Record<string, unknown>;
+        },
+    ): Promise<I_Return<{ verification_status: 'SUCCESS' | 'FAILURE' }>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        return postPayPalRequest<{ verification_status: 'SUCCESS' | 'FAILURE' }>(
+            credentials,
+            '/v2/notifications/verify-webhook-signature',
+            payload as unknown as Record<string, unknown>,
+            'verify-webhook',
         );
     },
 };
