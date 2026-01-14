@@ -51,6 +51,15 @@ mainRouter.get('/payment', async (req, res, next) => {
                 ? String(query['transactionID'])
                 : '';
         const statusParam = typeof query['status'] === 'string' ? query['status'].toUpperCase().trim() : '';
+        const normalizeId = (value: unknown): string | undefined => {
+            if (typeof value === 'string' && value.trim()) {
+                return value.trim();
+            }
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return String(value);
+            }
+            return undefined;
+        };
 
         log.info('[Payment Handler] Processing payment callback:', {
             transactionID,
@@ -95,6 +104,41 @@ mainRouter.get('/payment', async (req, res, next) => {
 
                 if (foundPr) {
                     paymentRequestRes = { success: true, result: foundPr };
+                }
+            }
+        }
+
+        // Fallback: resolve Netvalve order by transactionID, then map to PaymentRequest
+        if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            log.info('[Payment Handler] PaymentRequest not found by gatewayResponse, trying to resolve Netvalve order:', { transactionID });
+            const netvalveOrderRes = await netvalveCtr.getOrder(context, { transactionId: transactionID });
+            if (netvalveOrderRes.success && netvalveOrderRes.result) {
+                const payload = netvalveOrderRes.result as Record<string, unknown>;
+                const netvalveOrder = (payload['order'] as Record<string, unknown> | undefined) ?? payload;
+                const orderId = normalizeId(netvalveOrder?.['orderId'] ?? netvalveOrder?.['id'] ?? netvalveOrder?.['orderID']);
+                const clientOrderId = normalizeId(netvalveOrder?.['clientOrderId'] ?? netvalveOrder?.['clientOrderID']);
+
+                if (orderId) {
+                    log.info('[Payment Handler] Netvalve order resolved by transactionID:', { transactionID, orderId });
+                    const prByExternalOrderId = await paymentRequestCtr.getPaymentRequest(context, {
+                        filter: { externalOrderId: orderId },
+                    });
+                    if (prByExternalOrderId.success && prByExternalOrderId.result) {
+                        paymentRequestRes = prByExternalOrderId;
+                    }
+                }
+
+                if ((!paymentRequestRes.success || !paymentRequestRes.result) && clientOrderId) {
+                    log.info('[Payment Handler] Netvalve order resolved by transactionID with clientOrderId:', {
+                        transactionID,
+                        clientOrderId,
+                    });
+                    const prByClientOrderId = await paymentRequestCtr.getPaymentRequest(context, {
+                        filter: { 'meta.orderId': clientOrderId },
+                    });
+                    if (prByClientOrderId.success && prByClientOrderId.result) {
+                        paymentRequestRes = prByClientOrderId;
+                    }
                 }
             }
         }
