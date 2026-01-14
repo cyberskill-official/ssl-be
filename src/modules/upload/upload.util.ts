@@ -120,16 +120,6 @@ export async function applyAiModerationDecision(
                     isDel: false,
                 },
             });
-            // If gallery was auto-approved by AI, notify followers about the published media.
-            try {
-                const galleryFound = await galleryCtr.getGallery(context, { filter: { moderationMediaId: moderationId } });
-                if (galleryFound.success && galleryFound.result?.id) {
-                    await galleryCtr.notifyGalleryPublished(context, galleryFound.result.id);
-                }
-            }
-            catch {
-                /* ignore notify errors */
-            }
         }
         catch {
             /* ignore gallery sync errors */
