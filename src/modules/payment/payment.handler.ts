@@ -12,6 +12,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
@@ -625,6 +626,9 @@ mainRouter.get('/payment', async (req, res, next) => {
                             // Generate short invoice number (4 characters from orderId)
                             const orderId = orderData.id || order.id;
                             const invoiceNo = orderId ? orderId.slice(-4).toUpperCase() : 'N/A';
+                            const receiptDescription = pricing?.type === E_PricingType.ANNOUNCEMENT
+                                ? 'Announcements'
+                                : 'Membership';
 
                             // Build template data
                             const templateData = {
@@ -639,6 +643,7 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 paymentMethod,
                                 transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
                                 membershipPeriod: membershipPeriod || 'N/A',
+                                receiptDescription,
                                 isRebill: false, // This is a manual payment, not an automatic rebill
                             };
 

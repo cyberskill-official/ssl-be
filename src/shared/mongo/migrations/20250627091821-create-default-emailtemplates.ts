@@ -329,7 +329,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
                                     <td style="padding:10px 0;font-size:14px;font-weight:bold;color:#000000;font-family:Myanmar Text;text-align:right;width:40%;">Amount</td>
                                 </tr>
                                 <tr>
-                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;">Membership</td>
+                                    <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;"><%= receiptDescription %></td>
                                     <td style="padding:10px 0;font-size:13px;color:#000000;font-family:Myanmar Text;text-align:right;"></td>
                                 </tr>
                                 <tr>
@@ -377,6 +377,7 @@ const defaultEmailTemplates: I_EmailTemplateRaw[] = [
             'paymentMethod',
             'transactionId',
             'membershipPeriod',
+            'receiptDescription',
         ],
     },
     {
