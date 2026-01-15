@@ -5,6 +5,7 @@ import type { I_Context } from '#shared/typescript/express.js';
 
 import { PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
 import { emailCtr } from '#modules/email/index.js';
+import { E_EventType } from '#modules/event/event.type.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -626,8 +627,18 @@ mainRouter.get('/payment', async (req, res, next) => {
                             // Generate short invoice number (4 characters from orderId)
                             const orderId = orderData.id || order.id;
                             const invoiceNo = orderId ? orderId.slice(-4).toUpperCase() : 'N/A';
+                            const eventType = orderData?.meta?.event?.type as E_EventType | undefined;
+                            const eventTypeLabel = eventType === E_EventType.BOOTY_CALL
+                                ? 'Booty Call'
+                                : eventType === E_EventType.TRAVEL
+                                    ? 'Travel'
+                                    : eventType === E_EventType.PRIVATE
+                                        ? 'Private'
+                                        : eventType === E_EventType.CLUB_VISIT
+                                            ? 'Club Visit'
+                                            : 'Event';
                             const receiptDescription = pricing?.type === E_PricingType.ANNOUNCEMENT
-                                ? 'Announcements'
+                                ? `Announcements (${eventTypeLabel})`
                                 : 'Membership';
 
                             // Build template data
