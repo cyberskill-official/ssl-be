@@ -110,11 +110,12 @@ async function getPayPalAccessToken(credentials: I_PayPalCredentials): Promise<I
         return { success: true, result: tokenCache.accessToken };
     }
 
+    const authBaseUrl = credentials.baseUrl.replace(/\/v\d+$/, '');
     const basicToken = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
     const body = new URLSearchParams({ grant_type: 'client_credentials' });
 
     const response = await fetchPayPal<I_PayPalAccessTokenResponse>(
-        `${credentials.baseUrl}/v1/oauth2/token`,
+        `${authBaseUrl}/v1/oauth2/token`,
         {
             method: 'POST',
             headers: {

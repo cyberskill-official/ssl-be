@@ -9,10 +9,11 @@ import { getEnv } from '#shared/env/env.util.js';
 
 import { paypalCtr } from './paypal.controller.js';
 
+const env = getEnv();
+
 export async function paypalWebhookHandler(req: Request, res: Response) {
     try {
-        const env = getEnv();
-        const webhookId = (env as any).PAYPAL_WEBHOOK_ID as string | undefined; // Cast to access unchecked env var
+        const webhookId = env.PAYPAL_WEBHOOK_ID;
 
         // 1. Signature Verification
         const headers = req.headers;

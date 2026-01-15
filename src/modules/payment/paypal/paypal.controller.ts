@@ -36,7 +36,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalCreateOrderResponse>(
             credentials,
-            '/v2/checkout/orders',
+            '/checkout/orders',
             payload as unknown as Record<string, unknown>,
             'create-order',
         );
@@ -59,7 +59,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalCaptureOrderResponse>(
             credentials,
-            `/v2/checkout/orders/${safeOrderId}/capture`,
+            `/checkout/orders/${safeOrderId}/capture`,
             {},
             'capture-order',
         );
@@ -82,7 +82,7 @@ export const paypalCtr = {
 
         return getPayPalRequest<I_PayPalCreateOrderResponse>(
             credentials,
-            `/v2/checkout/orders/${safeOrderId}`,
+            `/checkout/orders/${safeOrderId}`,
             'get-order',
         );
     },
@@ -102,7 +102,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalProductResponse>(
             credentials,
-            '/v2/catalogs/products',
+            '/catalogs/products',
             payload as unknown as Record<string, unknown>,
             'create-product',
         );
@@ -132,7 +132,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalPlanResponse>(
             credentials,
-            '/v2/billing/plans',
+            '/billing/plans',
             payload as unknown as Record<string, unknown>,
             'create-plan',
         );
@@ -155,7 +155,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<void>(
             credentials,
-            `/v2/billing/plans/${safePlanId}/activate`,
+            `/billing/plans/${safePlanId}/activate`,
             null,
             'activate-plan',
         );
@@ -176,7 +176,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalSubscriptionResponse>(
             credentials,
-            '/v2/billing/subscriptions',
+            '/billing/subscriptions',
             payload as unknown as Record<string, unknown>,
             'create-subscription',
         );
@@ -199,7 +199,7 @@ export const paypalCtr = {
 
         return getPayPalRequest<I_PayPalSubscriptionResponse>(
             credentials,
-            `/v2/billing/subscriptions/${safeSubscriptionId}`,
+            `/billing/subscriptions/${safeSubscriptionId}`,
             'get-subscription',
         );
     },
@@ -227,7 +227,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<{ verification_status: 'SUCCESS' | 'FAILURE' }>(
             credentials,
-            '/v2/notifications/verify-webhook-signature',
+            '/notifications/verify-webhook-signature',
             payload as unknown as Record<string, unknown>,
             'verify-webhook',
         );
