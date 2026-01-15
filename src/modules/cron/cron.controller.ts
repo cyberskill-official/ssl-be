@@ -1172,6 +1172,7 @@ export const cron = {
 
                             // Generate invoice number
                             const invoiceNo = rebillOrder.id ? rebillOrder.id.slice(-4).toUpperCase() : 'N/A';
+                            const receiptDescription = 'Membership';
 
                             // Build template data
                             const templateData = {
@@ -1186,6 +1187,7 @@ export const cron = {
                                 paymentMethod: 'Card',
                                 transactionId: rebillTransactionIdString || 'N/A',
                                 membershipPeriod: membershipPeriod || 'N/A',
+                                receiptDescription,
                                 isRebill: true, // Indicate this is an automatic rebill
                             };
 

@@ -5,6 +5,7 @@ import type { I_Context } from '#shared/typescript/express.js';
 
 import { PAYMENT_SUCCESS } from '#modules/authn/authn.constant.js';
 import { emailCtr } from '#modules/email/index.js';
+import { E_EventType } from '#modules/event/event.type.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
@@ -12,6 +13,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
@@ -625,6 +627,18 @@ mainRouter.get('/payment', async (req, res, next) => {
                             // Generate short invoice number (4 characters from orderId)
                             const orderId = orderData.id || order.id;
                             const invoiceNo = orderId ? orderId.slice(-4).toUpperCase() : 'N/A';
+                            const eventType = orderData?.meta?.event?.type as E_EventType | undefined;
+                            const isClubVisit = eventType === E_EventType.CLUB_VISIT;
+                            const eventTypeLabel = eventType === E_EventType.BOOTY_CALL
+                                ? 'Booty Call'
+                                : eventType === E_EventType.TRAVEL
+                                    ? 'Travel'
+                                    : eventType === E_EventType.PRIVATE
+                                        ? 'Private'
+                                        : 'Event';
+                            const receiptDescription = pricing?.type === E_PricingType.ANNOUNCEMENT
+                                ? `Announcements (${eventTypeLabel})`
+                                : 'Membership';
 
                             // Build template data
                             const templateData = {
@@ -639,11 +653,14 @@ mainRouter.get('/payment', async (req, res, next) => {
                                 paymentMethod,
                                 transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
                                 membershipPeriod: membershipPeriod || 'N/A',
+                                receiptDescription,
                                 isRebill: false, // This is a manual payment, not an automatic rebill
                             };
 
                             // Send email directly (no notification)
-                            await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
+                            if (pricing?.type !== E_PricingType.ANNOUNCEMENT || !isClubVisit) {
+                                await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
+                            }
                         }
                     }
                     catch (error) {
