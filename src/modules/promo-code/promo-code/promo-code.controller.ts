@@ -55,6 +55,13 @@ export const promoCodeCtr = {
             }
         }
 
+        if (doc.isLimit && (!doc.globalUsageLimit || doc.globalUsageLimit <= 0)) {
+            throwError({
+                message: 'Global usage limit must be greater than 0 when usage limits are enabled.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         const existingPromoCode = await promoCodeCtr.getPromoCode(context, {
             filter: { code: doc.code },
         });
@@ -70,9 +77,28 @@ export const promoCodeCtr = {
     },
 
     updatePromoCode: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePromoCode>,
     ): Promise<I_Return<I_PromoCode>> => {
+        const existingPromoCode = await promoCodeCtr.getPromoCode(context, { filter });
+
+        if (!existingPromoCode.success) {
+            throwError({
+                message: 'Promo code not found.',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const updatedIsLimit = update.isLimit ?? existingPromoCode.result.isLimit;
+        const updatedGlobalUsageLimit = update.globalUsageLimit ?? existingPromoCode.result.globalUsageLimit;
+
+        if (updatedIsLimit && (!updatedGlobalUsageLimit || updatedGlobalUsageLimit <= 0)) {
+            throwError({
+                message: 'Global usage limit must be greater than 0 when usage limits are enabled.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         return mongooseCtr.updateOne(filter, update, options);
     },
     deletePromoCode: async (

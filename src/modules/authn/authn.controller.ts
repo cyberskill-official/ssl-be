@@ -1726,6 +1726,18 @@ export const authnCtr = {
             });
         }
 
+        if (context.req.session?.cookie) {
+            if (rememberMe) {
+                // Persist session across browser restarts when "remember me" is enabled.
+                context.req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
+            }
+            else {
+                // Session cookie: cleared when the browser is closed.
+                context.req.session.cookie.expires = undefined;
+                context.req.session.cookie.maxAge = undefined;
+            }
+        }
+
         await assignSessionUser(context.req.session, sanitizedLoginUser);
 
         return {
