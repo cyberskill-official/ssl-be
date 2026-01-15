@@ -27,6 +27,7 @@ import {
     E_PayPalUserAction,
 } from '#modules/payment/paypal/paypal.type.js';
 import { paypalWebhookHandler } from '#modules/payment/paypal/paypal.webhook.js';
+import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
