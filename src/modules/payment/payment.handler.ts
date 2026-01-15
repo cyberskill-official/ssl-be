@@ -628,15 +628,14 @@ mainRouter.get('/payment', async (req, res, next) => {
                             const orderId = orderData.id || order.id;
                             const invoiceNo = orderId ? orderId.slice(-4).toUpperCase() : 'N/A';
                             const eventType = orderData?.meta?.event?.type as E_EventType | undefined;
+                            const isClubVisit = eventType === E_EventType.CLUB_VISIT;
                             const eventTypeLabel = eventType === E_EventType.BOOTY_CALL
                                 ? 'Booty Call'
                                 : eventType === E_EventType.TRAVEL
                                     ? 'Travel'
                                     : eventType === E_EventType.PRIVATE
                                         ? 'Private'
-                                        : eventType === E_EventType.CLUB_VISIT
-                                            ? 'Club Visit'
-                                            : 'Event';
+                                        : 'Event';
                             const receiptDescription = pricing?.type === E_PricingType.ANNOUNCEMENT
                                 ? `Announcements (${eventTypeLabel})`
                                 : 'Membership';
@@ -659,7 +658,9 @@ mainRouter.get('/payment', async (req, res, next) => {
                             };
 
                             // Send email directly (no notification)
-                            await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
+                            if (pricing?.type !== E_PricingType.ANNOUNCEMENT || !isClubVisit) {
+                                await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
+                            }
                         }
                     }
                     catch (error) {
