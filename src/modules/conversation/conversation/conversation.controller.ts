@@ -260,7 +260,33 @@ function extractContactMessage(raw: string | null | undefined): string {
 }
 
 export const conversationCtr = {
-// replace existing getConversation with this version
+// Ensure required relationships are always populated for conversation listings.
+    normalizePopulateOptions: (options: Record<string, any> | undefined, requiredPaths: string[]) => {
+        const existingPopulate = options?.['populate'];
+        const populateList = Array.isArray(existingPopulate)
+            ? existingPopulate.slice()
+            : (existingPopulate ? [existingPopulate] : []);
+
+        const hasPath = (entry: any, path: string) => {
+            if (typeof entry === 'string')
+                return entry === path;
+            if (entry && typeof entry === 'object')
+                return entry.path === path;
+            return false;
+        };
+
+        requiredPaths.forEach((path) => {
+            if (!populateList.some(entry => hasPath(entry, path))) {
+                populateList.push(path);
+            }
+        });
+
+        return {
+            ...options,
+            populate: populateList,
+        };
+    },
+    // replace existing getConversation with this version
     getConversation: async (
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryConversation>,
@@ -292,7 +318,12 @@ export const conversationCtr = {
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryConversation>,
     ): Promise<I_Return<T_PaginateResult<I_Conversation & { resolvedContact?: I_ResolvedContact }>>> => {
-        const res = await mongooseCtr.findPaging(filter, options);
+        const nextOptions = conversationCtr.normalizePopulateOptions(options as Record<string, any> | undefined, [
+            'createdBy',
+            'lastMessage',
+            'resolvedBy',
+        ]);
+        const res = await mongooseCtr.findPaging(filter, nextOptions as any);
         if (!res.success || !res.result)
             return res as any;
 
@@ -354,7 +385,12 @@ export const conversationCtr = {
             type: { $in: [E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT, E_ConversationType.ADMIN_BROADCAST] },
         };
 
-        const res = await mongooseCtr.findPaging(supportFilter, options);
+        const nextOptions = conversationCtr.normalizePopulateOptions(options as Record<string, any> | undefined, [
+            'createdBy',
+            'lastMessage',
+            'resolvedBy',
+        ]);
+        const res = await mongooseCtr.findPaging(supportFilter, nextOptions as any);
         if (!res.success || !res.result)
             return res as any;
 
