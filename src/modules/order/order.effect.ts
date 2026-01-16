@@ -16,7 +16,7 @@ import { userCtr } from '#modules/user/index.js';
 
 import type { I_Order } from './order.type.js';
 
-import { E_OrderStatus } from './order.type.js';
+import { E_OrderStatus, E_OrderType } from './order.type.js';
 
 interface I_OrderPaidEffectsResult {
     event?: I_Event | null;
@@ -300,11 +300,22 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         }
     }
 
-    if (!pricingType) {
+    // Use orderType as the primary source of truth for effects.
+    // This prevents A_LA_CARTE_EVENT orders from granting membership.
+    const orderType = order.orderType;
+    let effectivePricingType = pricingType;
+    if (orderType === E_OrderType.A_LA_CARTE_EVENT) {
+        effectivePricingType = E_PricingType.ANNOUNCEMENT;
+    }
+    else if (orderType === E_OrderType.SUBSCRIPTION) {
+        effectivePricingType = E_PricingType.MEMBERSHIP;
+    }
+
+    if (!effectivePricingType) {
         return result;
     }
 
-    if (pricingType === E_PricingType.ANNOUNCEMENT) {
+    if (effectivePricingType === E_PricingType.ANNOUNCEMENT) {
         // ANNOUNCEMENT: Add +1 freeEventCount when user pays for announcement
         await addFreeEventCountForAnnouncement(context, order);
         try {
@@ -317,7 +328,7 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
             // Non-blocking: payment still succeeds even if event creation fails
         }
     }
-    else if (pricingType === E_PricingType.MEMBERSHIP) {
+    else if (effectivePricingType === E_PricingType.MEMBERSHIP) {
         // MEMBERSHIP: +1 tháng membership (không cộng freeEventCount)
         result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
     }

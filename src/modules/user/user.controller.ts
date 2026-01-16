@@ -926,23 +926,26 @@ export const userCtr = {
             return undefined;
         };
 
-        if (Object.prototype.hasOwnProperty.call(update, 'lastOnline')) {
-            const normalized = normalizeDateValue((update as any).lastOnline);
+        const normalizeDateField = (target: Record<string, unknown>, field: string) => {
+            if (!Object.prototype.hasOwnProperty.call(target, field)) {
+                return;
+            }
+            const normalized = normalizeDateValue(target[field]);
             if (normalized === undefined) {
-                delete (update as any).lastOnline;
+                delete target[field];
+                return;
             }
-            else {
-                (update as any).lastOnline = normalized;
-            }
-        }
-        if (hasAtomicOperators && (update as any).$set?.lastOnline !== undefined) {
-            const normalized = normalizeDateValue((update as any).$set.lastOnline);
-            if (normalized === undefined) {
-                delete (update as any).$set.lastOnline;
-            }
-            else {
-                (update as any).$set.lastOnline = normalized;
-            }
+            target[field] = normalized;
+        };
+
+        normalizeDateField(update as Record<string, unknown>, 'lastOnline');
+        normalizeDateField(update as Record<string, unknown>, 'membershipExpiresAt');
+        normalizeDateField(update as Record<string, unknown>, 'membershipEndDate');
+
+        if (hasAtomicOperators && (update as any).$set) {
+            normalizeDateField((update as any).$set as Record<string, unknown>, 'lastOnline');
+            normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipExpiresAt');
+            normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipEndDate');
         }
 
         const { password } = update;

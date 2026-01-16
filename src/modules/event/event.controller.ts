@@ -27,7 +27,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
+import { conversationCtr, E_ConversationType, E_ParticipantRole, participantCtr } from '#modules/conversation/index.js';
 import { destinationCtr } from '#modules/destination/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import {
@@ -551,7 +551,7 @@ export const eventCtr = {
 
         // If PRIVATE, create conversation using final title (doc.title) and rollback if it fails
         if (type === E_EventType.PRIVATE) {
-            const createdConversation = await conversationCtr.createConversation(context, {
+            const createdConversation = await conversationCtr.createConversationInternal(context, {
                 doc: {
                     name: doc.title ?? title,
                     type: E_ConversationType.GROUP,
@@ -562,6 +562,19 @@ export const eventCtr = {
             });
             if (!createdConversation.success) {
                 // cleanup event to avoid orphaned event
+                await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
+                throwError({ message: 'Failed to create conversation for event', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            const participantCreated = await participantCtr.createParticipant(context, {
+                doc: {
+                    conversationId: createdConversation.result.id,
+                    userId: currentUser.id,
+                    role: E_ParticipantRole.ADMIN,
+                },
+            });
+            if (!participantCreated.success) {
+                await conversationCtr.deleteConversation(context, { filter: { id: createdConversation.result.id } }).catch(() => { /* best-effort cleanup */ });
                 await mongooseCtr.deleteOne({ id: eventCreated.result.id }).catch(() => { /* best-effort cleanup */ });
                 throwError({ message: 'Failed to create conversation for event', status: RESPONSE_STATUS.BAD_REQUEST });
             }
