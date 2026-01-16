@@ -694,9 +694,8 @@ export const conversationCtr = {
 
         // Check if user is effectively a free member (includes expired memberships)
         const isFreeMember = await authnCtr.isFreeMember(context);
-
-        // FREE_MEMBER cannot create any new conversations (GROUP or PRIVATE)
-        if ([E_ConversationType.GROUP, E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT].includes(type) && isFreeMember) {
+        // FREE_MEMBER cannot initiate PRIVATE conversations (GROUP creation is allowed)
+        if (type === E_ConversationType.PRIVATE && isFreeMember) {
             throwError({
                 message: 'Free users cannot initiate new chats. Please upgrade your membership.',
                 status: RESPONSE_STATUS.FORBIDDEN,
