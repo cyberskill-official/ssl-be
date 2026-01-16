@@ -930,6 +930,7 @@ export const moderationMediaCtr = {
                         action: E_ModerationLogAction.APPROVE,
                         type: mediaType, // Set type to IMAGE or VIDEO
                         userId: currentUser.id,
+                        targetUserId: currentModerationMedia.result.uploadedById,
                         moderationMediaId: id,
                         reason: 'Approved by moderator (manual approval)',
                     },
@@ -972,6 +973,7 @@ export const moderationMediaCtr = {
                         action: E_ModerationLogAction.APPROVE,
                         type: mediaType, // Set type to IMAGE or VIDEO
                         userId: currentUser.id,
+                        targetUserId: currentModerationMedia.result.uploadedById,
                         moderationMediaId: id,
                         reason: approveReason,
                     },
@@ -1045,6 +1047,7 @@ export const moderationMediaCtr = {
                         action: E_ModerationLogAction.DELETE,
                         type: mediaType as any, // Set type to IMAGE or VIDEO
                         userId: currentUser.id,
+                        targetUserId: currentModerationMedia.result.uploadedById,
                         moderationMediaId: id,
                         reason: reason || 'Rejected by moderator (manual rejection)',
                     },
@@ -1143,6 +1146,7 @@ export const moderationMediaCtr = {
                         action: E_ModerationLogAction.DELETE,
                         type: mediaType, // Set type to IMAGE or VIDEO
                         userId: currentUser.id,
+                        targetUserId: currentModerationMedia.result.uploadedById,
                         moderationMediaId: id,
                         reason: reason || 'Rejected by moderator',
                     },

@@ -25,6 +25,8 @@ type T_ModerationLog {
     type: E_ModerationLogType
     userId: String
     user: T_User
+    targetUserId: String
+    targetUser: T_User
     moderationMediaId: String
     moderationMedia: T_ModerationMedia
     messageId: String
@@ -42,6 +44,7 @@ input Input_QueryModerationLog {
     action: E_ModerationLogAction
     type: E_ModerationLogType
     userId: String
+    targetUserId: String
     moderationMediaId: String
     messageId: String
     content: String
@@ -52,6 +55,7 @@ input Input_CreateModerationLog {
     action: E_ModerationLogAction!
     type: E_ModerationLogType
     userId: String
+    targetUserId: String
     moderationMediaId: String
     messageId: String
     content: String
@@ -63,6 +67,7 @@ input Input_UpdateModerationLog {
     action: E_ModerationLogAction
     type: E_ModerationLogType
     userId: String
+    targetUserId: String
     moderationMediaId: String
     messageId: String
     content: String

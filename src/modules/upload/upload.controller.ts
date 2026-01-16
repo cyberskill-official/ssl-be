@@ -317,6 +317,7 @@ export const uploadCtr = {
                                     action: logAction,
                                     type: E_ModerationLogType.VIDEO,
                                     userId: undefined,
+                                    targetUserId: currentUser.id,
                                     moderationMediaId: moderationId,
                                     aiResult,
                                     reason: 'AI moderation (video)',
@@ -493,6 +494,7 @@ export const uploadCtr = {
                                 action: logAction,
                                 type: mediaType, // Set type to IMAGE or VIDEO
                                 userId: undefined,
+                                targetUserId: currentUser.id,
                                 moderationMediaId: moderationId,
                                 aiResult: moderateImage.result,
                                 reason: 'AI moderation (image)',
