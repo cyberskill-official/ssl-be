@@ -1070,10 +1070,22 @@ export const userCtr = {
         const updateHasMembershipEndDate = hasAtomicOperators
             ? Object.prototype.hasOwnProperty.call((update as any).$set ?? {}, 'membershipEndDate')
             : Object.prototype.hasOwnProperty.call(update, 'membershipEndDate');
-        const nextExpiry = updateHasMembershipExpiresAt
+        const rawMembershipExpiresAt = updateHasMembershipExpiresAt
             ? (hasAtomicOperators ? (update as any).$set?.membershipExpiresAt : (update as any).membershipExpiresAt)
+            : undefined;
+        const rawMembershipEndDate = updateHasMembershipEndDate
+            ? (hasAtomicOperators ? (update as any).$set?.membershipEndDate : (update as any).membershipEndDate)
+            : undefined;
+        const normalizedMembershipExpiresAt = updateHasMembershipExpiresAt
+            ? normalizeDateValue(rawMembershipExpiresAt)
+            : undefined;
+        const normalizedMembershipEndDate = updateHasMembershipEndDate
+            ? normalizeDateValue(rawMembershipEndDate)
+            : undefined;
+        const nextExpiry = updateHasMembershipExpiresAt
+            ? rawMembershipExpiresAt
             : updateHasMembershipEndDate
-                ? (hasAtomicOperators ? (update as any).$set?.membershipEndDate : (update as any).membershipEndDate)
+                ? rawMembershipEndDate
                 : undefined;
         const previousExpiry = userFound.result.membershipExpiresAt !== undefined
             ? userFound.result.membershipExpiresAt
@@ -1180,6 +1192,38 @@ export const userCtr = {
         }
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
+
+        const applyNormalizedDate = (
+            payload: Record<string, unknown>,
+            field: 'membershipExpiresAt' | 'membershipEndDate',
+            value: Date | null | undefined,
+        ) => {
+            if (hasAtomicOperators) {
+                if (!payload['$set'] || typeof payload['$set'] !== 'object') {
+                    payload['$set'] = {};
+                }
+                if (value === undefined) {
+                    delete (payload['$set'] as Record<string, unknown>)[field];
+                }
+                else {
+                    (payload['$set'] as Record<string, unknown>)[field] = value;
+                }
+                return;
+            }
+            if (value === undefined) {
+                delete payload[field];
+            }
+            else {
+                payload[field] = value;
+            }
+        };
+
+        if (updateHasMembershipExpiresAt) {
+            applyNormalizedDate(payloadToPersist, 'membershipExpiresAt', normalizedMembershipExpiresAt);
+        }
+        if (updateHasMembershipEndDate) {
+            applyNormalizedDate(payloadToPersist, 'membershipEndDate', normalizedMembershipEndDate);
+        }
 
         const updateResult = await mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, payloadToPersist, options);
 
