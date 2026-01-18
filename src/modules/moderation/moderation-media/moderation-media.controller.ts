@@ -1072,13 +1072,7 @@ export const moderationMediaCtr = {
         // Try delete underlying file on Bunny before status update (only if not already rejected)
         const media = currentModerationMedia.result;
         try {
-            if (media.type === E_ModerationMediaType.VIDEO && media.url) {
-                const deleted = await bunnyCtr.deleteVideoUrl(context, media.url);
-                if (!deleted.success) {
-                    throw new Error(deleted.message || 'Failed to delete Bunny Stream video');
-                }
-            }
-            else if (media.type === E_ModerationMediaType.IMAGE && media.url) {
+            if (media.type === E_ModerationMediaType.IMAGE && media.url) {
                 let storagePath = media.url;
                 try {
                     const u = new URL(media.url);
