@@ -29,6 +29,8 @@ export interface I_ModerationLog extends I_GenericDocument {
     type?: E_ModerationLogType; // Type of content: TEXT, IMAGE, or VIDEO
     userId?: string;
     user?: I_User;
+    targetUserId?: string;
+    targetUser?: I_User;
     moderationMediaId?: string;
     moderationMedia?: I_ModerationMedia;
     messageId?: string; // For flagging messages that need manual review
@@ -38,7 +40,7 @@ export interface I_ModerationLog extends I_GenericDocument {
     reason?: string; // Additional context, e.g., matched keyword
 }
 
-export type T_ModerationLog_Populate = 'user' | 'moderationMedia' | 'message';
+export type T_ModerationLog_Populate = 'user' | 'targetUser' | 'moderationMedia' | 'message';
 
 export interface I_Input_QueryModerationLog extends Omit<I_ModerationLog, T_ModerationLog_Populate> { }
 

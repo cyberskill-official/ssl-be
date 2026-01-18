@@ -69,7 +69,12 @@ export const moderationLogCtr = {
     ): Promise<I_Return<I_ModerationLog>> => {
         const defaultPopulate = [
             { path: 'user', select: 'id username email' },
-            { path: 'moderationMedia', select: 'id type url status' },
+            { path: 'targetUser', select: 'id username email' },
+            {
+                path: 'moderationMedia',
+                select: 'id type url status uploadedById',
+                populate: { path: 'uploadedBy', select: 'id username email' },
+            },
             { path: 'message', select: 'id content' },
         ];
         return mongooseCtr.findOne(filter, projection, options, populate || defaultPopulate);
@@ -105,7 +110,12 @@ export const moderationLogCtr = {
             ...optionsAny,
             populate: optionsAny?.populate || [
                 { path: 'user', select: 'id username email' },
-                { path: 'moderationMedia', select: 'id type url status' },
+                { path: 'targetUser', select: 'id username email' },
+                {
+                    path: 'moderationMedia',
+                    select: 'id type url status uploadedById',
+                    populate: { path: 'uploadedBy', select: 'id username email' },
+                },
                 { path: 'message', select: 'id content' },
             ],
         };

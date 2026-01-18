@@ -1542,6 +1542,7 @@ export const userCtr = {
                             action: E_ModerationLogAction.DELETE,
                             type: E_ModerationLogType.ACCOUNT,
                             userId,
+                            targetUserId: userId,
                         },
                     });
                 }
@@ -1694,13 +1695,14 @@ export const userCtr = {
             update: { isAdminBlocked: true, isDel: true },
         });
 
-        if (updateResult.success && sessionUser?.id) {
+        if (updateResult.success && sessionUser?.id && userFound.result?.id) {
             try {
                 await moderationLogCtr.createModerationLog(context, {
                     doc: {
                         action: E_ModerationLogAction.SUSPEND,
                         type: E_ModerationLogType.ACCOUNT,
                         userId: sessionUser.id,
+                        targetUserId: userFound.result.id,
                     },
                 });
             }
@@ -1736,7 +1738,7 @@ export const userCtr = {
 
         const { userId } = filter || {};
 
-        if (!userId) {
+        if (!userId || typeof userId !== 'string') {
             throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Missing userId' });
         }
 
@@ -1762,6 +1764,7 @@ export const userCtr = {
                         action: E_ModerationLogAction.UN_SUSPEND,
                         type: E_ModerationLogType.ACCOUNT,
                         userId: sessionUser.id,
+                        targetUserId: userFound.result.id,
                         reason: `User unblocked: ${targetLabel}`,
                     },
                 });

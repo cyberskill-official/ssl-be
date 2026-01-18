@@ -214,6 +214,7 @@ export const messageCtr = {
                         action: E_ModerationLogAction.WARN,
                         type: E_ModerationLogType.TEXT, // Set type to TEXT for text moderation
                         userId: senderId,
+                        targetUserId: senderId,
                         messageId: createdMessage.id,
                         content: fullMessageText, // Store full message content directly
                         reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,

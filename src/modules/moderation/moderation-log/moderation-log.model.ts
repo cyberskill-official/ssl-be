@@ -27,6 +27,9 @@ export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
         userId: {
             type: String,
         },
+        targetUserId: {
+            type: String,
+        },
         moderationMediaId: {
             type: String,
         },
@@ -49,6 +52,15 @@ export const ModerationLogModel = mongo.createModel<I_ModerationLog>({
             options: {
                 ref: 'User',
                 localField: 'userId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'targetUser',
+            options: {
+                ref: 'User',
+                localField: 'targetUserId',
                 foreignField: 'id',
                 justOne: true,
             },

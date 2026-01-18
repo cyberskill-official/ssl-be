@@ -2338,6 +2338,7 @@ export const authnCtr = {
                         action: E_ModerationLogAction.APPROVE,
                         type: E_ModerationLogType.AGE_VERIFICATION,
                         userId: currentUser.id,
+                        targetUserId: userId,
                     },
                 });
             }
@@ -2456,6 +2457,7 @@ export const authnCtr = {
                         action: E_ModerationLogAction.DELETE,
                         type: E_ModerationLogType.AGE_VERIFICATION,
                         userId: currentUser.id,
+                        targetUserId: userId,
                         reason: `${trimmedReason}`,
                     },
                 });
