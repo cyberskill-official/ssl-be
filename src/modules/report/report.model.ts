@@ -65,7 +65,11 @@ export const ReportModel = mongo.createModel<I_Report>({
             ],
         },
         notes: {
-            type: NoteSchema,
+            type: [NoteSchema],
+            default: [],
+        },
+        moderationMediaId: {
+            type: String,
         },
     },
     virtuals: [
@@ -84,7 +88,16 @@ export const ReportModel = mongo.createModel<I_Report>({
                 ref: 'User',
                 localField: 'targetId',
                 foreignField: 'id',
-                justOne: false,
+                justOne: true,
+            },
+        },
+        {
+            name: 'moderationMedia',
+            options: {
+                ref: 'ModerationMedia',
+                localField: 'moderationMediaId',
+                foreignField: 'id',
+                justOne: true,
             },
         },
     ],

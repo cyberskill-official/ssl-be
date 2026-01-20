@@ -1,6 +1,7 @@
 enum E_ReportType {
     KEYWORD 
     USER
+    MEDIA
 }
 
 enum E_ReportStatus {
@@ -16,12 +17,14 @@ type T_Report {
     updatedAt: DateTime
     type: E_ReportType
     reportedByIds: [String]
-    reportedBy: T_User
+    reportedBy: [T_User]
     targetId: String
     target: T_User
     content: String
     status: E_ReportStatus
     notes: [T_Note]
+    moderationMedia: T_ModerationMedia
+    moderationMediaId: String
 }
 
 input Input_QueryReport {
@@ -35,6 +38,7 @@ input Input_QueryReport {
     content: String
     status: E_ReportStatus
     notes: [Input_Note]
+    moderationMediaId: String
 }
 
 input Input_CreateReport {
@@ -44,6 +48,7 @@ input Input_CreateReport {
     content: String!
     status: E_ReportStatus!
     notes: [Input_Note]
+    moderationMediaId: String
 }
 
 input Input_UpdateReport {
@@ -53,6 +58,7 @@ input Input_UpdateReport {
     content: String
     status: E_ReportStatus
     notes: [Input_Note]
+    moderationMediaId: String
 }
 
 type T_Response_Report {

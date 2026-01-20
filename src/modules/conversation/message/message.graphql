@@ -43,6 +43,7 @@ type T_Message {
     parent: T_Message
     messageStatuses: [T_MessageStatus]
     statusMedia: E_ModerationMediaStatus
+    moderationMediaId: String
 }
 
 input Input_QueryMessage {
@@ -61,6 +62,7 @@ input Input_CreateMessage {
     recipientId: String
     parentId: String
     statusMedia: E_ModerationMediaStatus
+    moderationMediaId: String
 }
 
 input Input_UpdateMessage {
@@ -69,6 +71,7 @@ input Input_UpdateMessage {
     content: Input_MessageContent
     conversationId: String
     parentId: String
+    moderationMediaId: String
 }
 
 type T_Response_Message {

@@ -8,7 +8,6 @@ import {
     E_RiskLevel,
     moderationMediaCtr,
 } from '#modules/moderation/index.js';
-import { E_NoteType } from '#modules/note/note.type.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import {
     E_NotificationEntityType,
@@ -141,7 +140,6 @@ export async function applyAiModerationDecision(
 
         if (moderationUpdated.success && moderationUpdated.result?.uploadedById) {
             const ownerId = moderationUpdated.result.uploadedById;
-            const reasonText = autoRejectReason ?? 'AI flagged and removed media.';
 
             await notificationCtr.createNotification(context, {
                 doc: {
@@ -159,7 +157,7 @@ export async function applyAiModerationDecision(
                 },
             });
 
-            // Red-flag the profile and attach an automated note when AI removes media
+            // Red-flag the profile when AI removes media
             // Only flag if confidence > 70% or risk level is HIGH/CRITICAL
             const confidence = aiResult.confidence;
             const riskLevel = aiResult.riskLevel;
@@ -173,13 +171,6 @@ export async function applyAiModerationDecision(
                         filter: { id: ownerId },
                         update: {
                             $inc: { flagCount: 1 },
-                            $push: {
-                                notes: {
-                                    type: E_NoteType.AUTOMATED_DETECTION,
-                                    content: reasonText,
-                                    createdAt: new Date(),
-                                },
-                            },
                         } as any,
                     });
                 }
@@ -212,20 +203,12 @@ export async function applyAiModerationDecision(
         // Flag user for AI warnings as well (non-removal)
         if (moderationUpdated.success) {
             const ownerId = moderationUpdated.result?.uploadedById;
-            const reasonText = warnReason;
             if (ownerId) {
                 try {
                     await userCtr.updateUser(context, {
                         filter: { id: ownerId },
                         update: {
                             $inc: { flagCount: 1 },
-                            $push: {
-                                notes: {
-                                    type: E_NoteType.AUTOMATED_DETECTION,
-                                    content: reasonText,
-                                    createdAt: new Date(),
-                                },
-                            },
                         } as any,
                     });
                 }

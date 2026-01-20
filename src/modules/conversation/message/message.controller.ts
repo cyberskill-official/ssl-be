@@ -63,7 +63,7 @@ export const messageCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateMessage>,
     ): Promise<I_Return<I_Message>> => {
-        const { recipientId, conversationId, content, parentId, statusMedia } = doc;
+        const { recipientId, conversationId, content, parentId, statusMedia, moderationMediaId } = doc;
 
         const currentUser = await authnCtr.getUserFromSession(context);
         const senderId = currentUser.id;
@@ -161,6 +161,7 @@ export const messageCtr = {
                 recipientId,
                 content,
                 statusMedia as E_ModerationMediaStatus | undefined,
+                moderationMediaId,
             );
 
             if (!result.success) {
@@ -185,6 +186,7 @@ export const messageCtr = {
                 content,
                 parentId,
                 statusMedia as E_ModerationMediaStatus | undefined,
+                moderationMediaId,
             );
 
             if (!sendResult.success) {
@@ -197,7 +199,7 @@ export const messageCtr = {
             }
         }
         else {
-            const created = await mongooseCtr.createOne({ ...doc, senderId, statusMedia });
+            const created = await mongooseCtr.createOne({ ...doc, senderId, statusMedia, moderationMediaId });
             const transformedResult = await transformMessageResult(context, created);
             if (transformedResult.success && transformedResult.result) {
                 createdMessage = transformedResult.result;
