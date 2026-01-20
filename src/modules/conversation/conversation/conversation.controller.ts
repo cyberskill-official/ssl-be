@@ -2165,6 +2165,7 @@ export const conversationCtr = {
         recipientId: string,
         content: I_MessageContent,
         statusMedia?: E_ModerationMediaStatus,
+        moderationMediaId?: string,
         conversationType: E_ConversationType = E_ConversationType.PRIVATE,
     ): Promise<I_Return<I_Conversation>> => {
         let isFreeMember = false;
@@ -2211,7 +2212,14 @@ export const conversationCtr = {
             }
 
             const messageResult = await messageCtr.createMessageOnly(context, {
-                doc: { conversationId: directMessageResult.conversationId, senderId, content, expiresAt: undefined, statusMedia },
+                doc: {
+                    conversationId: directMessageResult.conversationId,
+                    senderId,
+                    content,
+                    expiresAt: undefined,
+                    statusMedia,
+                    moderationMediaId,
+                },
             });
             if (!messageResult.success) {
                 throwError({ message: 'Failed to create message', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
@@ -2331,6 +2339,7 @@ export const conversationCtr = {
         content: I_MessageContent,
         parentId?: string,
         statusMedia?: E_ModerationMediaStatus,
+        moderationMediaId?: string,
     ): Promise<I_Return<I_Message>> => {
         try {
             // 1) Load conversation (participants populated)
@@ -2430,6 +2439,7 @@ export const conversationCtr = {
                     content,
                     parentId,
                     statusMedia,
+                    moderationMediaId,
                     expiresAt:
           conversation.type === E_ConversationType.GROUP && conversation.retentionDays
               ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)

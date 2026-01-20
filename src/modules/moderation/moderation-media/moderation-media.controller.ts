@@ -24,7 +24,6 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, CatalogueModel, E_CatalogueType } from '#modules/catalogue/index.js';
 import { E_MessageType, messageCtr, MessageModel } from '#modules/conversation/index.js';
 import { E_GalleryType, galleryCtr, GalleryModel } from '#modules/gallery/index.js';
-import { E_NoteType } from '#modules/note/note.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
@@ -818,19 +817,11 @@ export const moderationMediaCtr = {
                 }
 
                 if (shouldFlag) {
-                    const noteContent = reason?.trim() || 'Media rejected by moderator.';
                     try {
                         await userCtr.updateUser(context, {
                             filter: { id: moderation.uploadedById },
                             update: {
                                 $inc: { flagCount: 1 },
-                                $push: {
-                                    notes: {
-                                        type: E_NoteType.AUTOMATED_DETECTION,
-                                        content: noteContent,
-                                        createdAt: new Date(),
-                                    },
-                                },
                             } as any,
                         });
                     }

@@ -1,11 +1,13 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+import type { I_ModerationMedia } from '#modules/moderation/moderation-media/index.js';
 import type { I_Input_Note, I_Note } from '#modules/note/index.js';
 import type { I_User } from '#modules/user/index.js';
 
 export enum E_ReportType {
     KEYWORD = 'KEYWORD',
     USER = 'USER',
+    MEDIA = 'MEDIA',
 }
 
 export enum E_ReportStatus {
@@ -23,6 +25,8 @@ export interface I_Report extends I_GenericDocument {
     content?: string;
     status: E_ReportStatus;
     notes?: I_Note[];
+    moderationMedia?: I_ModerationMedia;
+    moderationMediaId?: string;
 }
 
 export type T_Report_Populate = 'reportedBy' | 'target';

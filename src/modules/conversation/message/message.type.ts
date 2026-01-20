@@ -32,6 +32,7 @@ export interface I_Message extends I_GenericDocument {
     redacted?: boolean;
     expiresAt?: Date;
     statusMedia?: E_ModerationMediaStatus;
+    moderationMediaId?: string;
 }
 
 export type T_Message_Populate = 'sender' | 'conversation' | 'parent' | 'messageStatuses';

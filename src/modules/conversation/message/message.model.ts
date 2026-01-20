@@ -138,6 +138,9 @@ export const MessageModel = mongo.createModel<I_Message>({
             type: String,
             enum: Object.values(E_ModerationMediaStatus),
         },
+        moderationMediaId: {
+            type: String,
+        },
     },
     virtuals: [
         {
