@@ -1049,8 +1049,6 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
             return;
         }
 
-        const env = getEnv();
-        const envValues = env as unknown as Record<string, string | undefined>;
         const body = (req.body ?? {}) as I_SubscriptionSetupBody;
         const subscriptionInput = body.subscription ?? {};
 
@@ -1141,9 +1139,7 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
         }
 
         const redirectBase = getPaymentRedirectBase();
-        const brandName = envValues['PAYPAL_BRAND_NAME'] ?? envValues['SERVICE_NAME'] ?? envValues['USER_APP_NAME'] ?? 'CyberSkill';
         const defaultAppContext = {
-            brand_name: brandName,
             user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
             return_url: appendQueryParams(redirectBase, { status: 'SUCCESS', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),
             cancel_url: appendQueryParams(redirectBase, { status: 'CANCEL', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),

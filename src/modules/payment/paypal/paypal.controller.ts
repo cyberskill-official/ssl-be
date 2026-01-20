@@ -19,6 +19,19 @@ import type {
 import { ensurePayPalCredentials, getPayPalRequest, postPayPalRequest } from './paypal.handler.js';
 import { getBillingCyclesValidationError } from './paypal.validate.js';
 
+function normalizePayPalBaseUrl(baseUrl: string, version: 'v1' | 'v2'): string {
+    const trimmed = baseUrl.trim().replace(/\/+$/, '');
+    const withoutVersion = trimmed.replace(/\/(v1|v2)$/i, '');
+    return `${withoutVersion}/${version}`;
+}
+
+function overridePayPalApiVersion(credentials: { baseUrl: string; clientId: string; clientSecret: string }, version: 'v1' | 'v2') {
+    return {
+        ...credentials,
+        baseUrl: normalizePayPalBaseUrl(credentials.baseUrl, version),
+    };
+}
+
 export const paypalCtr = {
     createOrder: async (
         _context: I_Context,
@@ -100,8 +113,10 @@ export const paypalCtr = {
             };
         }
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return postPayPalRequest<I_PayPalProductResponse>(
-            credentials,
+            v1Credentials,
             '/catalogs/products',
             payload as unknown as Record<string, unknown>,
             'create-product',
@@ -130,8 +145,10 @@ export const paypalCtr = {
             };
         }
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return postPayPalRequest<I_PayPalPlanResponse>(
-            credentials,
+            v1Credentials,
             '/billing/plans',
             payload as unknown as Record<string, unknown>,
             'create-plan',
@@ -153,8 +170,10 @@ export const paypalCtr = {
 
         const safePlanId = encodeURIComponent(planId);
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return postPayPalRequest<void>(
-            credentials,
+            v1Credentials,
             `/billing/plans/${safePlanId}/activate`,
             null,
             'activate-plan',
@@ -174,8 +193,10 @@ export const paypalCtr = {
             };
         }
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return postPayPalRequest<I_PayPalSubscriptionResponse>(
-            credentials,
+            v1Credentials,
             '/billing/subscriptions',
             payload as unknown as Record<string, unknown>,
             'create-subscription',
@@ -197,8 +218,10 @@ export const paypalCtr = {
 
         const safeSubscriptionId = encodeURIComponent(subscriptionId);
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return getPayPalRequest<I_PayPalSubscriptionResponse>(
-            credentials,
+            v1Credentials,
             `/billing/subscriptions/${safeSubscriptionId}`,
             'get-subscription',
         );
@@ -225,8 +248,10 @@ export const paypalCtr = {
             };
         }
 
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
         return postPayPalRequest<{ verification_status: 'SUCCESS' | 'FAILURE' }>(
-            credentials,
+            v1Credentials,
             '/notifications/verify-webhook-signature',
             payload as unknown as Record<string, unknown>,
             'verify-webhook',
