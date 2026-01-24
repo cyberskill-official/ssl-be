@@ -20,7 +20,7 @@ type T_Advertisement {
     slot: E_AdvertisementSlot
     startDate: DateTime
     endDate: DateTime
-    clickCount: Float    
+    clickCount: Float
     isActive: Boolean
 }
 
@@ -101,10 +101,7 @@ type Query {
         options: JSON
         populate: JSON
     ): T_Response_Advertisement!
-    getAdvertisements(
-        filter: Input_QueryAdvertisement
-        options: JSON
-    ): T_Response_Advertisements!
+    getAdvertisements(filter: Input_QueryAdvertisement, options: JSON): T_Response_Advertisements!
 }
 
 type Mutation {
@@ -114,15 +111,7 @@ type Mutation {
         update: Input_UpdateAdvertisement!
         options: JSON
     ): T_Response_Advertisement!
-    deleteAdvertisement(
-        filter: Input_QueryAdvertisement!
-        options: JSON
-    ): T_Response_Advertisement!
-    clickAdvertisement(
-        filter: Input_QueryAdvertisement!
-    ): T_Response_Advertisement!
-    updateClickCount(
-        filter: Input_QueryAdvertisement!
-        update: Input_UpdateClickCount!
-    ): T_Response_Advertisement!
+    deleteAdvertisement(filter: Input_QueryAdvertisement!, options: JSON): T_Response_Advertisement!
+    clickAdvertisement(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
+    updateClickCount(filter: Input_QueryAdvertisement!, update: Input_UpdateClickCount!): T_Response_Advertisement!
 }

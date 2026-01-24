@@ -1,4 +1,3 @@
-
 type T_RolePermission {
     id: String
     isDel: Boolean
@@ -58,7 +57,12 @@ type T_Response_RolePermissions {
 }
 
 type Query {
-    getRolePermissions(filter: Input_QueryRolePermission, projection: JSON, options: JSON, populate: JSON): T_Response_RolePermissions!
+    getRolePermissions(
+        filter: Input_QueryRolePermission
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_RolePermissions!
 }
 
 type Mutation {

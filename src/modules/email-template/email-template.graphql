@@ -73,23 +73,15 @@ extend type Query {
         options: JSON
         populate: JSON
     ): T_Response_EmailTemplate!
-    getEmailTemplates(
-        filter: Input_QueryEmailTemplate
-        options: JSON
-    ): T_Response_EmailTemplates!
+    getEmailTemplates(filter: Input_QueryEmailTemplate, options: JSON): T_Response_EmailTemplates!
 }
 
 extend type Mutation {
-    createEmailTemplate(
-        doc: Input_CreateEmailTemplate!
-    ): T_Response_EmailTemplate!
+    createEmailTemplate(doc: Input_CreateEmailTemplate!): T_Response_EmailTemplate!
     updateEmailTemplate(
         filter: Input_QueryEmailTemplate!
         update: Input_UpdateEmailTemplate!
         options: JSON
     ): T_Response_EmailTemplate!
-    deleteEmailTemplate(
-        filter: Input_QueryEmailTemplate!
-        options: JSON
-    ): T_Response_EmailTemplate!
+    deleteEmailTemplate(filter: Input_QueryEmailTemplate!, options: JSON): T_Response_EmailTemplate!
 }

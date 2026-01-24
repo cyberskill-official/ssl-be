@@ -10,7 +10,7 @@ enum E_ModerationLogAction {
 
 enum E_ModerationLogType {
     TEXT
-    ACCOUNT     
+    ACCOUNT
     AGE_VERIFICATION
     IMAGE
     VIDEO

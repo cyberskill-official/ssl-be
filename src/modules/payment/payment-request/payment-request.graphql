@@ -68,13 +68,22 @@ input Input_UpdatePaymentRequest {
 }
 
 type Query {
-    getPaymentRequest(filter: Input_QueryPaymentRequest!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentRequest!
+    getPaymentRequest(
+        filter: Input_QueryPaymentRequest!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PaymentRequest!
     getPaymentRequests(filter: Input_QueryPaymentRequest, options: JSON): T_Response_PaymentRequests!
 }
 
 type Mutation {
     createPaymentRequest(doc: Input_CreatePaymentRequest!): T_Response_PaymentRequest!
-    updatePaymentRequest(filter: Input_QueryPaymentRequest!, update: Input_UpdatePaymentRequest!, options: JSON): T_Response_PaymentRequest!
+    updatePaymentRequest(
+        filter: Input_QueryPaymentRequest!
+        update: Input_UpdatePaymentRequest!
+        options: JSON
+    ): T_Response_PaymentRequest!
     deletePaymentRequest(filter: Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequest!
     deletePaymentRequests(filter: Input_QueryPaymentRequest!, options: JSON): T_Response_PaymentRequests!
-}   
+}

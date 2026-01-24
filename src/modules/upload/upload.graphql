@@ -50,9 +50,5 @@ type Mutation {
         allowGuest: Boolean
         file: Upload!
     ): T_Response_Upload!
-    uploadContactAdminAttachment(
-        stubId: String
-        skipModeration: Boolean
-        file: Upload!
-    ): T_Response_ContactAdminUpload!
+    uploadContactAdminAttachment(stubId: String, skipModeration: Boolean, file: Upload!): T_Response_ContactAdminUpload!
 }

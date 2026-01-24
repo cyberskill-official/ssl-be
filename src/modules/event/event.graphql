@@ -129,4 +129,3 @@ type Mutation {
     deleteEvent(filter: Input_QueryEvent!, options: JSON): T_Response_Event!
     deleteEvents(filter: Input_QueryEvent!, options: JSON): T_Response_Events!
 }
-

@@ -9,14 +9,13 @@ enum E_PaymentStatus {
     FAILED
     CANCELED
     REFUNDED
-}   
+}
 
 enum E_PaymentMethod {
     CARD
     WALLET
     TOKEN
 }
-
 
 type T_Payment {
     orderId: String

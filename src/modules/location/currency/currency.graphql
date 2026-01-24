@@ -66,6 +66,6 @@ type Query {
 
 type Mutation {
     createCurrency(doc: Input_CreateCurrency!): T_Response_Currency!
-    updateCurrency(filter: Input_QueryCurrency! update: Input_UpdateCurrency! options: JSON): T_Response_Currency!
+    updateCurrency(filter: Input_QueryCurrency!, update: Input_UpdateCurrency!, options: JSON): T_Response_Currency!
     deleteCurrency(filter: Input_QueryCurrency!): T_Response_Currency!
 }

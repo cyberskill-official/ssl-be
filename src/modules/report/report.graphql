@@ -1,5 +1,5 @@
 enum E_ReportType {
-    KEYWORD 
+    KEYWORD
     USER
     MEDIA
 }
@@ -11,7 +11,7 @@ enum E_ReportStatus {
 }
 
 type T_Report {
-    id:	String
+    id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime

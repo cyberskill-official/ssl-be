@@ -100,7 +100,12 @@ type T_Response_PushChatStats {
 }
 
 type Query {
-    getPushChatMessage(filter: Input_QueryPushChatMessage!, projection: JSON, options: JSON, populate: JSON): T_Response_PushChatMessage!
+    getPushChatMessage(
+        filter: Input_QueryPushChatMessage!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PushChatMessage!
     getPushChatMessages(filter: Input_QueryPushChatMessage, options: JSON): T_Response_PushChatMessages!
     getPushChatStats: T_Response_PushChatStats!
 }

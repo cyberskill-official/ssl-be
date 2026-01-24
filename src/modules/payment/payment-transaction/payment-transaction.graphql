@@ -99,15 +99,10 @@ extend type Query {
         options: JSON
         populate: JSON
     ): T_Response_PaymentTransaction!
-    getPaymentTransactions(
-        filter: Input_QueryPaymentTransaction
-        options: JSON
-    ): T_Response_PaymentTransactions!
+    getPaymentTransactions(filter: Input_QueryPaymentTransaction, options: JSON): T_Response_PaymentTransactions!
 }
 
 extend type Mutation {
-    recordPaymentTransaction(
-        doc: Input_RecordPaymentTransaction!
-    ): T_Response_PaymentTransaction!
+    recordPaymentTransaction(doc: Input_RecordPaymentTransaction!): T_Response_PaymentTransaction!
     deletePaymentTransactions(filter: Input_QueryPaymentTransaction!, options: JSON): T_Response_PaymentTransactions!
 }

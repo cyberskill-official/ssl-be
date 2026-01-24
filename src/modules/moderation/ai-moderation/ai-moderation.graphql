@@ -21,7 +21,7 @@ enum E_TextModerationDecision {
 enum E_ModerationCategory {
     SENTIMENT
     EXPLICIT_NUDITY
-    NON_EXPLICIT_NUDITY 
+    NON_EXPLICIT_NUDITY
     SWIMWEAR_OR_UNDERWEAR
     VIOLENCE
     VISUALLY_DISTURBING
@@ -54,7 +54,7 @@ type T_TextModerationResult {
     reasons: [String]
     decision: E_TextModerationDecision
     language: String
-    # piiResult: [T_PIIEntity] 
+    # piiResult: [T_PIIEntity]
 }
 
 type T_TextModerationResponse {

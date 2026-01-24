@@ -71,27 +71,12 @@ type T_Response_PromoCodes {
 }
 
 type Query {
-    getPromoCode(
-        filter: Input_QueryPromoCode!
-        projection: JSON
-        options: JSON
-        populate: JSON
-    ): T_Response_PromoCode!
-    getPromoCodes(
-        filter: Input_QueryPromoCode
-        options: JSON
-    ): T_Response_PromoCodes!
+    getPromoCode(filter: Input_QueryPromoCode!, projection: JSON, options: JSON, populate: JSON): T_Response_PromoCode!
+    getPromoCodes(filter: Input_QueryPromoCode, options: JSON): T_Response_PromoCodes!
 }
 
 type Mutation {
     createPromoCode(doc: Input_CreatePromoCode!): T_Response_PromoCode!
-    updatePromoCode(
-        filter: Input_QueryPromoCode!
-        update: Input_UpdatePromoCode!
-        options: JSON
-    ): T_Response_PromoCode!
-    deletePromoCode(
-        filter: Input_QueryPromoCode!
-        options: JSON
-    ): T_Response_PromoCode!
+    updatePromoCode(filter: Input_QueryPromoCode!, update: Input_UpdatePromoCode!, options: JSON): T_Response_PromoCode!
+    deletePromoCode(filter: Input_QueryPromoCode!, options: JSON): T_Response_PromoCode!
 }

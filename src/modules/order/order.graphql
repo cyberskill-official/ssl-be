@@ -43,7 +43,7 @@ input Input_QueryOrder {
     customerDetails: JSON
     meta: JSON
     pricingId: String
-} 
+}
 
 input Input_CreateOrder {
     userId: String
@@ -95,7 +95,6 @@ type T_Response_Orders {
     message: String
     result: T_Orders
 }
-
 
 type Query {
     getOrder(filter: Input_QueryOrder!, projection: JSON, options: JSON, populate: JSON): T_Response_Order!
