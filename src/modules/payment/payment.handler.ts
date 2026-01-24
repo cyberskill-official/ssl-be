@@ -38,6 +38,86 @@ const mainRouter = Router();
 
 mainRouter.post('/webhook/paypal', paypalWebhookHandler);
 
+mainRouter.get('/payment/paypal/status', async (req, res, next) => {
+    try {
+        const paypalOrderId = resolvePayPalOrderId(req);
+
+        if (!paypalOrderId) {
+            res.status(400).json({ success: false, message: 'paypalOrderId is required' });
+            return;
+        }
+
+        const context: I_Context = { req };
+
+        const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+            filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
+        });
+
+        if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            res.status(404).json({ success: false, message: 'Payment request not found' });
+            return;
+        }
+
+        const paymentRequest = paymentRequestRes.result;
+        const meta = paymentRequest.meta as Record<string, unknown> | null | undefined;
+        const orderId = meta && typeof meta === 'object' && typeof meta['orderId'] === 'string'
+            ? meta['orderId']
+            : null;
+
+        if (!orderId) {
+            res.status(404).json({ success: false, message: 'Order not found for payment request' });
+            return;
+        }
+
+        const orderRes = await orderCtr.getOrder(context, {
+            filter: { id: orderId },
+            populate: [{ path: 'paymentTransaction' }],
+        });
+
+        if (!orderRes.success || !orderRes.result) {
+            res.status(404).json({ success: false, message: 'Order not found' });
+            return;
+        }
+
+        const order = orderRes.result as any;
+        const orderStatus = order.status;
+
+        let status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'CANCEL' = 'PENDING';
+        if (orderStatus === E_OrderStatus.PAID) {
+            status = 'SUCCESS';
+        }
+        else if (orderStatus === E_OrderStatus.FAILED) {
+            status = 'FAILED';
+        }
+        else if (orderStatus === E_OrderStatus.CANCELLED) {
+            status = 'CANCEL';
+        }
+        else if (orderStatus === E_OrderStatus.PENDING) {
+            status = 'PENDING';
+        }
+
+        const transactionId = order?.paymentTransaction?.transactionId
+            || order?.paymentTransactionId
+            || null;
+
+        const eventCreatedId = order?.meta && typeof order.meta === 'object'
+            ? (order.meta as Record<string, unknown>)['eventCreatedId']
+            : null;
+
+        res.status(200).json({
+            success: true,
+            orderId: order.id,
+            status,
+            transactionId,
+            eventCreated: Boolean(eventCreatedId),
+            eventId: typeof eventCreatedId === 'string' ? eventCreatedId : null,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+
 export function getPaymentUrls() {
     const env = getEnv();
     const baseUrl = env.USER_APP_URL.replace(/\/+$/, '');
