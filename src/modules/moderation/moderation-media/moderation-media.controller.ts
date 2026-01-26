@@ -562,7 +562,8 @@ export const moderationMediaCtr = {
                 }
 
                 case E_UploadEntity.CONVERSATION:
-                    // TODO: Handle conversation module if needed
+                    // For conversations, we always sync the statusMedia on messages
+                    // Redaction is handled separately below if status is REJECTED
                     break;
                 case E_UploadEntity.EVENT:
                     // TODO:Handle event module if needed
@@ -648,10 +649,10 @@ export const moderationMediaCtr = {
                         urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
                     }
 
-                    // First: update statusMedia on all messages that reference this media URL
-                    // (so FE sees latest APPROVED/REJECTED/PENDING state)
                     const messageMongooseCtr = new MongooseController(MessageModel);
                     try {
+                        // Consolidate statusMedia update for ALL status changes (APPROVED, REJECTED, PENDING)
+                        // This ensures FE always sees synchronized state
                         await messageMongooseCtr.updateMany(
                             {
                                 senderId: moderation.uploadedById,
@@ -661,7 +662,7 @@ export const moderationMediaCtr = {
                         );
                     }
                     catch {
-                        // Non-fatal: if statusMedia update fails, continue with restore logic
+                        // Non-fatal
                     }
 
                     // Then: try to find messages by URL first (most accurate) for possible restore
@@ -791,6 +792,65 @@ export const moderationMediaCtr = {
                     log.error('Failed to restore messages with approved media', {
                         error: error instanceof Error ? error.message : String(error),
                         stack: error instanceof Error ? error.stack : undefined,
+                        moderationMediaId: moderation.id,
+                    });
+                }
+            }
+
+            // REDACT messages when media is rejected
+            if (status === E_ModerationMediaStatus.REJECTED && moderation.url) {
+                try {
+                    let mediaUrl = moderation.url as string;
+                    const urlObj = new URL(mediaUrl);
+                    urlObj.searchParams.delete('token');
+                    urlObj.searchParams.delete('expires');
+                    urlObj.searchParams.delete('class');
+                    mediaUrl = urlObj.toString();
+
+                    const rawModerationMedia = await mongooseCtr.findOne({ id: moderation.id }, { url: 1 });
+                    if (rawModerationMedia.success && rawModerationMedia.result?.url) {
+                        mediaUrl = rawModerationMedia.result.url as string;
+                    }
+
+                    let baseUrl = mediaUrl;
+                    let pathname = '';
+                    try {
+                        const url = new URL(mediaUrl);
+                        pathname = url.pathname;
+                        baseUrl = `${url.protocol}//${url.hostname}${pathname}`;
+                    }
+                    catch { /* ignore */ }
+
+                    const urlConditions: any[] = [
+                        { 'content.value': mediaUrl },
+                        { 'content.value': baseUrl },
+                    ];
+                    if (pathname) {
+                        urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                    }
+
+                    // Find and redact messages immediately
+                    const messageMongooseCtr = new MongooseController(MessageModel);
+                    await messageMongooseCtr.updateMany(
+                        {
+                            senderId: moderation.uploadedById,
+                            $or: urlConditions,
+                            isDel: { $ne: true },
+                        },
+                        {
+                            $set: {
+                                'redacted': true,
+                                'content.value': '',
+                                'statusMedia': E_ModerationMediaStatus.REJECTED,
+                                'deletedAt': new Date(),
+                                'expiresAt': new Date(),
+                            },
+                        },
+                    );
+                }
+                catch (error) {
+                    log.error('Failed to redact messages with rejected media', {
+                        error: (error as any).message,
                         moderationMediaId: moderation.id,
                     });
                 }

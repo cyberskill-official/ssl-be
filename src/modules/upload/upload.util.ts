@@ -88,31 +88,66 @@ export async function applyAiModerationDecision(
 
     const warnReason = !shouldAutoReject && aiReason ? `AI flagged for review: ${aiReason}` : undefined;
 
-    {
+    // Get current moderation media to check entity
+    const moderationMedia = await moderationMediaCtr.getModerationMedia(context, {
+        filter: { id: moderationId },
+    });
+
+    if (moderationMedia.success && moderationMedia.result) {
+        const entity = moderationMedia.result.entity;
+        const isConversation = entity === E_UploadEntity.CONVERSATION;
+
         const blockedReason = shouldAutoReject
             ? (aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content')
             : undefined;
+
         const pendingReason = warnReason
             ?? (aiDecision === E_ModerationMediaStatus.APPROVED
                 ? (aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe')
                 : (blockedReason ?? aiReason));
 
+        let targetStatus: E_ModerationMediaStatus;
+        let targetReason: string | undefined;
+
+        if (isConversation) {
+            // Conversation media status is always PENDING regardless of AI decision
+            targetStatus = E_ModerationMediaStatus.PENDING;
+            targetReason = pendingReason;
+        }
+        else {
+            // Other entities (Gallery, etc.) follow AI decision
+            if (shouldAutoReject) {
+                targetStatus = E_ModerationMediaStatus.REJECTED;
+                targetReason = blockedReason;
+            }
+            else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
+                targetStatus = E_ModerationMediaStatus.APPROVED;
+                targetReason = pendingReason;
+            }
+            else {
+                // If AI decision is PENDING or unknown, stay PENDING
+                targetStatus = E_ModerationMediaStatus.PENDING;
+                targetReason = pendingReason;
+            }
+        }
+
         const moderationUpdated = await moderationMediaCtr.updateModerationMedia(context, {
             filter: { id: moderationId },
             update: {
-                status: E_ModerationMediaStatus.PENDING,
-                isPublished: false,
-                ...(pendingReason ? { reason: pendingReason } : {}),
+                status: targetStatus,
+                isPublished: targetStatus === E_ModerationMediaStatus.APPROVED,
+                ...(targetReason ? { reason: targetReason } : {}),
             },
         });
 
         try {
+            // Sync status to associated gallery if it exists
             await galleryCtr.updateGallery(context, {
                 filter: { moderationMediaId: moderationId },
                 update: {
-                    status: E_ModerationMediaStatus.PENDING,
-                    isPublished: false,
-                    isDel: false,
+                    status: targetStatus,
+                    isPublished: targetStatus === E_ModerationMediaStatus.APPROVED,
+                    isDel: targetStatus === E_ModerationMediaStatus.REJECTED,
                 },
             });
         }
@@ -120,8 +155,8 @@ export async function applyAiModerationDecision(
             /* ignore gallery sync errors */
         }
 
-        // Flag user for AI warnings as well (non-removal)
-        if (warnReason && moderationUpdated.success) {
+        // Flag user for AI warnings or rejections
+        if ((warnReason || shouldAutoReject) && moderationUpdated.success) {
             const ownerId = moderationUpdated.result?.uploadedById;
             if (ownerId) {
                 try {
