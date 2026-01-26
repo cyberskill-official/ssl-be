@@ -324,24 +324,18 @@ export const moderationMediaCtr = {
                         || aiRiskLevel === E_RiskLevel.HIGH
                         || aiRiskLevel === E_RiskLevel.CRITICAL;
 
-                // Nếu AI trả về thiếu decision hoặc không thành công thì coi là lỗi hệ thống
-                if (!aiDecision) {
-                    initialStatus = E_ModerationMediaStatus.REJECTED;
-                    reason = 'AI System Error: No decision returned';
-                }
-                else if (entity === E_UploadEntity.CONVERSATION) {
-                    if (shouldAutoReject) {
-                        initialStatus = E_ModerationMediaStatus.REJECTED;
-                        reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
-                    }
-                    else {
-                        initialStatus = E_ModerationMediaStatus.PENDING;
-                        reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
-                    }
+                if (entity === E_UploadEntity.CONVERSATION) {
+                    // Luôn để PENDING cho media thuộc conversation, bất kể AI phát hiện gì
+                    initialStatus = E_ModerationMediaStatus.PENDING;
+                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
                 }
                 else {
                     // Ngoài conversation, status sẽ theo đúng quyết định của AI
-                    if (shouldAutoReject) {
+                    if (!aiDecision) {
+                        initialStatus = E_ModerationMediaStatus.REJECTED;
+                        reason = 'AI System Error: No decision returned';
+                    }
+                    else if (shouldAutoReject) {
                         initialStatus = E_ModerationMediaStatus.REJECTED;
                         reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
                     }
