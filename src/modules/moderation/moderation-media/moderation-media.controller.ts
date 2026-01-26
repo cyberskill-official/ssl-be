@@ -266,7 +266,10 @@ export const moderationMediaCtr = {
 
             const bypassAiModeration = isStaff || isAdmin;
 
-            const initialStatus: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+            // Mặc định: conversation thì pending, ngoài ra sẽ do AI quyết định (APPROVED hoặc REJECTED)
+            let initialStatus: E_ModerationMediaStatus = (entity === E_UploadEntity.CONVERSATION)
+                ? E_ModerationMediaStatus.PENDING
+                : E_ModerationMediaStatus.APPROVED; // sẽ cập nhật lại bên dưới nếu có AI
 
             let reason: string | undefined;
 
@@ -321,14 +324,31 @@ export const moderationMediaCtr = {
                         || aiRiskLevel === E_RiskLevel.HIGH
                         || aiRiskLevel === E_RiskLevel.CRITICAL;
 
-                if (shouldAutoReject) {
-                    reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
+                // Nếu AI trả về thiếu decision hoặc không thành công thì coi là lỗi hệ thống
+                if (!aiDecision) {
+                    initialStatus = E_ModerationMediaStatus.REJECTED;
+                    reason = 'AI System Error: No decision returned';
                 }
-                else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
-                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
+                else if (entity === E_UploadEntity.CONVERSATION) {
+                    if (shouldAutoReject) {
+                        initialStatus = E_ModerationMediaStatus.REJECTED;
+                        reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
+                    }
+                    else {
+                        initialStatus = E_ModerationMediaStatus.PENDING;
+                        reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
+                    }
                 }
-                else if (aiReason) {
-                    reason = `AI flagged for review: ${aiReason}`;
+                else {
+                    // Ngoài conversation, status sẽ theo đúng quyết định của AI
+                    if (shouldAutoReject) {
+                        initialStatus = E_ModerationMediaStatus.REJECTED;
+                        reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
+                    }
+                    else {
+                        initialStatus = E_ModerationMediaStatus.APPROVED;
+                        reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
+                    }
                 }
             }
 
