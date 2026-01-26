@@ -6,7 +6,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
 import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
-import type { I_PayPalCreateOrderPayload } from '#modules/payment/paypal/paypal.type.js';
+import type { I_PayPalCreateOrderPayload, I_PayPalCreateOrderResponse, I_PayPalSubscriptionResponse } from '#modules/payment/paypal/paypal.type.js';
 import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -439,7 +439,7 @@ export const paymentController = {
             throwError({
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                 message:
-                orderRes.message ?? 'Failed to create order',
+                    orderRes.message ?? 'Failed to create order',
             });
         }
         const createdOrder = orderRes.result;
@@ -476,43 +476,72 @@ export const paymentController = {
                 provider: E_PaymentProvider.PAYPAL,
             });
 
-            const paypalPayload: I_PayPalCreateOrderPayload = {
-                intent: E_PayPalIntent.CAPTURE,
-                purchase_units: [
-                    {
-                        amount: {
-                            currency_code: currencyCode,
-                            value: resolvedAmount.toFixed(2),
-                        },
-                        description: pricingType === E_PricingType.MEMBERSHIP ? 'Membership' : 'Event',
+            let paypalResponse: I_Return<I_PayPalCreateOrderResponse | I_PayPalSubscriptionResponse>;
+            let externalOrderId: string | undefined;
+            let approvalUrl: string | undefined;
+            let gatewayResponse: any;
+
+            if (pricingType === E_PricingType.MEMBERSHIP) {
+                if (!pricing.paypalPlanId) {
+                    throwError({
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                        message: 'Membership pricing is missing PayPal Plan ID',
+                    });
+                }
+
+                const subscriptionPayload = {
+                    plan_id: pricing.paypalPlanId!,
+                    custom_id: currentUser.id,
+                    application_context: {
+                        return_url: returnUrl,
+                        cancel_url: cancelUrl,
+                        user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
                     },
-                ],
-                application_context: {
-                    return_url: returnUrl,
-                    cancel_url: cancelUrl,
-                    user_action: E_PayPalUserAction.PAY_NOW,
-                    shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
-                },
-            };
+                };
 
-            const paypalResponse = await paypalCtr.createOrder(context, paypalPayload);
+                const subResponse = await paypalCtr.createSubscription(context, subscriptionPayload);
+                paypalResponse = subResponse as any;
+                if (subResponse.success && subResponse.result) {
+                    externalOrderId = subResponse.result.id;
+                    approvalUrl = subResponse.result.links?.find(l => l.rel === 'approve')?.href;
+                    gatewayResponse = subResponse.result;
+                }
+            }
+            else {
+                const orderPayload: I_PayPalCreateOrderPayload = {
+                    intent: E_PayPalIntent.CAPTURE,
+                    purchase_units: [
+                        {
+                            amount: {
+                                currency_code: currencyCode,
+                                value: resolvedAmount.toFixed(2),
+                            },
+                            description: 'Event Announcement',
+                        },
+                    ],
+                    application_context: {
+                        return_url: returnUrl,
+                        cancel_url: cancelUrl,
+                        user_action: E_PayPalUserAction.PAY_NOW,
+                        shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
+                    },
+                };
 
-            if (!paypalResponse.success || !paypalResponse.result) {
+                const ordResponse = await paypalCtr.createOrder(context, orderPayload);
+                paypalResponse = ordResponse;
+                if (ordResponse.success && ordResponse.result) {
+                    externalOrderId = ordResponse.result.id;
+                    approvalUrl = ordResponse.result.links?.find(
+                        link => link.rel === 'approve' || link.rel === 'payer-action',
+                    )?.href;
+                    gatewayResponse = ordResponse.result;
+                }
+            }
+
+            if (!paypalResponse.success || !gatewayResponse || !approvalUrl || !externalOrderId) {
                 throwError({
                     status: RESPONSE_STATUS.BAD_REQUEST,
                     message: paypalResponse.message ?? 'Failed to initiate PayPal payment',
-                });
-            }
-
-            const paypalOrder = paypalResponse.result;
-            const approvalUrl = paypalOrder.links?.find(
-                link => link.rel === 'approve' || link.rel === 'payer-action',
-            )?.href;
-
-            if (!paypalOrder.id || !approvalUrl) {
-                throwError({
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                    message: 'PayPal order response missing approval URL',
                 });
             }
 
@@ -522,8 +551,8 @@ export const paymentController = {
                     $set: {
                         status: E_PaymentRequestStatus.PENDING,
                         paymentUrl: approvalUrl ?? null,
-                        externalOrderId: paypalOrder.id,
-                        gatewayResponse: paypalOrder ?? null,
+                        externalOrderId,
+                        gatewayResponse,
                         attempts: (paymentRequest.attempts ?? 0) + 1,
                     },
                 },
@@ -534,7 +563,7 @@ export const paymentController = {
                 update: {
                     $set: {
                         status: E_OrderStatus.PENDING,
-                        externalOrderId: paypalOrder.id,
+                        externalOrderId,
                     },
                 },
             });

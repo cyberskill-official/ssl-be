@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_DeleteResult, T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -1150,6 +1150,24 @@ export const notificationCtr = {
             pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, payload);
         }
         return result as unknown as I_Return<I_Notification | null>;
+    },
+
+    /**
+     * Delete all notifications for the current user
+     */
+    deleteNotifications: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryNotification>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        if (!currentUser) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+
+        // Optionally, publish a notification event for bulk delete
+        // pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, { notificationId: null, targetId: userId });
+        return mongooseCtr.deleteMany({ ...filter, targetId: currentUser.id }, options);
     },
     markNotificationRead: async (
         context: I_Context,
