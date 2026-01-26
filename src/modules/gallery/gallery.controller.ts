@@ -201,7 +201,7 @@ export const galleryCtr = {
                 && galleryStatus !== null
                 && galleryStatus !== E_ModerationMediaStatus.APPROVED;
 
-        if (!isStaff && !isAdmin && isHiddenStatus) {
+        if (!isStaff && !isAdmin && !isOwner && isHiddenStatus) {
             throwError({
                 message: 'Gallery not found',
                 status: RESPONSE_STATUS.NOT_FOUND,
@@ -447,17 +447,22 @@ export const galleryCtr = {
                 }
 
                 const galleryStatus = gallery.status;
+                const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
                 const isApproved
                     = galleryStatus === undefined
                         || galleryStatus === null
                         || galleryStatus === E_ModerationMediaStatus.APPROVED;
+                const isRejected = galleryStatus === E_ModerationMediaStatus.REJECTED;
 
-                if (!isApproved) {
+                if (isRejected) {
+                    return { gallery, shouldInclude: false };
+                }
+
+                if (!isOwner && !isApproved) {
                     return { gallery, shouldInclude: false };
                 }
 
                 // Only show galleries from users who completed registration (except owner/staff/admin)
-                const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
                 if (!isOwner) {
                     const uploader = (gallery as any)?.uploadedBy as { registerStep?: E_RegisterStep } | null | undefined;
                     // If populate match filtered out uploader, hide the gallery

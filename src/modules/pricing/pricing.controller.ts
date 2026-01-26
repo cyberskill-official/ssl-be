@@ -186,9 +186,12 @@ export const pricingCtr = {
             }
         }
 
+        let paypalPlanId: string | undefined;
+
         if (pricingForRegion) {
             price = pricingForRegion.price ?? 0;
             taxRate = pricingForRegion.taxRate ?? 0;
+            paypalPlanId = pricingForRegion.paypalPlanId;
 
             if (pricingForRegion.currency?.code) {
                 currency = pricingForRegion.currency.code ?? currency;
@@ -200,7 +203,7 @@ export const pricingCtr = {
                 }
             }
 
-            return { success: true, result: { price, currency, taxRate } };
+            return { success: true, result: { price, currency, taxRate, paypalPlanId } };
         }
 
         try {
@@ -211,12 +214,13 @@ export const pricingCtr = {
                 price = typeof val.price === 'number' ? val.price : price;
                 currency = typeof val.currency === 'string' ? val.currency : currency;
                 taxRate = typeof val.taxRate === 'number' ? val.taxRate : taxRate;
+                paypalPlanId = val.paypalPlanId;
             }
         }
         catch {
             // Ignore
         }
 
-        return { success: true, result: { price, currency, taxRate } };
+        return { success: true, result: { price, currency, taxRate, paypalPlanId } };
     },
 };

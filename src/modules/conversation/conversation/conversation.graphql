@@ -37,41 +37,41 @@ enum E_ContactTopic {
 
 enum E_ContactAdminType {
     #Technical account
-    LOGIN_OR_ACCESS_PROBLEM 
-    PROFILE_VERIFICATION_ID_CHECK_UPLOADING 
-    PHOTO_OR_VIDEO_UPLOAD_ISSUES 
-    TECHNICAL_BUG_OR_ERROR_ON_THE_SITE 
+    LOGIN_OR_ACCESS_PROBLEM
+    PROFILE_VERIFICATION_ID_CHECK_UPLOADING
+    PHOTO_OR_VIDEO_UPLOAD_ISSUES
+    TECHNICAL_BUG_OR_ERROR_ON_THE_SITE
     #Billing membership
-    MEMBERSHIP_UPGRADE_DOWGRADE 
-    SUBSCRIPTION_OR_PAYMENT_ISSUE 
+    MEMBERSHIP_UPGRADE_DOWGRADE
+    SUBSCRIPTION_OR_PAYMENT_ISSUE
     BILLING_OR_REFUND_INQUIRY
-    PAYMENT_METHOD_OR_CARD_DECLINE 
-    PROMO_CODE_OR_DISCOUNT_PROBLEM 
+    PAYMENT_METHOD_OR_CARD_DECLINE
+    PROMO_CODE_OR_DISCOUNT_PROBLEM
     #Content moderation
-    REPORT_INAPPROPRIATE_CONTENT 
-    REPORT_FAKE_OR_SUSPICIOUS_PROFILE 
+    REPORT_INAPPROPRIATE_CONTENT
+    REPORT_FAKE_OR_SUSPICIOUS_PROFILE
     REQUEST_CONTENT_REMOVAL
-    QUESTIONS_ABOUT_AI_MODERATION_RULES 
+    QUESTIONS_ABOUT_AI_MODERATION_RULES
     #Club event
     REPORT_EXPIRED_OR_INCORRECT_CLUB_INFORMATION
     SUGGEST_A_NEW_CLUB_OR_RESORT
-    PROBLEMS_WITH_ANNOUNCEMENTS 
+    PROBLEMS_WITH_ANNOUNCEMENTS
     #Legal compliance
     TERMS_OF_USE_PRIVACY_POLICY_QUESTIONS
-    DATA_ACCESS_OR_DELETION_REQUEST_GDPR 
-    REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY 
+    DATA_ACCESS_OR_DELETION_REQUEST_GDPR
+    REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY
     #General feedback
     FEEDBACK_ON_DESIGN_OR_USABILITY
-    FEATURE_SUGGESTION 
-    COLLABORATION_PARTNERSHIP_INQUIRY 
-    PRESS_OR_MEDIA_REQUEST 
+    FEATURE_SUGGESTION
+    COLLABORATION_PARTNERSHIP_INQUIRY
+    PRESS_OR_MEDIA_REQUEST
 
     OTHER
 }
 
 enum E_Device {
-    DESKTOP 
-    MOBILE 
+    DESKTOP
+    MOBILE
     TABLET
 }
 
@@ -101,8 +101,6 @@ type T_Conversation {
     lastReadByAdminAt: DateTime
     notes: String
 }
-
-
 
 type T_BroadcastResult {
     messageId: String
@@ -283,7 +281,12 @@ type T_Response_Boolean {
 }
 
 type Query {
-    getConversation(filter: Input_QueryConversation!, projection: JSON, options: JSON, populate: JSON): T_Response_Conversation!
+    getConversation(
+        filter: Input_QueryConversation!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Conversation!
     getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
     getSupportConversations(options: JSON): T_Response_Conversations!
     getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
@@ -306,7 +309,12 @@ type Mutation {
     requestJoinConversation(eventId: String!): T_Response_Generic!
     approveJoinConversation(requesterId: String!): T_Response_Generic!
     # New admin management mutations
-    updateConversationStatus(conversationId: String!, status: E_ConversationStatus, category: E_ConversationCategory, notes: String): T_Response_Conversation!
+    updateConversationStatus(
+        conversationId: String!
+        status: E_ConversationStatus
+        category: E_ConversationCategory
+        notes: String
+    ): T_Response_Conversation!
     markConversationAsRead(conversationId: String!): T_Response_Conversation!
     resolveConversation(conversationId: String!, notes: String): T_Response_Conversation!
     archiveConversation(conversationId: String!): T_Response_Conversation!

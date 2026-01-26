@@ -247,7 +247,7 @@ export const moderationMediaCtr = {
 
         let moderationCreatedId: string = undefined!;
         try {
-            // If uploader is staff/admin, bypass AI moderation and auto-approve.
+            // If uploader is staff/admin, bypass AI moderation but keep PENDING for manual review.
             let aiModerationResult = null;
             let isStaff = false;
             let isAdmin = false;
@@ -266,16 +266,22 @@ export const moderationMediaCtr = {
 
             const bypassAiModeration = isStaff || isAdmin;
 
+            const initialStatus: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+
+            let reason: string | undefined;
+
             if (!bypassAiModeration) {
                 try {
                     if (doc.type === E_ModerationMediaType.IMAGE) {
                         const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
+                        log.info('AI Image Moderation Result:', imageModerationResult);
                         if (imageModerationResult.success) {
                             aiModerationResult = imageModerationResult.result;
                         }
                     }
                     else if (doc.type === E_ModerationMediaType.VIDEO) {
                         const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
+                        log.info('AI Video Moderation Result:', videoModerationResult);
                         if (videoModerationResult.success) {
                             aiModerationResult = videoModerationResult.result;
                         }
@@ -283,12 +289,12 @@ export const moderationMediaCtr = {
                 }
                 catch (error) {
                     // Do not block uploads on AI moderation failure; log and continue
-                    log.warn('AI moderation failed during moderation media creation:', (error as Error)?.message || error);
+                    const errorMessage = (error as Error)?.message || String(error);
+                    log.error('AI moderation failed during moderation media creation:', errorMessage);
+                    reason = `AI System Error: ${errorMessage}`;
                 }
             }
 
-            let initialStatus = E_ModerationMediaStatus.PENDING;
-            let reason: string | undefined;
             // Bypass AI still skips AI call but no longer auto-approves; keep PENDING for manual review
             if (typeof bypassAiModeration !== 'undefined' && bypassAiModeration) {
                 reason = 'Bypassed AI moderation: uploaded by staff/admin';
@@ -316,24 +322,24 @@ export const moderationMediaCtr = {
                         || aiRiskLevel === E_RiskLevel.CRITICAL;
 
                 if (shouldAutoReject) {
-                    initialStatus = E_ModerationMediaStatus.REJECTED;
                     reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
                 }
                 else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
-                    // Auto-approve when AI explicitly approves
-                    initialStatus = E_ModerationMediaStatus.APPROVED;
+                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
                 }
                 else if (aiReason) {
                     reason = `AI flagged for review: ${aiReason}`;
                 }
             }
 
+            log.info('Creating Moderation Media with status:', { initialStatus, reason, uploadedBy: currentUser.id, bypassAiModeration });
+
             const moderationCreated = await mongooseCtr.createOne({
                 ...doc,
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: initialStatus === E_ModerationMediaStatus.APPROVED,
+                isPublished: false,
             });
 
             if (!moderationCreated.success) {
@@ -720,7 +726,7 @@ export const moderationMediaCtr = {
                                 success: true,
                                 result: {
                                     docs: allMessages.result.docs.filter((msg: any) => {
-                                        // Check if message is redacted, deleted, or has empty content.value
+                                    // Check if message is redacted, deleted, or has empty content.value
                                         const isRedacted = msg.redacted === true;
                                         const isDeleted = msg.deletedAt && msg.deletedAt !== null;
                                         const hasEmptyContent = !msg.content?.value || msg.content.value === '';

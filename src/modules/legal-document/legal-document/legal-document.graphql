@@ -1,4 +1,4 @@
-enum E_LegalDocumentType  {
+enum E_LegalDocumentType {
     TERM_AND_CONDITION
     PRIVACY_POLICY
     COOKIE_POLICY
@@ -7,7 +7,7 @@ enum E_LegalDocumentType  {
 }
 
 enum E_LegalDocumentStatus {
-    DRAFT,
+    DRAFT
     PUBLISHED
 }
 
@@ -35,7 +35,6 @@ input Input_MutateLegalDocumentHistory {
     updatedAt: DateTime!
     updatedById: String!
 }
-
 
 type T_LegalDocument {
     id: String
@@ -103,7 +102,12 @@ type T_Response_LegalDocuments {
 }
 
 type Query {
-    getLegalDocument(filter: Input_QueryLegalDocument!, projection: JSON, options: JSON, populate: JSON): T_Response_LegalDocument!
+    getLegalDocument(
+        filter: Input_QueryLegalDocument!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_LegalDocument!
     getLegalDocuments(filter: Input_QueryLegalDocument, options: JSON): T_Response_LegalDocuments!
 }
 

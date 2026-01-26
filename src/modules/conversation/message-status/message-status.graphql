@@ -73,7 +73,11 @@ type Query {
 type Mutation {
     createMessageStatus(doc: Input_CreateMessageStatus!): T_Response_MessageStatus!
     createMessageStatuses(docs: [Input_CreateMessageStatus!]!): T_Response_CreateMessageStatuses!
-    updateMessageStatus(filter: Input_QueryMessageStatus!, update: Input_UpdateMessageStatus, options: JSON): T_Response_MessageStatus!
+    updateMessageStatus(
+        filter: Input_QueryMessageStatus!
+        update: Input_UpdateMessageStatus
+        options: JSON
+    ): T_Response_MessageStatus!
     deleteMessageStatus(filter: Input_QueryMessageStatus!, options: JSON): T_Response_MessageStatus!
     deleteMessageStatuses(filter: Input_QueryMessageStatus!, options: JSON): T_Response_MessageStatus!
     markAsRead(messageId: String!, userId: String!): T_Response_MessageStatus!

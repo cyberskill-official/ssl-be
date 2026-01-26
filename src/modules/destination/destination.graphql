@@ -4,16 +4,16 @@ enum E_DestinationType {
 }
 
 enum E_DestinationRating {
-    BRONZE 
-    SILVER 
-    GOLD 
+    BRONZE
+    SILVER
+    GOLD
 }
 
 enum E_DestinationAgeGroup {
-    A18_25 
-    A26_35 
-    A36_45 
-    A45_PLUS 
+    A18_25
+    A26_35
+    A36_45
+    A45_PLUS
 }
 
 input Input_Seo {
@@ -258,14 +258,9 @@ type Query {
         options: JSON
         populate: JSON
     ): T_Response_Destination!
-    getDestinations(
-        filter: Input_QueryDestination
-        options: JSON
-    ): T_Response_Destinations!
+    getDestinations(filter: Input_QueryDestination, options: JSON): T_Response_Destinations!
     getDestinationAvailableCountries: T_Response_AvailableCountries!
-    getDestinationCountsAndCountries(
-        input: Input_QueryDestinationSummary
-    ): T_Response_DestinationCountriesSummary!
+    getDestinationCountsAndCountries(input: Input_QueryDestinationSummary): T_Response_DestinationCountriesSummary!
 }
 
 type Mutation {
@@ -275,8 +270,5 @@ type Mutation {
         update: Input_UpdateDestination!
         options: JSON
     ): T_Response_Destination!
-    deleteDestination(
-        filter: Input_QueryDestination!
-        options: JSON
-    ): T_Response_Destination!
+    deleteDestination(filter: Input_QueryDestination!, options: JSON): T_Response_Destination!
 }

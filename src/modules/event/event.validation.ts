@@ -58,69 +58,73 @@ export function validateTimeBasedEvent(
         });
     }
 
-    // Use startDate as the base for building startDateTime
-    // We important ensure we use the same reference day for both initially
-    const startDateTime = set(startDate, {
+    // Ensure startDate is a Date object (it might be a string from JSON payload)
+    const startDateObj = typeof startDate === 'string' ? new Date(startDate) : startDate;
+    if (!isValid(startDateObj)) {
+        throwError({ message: 'Invalid start date.', status: RESPONSE_STATUS.BAD_REQUEST });
+    }
+
+    // Construct valid startDateTime
+    const startDateTime = set(startDateObj, {
         hours: startTimeParsed.getHours(),
         minutes: startTimeParsed.getMinutes(),
         seconds: 0,
         milliseconds: 0,
     });
 
-    const startTimeHours = startTimeParsed.getHours();
-    const endTimeHours = endTimeParsed.getHours();
-
+    // Determine initial endDateTime based on input or default to startDate
     let endDateTime: Date;
 
-    if (endDate) {
-        // Use the calendar day difference between startDate and endDate
-        // We calculate the endDateTime by taking the startDate's date part
-        // and adding the "logical" day difference, then setting the time.
-        const dayDiff = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+    // Check if user provided a specific endDate (and it's valid)
+    // For Booty Calls, the UI usually sends same date for start/end, so we trust time logic more
+    const endDateObj = endDate && (typeof endDate === 'string' ? new Date(endDate) : endDate);
+    const hasValidExplicitEndDate = isValid(endDateObj);
 
-        // Start with the same day as startDate and add the day difference
-        endDateTime = new Date(startDateTime);
-        endDateTime.setDate(endDateTime.getDate() + dayDiff);
+    if (hasValidExplicitEndDate && endDateObj && !isSameDay(startDateObj, endDateObj)) {
+        // Different dates provided (e.g. Private event spanning days)
+        // Respect the provided endDate
+        endDateTime = set(endDateObj, {
+            hours: endTimeParsed.getHours(),
+            minutes: endTimeParsed.getMinutes(),
+            seconds: 0,
+            milliseconds: 0,
+        });
 
-        // Logical "overnight" condition: startTime is later than endTime
-        // If they entered the same day but times wrap around midnight, we add 1 day
-        const isOvernightTime = endTimeHours < startTimeHours
-            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
-
-        if (isOvernightTime && dayDiff === 0) {
-            endDateTime.setDate(endDateTime.getDate() + 1);
+        // Sanity check: if calculated end is before start, it's invalid for multi-day input
+        if (isAfter(startDateTime, endDateTime)) {
+            // Fallback to auto-logic if explicit dates are weird
+            endDateTime = set(startDateObj, {
+                hours: endTimeParsed.getHours(),
+                minutes: endTimeParsed.getMinutes(),
+                seconds: 0,
+                milliseconds: 0,
+            });
         }
-
-        // Apply hours to our adjusted endDateTime
-        endDateTime = set(endDateTime, {
+    }
+    else {
+        // Same day provided OR no end date OR Booty Call logic preference
+        // Base endDateTime on startDate
+        endDateTime = set(startDateObj, {
             hours: endTimeParsed.getHours(),
             minutes: endTimeParsed.getMinutes(),
             seconds: 0,
             milliseconds: 0,
         });
     }
-    else {
-        // Backward compatibility logic
-        const isOvernight = endTimeHours < startTimeHours
-            || (endTimeHours === startTimeHours && endTimeParsed.getMinutes() < startTimeParsed.getMinutes());
 
-        endDateTime = new Date(startDateTime);
-        if (isOvernight) {
-            endDateTime.setDate(endDateTime.getDate() + 1);
-        }
-
-        endDateTime = set(endDateTime, {
-            hours: endTimeParsed.getHours(),
-            minutes: endTimeParsed.getMinutes(),
-            seconds: 0,
-            milliseconds: 0,
-        });
+    // AUTO-OVERNIGHT LOGIC:
+    // If End Time is <= Start Time, it implies the event ends the next day.
+    // We strictly apply this for same-day calculations to guarantee positive duration.
+    if (endDateTime <= startDateTime) {
+        endDateTime.setDate(endDateTime.getDate() + 1);
     }
 
     const durationInHours = differenceInMinutes(endDateTime, startDateTime) / 60;
 
     const currentTime = new Date();
-    if (isAfter(currentTime, startDateTime)) {
+    // Allow a small grace period (e.g. 5 mins) for "just now" submissions to avoid latency errors
+    const gracePeriodMs = 5 * 60 * 1000;
+    if (isAfter(currentTime, new Date(startDateTime.getTime() + gracePeriodMs))) {
         throwError({
             message: 'Cannot create event for a time that has already passed.',
             status: RESPONSE_STATUS.BAD_REQUEST,
@@ -128,6 +132,9 @@ export function validateTimeBasedEvent(
     }
 
     if (durationInHours <= 0) {
+        // This should theoretically be unreachable with the logic above, but safe guard
+        endDateTime.setDate(endDateTime.getDate() + 1); // Force add another day?
+        // Or just throw error if still invalid
         throwError({
             message: 'Event duration must be greater than 0 hours.',
             status: RESPONSE_STATUS.BAD_REQUEST,

@@ -1,12 +1,12 @@
 enum E_KeywordCategory {
-    INAPPROPRIATE 
-    SPAM  
-    OFFENSIVE 
+    INAPPROPRIATE
+    SPAM
+    OFFENSIVE
     CUSTOM
 }
 
 type T_Keyword {
-    id:	String
+    id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
@@ -34,7 +34,7 @@ input Input_CreateKeyword {
     isActive: Boolean
 }
 
-input Input_UpdateKeyword{
+input Input_UpdateKeyword {
     isDel: Boolean
     word: String
     category: E_KeywordCategory
@@ -70,12 +70,7 @@ type T_Response_Keywords {
 }
 
 type Query {
-    getKeyword(
-        filter: Input_QueryKeyword!
-        projection: JSON
-        options: JSON
-        populate: JSON
-    ): T_Response_Keyword!
+    getKeyword(filter: Input_QueryKeyword!, projection: JSON, options: JSON, populate: JSON): T_Response_Keyword!
     getKeywords(filter: Input_QueryKeyword, options: JSON): T_Response_Keywords!
 }
 

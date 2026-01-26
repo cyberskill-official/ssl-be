@@ -20,6 +20,7 @@ export interface I_Pricing extends I_GenericDocument {
     state?: I_State;
     currencyId?: string;
     currency?: I_Currency;
+    paypalPlanId?: string;
 }
 
 export interface I_Input_QueryPricing extends I_Pricing {
@@ -36,4 +37,5 @@ export interface I_Response_SubscriptionPrice {
     price: number;
     currency: string;
     taxRate?: number;
+    paypalPlanId?: string;
 }

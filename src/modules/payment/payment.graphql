@@ -9,14 +9,13 @@ enum E_PaymentStatus {
     FAILED
     CANCELED
     REFUNDED
-}   
+}
 
 enum E_PaymentMethod {
     CARD
     WALLET
     TOKEN
 }
-
 
 type T_Payment {
     orderId: String
@@ -32,6 +31,7 @@ input Input_QueryMakePayment {
     event: Input_CreateEvent
     countryCode: String
     loc: String
+    paymentProvider: E_PaymentProvider
 }
 
 type T_Response_MakePayment {

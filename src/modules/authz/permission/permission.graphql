@@ -79,12 +79,21 @@ type T_Response_Permissions {
 }
 
 type Query {
-    getPermission(filter: Input_QueryPermission!, projection: JSON, options: JSON, populate: JSON): T_Response_Permission!
+    getPermission(
+        filter: Input_QueryPermission!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Permission!
     getPermissions(filter: Input_QueryPermission, options: JSON): T_Response_Permissions!
 }
 
 type Mutation {
     createPermission(doc: Input_CreatePermission!): T_Response_Permission!
-    updatePermission(filter: Input_QueryPermission!, update: Input_UpdatePermission, options: JSON): T_Response_Permission!
+    updatePermission(
+        filter: Input_QueryPermission!
+        update: Input_UpdatePermission
+        options: JSON
+    ): T_Response_Permission!
     deletePermission(filter: Input_QueryPermission!, options: JSON): T_Response_Permission!
 }

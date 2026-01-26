@@ -1,6 +1,7 @@
 import type { E_Environment } from '@cyberskill/shared/typescript';
 
 export interface I_Environment {
+    USER_APP_URL: string;
     EMAIL_LOGO_URL?: string;
     AWS_BUCKET_NAME: string;
     NODE_ENV: E_Environment.DEVELOPMENT | E_Environment.PRODUCTION;
@@ -55,7 +56,9 @@ export interface I_Environment {
     NETVALVE_SITE_ID: string;
     NETVALVE_MID_EUR: string;
     NETVALVE_MID_USD: string;
-    USER_APP_URL: string;
+    PAYPAL_API_BASE_URL: string;
+    PAYPAL_CLIENT_ID: string;
+    PAYPAL_CLIENT_SECRET: string;
     PAYMENT_REDIRECT_URL: string;
-    MEDIA_VIEWER_DEBUG: string;
+    PAYPAL_WEBHOOK_ID: string;
 }

@@ -80,10 +80,13 @@ input Input_UpdatePaymentMethod {
 }
 
 type Query {
-    getPaymentMethod(filter: Input_QueryPaymentMethod!, projection: JSON, options: JSON, populate: JSON): T_Response_PaymentMethod!
-    getPaymentMethods(
-        filter: Input_QueryPaymentMethod, options: JSON
-    ): T_Response_PaymentMethods!
+    getPaymentMethod(
+        filter: Input_QueryPaymentMethod!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PaymentMethod!
+    getPaymentMethods(filter: Input_QueryPaymentMethod, options: JSON): T_Response_PaymentMethods!
 }
 
 type Mutation {

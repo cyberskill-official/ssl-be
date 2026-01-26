@@ -6,6 +6,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
 import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
+import type { I_PayPalCreateOrderPayload } from '#modules/payment/paypal/paypal.type.js';
 import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -20,16 +21,24 @@ import { applyHppMerchantRouting, ensureCredentials } from '#modules/payment/net
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { E_PayPalIntent, E_PayPalShippingPreference, E_PayPalUserAction } from '#modules/payment/paypal/paypal.type.js';
 import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
-import { getPaymentUrls } from './payment.handler.js';
+import { getPaymentRedirectBase, getPaymentUrls } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const pricingMongooseCtr = new MongooseController<I_Pricing>(PricingModel);
+
+function appendQueryParams(url: string, params: Record<string, string>) {
+    const query = new URLSearchParams(params).toString();
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${query}`;
+}
 
 export const paymentController = {
     /**
@@ -407,6 +416,15 @@ export const paymentController = {
             ? E_OrderType.SUBSCRIPTION
             : E_OrderType.A_LA_CARTE_EVENT;
 
+        const paymentProvider = input.paymentProvider ?? E_PaymentProvider.NETVALVE;
+
+        if (paymentProvider !== E_PaymentProvider.NETVALVE && paymentProvider !== E_PaymentProvider.PAYPAL) {
+            throwError({
+                status: RESPONSE_STATUS.BAD_REQUEST,
+                message: 'Unsupported payment provider',
+            });
+        }
+
         const orderDoc: I_Input_CreateOrder = {
             userId: currentUser.id, // BE automatically sets userId from session
             amount: resolvedAmount,
@@ -429,7 +447,7 @@ export const paymentController = {
         const clientOrderId = createdOrder.id;
 
         const prDoc = {
-            gateway: E_PaymentProvider.NETVALVE,
+            gateway: paymentProvider,
             status: E_PaymentRequestStatus.WAITING,
             attempts: 0,
             meta: {
@@ -438,6 +456,7 @@ export const paymentController = {
                 currencyId: pricing.currencyId,
                 pricingId: pricing.id,
                 pricingType,
+                paymentProvider,
             },
         };
         const prRes = await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
@@ -445,6 +464,97 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR, message: 'Failed to create payment request' });
         }
         const paymentRequest = prRes.result;
+
+        if (paymentProvider === E_PaymentProvider.PAYPAL) {
+            const redirectBase = getPaymentRedirectBase();
+            const returnUrl = appendQueryParams(redirectBase, {
+                status: 'PENDING',
+                provider: E_PaymentProvider.PAYPAL,
+            });
+            const cancelUrl = appendQueryParams(redirectBase, {
+                status: 'CANCEL',
+                provider: E_PaymentProvider.PAYPAL,
+            });
+
+            const paypalPayload: I_PayPalCreateOrderPayload = {
+                intent: E_PayPalIntent.CAPTURE,
+                purchase_units: [
+                    {
+                        amount: {
+                            currency_code: currencyCode,
+                            value: resolvedAmount.toFixed(2),
+                        },
+                        description: pricingType === E_PricingType.MEMBERSHIP ? 'Membership' : 'Event',
+                    },
+                ],
+                application_context: {
+                    return_url: returnUrl,
+                    cancel_url: cancelUrl,
+                    user_action: E_PayPalUserAction.PAY_NOW,
+                    shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
+                },
+            };
+
+            const paypalResponse = await paypalCtr.createOrder(context, paypalPayload);
+
+            if (!paypalResponse.success || !paypalResponse.result) {
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: paypalResponse.message ?? 'Failed to initiate PayPal payment',
+                });
+            }
+
+            const paypalOrder = paypalResponse.result;
+            const approvalUrl = paypalOrder.links?.find(
+                link => link.rel === 'approve' || link.rel === 'payer-action',
+            )?.href;
+
+            if (!paypalOrder.id || !approvalUrl) {
+                throwError({
+                    status: RESPONSE_STATUS.BAD_REQUEST,
+                    message: 'PayPal order response missing approval URL',
+                });
+            }
+
+            await paymentRequestCtr.updatePaymentRequest(context, {
+                filter: { id: paymentRequest.id },
+                update: {
+                    $set: {
+                        status: E_PaymentRequestStatus.PENDING,
+                        paymentUrl: approvalUrl ?? null,
+                        externalOrderId: paypalOrder.id,
+                        gatewayResponse: paypalOrder ?? null,
+                        attempts: (paymentRequest.attempts ?? 0) + 1,
+                    },
+                },
+            });
+
+            await orderCtr.updateOrder(context, {
+                filter: { id: createdOrder.id },
+                update: {
+                    $set: {
+                        status: E_OrderStatus.PENDING,
+                        externalOrderId: paypalOrder.id,
+                    },
+                },
+            });
+
+            const paymentResult: I_MakePaymentResult = {
+                orderId: createdOrder.id,
+                amount: resolvedAmount,
+                currencyCode,
+                paymentMethod: E_PaymentMethod.WALLET,
+                paymentStatus: E_PaymentStatus.PENDING,
+                pricingId: pricing.id,
+                redirectUrl: approvalUrl,
+            };
+
+            return {
+                success: true,
+                message: paypalResponse.message ?? 'PayPal payment initiated',
+                result: paymentResult,
+            };
+        }
 
         // Build customerDetails - email and phone are required for 3DS Visa mandate
         // See: https://docs.netvalve.com/#tag/Hosted-Payment-Page/operation/createOrder
