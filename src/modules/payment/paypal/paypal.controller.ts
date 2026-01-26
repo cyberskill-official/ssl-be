@@ -8,6 +8,8 @@ import type {
     I_PayPalCaptureOrderResponse,
     I_PayPalCreateOrderPayload,
     I_PayPalCreateOrderResponse,
+    I_PayPalListPlansResponse,
+    I_PayPalListProductsResponse,
     I_PayPalPlanPayload,
     I_PayPalPlanResponse,
     I_PayPalProductPayload,
@@ -255,6 +257,50 @@ export const paypalCtr = {
             '/notifications/verify-webhook-signature',
             payload as unknown as Record<string, unknown>,
             'verify-webhook',
+        );
+    },
+    listProducts: async (
+        _context: I_Context,
+    ): Promise<I_Return<I_PayPalListProductsResponse>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
+        return getPayPalRequest<I_PayPalListProductsResponse>(
+            v1Credentials,
+            '/catalogs/products',
+            'list-products',
+        );
+    },
+    listPlans: async (
+        _context: I_Context,
+        { productId }: { productId: string },
+    ): Promise<I_Return<I_PayPalListPlansResponse>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        const safeProductId = encodeURIComponent(productId);
+        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
+
+        return getPayPalRequest<I_PayPalListPlansResponse>(
+            v1Credentials,
+            `/billing/plans?product_id=${safeProductId}`,
+            'list-plans',
         );
     },
 };

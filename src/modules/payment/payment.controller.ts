@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
@@ -22,6 +22,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { paypalSetupService } from '#modules/payment/paypal/paypal.setup.service.js';
 import { E_PayPalIntent, E_PayPalShippingPreference, E_PayPalUserAction } from '#modules/payment/paypal/paypal.type.js';
 import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
@@ -482,15 +483,40 @@ export const paymentController = {
             let gatewayResponse: any;
 
             if (pricingType === E_PricingType.MEMBERSHIP) {
-                if (!pricing.paypalPlanId) {
-                    throwError({
-                        status: RESPONSE_STATUS.BAD_REQUEST,
-                        message: 'Membership pricing is missing PayPal Plan ID',
-                    });
+                let paypalPlanId = pricing.paypalPlanId;
+
+                // Dynamic/Lazy Setup: If Plan ID is missing, create it on-the-fly
+                if (!paypalPlanId) {
+                    log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal Plan ID. Initializing dynamic setup...`);
+
+                    const productId = await paypalSetupService.getOrCreateProduct(context);
+                    if (!productId) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: 'Failed to initialize PayPal product for subscription',
+                        });
+                    }
+
+                    const newPlanId = await paypalSetupService.getOrCreatePlan(context, productId!, resolvedAmount, currencyCode);
+                    if (!newPlanId) {
+                        throwError({
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                            message: 'Failed to initialize PayPal plan for subscription',
+                        });
+                    }
+
+                    paypalPlanId = newPlanId!;
+
+                    // Update the pricing record in DB so we don't have to create it again
+                    await PricingModel.updateOne(
+                        { _id: pricing._id ?? pricing.id },
+                        { $set: { paypalPlanId } },
+                    );
+                    log.success(`[Payment] Dynamically created and linked PayPal Plan ${paypalPlanId} to pricing ${pricing.id}`);
                 }
 
                 const subscriptionPayload = {
-                    plan_id: pricing.paypalPlanId!,
+                    plan_id: paypalPlanId,
                     custom_id: currentUser.id,
                     application_context: {
                         return_url: returnUrl,
