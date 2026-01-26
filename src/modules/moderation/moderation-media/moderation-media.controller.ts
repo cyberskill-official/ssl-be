@@ -276,14 +276,14 @@ export const moderationMediaCtr = {
             if (!bypassAiModeration) {
                 try {
                     if (doc.type === E_ModerationMediaType.IMAGE) {
-                        const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
+                        const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.buffer || doc.url });
                         log.info('AI Image Moderation Result:', imageModerationResult);
                         if (imageModerationResult.success) {
                             aiModerationResult = imageModerationResult.result;
                         }
                     }
                     else if (doc.type === E_ModerationMediaType.VIDEO) {
-                        const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
+                        const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.buffer || doc.url });
                         log.info('AI Video Moderation Result:', videoModerationResult);
                         if (videoModerationResult.success) {
                             aiModerationResult = videoModerationResult.result;

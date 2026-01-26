@@ -50,6 +50,7 @@ export interface I_Input_CreateModerationMedia extends Omit<I_ModerationMedia, T
     uploadedById: string;
     url: string;
     thumbnailUrl?: string;
+    buffer?: Uint8Array;
 }
 
 export interface I_Input_UpdateModerationMedia extends Omit<I_ModerationMedia, T_Omit_Update | T_ModerationMedia_Populate> { }
