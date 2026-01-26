@@ -448,17 +448,19 @@ export const galleryCtr = {
 
                 const galleryStatus = gallery.status;
                 const isOwner = sessionUserId && gallery.uploadedById === sessionUserId;
-                const isApproved
+                const isApprovedOrPending
                     = galleryStatus === undefined
                         || galleryStatus === null
-                        || galleryStatus === E_ModerationMediaStatus.APPROVED;
+                        || galleryStatus === E_ModerationMediaStatus.APPROVED
+                        || galleryStatus === E_ModerationMediaStatus.PENDING;
                 const isRejected = galleryStatus === E_ModerationMediaStatus.REJECTED;
 
                 if (isRejected) {
                     return { gallery, shouldInclude: false };
                 }
 
-                if (!isOwner && !isApproved) {
+                // Cho phép hiển thị cả ảnh/video PENDING cho tất cả user
+                if (!isOwner && !isApprovedOrPending) {
                     return { gallery, shouldInclude: false };
                 }
 

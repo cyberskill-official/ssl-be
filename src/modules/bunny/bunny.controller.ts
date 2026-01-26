@@ -249,7 +249,10 @@ export const bunnyCtr = {
     uploadFile: async (_context: I_Context, storagePath: string, fileStreamOrBuffer: NodeJS.ReadableStream | Buffer): Promise<I_Return<string>> => {
         try {
             await BunnyFile.upload(storageZone, `${storagePath}`, fileStreamOrBuffer as any);
-            const publicUrl = `${env.BUNNY_CDN_HOSTNAME}/${storagePath}`;
+            // Chuẩn hóa domain và path để không bị dư dấu /
+            const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(/\/+$/u, '');
+            const path = (storagePath || '').replace(/^\/+/, '');
+            const publicUrl = `${domain}/${path}`;
             return { success: true, result: publicUrl };
         }
         catch (error) {

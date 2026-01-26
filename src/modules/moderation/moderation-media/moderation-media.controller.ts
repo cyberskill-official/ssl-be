@@ -266,21 +266,24 @@ export const moderationMediaCtr = {
 
             const bypassAiModeration = isStaff || isAdmin;
 
-            const initialStatus: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
+            // Mặc định: conversation thì pending, ngoài ra sẽ do AI quyết định (APPROVED hoặc REJECTED)
+            let initialStatus: E_ModerationMediaStatus = (entity === E_UploadEntity.CONVERSATION)
+                ? E_ModerationMediaStatus.PENDING
+                : E_ModerationMediaStatus.APPROVED; // sẽ cập nhật lại bên dưới nếu có AI
 
             let reason: string | undefined;
 
             if (!bypassAiModeration) {
                 try {
                     if (doc.type === E_ModerationMediaType.IMAGE) {
-                        const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.url });
+                        const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.buffer || doc.url });
                         log.info('AI Image Moderation Result:', imageModerationResult);
                         if (imageModerationResult.success) {
                             aiModerationResult = imageModerationResult.result;
                         }
                     }
                     else if (doc.type === E_ModerationMediaType.VIDEO) {
-                        const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.url });
+                        const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.buffer || doc.url });
                         log.info('AI Video Moderation Result:', videoModerationResult);
                         if (videoModerationResult.success) {
                             aiModerationResult = videoModerationResult.result;
@@ -321,14 +324,25 @@ export const moderationMediaCtr = {
                         || aiRiskLevel === E_RiskLevel.HIGH
                         || aiRiskLevel === E_RiskLevel.CRITICAL;
 
-                if (shouldAutoReject) {
-                    reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
+                if (entity === E_UploadEntity.CONVERSATION) {
+                    // Luôn để PENDING cho media thuộc conversation, bất kể AI phát hiện gì
+                    initialStatus = E_ModerationMediaStatus.PENDING;
+                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
                 }
-                else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
-                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
-                }
-                else if (aiReason) {
-                    reason = `AI flagged for review: ${aiReason}`;
+                else {
+                    // Ngoài conversation, status sẽ theo đúng quyết định của AI
+                    if (!aiDecision) {
+                        initialStatus = E_ModerationMediaStatus.REJECTED;
+                        reason = 'AI System Error: No decision returned';
+                    }
+                    else if (shouldAutoReject) {
+                        initialStatus = E_ModerationMediaStatus.REJECTED;
+                        reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
+                    }
+                    else {
+                        initialStatus = E_ModerationMediaStatus.APPROVED;
+                        reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
+                    }
                 }
             }
 
@@ -548,7 +562,8 @@ export const moderationMediaCtr = {
                 }
 
                 case E_UploadEntity.CONVERSATION:
-                    // TODO: Handle conversation module if needed
+                    // For conversations, we always sync the statusMedia on messages
+                    // Redaction is handled separately below if status is REJECTED
                     break;
                 case E_UploadEntity.EVENT:
                     // TODO:Handle event module if needed
@@ -634,10 +649,10 @@ export const moderationMediaCtr = {
                         urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
                     }
 
-                    // First: update statusMedia on all messages that reference this media URL
-                    // (so FE sees latest APPROVED/REJECTED/PENDING state)
                     const messageMongooseCtr = new MongooseController(MessageModel);
                     try {
+                        // Consolidate statusMedia update for ALL status changes (APPROVED, REJECTED, PENDING)
+                        // This ensures FE always sees synchronized state
                         await messageMongooseCtr.updateMany(
                             {
                                 senderId: moderation.uploadedById,
@@ -647,7 +662,7 @@ export const moderationMediaCtr = {
                         );
                     }
                     catch {
-                        // Non-fatal: if statusMedia update fails, continue with restore logic
+                        // Non-fatal
                     }
 
                     // Then: try to find messages by URL first (most accurate) for possible restore
@@ -777,6 +792,65 @@ export const moderationMediaCtr = {
                     log.error('Failed to restore messages with approved media', {
                         error: error instanceof Error ? error.message : String(error),
                         stack: error instanceof Error ? error.stack : undefined,
+                        moderationMediaId: moderation.id,
+                    });
+                }
+            }
+
+            // REDACT messages when media is rejected
+            if (status === E_ModerationMediaStatus.REJECTED && moderation.url) {
+                try {
+                    let mediaUrl = moderation.url as string;
+                    const urlObj = new URL(mediaUrl);
+                    urlObj.searchParams.delete('token');
+                    urlObj.searchParams.delete('expires');
+                    urlObj.searchParams.delete('class');
+                    mediaUrl = urlObj.toString();
+
+                    const rawModerationMedia = await mongooseCtr.findOne({ id: moderation.id }, { url: 1 });
+                    if (rawModerationMedia.success && rawModerationMedia.result?.url) {
+                        mediaUrl = rawModerationMedia.result.url as string;
+                    }
+
+                    let baseUrl = mediaUrl;
+                    let pathname = '';
+                    try {
+                        const url = new URL(mediaUrl);
+                        pathname = url.pathname;
+                        baseUrl = `${url.protocol}//${url.hostname}${pathname}`;
+                    }
+                    catch { /* ignore */ }
+
+                    const urlConditions: any[] = [
+                        { 'content.value': mediaUrl },
+                        { 'content.value': baseUrl },
+                    ];
+                    if (pathname) {
+                        urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                    }
+
+                    // Find and redact messages immediately
+                    const messageMongooseCtr = new MongooseController(MessageModel);
+                    await messageMongooseCtr.updateMany(
+                        {
+                            senderId: moderation.uploadedById,
+                            $or: urlConditions,
+                            isDel: { $ne: true },
+                        },
+                        {
+                            $set: {
+                                'redacted': true,
+                                'content.value': '',
+                                'statusMedia': E_ModerationMediaStatus.REJECTED,
+                                'deletedAt': new Date(),
+                                'expiresAt': new Date(),
+                            },
+                        },
+                    );
+                }
+                catch (error) {
+                    log.error('Failed to redact messages with rejected media', {
+                        error: (error as any).message,
                         moderationMediaId: moderation.id,
                     });
                 }

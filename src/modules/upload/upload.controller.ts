@@ -274,6 +274,7 @@ export const uploadCtr = {
                     tagId,
                     ipAddress: clientIp,
                     thumbnailUrl,
+                    buffer: videoBuffer,
                 },
             });
 
@@ -434,6 +435,7 @@ export const uploadCtr = {
                 entityId: resolvedEntityId,
                 tagId,
                 ipAddress: clientIp,
+                buffer: imageBuffer,
             },
         });
 
