@@ -41,6 +41,7 @@ export interface I_Destination extends I_GenericDocument {
     images?: string[];
     introductionHeadline?: string;
     introductionContent?: string;
+    introductionContentPlain?: string;
     ageGroup?: E_DestinationAgeGroup;
     ratingStar?: string;
     logo?: string;

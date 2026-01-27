@@ -19,7 +19,7 @@ import type { I_Country, I_Location } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, cleanFullUrl, normalizeStoragePath } from '#modules/bunny/index.js';
 import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
 
@@ -64,38 +64,40 @@ export const destinationCtr = {
             return destinationFound;
         }
 
+        const doc = typeof (destinationFound.result as any).toObject === 'function' ? (destinationFound.result as any).toObject() : { ...destinationFound.result };
+
         // Apply signed URL to image fields
-        if (destinationFound.result.ratingStar) {
-            destinationFound.result.ratingStar = bunnyCtr.generateSignedUrl({
-                fullUrl: destinationFound.result.ratingStar,
+        if (doc.ratingStar) {
+            doc.ratingStar = bunnyCtr.generateSignedUrl({
+                fullUrl: cleanFullUrl(doc.ratingStar),
                 extraQueryParams: {
                     class: 'normal',
                 },
             });
         }
 
-        if (destinationFound.result.logo) {
-            destinationFound.result.logo = bunnyCtr.generateSignedUrl({
-                fullUrl: destinationFound.result.logo,
+        if (doc.logo) {
+            doc.logo = bunnyCtr.generateSignedUrl({
+                fullUrl: cleanFullUrl(doc.logo),
                 extraQueryParams: {
                     class: 'normal',
                 },
             });
         }
 
-        if (destinationFound.result.wearImage) {
-            destinationFound.result.wearImage = bunnyCtr.generateSignedUrl({
-                fullUrl: destinationFound.result.wearImage,
+        if (doc.wearImage) {
+            doc.wearImage = bunnyCtr.generateSignedUrl({
+                fullUrl: cleanFullUrl(doc.wearImage),
                 extraQueryParams: {
                     class: 'normal',
                 },
             });
         }
 
-        if (destinationFound.result.images) {
-            destinationFound.result.images = destinationFound.result.images.map(imageUrl =>
+        if (doc.images) {
+            doc.images = doc.images.map((imageUrl: string) =>
                 bunnyCtr.generateSignedUrl({
-                    fullUrl: imageUrl,
+                    fullUrl: cleanFullUrl(imageUrl),
                     extraQueryParams: {
                         class: 'normal',
                     },
@@ -103,12 +105,12 @@ export const destinationCtr = {
             );
         }
 
-        const intro = extractPlainTextFromRichContent(destinationFound.result.introductionContent);
+        const intro = extractPlainTextFromRichContent(doc.introductionContent);
         if (intro) {
-            destinationFound.result.introductionContent = intro;
+            doc.introductionContentPlain = intro;
         }
 
-        return destinationFound;
+        return { ...destinationFound, result: doc };
     },
     getDestinations: async (
         _context: I_Context,
@@ -192,33 +194,33 @@ export const destinationCtr = {
 
                 if (doc.ratingStar) {
                     doc.ratingStar = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: doc.ratingStar, extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.ratingStar), extraQueryParams: { class: 'normal' } }),
                     );
                 }
 
                 if (doc.logo) {
                     doc.logo = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: doc.logo, extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.logo), extraQueryParams: { class: 'normal' } }),
                     );
                 }
 
                 if (doc.wearImage) {
                     doc.wearImage = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: doc.wearImage, extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.wearImage), extraQueryParams: { class: 'normal' } }),
                     );
                 }
 
                 if (Array.isArray(doc.images)) {
                     doc.images = await Promise.all(
                         doc.images.map((imageUrl: string) =>
-                            Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: imageUrl, extraQueryParams: { class: 'normal' } })),
+                            Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(imageUrl), extraQueryParams: { class: 'normal' } })),
                         ),
                     );
                 }
 
                 const intro = extractPlainTextFromRichContent(doc.introductionContent);
                 if (intro) {
-                    doc.introductionContent = intro;
+                    doc.introductionContentPlain = intro;
                 }
 
                 return doc as I_Destination;
@@ -300,6 +302,20 @@ export const destinationCtr = {
 
         if (!doc.ageGroup || !Object.values(E_DestinationAgeGroup).includes(doc.ageGroup)) {
             throwError({ message: 'Invalid or missing age group', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        // Clean incoming URLs to prevent poisoning database with signed URLs
+        if (doc.ratingStar) {
+            doc.ratingStar = cleanFullUrl(doc.ratingStar);
+        }
+        if (doc.logo) {
+            doc.logo = cleanFullUrl(doc.logo);
+        }
+        if (doc.wearImage) {
+            doc.wearImage = cleanFullUrl(doc.wearImage);
+        }
+        if (doc.images) {
+            doc.images = doc.images.map(cleanFullUrl);
         }
 
         const newNearbyHotelIds = [];
@@ -429,6 +445,21 @@ export const destinationCtr = {
         if (update.ageGroup && !Object.values(E_DestinationAgeGroup).includes(update.ageGroup)) {
             throwError({ message: 'Invalid age group', status: RESPONSE_STATUS.BAD_REQUEST });
         }
+
+        // Clean incoming URLs to prevent poisoning database with signed URLs
+        if (update.ratingStar) {
+            update.ratingStar = cleanFullUrl(update.ratingStar);
+        }
+        if (update.logo) {
+            update.logo = cleanFullUrl(update.logo);
+        }
+        if (update.wearImage) {
+            update.wearImage = cleanFullUrl(update.wearImage);
+        }
+        if (update.images) {
+            update.images = update.images.map(cleanFullUrl);
+        }
+
         const destinationFound = await destinationCtr.getDestination(context, { filter });
 
         if (!destinationFound.success) {
@@ -439,25 +470,39 @@ export const destinationCtr = {
         }
 
         if (update.images && destinationFound.result.images) {
-            const imagesToDelete = destinationFound.result.images.filter(
-                imageUrl => !update.images.includes(imageUrl),
-            );
+            const normalizedUpdateImages = update.images.map(normalizeStoragePath);
+            const imagesToDelete = destinationFound.result.images.filter((imageUrl) => {
+                const cleanPath = normalizeStoragePath(imageUrl);
+                return !normalizedUpdateImages.includes(cleanPath);
+            });
 
             for (const imageUrl of imagesToDelete) {
-                await bunnyCtr.deleteFile(context, imageUrl);
+                await bunnyCtr.deleteFile(context, normalizeStoragePath(imageUrl));
             }
         }
 
-        if (update.ratingStar && destinationFound.result.ratingStar && destinationFound.result.ratingStar !== update.ratingStar) {
-            await bunnyCtr.deleteFile(context, destinationFound.result.ratingStar);
+        if (update.ratingStar && destinationFound.result.ratingStar) {
+            const cleanNew = normalizeStoragePath(update.ratingStar);
+            const cleanOld = normalizeStoragePath(destinationFound.result.ratingStar);
+            if (cleanNew !== cleanOld) {
+                await bunnyCtr.deleteFile(context, cleanOld);
+            }
         }
 
-        if (update.logo && destinationFound.result.logo && destinationFound.result.logo !== update.logo) {
-            await bunnyCtr.deleteFile(context, destinationFound.result.logo);
+        if (update.logo && destinationFound.result.logo) {
+            const cleanNew = normalizeStoragePath(update.logo);
+            const cleanOld = normalizeStoragePath(destinationFound.result.logo);
+            if (cleanNew !== cleanOld) {
+                await bunnyCtr.deleteFile(context, cleanOld);
+            }
         }
 
-        if (update.wearImage && destinationFound.result.wearImage && destinationFound.result.wearImage !== update.wearImage) {
-            await bunnyCtr.deleteFile(context, destinationFound.result.wearImage);
+        if (update.wearImage && destinationFound.result.wearImage) {
+            const cleanNew = normalizeStoragePath(update.wearImage);
+            const cleanOld = normalizeStoragePath(destinationFound.result.wearImage);
+            if (cleanNew !== cleanOld) {
+                await bunnyCtr.deleteFile(context, cleanOld);
+            }
         }
 
         if (update.location) {

@@ -23,7 +23,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { blockCtr } from '#modules/block/block.controller.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, cleanFullUrl } from '#modules/bunny/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
@@ -1230,20 +1230,23 @@ export const locationCtr = {
 
                 // DESTINATION entity: blur images/logo if present
                 if (d.entityType === E_LocationEntityType.DESTINATION) {
-                    const dest = e as I_Destination;
+                    // Clone the entity to prevent in-place cache poisoning
+                    const dest = typeof (e as any).toObject === 'function' ? (e as any).toObject() : { ...e } as I_Destination;
+                    d.entity = dest;
+
                     if (Array.isArray(dest.images)) {
-                        dest.images = dest.images.map(u => (viewerMediaOptions.viewerAgeVerified ?? false)
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: u, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: u, extraQueryParams: { class: 'blur' } }));
+                        dest.images = dest.images.map((u: string) => (viewerMediaOptions.viewerAgeVerified ?? false)
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(u), extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(u), extraQueryParams: { class: 'blur' } }));
                     }
                     if (dest.logo) {
                         dest.logo = (viewerMediaOptions.viewerAgeVerified ?? false)
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: dest.logo, extraQueryParams: { class: 'blur' } });
+                            ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(dest.logo), extraQueryParams: { class: 'normal' } })
+                            : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(dest.logo), extraQueryParams: { class: 'blur' } });
                     }
                     const intro = extractPlainTextFromRichContent(dest.introductionContent);
                     if (intro) {
-                        dest.introductionContent = intro;
+                        dest.introductionContentPlain = intro;
                     }
                 }
             }

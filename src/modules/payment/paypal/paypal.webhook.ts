@@ -13,7 +13,6 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
-import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
@@ -79,9 +78,6 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
                 break;
             case 'PAYMENTS.CAPTURE.COMPLETED':
                 await handlePaymentCaptureCompleted(req, resource);
-                break;
-            case 'BILLING.SUBSCRIPTION.PAYMENT.SUCCEEDED':
-                await handleSubscriptionPaymentSucceeded(resource);
                 break;
             case 'BILLING.SUBSCRIPTION.CANCELLED':
                 await handleSubscriptionCancelled(resource);
@@ -167,7 +163,6 @@ async function handlePaymentSaleCompleted(resource: any) {
         paymentMethod: 'PayPal Subscription',
         transactionId: resource.id,
         membershipPeriod: '1 Month',
-        receiptDescription: 'Membership Subscription',
         isRebill: true,
     });
 }
@@ -464,7 +459,6 @@ async function processPayPalOrderCapture(
                             paymentMethod,
                             transactionId: paymentTransaction?.transactionId || orderData.paymentTransactionId || 'N/A',
                             membershipPeriod: membershipPeriod || 'N/A',
-                            receiptDescription: pricing?.type === E_PricingType.ANNOUNCEMENT ? 'Announcement' : 'Membership',
                             isRebill: false,
                         };
 
@@ -527,28 +521,6 @@ async function handleSubscriptionCancelled(resource: any) {
     const subscriptionId = resource.id;
     const customId = resource.custom_id;
     log.info(`[PayPal Webhook] Subscription Cancelled: ${subscriptionId}`, { userId: customId });
-
-    if (customId) {
-        await userCtr.updateUser({} as any, {
-            filter: { id: customId },
-            update: {
-                membershipCancelled: true,
-            },
-        });
-        log.info(`[PayPal Webhook] Marked membership as cancelled for user ${customId}`);
-    }
-}
-
-async function handleSubscriptionPaymentSucceeded(resource: any) {
-    const subscriptionId = resource.billing_agreement_id;
-    const amount = resource.amount?.total;
-    // For Subscription API, it might be in billing_agreement_id or resource.id depending on event
-    // The actual payment resource is what we need
-    log.info(`[PayPal Webhook] Subscription Payment Succeeded: ${subscriptionId || resource.id}`, { amount });
-
-    // SUBSCRIPTION.PAYMENT.SUCCEEDED resource is a payment capture-like object
-    // but the subscription ID is in billing_agreement_id
-    await handlePaymentSaleCompleted(resource);
 }
 
 async function handleSubscriptionSuspended(resource: any) {

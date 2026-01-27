@@ -48,7 +48,7 @@ function resolveCdnOrigin(url: URL): string {
     return url.origin;
 }
 
-function normalizeStoragePath(value: string): string {
+export function normalizeStoragePath(value: string): string {
     const trimmed = value.trim();
     if (!trimmed)
         return trimmed;
@@ -61,6 +61,12 @@ function normalizeStoragePath(value: string): string {
     catch {
         return withoutQuery.replace(/^\/+/u, '');
     }
+}
+
+export function cleanFullUrl(value: string): string {
+    const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(/\/+$/u, '');
+    const path = normalizeStoragePath(value);
+    return `${domain}/${path}`;
 }
 
 export const bunnyCtr = {
