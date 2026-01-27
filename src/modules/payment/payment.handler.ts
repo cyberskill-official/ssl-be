@@ -150,9 +150,78 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
         else if (orderStatus === E_OrderStatus.CANCELLED) {
             status = 'CANCEL';
         }
-        else if (orderStatus === E_OrderStatus.PENDING) {
-            status = 'PENDING';
+
+        // Proactive Check: If order is still PENDING in our DB, verify status directly with PayPal
+        if (status === 'PENDING') {
+            const externalOrderId = paymentRequest.externalOrderId;
+            if (externalOrderId) {
+                log.info('[PayPal Status] Proactively checking PayPal API:', { externalOrderId });
+
+                let isActuallyPaid = false;
+                let gatewayResponse: any = null;
+                let rawStatus = 'UNKNOWN';
+
+                if (externalOrderId.startsWith('I-')) {
+                    // Subscription Check
+                    const subRes = await paypalCtr.getSubscription(context, { subscriptionId: externalOrderId });
+                    if (subRes.success && subRes.result) {
+                        gatewayResponse = subRes.result;
+                        rawStatus = (subRes.result as any).status;
+                        if (rawStatus === 'ACTIVE') {
+                            isActuallyPaid = true;
+                        }
+                    }
+                }
+                else {
+                    // One-time Order Check
+                    const paypalOrderRes = await paypalCtr.getOrder(context, { orderId: externalOrderId });
+                    if (paypalOrderRes.success && paypalOrderRes.result) {
+                        gatewayResponse = paypalOrderRes.result;
+                        rawStatus = (paypalOrderRes.result as any).status;
+                        if (rawStatus === 'COMPLETED' || rawStatus === 'APPROVED') {
+                            isActuallyPaid = true;
+                        }
+                    }
+                }
+
+                log.info(`[PayPal Status] Proactive check result: ${rawStatus}`, { externalOrderId, isActuallyPaid });
+
+                if (isActuallyPaid) {
+                    log.info('[PayPal Status] Confirmed PAID via API, syncing records...', { externalOrderId });
+                    status = 'SUCCESS';
+
+                    // Update records asynchronously
+                    try {
+                        await Promise.allSettled([
+                            paymentRequestCtr.updatePaymentRequest(context, {
+                                filter: { id: paymentRequest.id },
+                                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse } },
+                            }),
+                            orderCtr.updateOrder(context, {
+                                filter: { id: order.id },
+                                update: { $set: { status: E_OrderStatus.PAID } },
+                            }),
+                        ]);
+
+                        // Apply effects immediately so user sees their new status
+                        const fullOrderRes = await orderCtr.getOrder(context, {
+                            filter: { id: order.id },
+                            populate: [
+                                { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                            ],
+                        });
+                        if (fullOrderRes.success && fullOrderRes.result) {
+                            await applyOrderPaidEffects(context, fullOrderRes.result);
+                            log.info('[PayPal Status] Applied order paid effects successfully');
+                        }
+                    }
+                    catch (syncErr) {
+                        log.error('[PayPal Status] Error syncing records after proactive confirm:', syncErr);
+                    }
+                }
+            }
         }
+        // No else if needed here as status is already handled
 
         const transactionId = order?.paymentTransaction?.transactionId
             || order?.paymentTransactionId
@@ -858,10 +927,12 @@ function resolvePayPalOrderId(req: Request): string | null {
         body?.['paypalOrderId'],
         body?.['token'],
         body?.['ba_token'],
+        body?.['subscription_id'],
         query?.['orderId'],
         query?.['paypalOrderId'],
         query?.['token'],
         query?.['ba_token'],
+        query?.['subscription_id'],
     ];
 
     for (const candidate of candidates) {

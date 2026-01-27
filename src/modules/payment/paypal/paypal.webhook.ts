@@ -106,15 +106,34 @@ async function handleSubscriptionActivated(resource: any) {
     const customId = resource.custom_id;
     log.info(`[PayPal Webhook] Subscription Activated: ${subscriptionId}`, { customId });
 
-    // Update the payment request status to ensure polling reflects the activation
+    // Update the payment request and order status to ensure polling reflects the activation
     try {
-        await paymentRequestCtr.updatePaymentRequest({} as any, {
+        const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
             filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
-            update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: resource } },
         });
+
+        if (prRes.success && prRes.result) {
+            const pr = prRes.result;
+            const orderId = (pr.meta as any)?.orderId;
+
+            // Mark PaymentRequest as PAID
+            await paymentRequestCtr.updatePaymentRequest({} as any, {
+                filter: { id: pr.id },
+                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: resource } },
+            });
+
+            // Mark Order as PAID
+            if (orderId) {
+                await orderCtr.updateOrder({} as any, {
+                    filter: { id: orderId },
+                    update: { $set: { status: E_OrderStatus.PAID } },
+                });
+                log.info(`[PayPal Webhook] Marked Order ${orderId} as PAID for subscription activation ${subscriptionId}`);
+            }
+        }
     }
     catch (err) {
-        log.warn('[PayPal Webhook] Failed to update PaymentRequest on activation:', { subscriptionId, error: err });
+        log.warn('[PayPal Webhook] Failed to update payment records on activation:', { subscriptionId, error: err });
     }
 }
 
