@@ -224,3 +224,17 @@ export interface I_PayPalSubscriptionResponse {
     billing_info?: Record<string, unknown>;
     links?: I_PayPalOrderLink[];
 }
+
+export interface I_PayPalListProductsResponse {
+    products?: I_PayPalProductResponse[];
+    total_items?: number;
+    total_pages?: number;
+    links?: I_PayPalOrderLink[];
+}
+
+export interface I_PayPalListPlansResponse {
+    plans?: I_PayPalPlanResponse[];
+    total_items?: number;
+    total_pages?: number;
+    links?: I_PayPalOrderLink[];
+}

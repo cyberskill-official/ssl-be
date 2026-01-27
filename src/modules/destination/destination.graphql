@@ -66,6 +66,7 @@ type T_Destination {
     images: [String]
     introductionHeadline: String
     introductionContent: String
+    introductionContentPlain: String
     ageGroup: E_DestinationAgeGroup
     ratingStar: String
     logo: String
@@ -105,6 +106,7 @@ input Input_QueryDestination {
     images: [String]
     introductionHeadline: String
     introductionContent: String
+    introductionContentPlain: String
     ageGroup: E_DestinationAgeGroup
     ratingStar: String
     logo: String

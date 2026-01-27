@@ -52,6 +52,11 @@ const notificationResolver = {
             args: I_Input_DeleteOne<I_Input_QueryNotification>,
             context: I_Context,
         ) => notificationCtr.deleteNotification(context, args),
+        deleteNotifications: (
+            _parent: unknown,
+            args: I_Input_DeleteOne<I_Input_QueryNotification>,
+            context: I_Context,
+        ) => notificationCtr.deleteNotifications(context, args),
         markNotificationRead: (
             _parent: unknown,
             args: I_Input_UpdateOne<I_Input_UpdateNotification>,

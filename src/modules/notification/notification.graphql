@@ -276,6 +276,7 @@ type Mutation {
     createNotificationWithSettings(doc: Input_CreateNotification!): T_Response_Notification!
     updateNotification(filter: Input_QueryNotification!, update: Input_UpdateNotification!): T_Response_Notification!
     deleteNotification(filter: Input_QueryNotification!): T_Response_Notification!
+    deleteNotifications: T_Response_Notification!
     markNotificationRead(filter: Input_QueryNotification!): T_Response_Notification!
     dismissNotification(filter: Input_QueryNotification!): T_Response_Notification!
 }
