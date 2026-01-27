@@ -53,59 +53,40 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
-        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse or meta
+        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse
         // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
-            const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: {
-                    gateway: E_PaymentProvider.PAYPAL,
-                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
-                },
+            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search by token:', { paypalOrderId });
+            const allPendingPRs = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: { gateway: E_PaymentProvider.PAYPAL, status: E_PaymentRequestStatus.PENDING },
                 options: { limit: 100, sort: { createdAt: -1 } },
             });
 
-            if (allActivePRs.success && allActivePRs.result?.docs) {
-                log.info(`[PayPal Status] Fallback search: checking ${allActivePRs.result.docs.length} active requests`);
-                const foundPr = allActivePRs.result.docs.find((pr) => {
+            if (allPendingPRs.success && allPendingPRs.result?.docs) {
+                const foundPr = allPendingPRs.result.docs.find((pr) => {
+                    // Check explicitly stored token in meta first (most reliable for new PRs)
                     const meta = pr.meta as any;
+                    if (meta?.token === paypalOrderId) {
+                        return true;
+                    }
+
+                    // Fallback search in gatewayResponse (for legacy PRs or if token extraction failed)
                     const gr = pr.gatewayResponse as any;
+                    if (!gr)
+                        return false;
 
-                    // 1. Check explicitly stored token or orderId in meta
-                    if (meta?.token === paypalOrderId || meta?.orderId === paypalOrderId) {
-                        return true;
+                    // Check if the token exists in links
+                    const links = gr.links as any[];
+                    if (Array.isArray(links)) {
+                        return links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId));
                     }
 
-                    // 2. Check externalOrderId (direct match or prefix mismatch)
-                    if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
-                        return true;
-                    }
-
-                    // 3. Fallback search in gatewayResponse
-                    if (gr) {
-                        // Check if it's the main ID in gatewayResponse
-                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
-                            return true;
-                        }
-
-                        // Check if the token exists in links
-                        const links = gr.links as any[];
-                        if (Array.isArray(links)) {
-                            if (links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId))) {
-                                return true;
-                            }
-                        }
-                    }
-
-                    return false;
+                    // Also check if id (Order ID) matches if it wasn't the externalOrderId
+                    return gr.id === paypalOrderId;
                 });
 
                 if (foundPr) {
-                    log.info('[PayPal Status] Fallback search found match:', { id: foundPr.id, externalOrderId: foundPr.externalOrderId });
                     paymentRequestRes = { success: true, result: foundPr };
-                }
-                else {
-                    log.warn('[PayPal Status] Fallback search found no matches in active requests');
                 }
             }
         }
@@ -857,11 +838,9 @@ function resolvePayPalOrderId(req: Request): string | null {
         body?.['orderId'],
         body?.['paypalOrderId'],
         body?.['token'],
-        body?.['ba_token'],
         query?.['orderId'],
         query?.['paypalOrderId'],
         query?.['token'],
-        query?.['ba_token'],
     ];
 
     for (const candidate of candidates) {
