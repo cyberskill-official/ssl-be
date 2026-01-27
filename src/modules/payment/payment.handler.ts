@@ -57,32 +57,45 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
         // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
             log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search by token:', { paypalOrderId });
-            const allPendingPRs = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: { gateway: E_PaymentProvider.PAYPAL, status: E_PaymentRequestStatus.PENDING },
+            const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: {
+                    gateway: E_PaymentProvider.PAYPAL,
+                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
+                },
                 options: { limit: 100, sort: { createdAt: -1 } },
             });
 
-            if (allPendingPRs.success && allPendingPRs.result?.docs) {
-                const foundPr = allPendingPRs.result.docs.find((pr) => {
-                    // Check explicitly stored token in meta first (most reliable for new PRs)
+            if (allActivePRs.success && allActivePRs.result?.docs) {
+                const foundPr = allActivePRs.result.docs.find((pr) => {
                     const meta = pr.meta as any;
+                    const gr = pr.gatewayResponse as any;
+
+                    // 1. Check explicitly stored token in meta
                     if (meta?.token === paypalOrderId) {
                         return true;
                     }
 
-                    // Fallback search in gatewayResponse (for legacy PRs or if token extraction failed)
-                    const gr = pr.gatewayResponse as any;
-                    if (!gr)
-                        return false;
-
-                    // Check if the token exists in links
-                    const links = gr.links as any[];
-                    if (Array.isArray(links)) {
-                        return links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId));
+                    // 2. Check externalOrderId (in case of prefix mismatch or similar)
+                    if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
+                        return true;
                     }
 
-                    // Also check if id (Order ID) matches if it wasn't the externalOrderId
-                    return gr.id === paypalOrderId;
+                    // 3. Fallback search in gatewayResponse
+                    if (gr) {
+                        // Check if the token exists in links
+                        const links = gr.links as any[];
+                        if (Array.isArray(links)) {
+                            if (links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId))) {
+                                return true;
+                            }
+                        }
+                        // Check if id matches
+                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
+                            return true;
+                        }
+                    }
+
+                    return false;
                 });
 
                 if (foundPr) {
