@@ -571,15 +571,28 @@ export const paymentController = {
                 });
             }
 
+            // Extract token from approvalUrl for easier lookup later
+            let token: string | undefined;
+            if (approvalUrl) {
+                try {
+                    const url = new URL(approvalUrl);
+                    token = url.searchParams.get('token') || undefined;
+                }
+                catch {
+                    // ignore
+                }
+            }
+
             await paymentRequestCtr.updatePaymentRequest(context, {
                 filter: { id: paymentRequest.id },
                 update: {
                     $set: {
-                        status: E_PaymentRequestStatus.PENDING,
-                        paymentUrl: approvalUrl ?? null,
+                        'status': E_PaymentRequestStatus.PENDING,
+                        'paymentUrl': approvalUrl ?? null,
                         externalOrderId,
                         gatewayResponse,
-                        attempts: (paymentRequest.attempts ?? 0) + 1,
+                        'attempts': (paymentRequest.attempts ?? 0) + 1,
+                        'meta.token': token,
                     },
                 },
             });

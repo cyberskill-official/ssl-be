@@ -49,11 +49,50 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
 
         const context: I_Context = { req };
 
-        const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+        let paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
+        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse
+        // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search by token:', { paypalOrderId });
+            const allPendingPRs = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: { gateway: E_PaymentProvider.PAYPAL, status: E_PaymentRequestStatus.PENDING },
+                options: { limit: 100, sort: { createdAt: -1 } },
+            });
+
+            if (allPendingPRs.success && allPendingPRs.result?.docs) {
+                const foundPr = allPendingPRs.result.docs.find((pr) => {
+                    // Check explicitly stored token in meta first (most reliable for new PRs)
+                    const meta = pr.meta as any;
+                    if (meta?.token === paypalOrderId) {
+                        return true;
+                    }
+
+                    // Fallback search in gatewayResponse (for legacy PRs or if token extraction failed)
+                    const gr = pr.gatewayResponse as any;
+                    if (!gr)
+                        return false;
+
+                    // Check if the token exists in links
+                    const links = gr.links as any[];
+                    if (Array.isArray(links)) {
+                        return links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId));
+                    }
+
+                    // Also check if id (Order ID) matches if it wasn't the externalOrderId
+                    return gr.id === paypalOrderId;
+                });
+
+                if (foundPr) {
+                    paymentRequestRes = { success: true, result: foundPr };
+                }
+            }
+        }
+
+        if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            log.warn('[PayPal Status] Payment request not found', { paypalOrderId });
             res.status(404).json({ success: false, message: 'Payment request not found' });
             return;
         }
