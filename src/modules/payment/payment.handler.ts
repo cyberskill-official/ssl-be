@@ -1320,6 +1320,22 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
                 catch { /* ignore */ }
             }
 
+            // A) Create a formal Order record (required for polling logic)
+            const orderDoc = {
+                userId: currentUser.id,
+                status: E_OrderStatus.PENDING,
+                externalOrderId,
+                amount: 0, // Will be updated by webhook on capture, or we could fetch plan price
+                gateway: E_PaymentProvider.PAYPAL,
+                meta: {
+                    planId,
+                    subscriptionId: externalOrderId,
+                },
+            };
+            const orderRes = await orderCtr.createOrder(context, { doc: orderDoc });
+            const createdOrder = orderRes.success ? orderRes.result : null;
+
+            // B) Create the PaymentRequest
             const prDoc = {
                 gateway: E_PaymentProvider.PAYPAL,
                 status: E_PaymentRequestStatus.PENDING,
@@ -1328,16 +1344,17 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
                 gatewayResponse: subscriptionRes.result as any,
                 meta: {
                     userId: currentUser.id,
+                    orderId: createdOrder?.id,
                     planId,
                     token,
                     pricingType: E_PricingType.MEMBERSHIP,
                 },
             };
             await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
-            log.info(`[PayPal Subscription] Recorded payment request for ${externalOrderId}`, { token });
+            log.info(`[PayPal Subscription] Recorded order ${createdOrder?.id} and payment request for ${externalOrderId}`, { token });
         }
         catch (prError) {
-            log.error('[PayPal Subscription] Failed to record payment request:', prError);
+            log.error('[PayPal Subscription] Failed to record payment records:', prError);
             // We don't fail the whole setup if only the tracking record fails, but it will break polling
         }
 
