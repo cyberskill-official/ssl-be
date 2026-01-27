@@ -53,10 +53,10 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
-        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse
+        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse or meta
         // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search by token:', { paypalOrderId });
+            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
             const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
                 filter: {
                     gateway: E_PaymentProvider.PAYPAL,
@@ -66,22 +66,28 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             });
 
             if (allActivePRs.success && allActivePRs.result?.docs) {
+                log.info(`[PayPal Status] Fallback search: checking ${allActivePRs.result.docs.length} active requests`);
                 const foundPr = allActivePRs.result.docs.find((pr) => {
                     const meta = pr.meta as any;
                     const gr = pr.gatewayResponse as any;
 
-                    // 1. Check explicitly stored token in meta
-                    if (meta?.token === paypalOrderId) {
+                    // 1. Check explicitly stored token or orderId in meta
+                    if (meta?.token === paypalOrderId || meta?.orderId === paypalOrderId) {
                         return true;
                     }
 
-                    // 2. Check externalOrderId (in case of prefix mismatch or similar)
+                    // 2. Check externalOrderId (direct match or prefix mismatch)
                     if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
                         return true;
                     }
 
                     // 3. Fallback search in gatewayResponse
                     if (gr) {
+                        // Check if it's the main ID in gatewayResponse
+                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
+                            return true;
+                        }
+
                         // Check if the token exists in links
                         const links = gr.links as any[];
                         if (Array.isArray(links)) {
@@ -89,17 +95,17 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                                 return true;
                             }
                         }
-                        // Check if id matches
-                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
-                            return true;
-                        }
                     }
 
                     return false;
                 });
 
                 if (foundPr) {
+                    log.info('[PayPal Status] Fallback search found match:', { id: foundPr.id, externalOrderId: foundPr.externalOrderId });
                     paymentRequestRes = { success: true, result: foundPr };
+                }
+                else {
+                    log.warn('[PayPal Status] Fallback search found no matches in active requests');
                 }
             }
         }
@@ -851,9 +857,11 @@ function resolvePayPalOrderId(req: Request): string | null {
         body?.['orderId'],
         body?.['paypalOrderId'],
         body?.['token'],
+        body?.['ba_token'],
         query?.['orderId'],
         query?.['paypalOrderId'],
         query?.['token'],
+        query?.['ba_token'],
     ];
 
     for (const candidate of candidates) {

@@ -576,7 +576,7 @@ export const paymentController = {
             if (approvalUrl) {
                 try {
                     const url = new URL(approvalUrl);
-                    token = url.searchParams.get('token') || undefined;
+                    token = url.searchParams.get('token') || url.searchParams.get('ba_token') || undefined;
                 }
                 catch {
                     // ignore
