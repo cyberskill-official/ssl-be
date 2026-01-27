@@ -53,40 +53,59 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
-        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse
+        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse or meta
         // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search by token:', { paypalOrderId });
-            const allPendingPRs = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: { gateway: E_PaymentProvider.PAYPAL, status: E_PaymentRequestStatus.PENDING },
+            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
+            const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: {
+                    gateway: E_PaymentProvider.PAYPAL,
+                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
+                },
                 options: { limit: 100, sort: { createdAt: -1 } },
             });
 
-            if (allPendingPRs.success && allPendingPRs.result?.docs) {
-                const foundPr = allPendingPRs.result.docs.find((pr) => {
-                    // Check explicitly stored token in meta first (most reliable for new PRs)
+            if (allActivePRs.success && allActivePRs.result?.docs) {
+                log.info(`[PayPal Status] Fallback search: checking ${allActivePRs.result.docs.length} active requests`);
+                const foundPr = allActivePRs.result.docs.find((pr) => {
                     const meta = pr.meta as any;
-                    if (meta?.token === paypalOrderId) {
+                    const gr = pr.gatewayResponse as any;
+
+                    // 1. Check explicitly stored token or orderId in meta
+                    if (meta?.token === paypalOrderId || meta?.orderId === paypalOrderId || meta?.internalOrderId === paypalOrderId) {
                         return true;
                     }
 
-                    // Fallback search in gatewayResponse (for legacy PRs or if token extraction failed)
-                    const gr = pr.gatewayResponse as any;
-                    if (!gr)
-                        return false;
-
-                    // Check if the token exists in links
-                    const links = gr.links as any[];
-                    if (Array.isArray(links)) {
-                        return links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId));
+                    // 2. Check externalOrderId (direct match or prefix mismatch)
+                    if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
+                        return true;
                     }
 
-                    // Also check if id (Order ID) matches if it wasn't the externalOrderId
-                    return gr.id === paypalOrderId;
+                    // 3. Fallback search in gatewayResponse
+                    if (gr) {
+                        // Check if it's the main ID in gatewayResponse
+                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
+                            return true;
+                        }
+
+                        // Check if the token exists in links
+                        const links = gr.links as any[];
+                        if (Array.isArray(links)) {
+                            if (links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId))) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    return false;
                 });
 
                 if (foundPr) {
+                    log.info('[PayPal Status] Fallback search found match:', { id: foundPr.id, externalOrderId: foundPr.externalOrderId });
                     paymentRequestRes = { success: true, result: foundPr };
+                }
+                else {
+                    log.warn('[PayPal Status] Fallback search found no matches in active requests');
                 }
             }
         }
@@ -838,9 +857,11 @@ function resolvePayPalOrderId(req: Request): string | null {
         body?.['orderId'],
         body?.['paypalOrderId'],
         body?.['token'],
+        body?.['ba_token'],
         query?.['orderId'],
         query?.['paypalOrderId'],
         query?.['token'],
+        query?.['ba_token'],
     ];
 
     for (const candidate of candidates) {
@@ -1286,6 +1307,39 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
 
         const createdProduct = productResult?.success ? productResult.result : null;
         const createdPlan = planResult?.success ? planResult.result : null;
+
+        // Record the payment request so it can be polled/tracked
+        try {
+            const externalOrderId = subscriptionRes.result.id;
+            let token: string | undefined;
+            if (approvalUrl) {
+                try {
+                    const url = new URL(approvalUrl);
+                    token = url.searchParams.get('token') || url.searchParams.get('ba_token') || undefined;
+                }
+                catch { /* ignore */ }
+            }
+
+            const prDoc = {
+                gateway: E_PaymentProvider.PAYPAL,
+                status: E_PaymentRequestStatus.PENDING,
+                externalOrderId,
+                paymentUrl: approvalUrl,
+                gatewayResponse: subscriptionRes.result as any,
+                meta: {
+                    userId: currentUser.id,
+                    planId,
+                    token,
+                    pricingType: E_PricingType.MEMBERSHIP,
+                },
+            };
+            await paymentRequestCtr.createPaymentRequest(context, { doc: prDoc });
+            log.info(`[PayPal Subscription] Recorded payment request for ${externalOrderId}`, { token });
+        }
+        catch (prError) {
+            log.error('[PayPal Subscription] Failed to record payment request:', prError);
+            // We don't fail the whole setup if only the tracking record fails, but it will break polling
+        }
 
         res.status(200).json({
             success: true,

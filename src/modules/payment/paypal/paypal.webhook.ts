@@ -64,6 +64,9 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
         log.info(`[PayPal Webhook] Received event: ${eventType}`, { id: body.id });
 
         switch (eventType) {
+            case 'BILLING.SUBSCRIPTION.CREATED':
+                log.info(`[PayPal Webhook] Subscription Created: ${resource.id}`, { customId: resource.custom_id });
+                break;
             case 'BILLING.SUBSCRIPTION.ACTIVATED':
                 await handleSubscriptionActivated(resource);
                 break;
