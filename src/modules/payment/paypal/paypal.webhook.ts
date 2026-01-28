@@ -64,6 +64,9 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
         log.info(`[PayPal Webhook] Received event: ${eventType}`, { id: body.id });
 
         switch (eventType) {
+            case 'BILLING.SUBSCRIPTION.CREATED':
+                log.info(`[PayPal Webhook] Subscription Created: ${resource.id}`, { customId: resource.custom_id });
+                break;
             case 'BILLING.SUBSCRIPTION.ACTIVATED':
                 await handleSubscriptionActivated(resource);
                 break;
@@ -102,6 +105,36 @@ async function handleSubscriptionActivated(resource: any) {
     const subscriptionId = resource.id;
     const customId = resource.custom_id;
     log.info(`[PayPal Webhook] Subscription Activated: ${subscriptionId}`, { customId });
+
+    // Update the payment request and order status to ensure polling reflects the activation
+    try {
+        const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
+            filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
+        });
+
+        if (prRes.success && prRes.result) {
+            const pr = prRes.result;
+            const orderId = (pr.meta as any)?.orderId;
+
+            // Mark PaymentRequest as PAID
+            await paymentRequestCtr.updatePaymentRequest({} as any, {
+                filter: { id: pr.id },
+                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: resource } },
+            });
+
+            // Mark Order as PAID
+            if (orderId) {
+                await orderCtr.updateOrder({} as any, {
+                    filter: { id: orderId },
+                    update: { $set: { status: E_OrderStatus.PAID } },
+                });
+                log.info(`[PayPal Webhook] Marked Order ${orderId} as PAID for subscription activation ${subscriptionId}`);
+            }
+        }
+    }
+    catch (err) {
+        log.warn('[PayPal Webhook] Failed to update payment records on activation:', { subscriptionId, error: err });
+    }
 }
 
 async function handlePaymentSaleCompleted(resource: any) {
@@ -109,17 +142,50 @@ async function handlePaymentSaleCompleted(resource: any) {
     const amount = resource.amount?.total;
     const customId = resource.custom;
 
-    log.info(`[PayPal Webhook] Payment Sale Completed for Subscription: ${subscriptionId}`, { amount });
+    log.info(`[PayPal Webhook] Payment Sale Completed for Subscription: ${subscriptionId}`, { amount, customId });
 
     if (!subscriptionId)
         return;
 
+    // 1. Find and update PaymentRequest & Order to PAID/SUCCESS
     let userId = customId;
+    let orderId: string | undefined;
+
+    try {
+        const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
+            filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
+        });
+
+        if (prRes.success && prRes.result) {
+            const pr = prRes.result;
+            userId = userId || (pr.meta as any)?.userId;
+            orderId = (pr.meta as any)?.orderId;
+
+            // Mark PaymentRequest as PAID
+            await paymentRequestCtr.updatePaymentRequest({} as any, {
+                filter: { id: pr.id },
+                update: { $set: { status: E_PaymentRequestStatus.PAID } },
+            });
+
+            // If an Order is associated, mark it as PAID
+            if (orderId) {
+                await orderCtr.updateOrder({} as any, {
+                    filter: { id: orderId },
+                    update: { $set: { status: E_OrderStatus.PAID } },
+                });
+                log.info(`[PayPal Webhook] Marked Order ${orderId} as PAID for subscription ${subscriptionId}`);
+            }
+        }
+    }
+    catch (err) {
+        log.error('[PayPal Webhook] Error updating payment records for subscription sale:', err);
+    }
+
+    // 2. Identification Fallback (Old Logic)
     if (!userId) {
         // Mock context for internal call
         const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });
         if (subRes.success && subRes.result) {
-            // Access custom_id safely if definition includes it, otherwise cast
             const sub = subRes.result as any;
             userId = sub.custom_id;
         }
@@ -130,6 +196,7 @@ async function handlePaymentSaleCompleted(resource: any) {
         return;
     }
 
+    // 3. Extend Membership
     const userRes = await userCtr.getUser({} as any, { filter: { id: userId } });
     if (!userRes.success || !userRes.result)
         return;
@@ -139,7 +206,7 @@ async function handlePaymentSaleCompleted(resource: any) {
         ? new Date(user.membershipExpiresAt)
         : new Date();
 
-    // Default to 30 days extension for now. Ideally fetch Plan frequency or Logic
+    // Default to 1 Month extension
     const newExpiry = new Date(currentExpiry.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     await userCtr.updateUser({} as any, {
@@ -151,6 +218,7 @@ async function handlePaymentSaleCompleted(resource: any) {
 
     log.info(`[PayPal Webhook] Extended membership for user ${userId} to ${newExpiry}`);
 
+    // 4. Send Email
     await emailCtr.sendEmail(PAYMENT_SUCCESS, user.email || '', {
         invoiceNo: `SUB-${subscriptionId.slice(-4)}`,
         paymentDate: new Date().toLocaleDateString(),

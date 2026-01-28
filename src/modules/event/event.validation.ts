@@ -41,15 +41,31 @@ export function validateTimeBasedEvent(
 ): I_TimeBasedEventValidation {
     const { startDate, endDate, startTime, endTime } = eventData;
 
-    // Support both 12h (with AM/PM) and 24h (HH:mm) formats
-    const hasMeridianStart = /\bAM\b|\bPM\b/i.test(startTime);
-    const hasMeridianEnd = /\bAM\b|\bPM\b/i.test(endTime);
+    // Special logic for BOOTY_CALL: ignore startTime/endTime, only use startDate
+    if (eventType === E_EventType.BOOTY_CALL) {
+        const startDateObj = typeof startDate === 'string' ? new Date(startDate) : startDate;
+        if (!isValid(startDateObj)) {
+            throwError({ message: 'Invalid start date.', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+        // Set endDateTime to 23:59:59 of the selected date (location timezone logic handled elsewhere)
+        const endDateTime = set(startDateObj, { hours: 23, minutes: 59, seconds: 59, milliseconds: 0 });
+        return {
+            startDateTime: startDateObj,
+            endDateTime,
+            isOvernight: false,
+            durationInHours: differenceInMinutes(endDateTime, startDateObj) / 60,
+        };
+    }
+
+    // Support both 12h (with AM/PM) and 24h (HH:mm) formats for other event types
+    const hasMeridianStart = /\bAM\b|\bPM\b/i.test(startTime ?? '');
+    const hasMeridianEnd = /\bAM\b|\bPM\b/i.test(endTime ?? '');
 
     const startFormat = hasMeridianStart ? 'hh:mm a' : 'HH:mm';
     const endFormat = hasMeridianEnd ? 'hh:mm a' : 'HH:mm';
 
-    const startTimeParsed = parse(startTime, startFormat, new Date());
-    const endTimeParsed = parse(endTime, endFormat, new Date());
+    const startTimeParsed = parse(startTime ?? '', startFormat, new Date());
+    const endTimeParsed = parse(endTime ?? '', endFormat, new Date());
 
     if (!isValid(startTimeParsed) || !isValid(endTimeParsed)) {
         throwError({
@@ -141,12 +157,7 @@ export function validateTimeBasedEvent(
         });
     }
 
-    if (eventType === E_EventType.BOOTY_CALL && durationInHours > 24) {
-        throwError({
-            message: 'Booty Calls can only last a maximum of 24 hours.',
-            status: RESPONSE_STATUS.BAD_REQUEST,
-        });
-    }
+    // The following check is unnecessary because eventType cannot be BOOTY_CALL here.
     return {
         startDateTime,
         endDateTime,
