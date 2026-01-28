@@ -482,24 +482,29 @@ export const eventCtr = {
             }
         }
 
-        // BOOTY_CALL validations (require start/end dates & times)
+        // BOOTY_CALL validations (date only, expires at 23:59 in pin's timezone)
         if (type === E_EventType.BOOTY_CALL) {
             if (!description?.trim()) {
                 throwError({ message: 'Text description is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
-            if (!startDate || !endDate || !startTime || !endTime) {
+            if (!startDate) {
                 throwError({
-                    message: 'Start date, end date, start time, and end time are required for time-based events.',
+                    message: 'Date is required for Booty Calls.',
                     status: RESPONSE_STATUS.BAD_REQUEST,
                 });
             }
-            const validation = validateTimeBasedEvent({ startDate, endDate, startTime, endTime }, E_EventType.BOOTY_CALL);
+            if (!location || !location.map || typeof location.map.latitude !== 'number' || typeof location.map.longitude !== 'number') {
+                throwError({ message: 'Location with valid coordinates is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            // Sử dụng validateTimeBasedEvent cho BOOTY_CALL chỉ truyền startDate, endDate, location
+            const validation = validateTimeBasedEvent({
+                startDate,
+                endDate,
+                location,
+            }, E_EventType.BOOTY_CALL);
             doc.startDate = validation.startDateTime;
             doc.endDate = validation.endDateTime;
-
-            if (!location) {
-                throwError({ message: 'Location is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
-            }
         }
 
         // PRIVATE validations

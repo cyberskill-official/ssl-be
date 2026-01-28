@@ -53,8 +53,9 @@ export interface I_Input_UpdateEvent extends Omit<I_Event, T_Omit_Update | T_Eve
 export interface I_Input_TimeBasedEventData {
     startDate: Date;
     endDate?: Date;
-    startTime: string;
-    endTime: string;
+    startTime?: string;
+    endTime?: string;
+    location?: I_Location;
 }
 
 export interface I_TimeBasedEventValidation {

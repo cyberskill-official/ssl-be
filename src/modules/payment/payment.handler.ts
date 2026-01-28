@@ -60,7 +60,7 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
                 filter: {
                     gateway: E_PaymentProvider.PAYPAL,
-                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING, E_PaymentRequestStatus.PAID] } as any,
+                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
                 },
                 options: { limit: 100, sort: { createdAt: -1 } },
             });
@@ -961,57 +961,9 @@ async function handlePayPalCapture(req: Request, res: Response, next: NextFuncti
 
         const context: I_Context = { req };
 
-        let paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+        const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
-
-        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse
-        if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.info('[PayPal Capture] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
-            const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: {
-                    gateway: E_PaymentProvider.PAYPAL,
-                    // Allow capturing PENDING or WAITING requests.
-                    // If PAID, we'll handle it below as "already processed"
-                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING, E_PaymentRequestStatus.PAID] } as any,
-                },
-                options: { limit: 100, sort: { createdAt: -1 } },
-            });
-
-            if (allActivePRs.success && allActivePRs.result?.docs) {
-                const foundPr = allActivePRs.result.docs.find((pr) => {
-                    const meta = pr.meta as any;
-                    const gr = pr.gatewayResponse as any;
-
-                    // 1. Check explicitly stored token or orderId in meta
-                    if (meta?.token === paypalOrderId || meta?.orderId === paypalOrderId || meta?.internalOrderId === paypalOrderId) {
-                        return true;
-                    }
-
-                    // 2. Check externalOrderId (direct match or prefix mismatch)
-                    if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
-                        return true;
-                    }
-
-                    // 3. Fallback search in gatewayResponse
-                    if (gr) {
-                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`)
-                            return true;
-                        const links = gr.links as any[];
-                        if (Array.isArray(links)) {
-                            if (links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId)))
-                                return true;
-                        }
-                    }
-                    return false;
-                });
-
-                if (foundPr) {
-                    log.info('[PayPal Capture] Fallback search found match:', { id: foundPr.id, externalOrderId: foundPr.externalOrderId });
-                    paymentRequestRes = { success: true, result: foundPr };
-                }
-            }
-        }
 
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
             res.status(404).json({ success: false, message: 'Payment request not found' });
@@ -1043,48 +995,17 @@ async function handlePayPalCapture(req: Request, res: Response, next: NextFuncti
             return;
         }
 
-        // --- Handle Subscription vs Order Capture ---
-        let finalCaptureResult: any = null;
+        const captureRes = await paypalCtr.captureOrder(context, { orderId: paypalOrderId });
 
-        // Check if it's a subscription
-        if (paymentRequest.externalOrderId && paymentRequest.externalOrderId.startsWith('I-')) {
-            log.info('[PayPal Capture] Detected Subscription ID, verifying status instead of capturing:', { subscriptionId: paymentRequest.externalOrderId });
-
-            // For subscriptions, "capture" just means verifying it's active
-            const subRes = await paypalCtr.getSubscription(context, { subscriptionId: paymentRequest.externalOrderId });
-            if (subRes.success && subRes.result && (subRes.result as any).status === 'ACTIVE') {
-                // Mock a capture result for downstream logic
-                finalCaptureResult = {
-                    status: 'COMPLETED',
-                    id: (subRes.result as any).id,
-                    purchase_units: [{ payments: { captures: [{ status: 'COMPLETED', id: (subRes.result as any).id }] } }],
-                };
-            }
-            else {
-                res.status(400).json({ success: false, message: 'Subscription not active' });
-                return;
-            }
-        }
-        else {
-            // Standard one-time order capture
-            const captureRes = await paypalCtr.captureOrder(context, { orderId: paypalOrderId });
-
-            if (!captureRes.success || !captureRes.result) {
-                res.status(typeof captureRes.code === 'number' ? captureRes.code : 502).json({
-                    success: false,
-                    message: captureRes.message ?? 'PayPal capture failed',
-                });
-                return;
-            }
-            finalCaptureResult = captureRes.result;
-        }
-
-        if (!finalCaptureResult) {
-            res.status(500).json({ success: false, message: 'Capture result is empty' });
+        if (!captureRes.success || !captureRes.result) {
+            res.status(typeof captureRes.code === 'number' ? captureRes.code : 502).json({
+                success: false,
+                message: captureRes.message ?? 'PayPal capture failed',
+            });
             return;
         }
 
-        const captureResult = finalCaptureResult as I_PayPalCaptureOrderResponse;
+        const captureResult = captureRes.result as I_PayPalCaptureOrderResponse;
         const capture = captureResult.purchase_units?.[0]?.payments?.captures?.[0];
         const captureStatus = typeof capture?.status === 'string'
             ? capture.status
