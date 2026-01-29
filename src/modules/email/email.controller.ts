@@ -52,6 +52,8 @@ export const emailCtr = {
                 // Add USER_APP_URL to renderData so email templates can use it dynamically
                 USER_APP_URL: userAppUrl,
                 userAppUrl, // Also provide lowercase version for convenience
+                // Always provide a fallback for receiptDescription
+                receiptDescription: (safeTemplateData as Record<string, any>)?.['receiptDescription'] ?? 'Payment',
             };
             let html: string;
             let subjectText: string;
