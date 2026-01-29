@@ -3,6 +3,8 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 export interface I_PromoCode extends I_GenericDocument {
     code?: string;
     expiresAt?: Date;
+    /** Number of days of membership granted when this promo code is redeemed */
+    grantDays?: number;
     isActive?: boolean;
     isLimit?: boolean;
     usageLimit?: number;

@@ -5,6 +5,7 @@ input Input_QueryPromoCode {
     updatedAt: DateTime
     code: String
     expiresAt: DateTime
+    grantDays: Int
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
@@ -14,6 +15,7 @@ input Input_QueryPromoCode {
 input Input_CreatePromoCode {
     code: String!
     expiresAt: DateTime!
+    grantDays: Int
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
@@ -24,6 +26,7 @@ input Input_UpdatePromoCode {
     isDel: Boolean
     code: String
     expiresAt: DateTime
+    grantDays: Int
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int
@@ -37,6 +40,7 @@ type T_PromoCode {
     updatedAt: DateTime
     code: String
     expiresAt: DateTime
+    grantDays: Int
     isActive: Boolean
     isLimit: Boolean
     usageLimit: Int

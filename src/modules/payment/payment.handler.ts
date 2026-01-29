@@ -964,9 +964,17 @@ async function handlePayPalCapture(req: Request, res: Response, next: NextFuncti
 
         const context: I_Context = { req };
 
-        const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+        // Ưu tiên tìm theo externalOrderId (PayPal), nếu không tìm thấy thì tìm theo id hệ thống (orderId nội bộ)
+        let paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
+
+        // Nếu không tìm thấy theo externalOrderId, thử tìm theo id hệ thống
+        if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
+                filter: { id: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
+            });
+        }
 
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
             res.status(404).json({ success: false, message: 'Payment request not found' });
@@ -995,6 +1003,15 @@ async function handlePayPalCapture(req: Request, res: Response, next: NextFuncti
 
         if (order.status === E_OrderStatus.PAID) {
             res.status(200).json({ success: true, message: 'Order already processed', orderId: order.id });
+            return;
+        }
+
+        // Nếu là subscriptionId (bắt đầu bằng I-) thì không gọi captureOrder, trả về lỗi rõ ràng
+        if (paypalOrderId.startsWith('I-')) {
+            res.status(400).json({
+                success: false,
+                message: 'PayPal capture không hỗ trợ subscriptionId. Chỉ dùng cho orderId.',
+            });
             return;
         }
 

@@ -345,6 +345,11 @@ async function processPayPalOrderCapture(
 
     let resolvedCaptureResult = captureResult ?? null;
     if (!resolvedCaptureResult) {
+        // Skip capture for subscriptions - they don't use the capture flow
+        if (paypalOrderId.startsWith('I-')) {
+            log.warn('[PayPal Webhook] Skipping capture for subscription ID', { paypalOrderId });
+            return;
+        }
         const captureRes = await paypalCtr.captureOrder(context, { orderId: paypalOrderId });
         if (!captureRes.success || !captureRes.result) {
             log.error('[PayPal Webhook] PayPal capture failed', {
