@@ -1,6 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { log } from 'node_modules/@cyberskill/shared/dist/node/log/log.util.js';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -71,7 +72,8 @@ export const paypalCtr = {
         }
 
         const safeOrderId = encodeURIComponent(orderId);
-
+        // Chỉ log thông tin liên quan captureOrder
+        log.info('[PayPal][API][captureOrder]', { orderId });
         return postPayPalRequest<I_PayPalCaptureOrderResponse>(
             credentials,
             `/checkout/orders/${safeOrderId}/capture`,
@@ -94,7 +96,7 @@ export const paypalCtr = {
         }
 
         const safeOrderId = encodeURIComponent(orderId);
-
+        // Không log ở getOrder để tập trung debug capture
         return getPayPalRequest<I_PayPalCreateOrderResponse>(
             credentials,
             `/checkout/orders/${safeOrderId}`,
