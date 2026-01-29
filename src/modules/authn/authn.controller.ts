@@ -1159,7 +1159,11 @@ export const authnCtr = {
                     });
                 }
 
-                membershipExpiresAt = applyPromo.result.expiresAt;
+                // Calculate membershipExpiresAt based on grantDays from promo code
+                // Default to 30 days if grantDays is not specified
+                const grantDays = applyPromo.result.grantDays ?? 30;
+                const now = new Date();
+                membershipExpiresAt = new Date(now.getTime() + grantDays * 24 * 60 * 60 * 1000);
 
                 const roleFound = await roleCtr.getRole(context, {
                     filter: {

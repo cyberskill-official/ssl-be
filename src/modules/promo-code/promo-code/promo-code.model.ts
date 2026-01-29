@@ -32,6 +32,10 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
                 },
             ],
         },
+        grantDays: {
+            type: Number,
+            default: 30, // Default to 30 days of membership
+        },
         isActive: {
             type: Boolean,
             default: false,
