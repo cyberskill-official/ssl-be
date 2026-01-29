@@ -22,19 +22,6 @@ import type {
 import { ensurePayPalCredentials, getPayPalRequest, postPayPalRequest } from './paypal.handler.js';
 import { getBillingCyclesValidationError } from './paypal.validate.js';
 
-function normalizePayPalBaseUrl(baseUrl: string, version: 'v1' | 'v2'): string {
-    const trimmed = baseUrl.trim().replace(/\/+$/, '');
-    const withoutVersion = trimmed.replace(/\/(v1|v2)$/i, '');
-    return `${withoutVersion}/${version}`;
-}
-
-function overridePayPalApiVersion(credentials: { baseUrl: string; clientId: string; clientSecret: string }, version: 'v1' | 'v2') {
-    return {
-        ...credentials,
-        baseUrl: normalizePayPalBaseUrl(credentials.baseUrl, version),
-    };
-}
-
 export const paypalCtr = {
     createOrder: async (
         _context: I_Context,
@@ -52,7 +39,7 @@ export const paypalCtr = {
 
         return postPayPalRequest<I_PayPalCreateOrderResponse>(
             credentials,
-            '/checkout/orders',
+            '/v2/checkout/orders',
             payload as unknown as Record<string, unknown>,
             'create-order',
         );
@@ -76,7 +63,7 @@ export const paypalCtr = {
         log.info('[PayPal][API][captureOrder]', { orderId });
         return postPayPalRequest<I_PayPalCaptureOrderResponse>(
             credentials,
-            `/checkout/orders/${safeOrderId}/capture`,
+            `/v2/checkout/orders/${safeOrderId}/capture`,
             {},
             'capture-order',
         );
@@ -99,7 +86,7 @@ export const paypalCtr = {
         // Không log ở getOrder để tập trung debug capture
         return getPayPalRequest<I_PayPalCreateOrderResponse>(
             credentials,
-            `/checkout/orders/${safeOrderId}`,
+            `/v2/checkout/orders/${safeOrderId}`,
             'get-order',
         );
     },
@@ -117,11 +104,9 @@ export const paypalCtr = {
             };
         }
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return postPayPalRequest<I_PayPalProductResponse>(
-            v1Credentials,
-            '/catalogs/products',
+            credentials,
+            '/v1/catalogs/products',
             payload as unknown as Record<string, unknown>,
             'create-product',
         );
@@ -149,11 +134,9 @@ export const paypalCtr = {
             };
         }
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return postPayPalRequest<I_PayPalPlanResponse>(
-            v1Credentials,
-            '/billing/plans',
+            credentials,
+            '/v1/billing/plans',
             payload as unknown as Record<string, unknown>,
             'create-plan',
         );
@@ -174,11 +157,9 @@ export const paypalCtr = {
 
         const safePlanId = encodeURIComponent(planId);
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return postPayPalRequest<void>(
-            v1Credentials,
-            `/billing/plans/${safePlanId}/activate`,
+            credentials,
+            `/v1/billing/plans/${safePlanId}/activate`,
             null,
             'activate-plan',
         );
@@ -197,11 +178,9 @@ export const paypalCtr = {
             };
         }
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return postPayPalRequest<I_PayPalSubscriptionResponse>(
-            v1Credentials,
-            '/billing/subscriptions',
+            credentials,
+            '/v1/billing/subscriptions',
             payload as unknown as Record<string, unknown>,
             'create-subscription',
         );
@@ -222,11 +201,9 @@ export const paypalCtr = {
 
         const safeSubscriptionId = encodeURIComponent(subscriptionId);
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return getPayPalRequest<I_PayPalSubscriptionResponse>(
-            v1Credentials,
-            `/billing/subscriptions/${safeSubscriptionId}`,
+            credentials,
+            `/v1/billing/subscriptions/${safeSubscriptionId}`,
             'get-subscription',
         );
     },
@@ -252,11 +229,9 @@ export const paypalCtr = {
             };
         }
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return postPayPalRequest<{ verification_status: 'SUCCESS' | 'FAILURE' }>(
-            v1Credentials,
-            '/notifications/verify-webhook-signature',
+            credentials,
+            '/v1/notifications/verify-webhook-signature',
             payload as unknown as Record<string, unknown>,
             'verify-webhook',
         );
@@ -274,11 +249,9 @@ export const paypalCtr = {
             };
         }
 
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
-
         return getPayPalRequest<I_PayPalListProductsResponse>(
-            v1Credentials,
-            '/catalogs/products',
+            credentials,
+            '/v1/catalogs/products',
             'list-products',
         );
     },
@@ -297,11 +270,10 @@ export const paypalCtr = {
         }
 
         const safeProductId = encodeURIComponent(productId);
-        const v1Credentials = overridePayPalApiVersion(credentials, 'v1');
 
         return getPayPalRequest<I_PayPalListPlansResponse>(
-            v1Credentials,
-            `/billing/plans?product_id=${safeProductId}`,
+            credentials,
+            `/v1/billing/plans?product_id=${safeProductId}`,
             'list-plans',
         );
     },

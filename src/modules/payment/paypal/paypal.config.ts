@@ -12,8 +12,8 @@ export function getPayPalCredentials(): I_PayPalCredentials {
     if (!baseUrl) {
         const isProd = env['NODE_ENV'] === 'production';
         baseUrl = isProd
-            ? 'https://api-m.paypal.com/v2'
-            : 'https://api-m.sandbox.paypal.com/v2';
+            ? 'https://api-m.paypal.com'
+            : 'https://api-m.sandbox.paypal.com';
     }
 
     const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
