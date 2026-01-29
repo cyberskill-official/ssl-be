@@ -53,10 +53,16 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
+        // Declare allActivePRs in the outer scope for later use
+        let allActivePRs: any;
+
         // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse or meta
         // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
             log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
+            log.debug('[PayPal Status][Debug] Query filter used:', {
+                filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
+            });
             const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
                 filter: {
                     gateway: E_PaymentProvider.PAYPAL,
@@ -67,6 +73,12 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
 
             if (allActivePRs.success && allActivePRs.result?.docs) {
                 log.info(`[PayPal Status] Fallback search: checking ${allActivePRs.result.docs.length} active requests`);
+                log.debug('[PayPal Status][Debug] Fallback search active requests:', allActivePRs.result.docs.map(pr => ({
+                    id: pr.id,
+                    externalOrderId: pr.externalOrderId,
+                    meta: pr.meta,
+                    gatewayResponse: pr.gatewayResponse,
+                })));
                 const foundPr = allActivePRs.result.docs.find((pr) => {
                     const meta = pr.meta as any;
                     const gr = pr.gatewayResponse as any;
@@ -112,6 +124,17 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
 
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
             log.warn('[PayPal Status] Payment request not found', { paypalOrderId });
+            log.debug('[PayPal Status][Debug] No payment request found after all strategies. Context:', {
+                paypalOrderId,
+                attemptedFilter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
+                activeRequestsCount: allActivePRs?.result?.docs?.length,
+                activeRequests: allActivePRs?.result?.docs?.map((pr: { id: any; externalOrderId: any; meta: any; gatewayResponse: any }) => ({
+                    id: pr.id,
+                    externalOrderId: pr.externalOrderId,
+                    meta: pr.meta,
+                    gatewayResponse: pr.gatewayResponse,
+                })),
+            });
             res.status(404).json({ success: false, message: 'Payment request not found' });
             return;
         }

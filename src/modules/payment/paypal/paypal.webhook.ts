@@ -24,6 +24,7 @@ const env = getEnv();
 
 export async function paypalWebhookHandler(req: Request, res: Response) {
     try {
+        log.info('[PayPal Webhook] Raw payload:', { headers: req.headers, body: req.body });
         const webhookId = env.PAYPAL_WEBHOOK_ID;
 
         // 1. Signature Verification
@@ -61,6 +62,7 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
         const eventType = body.event_type;
         const resource = body.resource;
 
+        log.info('[PayPal Webhook] EventType & Resource:', { eventType, resource });
         log.info(`[PayPal Webhook] Received event: ${eventType}`, { id: body.id });
 
         switch (eventType) {
@@ -111,12 +113,14 @@ async function handleSubscriptionActivated(resource: any) {
         const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
             filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
         });
+        log.info('[PayPal Webhook] handleSubscriptionActivated - PaymentRequest query result', { prRes });
 
         if (prRes.success && prRes.result) {
             const pr = prRes.result;
             const orderId = (pr.meta as any)?.orderId;
 
             // Mark PaymentRequest as PAID
+            log.info('[PayPal Webhook] handleSubscriptionActivated - Updating PaymentRequest to PAID', { paymentRequestId: pr.id });
             await paymentRequestCtr.updatePaymentRequest({} as any, {
                 filter: { id: pr.id },
                 update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: resource } },
@@ -124,6 +128,7 @@ async function handleSubscriptionActivated(resource: any) {
 
             // Mark Order as PAID
             if (orderId) {
+                log.info('[PayPal Webhook] handleSubscriptionActivated - Updating Order to PAID', { orderId });
                 await orderCtr.updateOrder({} as any, {
                     filter: { id: orderId },
                     update: { $set: { status: E_OrderStatus.PAID } },
@@ -155,6 +160,7 @@ async function handlePaymentSaleCompleted(resource: any) {
         const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
             filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
         });
+        log.info('[PayPal Webhook] handlePaymentSaleCompleted - PaymentRequest query result', { prRes });
 
         if (prRes.success && prRes.result) {
             const pr = prRes.result;
@@ -162,6 +168,7 @@ async function handlePaymentSaleCompleted(resource: any) {
             orderId = (pr.meta as any)?.orderId;
 
             // Mark PaymentRequest as PAID
+            log.info('[PayPal Webhook] handlePaymentSaleCompleted - Updating PaymentRequest to PAID', { paymentRequestId: pr.id });
             await paymentRequestCtr.updatePaymentRequest({} as any, {
                 filter: { id: pr.id },
                 update: { $set: { status: E_PaymentRequestStatus.PAID } },
@@ -169,6 +176,7 @@ async function handlePaymentSaleCompleted(resource: any) {
 
             // If an Order is associated, mark it as PAID
             if (orderId) {
+                log.info('[PayPal Webhook] handlePaymentSaleCompleted - Updating Order to PAID', { orderId });
                 await orderCtr.updateOrder({} as any, {
                     filter: { id: orderId },
                     update: { $set: { status: E_OrderStatus.PAID } },
@@ -300,9 +308,11 @@ async function processPayPalOrderCapture(
         responsePayload?: Record<string, unknown> | null;
     },
 ): Promise<void> {
+    log.info('[PayPal Webhook] processPayPalOrderCapture', { paypalOrderId, captureResult, responsePayload });
     const paymentRequestRes = await paymentRequestCtr.getPaymentRequest(context, {
         filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
     });
+    log.info('[PayPal Webhook] processPayPalOrderCapture - PaymentRequest query result', { paymentRequestRes });
 
     if (!paymentRequestRes.success || !paymentRequestRes.result) {
         log.warn('[PayPal Webhook] Payment request not found', { paypalOrderId });
@@ -321,6 +331,7 @@ async function processPayPalOrderCapture(
     }
 
     const orderRes = await orderCtr.getOrder(context, { filter: { id: orderId } });
+    log.info('[PayPal Webhook] processPayPalOrderCapture - Order query result', { orderRes });
     if (!orderRes.success || !orderRes.result) {
         log.warn('[PayPal Webhook] Order not found', { orderId, paypalOrderId });
         return;
@@ -407,6 +418,7 @@ async function processPayPalOrderCapture(
         });
     }
 
+    log.info('[PayPal Webhook] processPayPalOrderCapture - Updating order status', { orderId: order.id, orderStatus });
     const updateOrderRes = await orderCtr.updateOrder(context, {
         filter: { id: order.id },
         update: {
@@ -422,6 +434,7 @@ async function processPayPalOrderCapture(
         return;
     }
 
+    log.info('[PayPal Webhook] processPayPalOrderCapture - Updating PaymentRequest status', { paymentRequestId: paymentRequest.id, paymentRequestStatus });
     await paymentRequestCtr.updatePaymentRequest(context, {
         filter: { id: paymentRequest.id },
         update: {
@@ -530,6 +543,7 @@ async function processPayPalOrderCapture(
                             isRebill: false,
                         };
 
+                        log.info('[PayPal Webhook] Sending payment success email', { userEmail, templateData });
                         await emailCtr.sendEmail(PAYMENT_SUCCESS, userEmail ?? '', templateData);
                     }
                 }
