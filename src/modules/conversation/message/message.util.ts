@@ -61,6 +61,37 @@ function maskLexicalText(jsonStr: string, pattern: RegExp): string {
     }
 }
 
+export function extractLexicalText(jsonStr: string | null | undefined): string {
+    if (!jsonStr)
+        return '';
+    const trimmed = jsonStr.trim();
+    if (!trimmed.startsWith('{'))
+        return trimmed;
+
+    try {
+        const root = JSON.parse(trimmed);
+        let textResult = '';
+        const recursiveExtract = (node: any) => {
+            if (!node || typeof node !== 'object')
+                return;
+
+            if (node.type === 'text' && typeof node.text === 'string') {
+                textResult += (textResult ? ' ' : '') + node.text;
+            }
+
+            if (Array.isArray(node.children)) {
+                node.children.forEach(recursiveExtract);
+            }
+        };
+        recursiveExtract(root);
+        return textResult;
+    }
+    catch {
+        // Fallback to raw string if JSON is invalid
+        return trimmed;
+    }
+}
+
 function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined {
     if (typeof url !== 'string' || url.length === 0)
         return undefined;

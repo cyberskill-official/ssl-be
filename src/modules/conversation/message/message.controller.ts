@@ -37,6 +37,7 @@ import {
 
 } from './message.type.js';
 import {
+    extractLexicalText,
     transformMessageMedia,
     transformMessageResult,
     transformMessagesPagingResult,
@@ -106,7 +107,7 @@ export const messageCtr = {
             try {
                 const activeKeywords = await keywordCtr.getActiveKeywords(context);
                 if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
-                    const textValue = content.value.trim();
+                    const textValue = extractLexicalText(content.value.trim());
                     matchedKeyword = activeKeywords.result.find((keyword) => {
                         const word = keyword.word?.trim();
                         if (!word)
@@ -215,7 +216,8 @@ export const messageCtr = {
 
         // If message contains keyword, flag it for manual review instead of blocking
         // This allows admins to see full context before taking action
-        if (matchedKeyword && createdMessage?.id && content?.type === E_MessageType.TEXT && content.value) {
+        const messageId = createdMessage?.id || (createdMessage as any)?._id?.toString();
+        if (matchedKeyword && messageId && content?.type === E_MessageType.TEXT && content.value) {
             try {
                 const fullMessageText = typeof content.value === 'string' ? content.value : '';
                 await moderationLogCtr.createModerationLog(context, {
@@ -224,7 +226,7 @@ export const messageCtr = {
                         type: E_ModerationLogType.TEXT, // Set type to TEXT for text moderation
                         userId: senderId,
                         targetUserId: senderId,
-                        messageId: createdMessage.id,
+                        messageId,
                         content: fullMessageText, // Store full message content directly
                         reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
                     },
