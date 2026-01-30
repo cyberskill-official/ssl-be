@@ -266,7 +266,8 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
     // Only redact for other users, not the sender
     let shouldRedactKeywords = false;
     let keywordToRedact: string | null = null;
-    if (content?.type === E_MessageType.TEXT && plainMessage.id && plainMessage.senderId) {
+    const messageId = plainMessage.id || (plainMessage._id ? String(plainMessage._id) : undefined);
+    if (content?.type === E_MessageType.TEXT && messageId && plainMessage.senderId) {
         try {
             const viewerId = viewer?.id;
 
@@ -275,7 +276,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                 // Check if message has WARN log (keyword detected) and no APPROVE log
                 const warnLogs = await moderationLogCtr.getModerationLogs(context, {
                     filter: {
-                        messageId: plainMessage.id,
+                        messageId,
                         action: E_ModerationLogAction.WARN,
                     },
                     options: { pagination: false },
@@ -285,7 +286,7 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                     // Check if there's an APPROVE log for this message
                     const approveLogs = await moderationLogCtr.getModerationLogs(context, {
                         filter: {
-                            messageId: plainMessage.id,
+                            messageId,
                             action: E_ModerationLogAction.APPROVE,
                         },
                         options: { pagination: false },

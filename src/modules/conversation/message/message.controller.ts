@@ -111,7 +111,14 @@ export const messageCtr = {
                         const word = keyword.word?.trim();
                         if (!word)
                             return false;
-                        const pattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
+
+                        // Use a more relaxed pattern if the keyword contains special characters
+                        // Word boundaries (\b) only work for word characters (\w)
+                        const hasSpecialChars = /[^\w\s]/.test(word);
+                        const pattern = hasSpecialChars
+                            ? new RegExp(escapeRegExp(word), 'i')
+                            : new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
+
                         return pattern.test(textValue);
                     }) || null;
                 }
