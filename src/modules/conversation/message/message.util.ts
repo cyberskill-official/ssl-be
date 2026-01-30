@@ -3,12 +3,14 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
+import mongoose from 'mongoose';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { ModerationLogModel } from '#modules/moderation/moderation-log/moderation-log.model.js';
+import { keywordCtr } from '#modules/keyword/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { userCtr } from '#modules/user/user.controller.js';
 import { UserModel } from '#modules/user/user.model.js';
@@ -322,8 +324,6 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     // Check if message has pending keyword moderation (needs redaction)
     // Only redact for other users, not the sender
-    let shouldRedactKeywords = false;
-    let keywordToRedact: string | null = null;
     const messageId = plainMessage.id || (plainMessage._id ? String(plainMessage._id) : undefined);
     if (content?.type === E_MessageType.TEXT && messageId && plainMessage.senderId) {
         try {
@@ -333,45 +333,60 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             if (viewerId) {
                 // Check if message has WARN log (keyword detected) and no APPROVE log
                 // USE DIRECT QUERY to bypass user permission filters in moderationLogCtr
-                const warnLogs = await ModerationLogModel.find({
-                    messageId,
+                const query: any = {
+                    $or: [
+                        { messageId },
+                        { messageId: new mongoose.Types.ObjectId(messageId) as any },
+                    ],
                     action: E_ModerationLogAction.WARN,
-                }).lean();
+                };
+
+                const warnResult = await moderationLogCtr.getModerationLogs(context, {
+                    filter: query,
+                    options: { pagination: false },
+                });
+                const warnLogs = warnResult.success && warnResult.result?.docs ? warnResult.result.docs : [];
 
                 if (warnLogs && warnLogs.length > 0) {
                     // Check if there's an APPROVE log for this message
-                    const approveLogs = await ModerationLogModel.find({
-                        messageId,
-                        action: E_ModerationLogAction.APPROVE,
-                    }).lean();
+                    const approveResult = await moderationLogCtr.getModerationLogs(context, {
+                        filter: {
+                            $or: [
+                                { messageId },
+                                { messageId: new mongoose.Types.ObjectId(messageId) as any },
+                            ],
+                            action: E_ModerationLogAction.APPROVE,
+                        },
+                        options: { pagination: false },
+                    });
+                    const approveLogs = approveResult.success && approveResult.result?.docs ? approveResult.result.docs : [];
 
-                    // If no APPROVE log exists, message is still pending moderation - redact keyword
-                    if (!approveLogs || approveLogs.length === 0) {
-                        shouldRedactKeywords = true;
-                        // Extract keyword from reason field
-                        // Format: "Message contains keyword: "xxx" (category: xxx)"
-                        const reason = warnLogs[0]?.reason || '';
-                        const match = reason.match(/keyword: "([^"]+)"/);
-                        if (match && match[1]) {
-                            keywordToRedact = match[1];
+                    // If no APPROVE log exists, message is still pending moderation - redact keywords
+                    if (approveLogs.length === 0) {
+                        // If flagged, mask all active keywords for robustness
+                        const activeKeywords = await keywordCtr.getActiveKeywords(context);
+                        if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
+                            for (const keyword of activeKeywords.result) {
+                                const word = keyword.word?.trim();
+                                if (!word)
+                                    continue;
+
+                                const hasSpecialChars = /[^\w\s]/.test(word);
+                                const keywordPattern = hasSpecialChars
+                                    ? new RegExp(escapeRegExp(word), 'gi')
+                                    : new RegExp(`\\\\b${escapeRegExp(word)}\\\\b`, 'gi');
+
+                                content.value = maskLexicalText(content.value, keywordPattern);
+                            }
                         }
                     }
                 }
             }
         }
-        catch {
+        catch (err) {
             // Non-fatal: if moderation check fails, don't redact
+            console.error('Redaction failed:', err);
         }
-    }
-
-    // Redact keyword in message content if needed
-    if (shouldRedactKeywords && keywordToRedact && content?.type === E_MessageType.TEXT && typeof content.value === 'string') {
-        const hasSpecialChars = /[^\w\s]/.test(keywordToRedact);
-        const keywordPattern = hasSpecialChars
-            ? new RegExp(escapeRegExp(keywordToRedact), 'gi')
-            : new RegExp(`\\b${escapeRegExp(keywordToRedact)}\\b`, 'gi');
-
-        content.value = maskLexicalText(content.value, keywordPattern);
     }
 
     // Transform sender avatar using hydrateUserMedia
