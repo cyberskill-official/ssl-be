@@ -3,6 +3,7 @@ import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
 import { addDays, addMonths, isAfter, isValid, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
+import process from 'node:process';
 
 import type { I_Event } from '#modules/event/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
@@ -601,647 +602,738 @@ export const cron = {
         try {
             log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS STARTED ==========');
             const now = new Date();
-            const tomorrow = addDays(now, 1);
-            log.info(`[CRON] Checking for memberships expiring between ${now.toISOString()} and ${tomorrow.toISOString()}`);
 
-            const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
-            if (!paidRole.success) {
-                log.warn('[CRON] Paid member role not found; skipping rebill check.');
+            // DISTRIBUTED LOCK: Prevent multiple instances from running rebill simultaneously
+            // This is critical for clustered/scaled deployments
+            const lockName = 'rebill_expiring_memberships';
+            const lockDuration = 30 * 60 * 1000; // 30 minutes lock (rebill should complete within this time)
+            const lockExpiry = new Date(now.getTime() + lockDuration);
+
+            const db = mongoose.connection.db;
+            if (!db) {
+                log.warn('[CRON] MongoDB not connected; skipping rebill');
                 return;
             }
-            const paidRoleId = paidRole.result.id;
 
-            const candidatesRes = await userCtr.getUsers({}, {
-                filter: {
-                    isDel: { $ne: true },
-                    isAdminBlocked: { $ne: true },
-                    rolesIds: { $in: [paidRoleId] },
-                    membershipExpiresAt: { $exists: true, $ne: null, $gt: now, $lte: tomorrow },
-                    // Only rebill users who haven't cancelled their subscription
+            const locksCollection = db.collection('cron_locks');
+
+            // Try to acquire lock atomically
+            // Only succeed if: lock doesn't exist OR lock has expired
+            const lockResult = await locksCollection.findOneAndUpdate(
+                {
+                    _id: lockName as any,
                     $or: [
-                        { membershipCancelled: { $exists: false } },
-                        { membershipCancelled: false },
-                        { membershipCancelled: null },
+                        { lockedUntil: { $exists: false } },
+                        { lockedUntil: { $lt: now } },
                     ],
                 },
-                options: { pagination: false },
-            });
+                {
+                    $set: {
+                        lockedUntil: lockExpiry,
+                        lockedBy: process.pid,
+                        lockedAt: now,
+                    },
+                },
+                { upsert: true, returnDocument: 'after' },
+            );
 
-            if (!candidatesRes.success || !candidatesRes.result?.docs?.length) {
-                log.info('[CRON] No memberships expiring within 1 day for rebill');
-                log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS COMPLETED (NO CANDIDATES) ==========');
+            if (!lockResult || !lockResult['lockedBy'] || lockResult['lockedBy'] !== process.pid) {
+                log.info('[CRON] Rebill already running on another instance; skipping (distributed lock)');
                 return;
             }
 
-            log.info(`[CRON] Found ${candidatesRes.result.docs.length} candidate(s) for rebill`);
-            let rebilledCount = 0;
-            let failedCount = 0;
+            log.info(`[CRON] Acquired rebill lock (PID: ${process.pid}, expires: ${lockExpiry.toISOString()})`);
 
-            const tryRebillOnce = async (userId: string): Promise<boolean> => {
+            // Cleanup function to release lock
+            const releaseLock = async () => {
                 try {
-                    const ctx = {} as I_Context;
+                    await locksCollection.deleteOne({ _id: lockName as any, lockedBy: process.pid });
+                    log.info('[CRON] Released rebill lock');
+                }
+                catch (err) {
+                    log.warn('[CRON] Failed to release rebill lock:', err);
+                }
+            };
 
-                    // Double-check user hasn't cancelled (in case they cancelled between filter and now)
-                    const userCheck = await userCtr.getUser(ctx, { filter: { id: userId } });
-                    if (!userCheck.success || !userCheck.result) {
-                        return false;
-                    }
-                    if (userCheck.result.membershipCancelled === true) {
-                        log.info(`[CRON] Skipping rebill for user ${userId} - subscription cancelled`);
-                        return false;
-                    }
+            try {
+                const tomorrow = addDays(now, 1);
+                log.info(`[CRON] Checking for memberships expiring between ${now.toISOString()} and ${tomorrow.toISOString()}`);
 
-                    // Only find SUBSCRIPTION orders for rebill (A_LA_CARTE_EVENT orders should not be rebilled)
-                    // IMPORTANT: NetValve requires transactionId from the FIRST payment (HPP_ORDER), not from rebill orders
-                    // So we need to find the order with PaymentTransaction.operation = HPP_ORDER
-                    const ordersRes = await orderCtr.getOrders(ctx, {
-                        filter: {
-                            userId,
-                            status: E_OrderStatus.PAID,
-                            orderType: E_OrderType.SUBSCRIPTION, // Only rebill SUBSCRIPTION orders, not A_LA_CARTE_EVENT
-                        },
-                        options: {
-                            pagination: false,
-                            sort: { createdAt: 1 }, // Sort ascending to find first order first
-                            populate: [
-                                { path: 'paymentTransaction' },
-                                { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
-                            ],
-                        },
-                    } as any);
+                const paidRole = await roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } });
+                if (!paidRole.success) {
+                    log.warn('[CRON] Paid member role not found; skipping rebill check.');
+                    return;
+                }
+                const paidRoleId = paidRole.result.id;
 
-                    if (!ordersRes.success || !ordersRes.result?.docs?.length) {
-                        log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}. User needs at least one PAID SUBSCRIPTION order to enable rebill. A_LA_CARTE_EVENT orders are not eligible for rebill.`);
-                        return false;
-                    }
+                const candidatesRes = await userCtr.getUsers({}, {
+                    filter: {
+                        isDel: { $ne: true },
+                        isAdminBlocked: { $ne: true },
+                        rolesIds: { $in: [paidRoleId] },
+                        membershipExpiresAt: { $exists: true, $ne: null, $gt: now, $lte: tomorrow },
+                        // Only rebill users who haven't cancelled their subscription
+                        $or: [
+                            { membershipCancelled: { $exists: false } },
+                            { membershipCancelled: false },
+                            { membershipCancelled: null },
+                        ],
+                    },
+                    options: { pagination: false },
+                });
 
-                    // Find the order with PaymentTransaction.operation = HPP_ORDER (first payment)
-                    // This is the transactionId we need for rebill
-                    let lastOrder: any = null;
-                    let transactionId: string | undefined;
-                    let paymentTransactionOperation: string | undefined;
+                if (!candidatesRes.success || !candidatesRes.result?.docs?.length) {
+                    log.info('[CRON] No memberships expiring within 1 day for rebill');
+                    log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS COMPLETED (NO CANDIDATES) ==========');
+                    return;
+                }
 
-                    for (const order of ordersRes.result.docs) {
-                        // Double-check orderType is SUBSCRIPTION (safety check)
-                        if (order.orderType !== E_OrderType.SUBSCRIPTION) {
-                            continue;
+                log.info(`[CRON] Found ${candidatesRes.result.docs.length} candidate(s) for rebill`);
+                let rebilledCount = 0;
+                let failedCount = 0;
+
+                const tryRebillOnce = async (userId: string): Promise<boolean> => {
+                    try {
+                        const ctx = {} as I_Context;
+
+                        // Double-check user hasn't cancelled (in case they cancelled between filter and now)
+                        const userCheck = await userCtr.getUser(ctx, { filter: { id: userId } });
+                        if (!userCheck.success || !userCheck.result) {
+                            return false;
+                        }
+                        if (userCheck.result.membershipCancelled === true) {
+                            log.info(`[CRON] Skipping rebill for user ${userId} - subscription cancelled`);
+                            return false;
                         }
 
-                        // Try to get transactionId from populated paymentTransaction
-                        let ptOperation = (order as any)?.paymentTransaction?.operation;
-                        let ptTransactionId = (order as any)?.paymentTransaction?.transactionId;
+                        // IDEMPOTENCY CHECK: Prevent duplicate rebills within 24 hours
+                        // This protects against cron job running twice (due to restart, deployment, or scheduling overlap)
+                        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                        const recentRebillOrders = await orderCtr.getOrders(ctx, {
+                            filter: {
+                                userId,
+                                orderType: E_OrderType.SUBSCRIPTION,
+                                status: E_OrderStatus.PAID,
+                                createdAt: { $gte: twentyFourHoursAgo },
+                            },
+                            options: {
+                                pagination: false,
+                                populate: [{ path: 'paymentTransaction' }],
+                            },
+                        } as any);
 
-                        // If not populated, query directly
-                        if (!ptTransactionId && (order as any)?.paymentTransactionId) {
-                            const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
-                                filter: { id: (order as any).paymentTransactionId },
-                            } as any);
-                            if (ptRes.success && ptRes.result) {
-                                ptTransactionId = ptRes.result.transactionId;
-                                ptOperation = ptRes.result.operation;
-                            }
-                        }
-
-                        // If this is HPP_ORDER, use it (this is the original payment)
-                        if (ptOperation === E_PaymentGatewayOperation.HPP_ORDER && ptTransactionId) {
-                            lastOrder = order;
-                            transactionId = ptTransactionId;
-                            paymentTransactionOperation = ptOperation;
-                            log.info(`[CRON] Found original HPP_ORDER payment for rebill: orderId=${order.id}, transactionId=${transactionId}`);
-                            break;
-                        }
-                    }
-
-                    // If no HPP_ORDER found, fallback to last order (but log warning)
-                    if (!lastOrder || !transactionId) {
-                        // Fallback: use the last order (newest)
-                        lastOrder = ordersRes.result.docs[ordersRes.result.docs.length - 1];
-                        transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
-                        paymentTransactionOperation = (lastOrder as any)?.paymentTransaction?.operation;
-
-                        if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
-                            const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
-                                filter: { id: (lastOrder as any).paymentTransactionId },
-                            } as any);
-                            if (ptRes.success && ptRes.result) {
-                                transactionId = ptRes.result.transactionId;
-                                paymentTransactionOperation = ptRes.result.operation;
-                            }
-                        }
-
-                        if (paymentTransactionOperation !== E_PaymentGatewayOperation.HPP_ORDER) {
-                            log.warn(`[CRON] ⚠️  No HPP_ORDER payment found for user ${userId}. Using transactionId from ${paymentTransactionOperation || 'unknown'} operation. Rebill may fail with "Invalid Gateway Transaction Operation" because NetValve requires transactionId from the original HPP_ORDER payment.`);
-                        }
-                    }
-
-                    if (!lastOrder || !lastOrder.amount || !lastOrder.pricingId) {
-                        log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}.`);
-                        return false;
-                    }
-
-                    if (!transactionId) {
-                        log.warn(`[CRON] No transaction ID found for user ${userId}`);
-                        return false;
-                    }
-
-                    // Validate transaction ID: NetValve transaction IDs are typically numeric (Long type)
-                    // Test transaction IDs from /test/rebill/convert-order are timestamps (13 digits)
-                    // Real NetValve transaction IDs from HPP_ORDER are usually shorter numeric strings
-                    // Check if this looks like a test transaction ID (timestamp-based)
-                    const isTestTransactionId = /^\d{13}$/.test(transactionId) && Number(transactionId) > 1000000000000;
-                    const isFromHppOrder = paymentTransactionOperation === E_PaymentGatewayOperation.HPP_ORDER;
-
-                    if (isTestTransactionId && !isFromHppOrder) {
-                        log.warn(`[CRON] ⚠️  Transaction ID ${transactionId} appears to be a test transaction ID (timestamp-based). Rebill will likely fail with "Invalid Merchant ID" because NetValve doesn't recognize this transaction. To test rebill properly, use an order created through the real NetValve HPP flow.`);
-                        // Continue anyway - let NetValve reject it, but log the warning
-                    }
-
-                    const amount = typeof lastOrder.amount === 'number' ? lastOrder.amount : Number(lastOrder.amount);
-                    if (!Number.isFinite(amount) || amount <= 0) {
-                        log.warn(`[CRON] Invalid amount for user ${userId}: ${lastOrder.amount}`);
-                        return false;
-                    }
-
-                    const currency = (lastOrder as any)?.pricing?.currency?.code || 'EUR';
-                    const pricing = (lastOrder as any)?.pricing;
-
-                    // Try to get netvalveMidId from Order (highest priority - stored directly)
-                    // This ensures we use the same Merchant ID that was used successfully before
-                    let netvalveMidIdFromRequest: string | undefined;
-
-                    // Method 1: Try Order.netvalveMidId (stored directly in Order)
-                    if ((lastOrder as any)?.netvalveMidId && typeof (lastOrder as any).netvalveMidId === 'string') {
-                        netvalveMidIdFromRequest = (lastOrder as any).netvalveMidId;
-                        log.info(`[CRON] ✅ Found netvalveMidId from Order.netvalveMidId: ${netvalveMidIdFromRequest}`);
-                    }
-
-                    // Method 2: Try PaymentRequest.gatewayResponse.netvalveMidId
-                    if (lastOrder.paymentRequestId) {
-                        try {
-                            log.info(`[CRON] Looking for netvalveMidId in PaymentRequest: ${lastOrder.paymentRequestId}`);
-                            const prRes = await paymentRequestCtr.getPaymentRequest(ctx, {
-                                filter: { id: lastOrder.paymentRequestId },
+                        if (recentRebillOrders.success && recentRebillOrders.result?.docs?.length) {
+                            // Check if any of these orders were created via REBILL operation
+                            const hasRecentRebill = recentRebillOrders.result.docs.some((order: any) => {
+                                const operation = order.paymentTransaction?.operation;
+                                return operation === E_PaymentGatewayOperation.REBILL;
                             });
-                            if (prRes.success && prRes.result) {
-                                log.info(`[CRON] PaymentRequest found. Has gatewayResponse: ${!!prRes.result.gatewayResponse}`);
-                                if (prRes.result.gatewayResponse) {
-                                    const gatewayResponse = prRes.result.gatewayResponse as Record<string, unknown>;
-                                    log.info(`[CRON] PaymentRequest.gatewayResponse keys: ${Object.keys(gatewayResponse).join(', ')}`);
-                                    const midId = gatewayResponse['netvalveMidId'];
-                                    log.info(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId: ${midId} (type: ${typeof midId})`);
-                                    if (midId && typeof midId === 'string') {
-                                        netvalveMidIdFromRequest = midId;
-                                        log.info(`[CRON] ✅ Found netvalveMidId from PaymentRequest.gatewayResponse: ${netvalveMidIdFromRequest}`);
+
+                            if (hasRecentRebill) {
+                                log.info(`[CRON] Skipping rebill for user ${userId} - already rebilled within 24 hours (idempotency check)`);
+                                return false;
+                            }
+                        }
+
+                        // Only find SUBSCRIPTION orders for rebill (A_LA_CARTE_EVENT orders should not be rebilled)
+                        // IMPORTANT: NetValve requires transactionId from the FIRST payment (HPP_ORDER), not from rebill orders
+                        // So we need to find the order with PaymentTransaction.operation = HPP_ORDER
+                        const ordersRes = await orderCtr.getOrders(ctx, {
+                            filter: {
+                                userId,
+                                status: E_OrderStatus.PAID,
+                                orderType: E_OrderType.SUBSCRIPTION, // Only rebill SUBSCRIPTION orders, not A_LA_CARTE_EVENT
+                            },
+                            options: {
+                                pagination: false,
+                                sort: { createdAt: 1 }, // Sort ascending to find first order first
+                                populate: [
+                                    { path: 'paymentTransaction' },
+                                    { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                                ],
+                            },
+                        } as any);
+
+                        if (!ordersRes.success || !ordersRes.result?.docs?.length) {
+                            log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}. User needs at least one PAID SUBSCRIPTION order to enable rebill. A_LA_CARTE_EVENT orders are not eligible for rebill.`);
+                            return false;
+                        }
+
+                        // Find the order with PaymentTransaction.operation = HPP_ORDER (first payment)
+                        // This is the transactionId we need for rebill
+                        let lastOrder: any = null;
+                        let transactionId: string | undefined;
+                        let paymentTransactionOperation: string | undefined;
+
+                        for (const order of ordersRes.result.docs) {
+                            // Double-check orderType is SUBSCRIPTION (safety check)
+                            if (order.orderType !== E_OrderType.SUBSCRIPTION) {
+                                continue;
+                            }
+
+                            // Try to get transactionId from populated paymentTransaction
+                            let ptOperation = (order as any)?.paymentTransaction?.operation;
+                            let ptTransactionId = (order as any)?.paymentTransaction?.transactionId;
+
+                            // If not populated, query directly
+                            if (!ptTransactionId && (order as any)?.paymentTransactionId) {
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (order as any).paymentTransactionId },
+                                } as any);
+                                if (ptRes.success && ptRes.result) {
+                                    ptTransactionId = ptRes.result.transactionId;
+                                    ptOperation = ptRes.result.operation;
+                                }
+                            }
+
+                            // If this is HPP_ORDER, use it (this is the original payment)
+                            if (ptOperation === E_PaymentGatewayOperation.HPP_ORDER && ptTransactionId) {
+                                lastOrder = order;
+                                transactionId = ptTransactionId;
+                                paymentTransactionOperation = ptOperation;
+                                log.info(`[CRON] Found original HPP_ORDER payment for rebill: orderId=${order.id}, transactionId=${transactionId}`);
+                                break;
+                            }
+                        }
+
+                        // If no HPP_ORDER found, fallback to last order (but log warning)
+                        if (!lastOrder || !transactionId) {
+                            // Fallback: use the last order (newest)
+                            lastOrder = ordersRes.result.docs[ordersRes.result.docs.length - 1];
+                            transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
+                            paymentTransactionOperation = (lastOrder as any)?.paymentTransaction?.operation;
+
+                            if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (lastOrder as any).paymentTransactionId },
+                                } as any);
+                                if (ptRes.success && ptRes.result) {
+                                    transactionId = ptRes.result.transactionId;
+                                    paymentTransactionOperation = ptRes.result.operation;
+                                }
+                            }
+
+                            if (paymentTransactionOperation !== E_PaymentGatewayOperation.HPP_ORDER) {
+                                log.warn(`[CRON] ⚠️  No HPP_ORDER payment found for user ${userId}. Using transactionId from ${paymentTransactionOperation || 'unknown'} operation. Rebill may fail with "Invalid Gateway Transaction Operation" because NetValve requires transactionId from the original HPP_ORDER payment.`);
+                            }
+                        }
+
+                        if (!lastOrder || !lastOrder.amount || !lastOrder.pricingId) {
+                            log.warn(`[CRON] No valid previous PAID SUBSCRIPTION order found for user ${userId}.`);
+                            return false;
+                        }
+
+                        if (!transactionId) {
+                            log.warn(`[CRON] No transaction ID found for user ${userId}`);
+                            return false;
+                        }
+
+                        // Validate transaction ID: NetValve transaction IDs are typically numeric (Long type)
+                        // Test transaction IDs from /test/rebill/convert-order are timestamps (13 digits)
+                        // Real NetValve transaction IDs from HPP_ORDER are usually shorter numeric strings
+                        // Check if this looks like a test transaction ID (timestamp-based)
+                        const isTestTransactionId = /^\d{13}$/.test(transactionId) && Number(transactionId) > 1000000000000;
+                        const isFromHppOrder = paymentTransactionOperation === E_PaymentGatewayOperation.HPP_ORDER;
+
+                        if (isTestTransactionId && !isFromHppOrder) {
+                            log.warn(`[CRON] ⚠️  Transaction ID ${transactionId} appears to be a test transaction ID (timestamp-based). Rebill will likely fail with "Invalid Merchant ID" because NetValve doesn't recognize this transaction. To test rebill properly, use an order created through the real NetValve HPP flow.`);
+                            // Continue anyway - let NetValve reject it, but log the warning
+                        }
+
+                        const amount = typeof lastOrder.amount === 'number' ? lastOrder.amount : Number(lastOrder.amount);
+                        if (!Number.isFinite(amount) || amount <= 0) {
+                            log.warn(`[CRON] Invalid amount for user ${userId}: ${lastOrder.amount}`);
+                            return false;
+                        }
+
+                        const currency = (lastOrder as any)?.pricing?.currency?.code || 'EUR';
+                        const pricing = (lastOrder as any)?.pricing;
+
+                        // Try to get netvalveMidId from Order (highest priority - stored directly)
+                        // This ensures we use the same Merchant ID that was used successfully before
+                        let netvalveMidIdFromRequest: string | undefined;
+
+                        // Method 1: Try Order.netvalveMidId (stored directly in Order)
+                        if ((lastOrder as any)?.netvalveMidId && typeof (lastOrder as any).netvalveMidId === 'string') {
+                            netvalveMidIdFromRequest = (lastOrder as any).netvalveMidId;
+                            log.info(`[CRON] ✅ Found netvalveMidId from Order.netvalveMidId: ${netvalveMidIdFromRequest}`);
+                        }
+
+                        // Method 2: Try PaymentRequest.gatewayResponse.netvalveMidId
+                        if (lastOrder.paymentRequestId) {
+                            try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentRequest: ${lastOrder.paymentRequestId}`);
+                                const prRes = await paymentRequestCtr.getPaymentRequest(ctx, {
+                                    filter: { id: lastOrder.paymentRequestId },
+                                });
+                                if (prRes.success && prRes.result) {
+                                    log.info(`[CRON] PaymentRequest found. Has gatewayResponse: ${!!prRes.result.gatewayResponse}`);
+                                    if (prRes.result.gatewayResponse) {
+                                        const gatewayResponse = prRes.result.gatewayResponse as Record<string, unknown>;
+                                        log.info(`[CRON] PaymentRequest.gatewayResponse keys: ${Object.keys(gatewayResponse).join(', ')}`);
+                                        const midId = gatewayResponse['netvalveMidId'];
+                                        log.info(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                        if (midId && typeof midId === 'string') {
+                                            netvalveMidIdFromRequest = midId;
+                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentRequest.gatewayResponse: ${netvalveMidIdFromRequest}`);
+                                        }
+                                        else {
+                                            log.warn(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId is not a valid string: ${midId}`);
+                                        }
                                     }
                                     else {
-                                        log.warn(`[CRON] PaymentRequest.gatewayResponse.netvalveMidId is not a valid string: ${midId}`);
+                                        log.warn(`[CRON] PaymentRequest has no gatewayResponse`);
                                     }
                                 }
                                 else {
-                                    log.warn(`[CRON] PaymentRequest has no gatewayResponse`);
+                                    log.warn(`[CRON] PaymentRequest not found: ${prRes.message || 'unknown error'}`);
                                 }
                             }
-                            else {
-                                log.warn(`[CRON] PaymentRequest not found: ${prRes.message || 'unknown error'}`);
+                            catch (error) {
+                                log.warn(`[CRON] Failed to get PaymentRequest for netvalveMidId: ${error}`);
                             }
                         }
-                        catch (error) {
-                            log.warn(`[CRON] Failed to get PaymentRequest for netvalveMidId: ${error}`);
+                        else {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no paymentRequestId`);
                         }
-                    }
-                    else {
-                        log.warn(`[CRON] Order ${lastOrder.id} has no paymentRequestId`);
-                    }
 
-                    // Method 3: Try PaymentTransaction.responsePayload (if Order and PaymentRequest don't have it)
-                    if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransaction) {
-                        try {
-                            log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (populated): ${(lastOrder as any).paymentTransaction.id}`);
-                            const paymentTransaction = (lastOrder as any).paymentTransaction;
-                            const responsePayload = paymentTransaction.responsePayload as Record<string, unknown> | null | undefined;
+                        // Method 3: Try PaymentTransaction.responsePayload (if Order and PaymentRequest don't have it)
+                        if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransaction) {
+                            try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (populated): ${(lastOrder as any).paymentTransaction.id}`);
+                                const paymentTransaction = (lastOrder as any).paymentTransaction;
+                                const responsePayload = paymentTransaction.responsePayload as Record<string, unknown> | null | undefined;
 
-                            if (responsePayload && typeof responsePayload === 'object') {
-                                log.info(`[CRON] PaymentTransaction.responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
-                                // Try response.netvalveMidId (from NetValve response)
-                                const response = responsePayload['response'] as Record<string, unknown> | undefined;
-                                if (response && typeof response === 'object') {
-                                    log.info(`[CRON] PaymentTransaction.responsePayload.response keys: ${Object.keys(response).join(', ')}`);
-                                    const midId = response['netvalveMidId'];
-                                    log.info(`[CRON] PaymentTransaction.responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
-                                    if (midId && typeof midId === 'string') {
-                                        netvalveMidIdFromRequest = midId;
-                                        log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.response: ${netvalveMidIdFromRequest}`);
-                                    }
-                                }
-
-                                // Try request.netvalveMidId (from original request)
-                                if (!netvalveMidIdFromRequest) {
-                                    const request = responsePayload['request'] as Record<string, unknown> | undefined;
-                                    if (request && typeof request === 'object') {
-                                        log.info(`[CRON] PaymentTransaction.responsePayload.request keys: ${Object.keys(request).join(', ')}`);
-                                        const midId = request['netvalveMidId'];
-                                        log.info(`[CRON] PaymentTransaction.responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
-                                        if (midId && typeof midId === 'string') {
-                                            netvalveMidIdFromRequest = midId;
-                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.request: ${netvalveMidIdFromRequest}`);
-                                        }
-                                    }
-                                }
-                            }
-                            else {
-                                log.warn(`[CRON] PaymentTransaction has no responsePayload or it's not an object`);
-                            }
-                        }
-                        catch (error) {
-                            log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction: ${error}`);
-                        }
-                    }
-                    else if (!netvalveMidIdFromRequest) {
-                        log.warn(`[CRON] Order ${lastOrder.id} has no populated paymentTransaction`);
-                    }
-
-                    // Method 4: Try PaymentTransaction directly (if not populated)
-                    if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransactionId) {
-                        try {
-                            log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (direct query): ${(lastOrder as any).paymentTransactionId}`);
-                            const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
-                                filter: { id: (lastOrder as any).paymentTransactionId },
-                            } as any);
-
-                            if (ptRes.success && ptRes.result) {
-                                log.info(`[CRON] PaymentTransaction found (direct query). Has responsePayload: ${!!ptRes.result.responsePayload}`);
-                                if (ptRes.result.responsePayload) {
-                                    const responsePayload = ptRes.result.responsePayload as Record<string, unknown>;
-                                    log.info(`[CRON] PaymentTransaction (direct query).responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
-
-                                    // Try response.netvalveMidId
+                                if (responsePayload && typeof responsePayload === 'object') {
+                                    log.info(`[CRON] PaymentTransaction.responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
+                                    // Try response.netvalveMidId (from NetValve response)
                                     const response = responsePayload['response'] as Record<string, unknown> | undefined;
                                     if (response && typeof response === 'object') {
-                                        log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response keys: ${Object.keys(response).join(', ')}`);
+                                        log.info(`[CRON] PaymentTransaction.responsePayload.response keys: ${Object.keys(response).join(', ')}`);
                                         const midId = response['netvalveMidId'];
-                                        log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                        log.info(`[CRON] PaymentTransaction.responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
                                         if (midId && typeof midId === 'string') {
                                             netvalveMidIdFromRequest = midId;
-                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.response: ${netvalveMidIdFromRequest}`);
+                                            log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.response: ${netvalveMidIdFromRequest}`);
                                         }
                                     }
 
-                                    // Try request.netvalveMidId
+                                    // Try request.netvalveMidId (from original request)
                                     if (!netvalveMidIdFromRequest) {
                                         const request = responsePayload['request'] as Record<string, unknown> | undefined;
                                         if (request && typeof request === 'object') {
-                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request keys: ${Object.keys(request).join(', ')}`);
+                                            log.info(`[CRON] PaymentTransaction.responsePayload.request keys: ${Object.keys(request).join(', ')}`);
                                             const midId = request['netvalveMidId'];
-                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                            log.info(`[CRON] PaymentTransaction.responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
                                             if (midId && typeof midId === 'string') {
                                                 netvalveMidIdFromRequest = midId;
-                                                log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.request: ${netvalveMidIdFromRequest}`);
+                                                log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction.responsePayload.request: ${netvalveMidIdFromRequest}`);
                                             }
                                         }
                                     }
                                 }
                                 else {
-                                    log.warn(`[CRON] PaymentTransaction (direct query) has no responsePayload`);
+                                    log.warn(`[CRON] PaymentTransaction has no responsePayload or it's not an object`);
                                 }
                             }
-                            else {
-                                log.warn(`[CRON] PaymentTransaction (direct query) not found: ${ptRes.message || 'unknown error'}`);
+                            catch (error) {
+                                log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction: ${error}`);
                             }
                         }
-                        catch (error) {
-                            log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction (direct query): ${error}`);
+                        else if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no populated paymentTransaction`);
                         }
-                    }
-                    else if (!netvalveMidIdFromRequest) {
-                        log.warn(`[CRON] Order ${lastOrder.id} has no paymentTransactionId`);
-                    }
 
-                    if (!netvalveMidIdFromRequest) {
-                        log.warn(`[CRON] ⚠️  No netvalveMidId found for user ${userId}. Rebill will use currency-based merchant routing, which may fail if merchant ID changed.`);
-                    }
+                        // Method 4: Try PaymentTransaction directly (if not populated)
+                        if (!netvalveMidIdFromRequest && (lastOrder as any)?.paymentTransactionId) {
+                            try {
+                                log.info(`[CRON] Looking for netvalveMidId in PaymentTransaction (direct query): ${(lastOrder as any).paymentTransactionId}`);
+                                const ptRes = await paymentCtr.getPaymentTransaction(ctx, {
+                                    filter: { id: (lastOrder as any).paymentTransactionId },
+                                } as any);
 
-                    // Prepare rebill payload
-                    const payload = {
-                        transactionID: String(transactionId),
-                        amount,
-                        currency,
-                    } as any;
+                                if (ptRes.success && ptRes.result) {
+                                    log.info(`[CRON] PaymentTransaction found (direct query). Has responsePayload: ${!!ptRes.result.responsePayload}`);
+                                    if (ptRes.result.responsePayload) {
+                                        const responsePayload = ptRes.result.responsePayload as Record<string, unknown>;
+                                        log.info(`[CRON] PaymentTransaction (direct query).responsePayload keys: ${Object.keys(responsePayload).join(', ')}`);
 
-                    // Use netvalveMidId from PaymentRequest if available (highest priority)
-                    if (netvalveMidIdFromRequest) {
-                        payload.netvalveMidId = netvalveMidIdFromRequest;
-                        log.info(`[CRON] Using netvalveMidId from original PaymentRequest: ${netvalveMidIdFromRequest}`);
-                    }
+                                        // Try response.netvalveMidId
+                                        const response = responsePayload['response'] as Record<string, unknown> | undefined;
+                                        if (response && typeof response === 'object') {
+                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response keys: ${Object.keys(response).join(', ')}`);
+                                            const midId = response['netvalveMidId'];
+                                            log.info(`[CRON] PaymentTransaction (direct query).responsePayload.response.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                            if (midId && typeof midId === 'string') {
+                                                netvalveMidIdFromRequest = midId;
+                                                log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.response: ${netvalveMidIdFromRequest}`);
+                                            }
+                                        }
 
-                    // Call NetValve rebill API FIRST - only create order/payment transaction if successful
-                    log.info(`[CRON] Attempting rebill for user ${userId}: amount=${amount} ${currency}, transactionId=${transactionId}`);
-                    log.info(`[CRON] Rebill payload before merchant routing:`, {
-                        transactionID: payload.transactionID,
-                        amount: payload.amount,
-                        currency: payload.currency,
-                        netvalveMidId: (payload as any).netvalveMidId,
-                        siteId: (payload as any).siteId,
-                    });
+                                        // Try request.netvalveMidId
+                                        if (!netvalveMidIdFromRequest) {
+                                            const request = responsePayload['request'] as Record<string, unknown> | undefined;
+                                            if (request && typeof request === 'object') {
+                                                log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request keys: ${Object.keys(request).join(', ')}`);
+                                                const midId = request['netvalveMidId'];
+                                                log.info(`[CRON] PaymentTransaction (direct query).responsePayload.request.netvalveMidId: ${midId} (type: ${typeof midId})`);
+                                                if (midId && typeof midId === 'string') {
+                                                    netvalveMidIdFromRequest = midId;
+                                                    log.info(`[CRON] ✅ Found netvalveMidId from PaymentTransaction (direct query).responsePayload.request: ${netvalveMidIdFromRequest}`);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        log.warn(`[CRON] PaymentTransaction (direct query) has no responsePayload`);
+                                    }
+                                }
+                                else {
+                                    log.warn(`[CRON] PaymentTransaction (direct query) not found: ${ptRes.message || 'unknown error'}`);
+                                }
+                            }
+                            catch (error) {
+                                log.warn(`[CRON] Failed to get netvalveMidId from PaymentTransaction (direct query): ${error}`);
+                            }
+                        }
+                        else if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] Order ${lastOrder.id} has no paymentTransactionId`);
+                        }
 
-                    const rebillRes = await netvalveCtr.rebill(ctx, payload);
-                    if (!rebillRes.success) {
-                        log.warn('[CRON] Rebill failed', { userId, transactionId, message: rebillRes.message });
-                        return false;
-                    }
+                        if (!netvalveMidIdFromRequest) {
+                            log.warn(`[CRON] ⚠️  No netvalveMidId found for user ${userId}. Rebill will use currency-based merchant routing, which may fail if merchant ID changed.`);
+                        }
 
-                    // Extract rebill transaction ID from response
-                    const rebillResponse = rebillRes.result as any;
-
-                    // Check responseCode in response body (NetValve may return HTTP 200 but with error responseCode)
-                    const responseCode = rebillResponse?.responseCode;
-                    const responseCodeType = rebillResponse?.responseCodeType;
-                    const responseMessage = rebillResponse?.responseMessage || rebillResponse?.message;
-
-                    // GTW_1000 means success, other codes (GTW_2000, etc.) mean failure
-                    if (responseCode && responseCode !== 'GTW_1000') {
-                        log.error(`[CRON] Rebill failed: NetValve returned error responseCode=${responseCode}, message=${responseMessage}`, {
-                            userId,
-                            transactionId,
-                            responseCode,
-                            responseCodeType,
-                            responseMessage,
-                            fullResponse: rebillResponse,
-                        });
-                        return false; // Don't create any records
-                    }
-
-                    // If responseCodeType is SOFT_DECLINE or HARD_DECLINE, it's a failure
-                    if (responseCodeType === 'SOFT DECLINE' || responseCodeType === 'HARD DECLINE') {
-                        log.error(`[CRON] Rebill failed: NetValve returned ${responseCodeType}`, {
-                            userId,
-                            transactionId,
-                            responseCode,
-                            responseMessage,
-                            fullResponse: rebillResponse,
-                        });
-                        return false; // Don't create any records
-                    }
-
-                    // Rebill successful - NOW create order and payment transaction
-                    log.info(`[CRON] ✅ Rebill successful for user ${userId} (responseCode: ${responseCode || 'N/A'})`);
-
-                    const rebillOrderRes = await orderCtr.createOrder(ctx, {
-                        doc: {
-                            userId,
+                        // Prepare rebill payload
+                        const payload = {
+                            transactionID: String(transactionId),
                             amount,
-                            pricingId: lastOrder.pricingId,
-                            orderType: E_OrderType.SUBSCRIPTION,
-                            status: E_OrderStatus.PENDING, // Will be updated to PAID after creating payment transaction
-                            // Copy netvalveMidId from lastOrder if available (for future rebills)
-                            ...(netvalveMidIdFromRequest && { netvalveMidId: netvalveMidIdFromRequest }),
-                        },
-                    });
+                            currency,
+                        } as any;
 
-                    if (!rebillOrderRes.success || !rebillOrderRes.result) {
-                        log.error(`[CRON] Failed to create rebill order after successful rebill: ${rebillOrderRes.message}`);
-                        // Rebill succeeded but order creation failed - this is a critical error
-                        return false;
-                    }
+                        // Use netvalveMidId from PaymentRequest if available (highest priority)
+                        if (netvalveMidIdFromRequest) {
+                            payload.netvalveMidId = netvalveMidIdFromRequest;
+                            log.info(`[CRON] Using netvalveMidId from original PaymentRequest: ${netvalveMidIdFromRequest}`);
+                        }
 
-                    const rebillOrder = rebillOrderRes.result;
+                        // Call NetValve rebill API FIRST - only create order/payment transaction if successful
+                        log.info(`[CRON] Attempting rebill for user ${userId}: amount=${amount} ${currency}, transactionId=${transactionId}`);
+                        log.info(`[CRON] Rebill payload before merchant routing:`, {
+                            transactionID: payload.transactionID,
+                            amount: payload.amount,
+                            currency: payload.currency,
+                            netvalveMidId: (payload as any).netvalveMidId,
+                            siteId: (payload as any).siteId,
+                        });
 
-                    // Log full rebill response for debugging
-                    // NetValve rebill response structure: { traceID, responseTimestamp, responseCode, responseMessage, responseCodeType, transactionID? }
-                    log.info(`[CRON] NetValve rebill response for user ${userId}:`, {
-                        traceID: rebillResponse?.traceID,
-                        responseCode: rebillResponse?.responseCode,
-                        responseCodeType: rebillResponse?.responseCodeType,
-                        transactionID: rebillResponse?.transactionID, // NetValve returns uppercase transactionID
-                        transactionId: rebillResponse?.transactionId, // Fallback camelCase
-                        fullResponse: JSON.stringify(rebillResponse, null, 2),
-                    });
+                        const rebillRes = await netvalveCtr.rebill(ctx, payload);
+                        if (!rebillRes.success) {
+                            log.warn('[CRON] Rebill failed', { userId, transactionId, message: rebillRes.message });
+                            return false;
+                        }
 
-                    // Try to get new transactionId from rebill response
-                    // NetValve rebill API response structure is similar to HPP_ORDER:
-                    // - transactionID (uppercase) at root level when successful
-                    // - responseCode: "GTW_1000" means success
-                    // - responseCodeType: "SOFT DECLINE" or "HARD DECLINE" means failure
-                    let rebillTransactionId = rebillResponse?.transactionID // NetValve returns uppercase transactionID
-                        || rebillResponse?.transactionId // Fallback camelCase variant
-                        || rebillResponse?.responsePayload?.transactionID
-                        || rebillResponse?.responsePayload?.transactionId;
+                        // Extract rebill transaction ID from response
+                        const rebillResponse = rebillRes.result as any;
 
-                    // If no new transactionId found, use the original one (fallback)
-                    // This might happen if NetValve doesn't return a new transactionId
-                    if (!rebillTransactionId) {
-                        log.warn(`[CRON] No new transactionId in rebill response, using original transactionId: ${transactionId}`);
-                        rebillTransactionId = transactionId;
-                    }
-                    else if (rebillTransactionId === transactionId) {
-                        log.warn(`[CRON] Rebill response returned same transactionId as original (${transactionId}). This might be expected behavior from NetValve. Full response: ${JSON.stringify(rebillResponse)}`);
-                    }
-                    else {
-                        log.info(`[CRON] Rebill returned new transactionId: ${rebillTransactionId} (original: ${transactionId})`);
-                    }
+                        // Check responseCode in response body (NetValve may return HTTP 200 but with error responseCode)
+                        const responseCode = rebillResponse?.responseCode;
+                        const responseCodeType = rebillResponse?.responseCodeType;
+                        const responseMessage = rebillResponse?.responseMessage || rebillResponse?.message;
 
-                    // Convert rebillTransactionId to string (NetValve may return number)
-                    const rebillTransactionIdString = String(rebillTransactionId);
+                        // GTW_1000 means success, other codes (GTW_2000, etc.) mean failure
+                        if (responseCode && responseCode !== 'GTW_1000') {
+                            log.error(`[CRON] Rebill failed: NetValve returned error responseCode=${responseCode}, message=${responseMessage}`, {
+                                userId,
+                                transactionId,
+                                responseCode,
+                                responseCodeType,
+                                responseMessage,
+                                fullResponse: rebillResponse,
+                            });
+                            return false; // Don't create any records
+                        }
 
-                    // Create payment transaction record for rebill
-                    const paymentTransactionRes = await paymentCtr.recordGatewayTransaction(ctx, {
-                        provider: E_PaymentProvider.NETVALVE,
-                        operation: E_PaymentGatewayOperation.REBILL,
-                        transactionId: rebillTransactionIdString,
-                        status: E_PaymentTransactionStatus.SUCCESS,
-                        success: true,
-                        responsePayload: rebillResponse || {},
-                        performedAt: new Date(),
-                    });
+                        // If responseCodeType is SOFT_DECLINE or HARD_DECLINE, it's a failure
+                        if (responseCodeType === 'SOFT DECLINE' || responseCodeType === 'HARD DECLINE') {
+                            log.error(`[CRON] Rebill failed: NetValve returned ${responseCodeType}`, {
+                                userId,
+                                transactionId,
+                                responseCode,
+                                responseMessage,
+                                fullResponse: rebillResponse,
+                            });
+                            return false; // Don't create any records
+                        }
 
-                    if (!paymentTransactionRes.success || !paymentTransactionRes.result) {
-                        log.error(`[CRON] Failed to create payment transaction for rebill: ${paymentTransactionRes.message}`);
-                        // Continue anyway - rebill succeeded
-                    }
+                        // Rebill successful - NOW create order and payment transaction
+                        log.info(`[CRON] ✅ Rebill successful for user ${userId} (responseCode: ${responseCode || 'N/A'})`);
 
-                    // Update rebill order with payment transaction and set status to PAID
-                    const paymentTransactionId = paymentTransactionRes.success && paymentTransactionRes.result
-                        ? paymentTransactionRes.result.id
-                        : undefined;
+                        const rebillOrderRes = await orderCtr.createOrder(ctx, {
+                            doc: {
+                                userId,
+                                amount,
+                                pricingId: lastOrder.pricingId,
+                                orderType: E_OrderType.SUBSCRIPTION,
+                                status: E_OrderStatus.PENDING, // Will be updated to PAID after creating payment transaction
+                                // Copy netvalveMidId from lastOrder if available (for future rebills)
+                                ...(netvalveMidIdFromRequest && { netvalveMidId: netvalveMidIdFromRequest }),
+                            },
+                        });
 
-                    const updateRebillOrderRes = await orderCtr.updateOrder(ctx, {
-                        filter: { id: rebillOrder.id },
-                        update: {
-                            paymentTransactionId,
-                            status: E_OrderStatus.PAID,
-                        },
-                    });
+                        if (!rebillOrderRes.success || !rebillOrderRes.result) {
+                            log.error(`[CRON] Failed to create rebill order after successful rebill: ${rebillOrderRes.message}`);
+                            // Rebill succeeded but order creation failed - this is a critical error
+                            return false;
+                        }
 
-                    if (!updateRebillOrderRes.success) {
-                        log.error(`[CRON] Failed to update rebill order: ${updateRebillOrderRes.message}`);
-                        // Continue anyway - rebill succeeded
-                    }
+                        const rebillOrder = rebillOrderRes.result;
 
-                    // Apply order paid effects (extends membership and handles roles properly)
-                    try {
-                        // Reload order with populated data for applyOrderPaidEffects
-                        const populatedOrderRes = await orderCtr.getOrder(ctx, {
+                        // Log full rebill response for debugging
+                        // NetValve rebill response structure: { traceID, responseTimestamp, responseCode, responseMessage, responseCodeType, transactionID? }
+                        log.info(`[CRON] NetValve rebill response for user ${userId}:`, {
+                            traceID: rebillResponse?.traceID,
+                            responseCode: rebillResponse?.responseCode,
+                            responseCodeType: rebillResponse?.responseCodeType,
+                            transactionID: rebillResponse?.transactionID, // NetValve returns uppercase transactionID
+                            transactionId: rebillResponse?.transactionId, // Fallback camelCase
+                            fullResponse: JSON.stringify(rebillResponse, null, 2),
+                        });
+
+                        // Try to get new transactionId from rebill response
+                        // NetValve rebill API response structure is similar to HPP_ORDER:
+                        // - transactionID (uppercase) at root level when successful
+                        // - responseCode: "GTW_1000" means success
+                        // - responseCodeType: "SOFT DECLINE" or "HARD DECLINE" means failure
+                        let rebillTransactionId = rebillResponse?.transactionID // NetValve returns uppercase transactionID
+                            || rebillResponse?.transactionId // Fallback camelCase variant
+                            || rebillResponse?.responsePayload?.transactionID
+                            || rebillResponse?.responsePayload?.transactionId;
+
+                        // If no new transactionId found, use the original one (fallback)
+                        // This might happen if NetValve doesn't return a new transactionId
+                        if (!rebillTransactionId) {
+                            log.warn(`[CRON] No new transactionId in rebill response, using original transactionId: ${transactionId}`);
+                            rebillTransactionId = transactionId;
+                        }
+                        else if (rebillTransactionId === transactionId) {
+                            log.warn(`[CRON] Rebill response returned same transactionId as original (${transactionId}). This might be expected behavior from NetValve. Full response: ${JSON.stringify(rebillResponse)}`);
+                        }
+                        else {
+                            log.info(`[CRON] Rebill returned new transactionId: ${rebillTransactionId} (original: ${transactionId})`);
+                        }
+
+                        // Convert rebillTransactionId to string (NetValve may return number)
+                        const rebillTransactionIdString = String(rebillTransactionId);
+
+                        // Create payment transaction record for rebill
+                        const paymentTransactionRes = await paymentCtr.recordGatewayTransaction(ctx, {
+                            provider: E_PaymentProvider.NETVALVE,
+                            operation: E_PaymentGatewayOperation.REBILL,
+                            transactionId: rebillTransactionIdString,
+                            status: E_PaymentTransactionStatus.SUCCESS,
+                            success: true,
+                            responsePayload: rebillResponse || {},
+                            performedAt: new Date(),
+                        });
+
+                        if (!paymentTransactionRes.success || !paymentTransactionRes.result) {
+                            log.error(`[CRON] Failed to create payment transaction for rebill: ${paymentTransactionRes.message}`);
+                            // Continue anyway - rebill succeeded
+                        }
+
+                        // Update rebill order with payment transaction and set status to PAID
+                        const paymentTransactionId = paymentTransactionRes.success && paymentTransactionRes.result
+                            ? paymentTransactionRes.result.id
+                            : undefined;
+
+                        const updateRebillOrderRes = await orderCtr.updateOrder(ctx, {
                             filter: { id: rebillOrder.id },
-                            populate: [
-                                { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
-                                { path: 'paymentTransaction' },
-                            ],
+                            update: {
+                                paymentTransactionId,
+                                status: E_OrderStatus.PAID,
+                            },
                         });
 
-                        if (populatedOrderRes.success && populatedOrderRes.result) {
-                            log.info(`[CRON] Applying order paid effects for rebill order ${rebillOrder.id}`);
-                            await applyOrderPaidEffects(ctx, populatedOrderRes.result);
-                            log.info(`[CRON] ✅ Order paid effects applied successfully`);
+                        if (!updateRebillOrderRes.success) {
+                            log.error(`[CRON] Failed to update rebill order: ${updateRebillOrderRes.message}`);
+                            // Continue anyway - rebill succeeded
                         }
-                    }
-                    catch (error) {
-                        log.error('[CRON] Error applying order paid effects after rebill:', {
-                            userId,
-                            orderId: rebillOrder.id,
-                            error: error instanceof Error ? error.message : String(error),
-                        });
-                        // Fallback: extend membership manually
-                        const userFound = await userCtr.getUser(ctx, { filter: { id: userId } });
-                        if (userFound.success && userFound.result) {
-                            const user = userFound.result;
-                            const currentExpiry = user.membershipExpiresAt ? new Date(user.membershipExpiresAt) : null;
-                            let baseDate = now;
-                            if (currentExpiry && currentExpiry > now) {
-                                baseDate = currentExpiry;
-                            }
-                            else if (currentExpiry) {
-                                const monthsSinceExpiry = Math.floor((now.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24 * 30));
-                                if (monthsSinceExpiry < 12) {
-                                    baseDate = currentExpiry;
-                                }
-                            }
-                            const newExpiry = addMonths(baseDate, 1);
-                            await userCtr.updateUser(ctx, {
-                                filter: { id: userId },
-                                update: { membershipExpiresAt: newExpiry },
-                            });
-                        }
-                    }
 
-                    // Send receipt email
-                    if (rebillOrder && userCheck.result.email) {
+                        // Apply order paid effects (extends membership and handles roles properly)
                         try {
-                            const user = userCheck.result;
-
-                            // Get country from user location or pricing
-                            let country = '';
-                            if (user.partner1?.location?.country?.name) {
-                                country = user.partner1.location.country.name;
-                            }
-                            else if (user.partner2?.location?.country?.name) {
-                                country = user.partner2.location.country.name;
-                            }
-                            else if (pricing?.country?.name) {
-                                country = pricing.country.name;
-                            }
-
-                            // Format amounts
-                            const currencyCode = pricing?.currency?.code || currency || 'EUR';
-                            const taxRate = typeof pricing?.taxRate === 'number' ? pricing.taxRate : 0;
-                            const baseAmount = amount / (1 + taxRate / 100);
-                            const taxAmount = amount - baseAmount;
-
-                            // Format payment date
-                            const paymentDateObj = new Date();
-                            const paymentDate = paymentDateObj.toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
+                            // Reload order with populated data for applyOrderPaidEffects
+                            const populatedOrderRes = await orderCtr.getOrder(ctx, {
+                                filter: { id: rebillOrder.id },
+                                populate: [
+                                    { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                                    { path: 'paymentTransaction' },
+                                ],
                             });
 
-                            // Calculate membership period
-                            let membershipPeriod = '';
-                            if (user.membershipExpiresAt) {
-                                const endDate = new Date(user.membershipExpiresAt);
-                                const startDateStr = paymentDateObj.toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                });
-                                const endDateStr = endDate.toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                });
-                                membershipPeriod = `${startDateStr} - ${endDateStr}`;
-                            }
-
-                            // Generate invoice number
-                            const invoiceNo = rebillOrder.id ? rebillOrder.id.slice(-4).toUpperCase() : 'N/A';
-                            const receiptDescription = 'Membership';
-
-                            // Build template data
-                            const templateData = {
-                                invoiceNo,
-                                paymentDate,
-                                userEmail: user.email,
-                                country: country || 'N/A',
-                                subtotal: `${baseAmount.toFixed(2)} ${currencyCode}`,
-                                taxRate: taxRate.toFixed(0),
-                                tax: taxAmount > 0 ? `${taxAmount.toFixed(2)} ${currencyCode}` : `0.00 ${currencyCode}`,
-                                totalAmount: `${amount.toFixed(2)} ${currencyCode}`,
-                                paymentMethod: 'Card',
-                                transactionId: rebillTransactionIdString || 'N/A',
-                                membershipPeriod: membershipPeriod || 'N/A',
-                                receiptDescription,
-                                isRebill: true, // Indicate this is an automatic rebill
-                            };
-
-                            // Send receipt email
-                            if (user.email) {
-                                await emailCtr.sendEmail(PAYMENT_SUCCESS, user.email, templateData);
-                                log.info(`[CRON] ✅ Receipt email sent for rebill to user ${userId} (${user.email})`);
-                            }
-                            else {
-                                log.warn(`[CRON] ⚠️  User ${userId} has no email, receipt not sent`);
+                            if (populatedOrderRes.success && populatedOrderRes.result) {
+                                log.info(`[CRON] Applying order paid effects for rebill order ${rebillOrder.id}`);
+                                await applyOrderPaidEffects(ctx, populatedOrderRes.result);
+                                log.info(`[CRON] ✅ Order paid effects applied successfully`);
                             }
                         }
                         catch (error) {
-                            log.error('[CRON] Error sending receipt email after rebill:', {
+                            log.error('[CRON] Error applying order paid effects after rebill:', {
                                 userId,
+                                orderId: rebillOrder.id,
                                 error: error instanceof Error ? error.message : String(error),
                             });
-                            // Non-blocking: rebill still succeeds even if email fails
+                            // Fallback: extend membership manually
+                            const userFound = await userCtr.getUser(ctx, { filter: { id: userId } });
+                            if (userFound.success && userFound.result) {
+                                const user = userFound.result;
+                                const currentExpiry = user.membershipExpiresAt ? new Date(user.membershipExpiresAt) : null;
+                                let baseDate = now;
+                                if (currentExpiry && currentExpiry > now) {
+                                    baseDate = currentExpiry;
+                                }
+                                else if (currentExpiry) {
+                                    const monthsSinceExpiry = Math.floor((now.getTime() - currentExpiry.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                                    if (monthsSinceExpiry < 12) {
+                                        baseDate = currentExpiry;
+                                    }
+                                }
+                                const newExpiry = addMonths(baseDate, 1);
+                                await userCtr.updateUser(ctx, {
+                                    filter: { id: userId },
+                                    update: { membershipExpiresAt: newExpiry },
+                                });
+                            }
                         }
+
+                        // Send receipt email
+                        if (rebillOrder && userCheck.result.email) {
+                            try {
+                                const user = userCheck.result;
+
+                                // Get country from user location or pricing
+                                let country = '';
+                                if (user.partner1?.location?.country?.name) {
+                                    country = user.partner1.location.country.name;
+                                }
+                                else if (user.partner2?.location?.country?.name) {
+                                    country = user.partner2.location.country.name;
+                                }
+                                else if (pricing?.country?.name) {
+                                    country = pricing.country.name;
+                                }
+
+                                // Format amounts
+                                const currencyCode = pricing?.currency?.code || currency || 'EUR';
+                                const taxRate = typeof pricing?.taxRate === 'number' ? pricing.taxRate : 0;
+                                const baseAmount = amount / (1 + taxRate / 100);
+                                const taxAmount = amount - baseAmount;
+
+                                // Format payment date
+                                const paymentDateObj = new Date();
+                                const paymentDate = paymentDateObj.toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                });
+
+                                // Calculate membership period
+                                let membershipPeriod = '';
+                                if (user.membershipExpiresAt) {
+                                    const endDate = new Date(user.membershipExpiresAt);
+                                    const startDateStr = paymentDateObj.toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric',
+                                    });
+                                    const endDateStr = endDate.toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'long',
+                                        day: 'numeric',
+                                    });
+                                    membershipPeriod = `${startDateStr} - ${endDateStr}`;
+                                }
+
+                                // Generate invoice number
+                                const invoiceNo = rebillOrder.id ? rebillOrder.id.slice(-4).toUpperCase() : 'N/A';
+                                const receiptDescription = 'Membership';
+
+                                // Build template data
+                                const templateData = {
+                                    invoiceNo,
+                                    paymentDate,
+                                    userEmail: user.email,
+                                    country: country || 'N/A',
+                                    subtotal: `${baseAmount.toFixed(2)} ${currencyCode}`,
+                                    taxRate: taxRate.toFixed(0),
+                                    tax: taxAmount > 0 ? `${taxAmount.toFixed(2)} ${currencyCode}` : `0.00 ${currencyCode}`,
+                                    totalAmount: `${amount.toFixed(2)} ${currencyCode}`,
+                                    paymentMethod: 'Card',
+                                    transactionId: rebillTransactionIdString || 'N/A',
+                                    membershipPeriod: membershipPeriod || 'N/A',
+                                    receiptDescription,
+                                    isRebill: true, // Indicate this is an automatic rebill
+                                };
+
+                                // Send receipt email
+                                if (user.email) {
+                                    await emailCtr.sendEmail(PAYMENT_SUCCESS, user.email, templateData);
+                                    log.info(`[CRON] ✅ Receipt email sent for rebill to user ${userId} (${user.email})`);
+                                }
+                                else {
+                                    log.warn(`[CRON] ⚠️  User ${userId} has no email, receipt not sent`);
+                                }
+                            }
+                            catch (error) {
+                                log.error('[CRON] Error sending receipt email after rebill:', {
+                                    userId,
+                                    error: error instanceof Error ? error.message : String(error),
+                                });
+                                // Non-blocking: rebill still succeeds even if email fails
+                            }
+                        }
+
+                        return true;
                     }
+                    catch (error) {
+                        log.error('[CRON] Error attempting rebill', { userId, error });
+                        return false;
+                    }
+                };
 
-                    return true;
+                for (const user of candidatesRes.result.docs) {
+                    const success = await tryRebillOnce(user.id);
+                    if (success) {
+                        rebilledCount += 1;
+                    }
+                    else {
+                        failedCount += 1;
+                    }
                 }
-                catch (error) {
-                    log.error('[CRON] Error attempting rebill', { userId, error });
-                    return false;
-                }
-            };
 
-            for (const user of candidatesRes.result.docs) {
-                const success = await tryRebillOnce(user.id);
-                if (success) {
-                    rebilledCount += 1;
+                if (rebilledCount > 0) {
+                    log.success(`[CRON] ✅ Re-billed and extended ${rebilledCount} expiring membership(s).`);
                 }
-                else {
-                    failedCount += 1;
+                if (failedCount > 0) {
+                    log.warn(`[CRON] ⚠️  Failed to rebill ${failedCount} membership(s).`);
                 }
+                if (rebilledCount === 0 && failedCount === 0) {
+                    log.info('[CRON] ℹ️  No memberships rebilled (no candidates found or all skipped).');
+                }
+                log.info(`[CRON] Summary: ${rebilledCount} succeeded, ${failedCount} failed, ${candidatesRes.result.docs.length} total candidates`);
+                log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS COMPLETED ==========');
             }
-
-            if (rebilledCount > 0) {
-                log.success(`[CRON] ✅ Re-billed and extended ${rebilledCount} expiring membership(s).`);
+            catch (error) {
+                log.error('[CRON] ❌ Error rebilling expiring memberships:', error);
+                log.error('[CRON] ========== REBILL EXPIRING MEMBERSHIPS FAILED ==========');
             }
-            if (failedCount > 0) {
-                log.warn(`[CRON] ⚠️  Failed to rebill ${failedCount} membership(s).`);
+            finally {
+                // Always release the distributed lock
+                await releaseLock();
             }
-            if (rebilledCount === 0 && failedCount === 0) {
-                log.info('[CRON] ℹ️  No memberships rebilled (no candidates found or all skipped).');
-            }
-            log.info(`[CRON] Summary: ${rebilledCount} succeeded, ${failedCount} failed, ${candidatesRes.result.docs.length} total candidates`);
-            log.info('[CRON] ========== REBILL EXPIRING MEMBERSHIPS COMPLETED ==========');
         }
         catch (error) {
-            log.error('[CRON] ❌ Error rebilling expiring memberships:', error);
-            log.error('[CRON] ========== REBILL EXPIRING MEMBERSHIPS FAILED ==========');
+            log.error('[CRON] Error in rebill initialization:', error);
         }
     },
 

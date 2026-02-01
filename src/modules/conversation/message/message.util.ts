@@ -3,11 +3,13 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
+import mongoose from 'mongoose';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { keywordCtr } from '#modules/keyword/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { userCtr } from '#modules/user/user.controller.js';
@@ -32,6 +34,64 @@ function toPlain<T>(input: T): T {
         }
     }
     return input;
+}
+
+function maskLexicalText(jsonStr: string, pattern: RegExp): string {
+    if (!jsonStr.trim().startsWith('{'))
+        return jsonStr.replace(pattern, '*****');
+
+    try {
+        const root = JSON.parse(jsonStr);
+        const recursiveMask = (node: any) => {
+            if (!node || typeof node !== 'object')
+                return;
+
+            if (node.type === 'text' && typeof node.text === 'string') {
+                node.text = node.text.replace(pattern, '*****');
+            }
+
+            if (Array.isArray(node.children)) {
+                node.children.forEach(recursiveMask);
+            }
+        };
+        recursiveMask(root);
+        return JSON.stringify(root);
+    }
+    catch {
+        // Fallback to raw replacement if JSON is invalid but looked like JSON
+        return jsonStr.replace(pattern, '*****');
+    }
+}
+
+export function extractLexicalText(jsonStr: string | null | undefined): string {
+    if (!jsonStr)
+        return '';
+    const trimmed = jsonStr.trim();
+    if (!trimmed.startsWith('{'))
+        return trimmed;
+
+    try {
+        const root = JSON.parse(trimmed);
+        let textResult = '';
+        const recursiveExtract = (node: any) => {
+            if (!node || typeof node !== 'object')
+                return;
+
+            if (node.type === 'text' && typeof node.text === 'string') {
+                textResult += (textResult ? ' ' : '') + node.text;
+            }
+
+            if (Array.isArray(node.children)) {
+                node.children.forEach(recursiveExtract);
+            }
+        };
+        recursiveExtract(root);
+        return textResult;
+    }
+    catch {
+        // Fallback to raw string if JSON is invalid
+        return trimmed;
+    }
 }
 
 function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined {
@@ -264,56 +324,69 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
 
     // Check if message has pending keyword moderation (needs redaction)
     // Only redact for other users, not the sender
-    let shouldRedactKeywords = false;
-    let keywordToRedact: string | null = null;
-    if (content?.type === E_MessageType.TEXT && plainMessage.id && plainMessage.senderId) {
+    const messageId = plainMessage.id || (plainMessage._id ? String(plainMessage._id) : undefined);
+    if (content?.type === E_MessageType.TEXT && messageId && plainMessage.senderId) {
         try {
             const viewerId = viewer?.id;
 
-            // Only redact for other users, not the sender
-            if (viewerId && viewerId !== plainMessage.senderId) {
+            // Redact for all users if keyword detected
+            if (viewerId) {
                 // Check if message has WARN log (keyword detected) and no APPROVE log
-                const warnLogs = await moderationLogCtr.getModerationLogs(context, {
-                    filter: {
-                        messageId: plainMessage.id,
-                        action: E_ModerationLogAction.WARN,
-                    },
+                // USE DIRECT QUERY to bypass user permission filters in moderationLogCtr
+                const query: any = {
+                    $or: [
+                        { messageId },
+                        { messageId: new mongoose.Types.ObjectId(messageId) as any },
+                    ],
+                    action: E_ModerationLogAction.WARN,
+                };
+
+                const warnResult = await moderationLogCtr.getModerationLogs(context, {
+                    filter: query,
                     options: { pagination: false },
                 });
+                const warnLogs = warnResult.success && warnResult.result?.docs ? warnResult.result.docs : [];
 
-                if (warnLogs.success && warnLogs.result?.docs && warnLogs.result.docs.length > 0) {
+                if (warnLogs && warnLogs.length > 0) {
                     // Check if there's an APPROVE log for this message
-                    const approveLogs = await moderationLogCtr.getModerationLogs(context, {
+                    const approveResult = await moderationLogCtr.getModerationLogs(context, {
                         filter: {
-                            messageId: plainMessage.id,
+                            $or: [
+                                { messageId },
+                                { messageId: new mongoose.Types.ObjectId(messageId) as any },
+                            ],
                             action: E_ModerationLogAction.APPROVE,
                         },
                         options: { pagination: false },
                     });
+                    const approveLogs = approveResult.success && approveResult.result?.docs ? approveResult.result.docs : [];
 
-                    // If no APPROVE log exists, message is still pending moderation - redact keyword
-                    if (!approveLogs.success || !approveLogs.result?.docs || approveLogs.result.docs.length === 0) {
-                        shouldRedactKeywords = true;
-                        // Extract keyword from reason field
-                        // Format: "Message contains keyword: "xxx" (category: xxx)"
-                        const reason = warnLogs.result.docs[0]?.reason || '';
-                        const match = reason.match(/keyword: "([^"]+)"/);
-                        if (match && match[1]) {
-                            keywordToRedact = match[1];
+                    // If no APPROVE log exists, message is still pending moderation - redact keywords
+                    if (approveLogs.length === 0) {
+                        // If flagged, mask all active keywords for robustness
+                        const activeKeywords = await keywordCtr.getActiveKeywords(context);
+                        if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
+                            for (const keyword of activeKeywords.result) {
+                                const word = keyword.word?.trim();
+                                if (!word)
+                                    continue;
+
+                                const hasSpecialChars = /[^\w\s]/.test(word);
+                                const keywordPattern = hasSpecialChars
+                                    ? new RegExp(escapeRegExp(word), 'gi')
+                                    : new RegExp(`\\\\b${escapeRegExp(word)}\\\\b`, 'gi');
+
+                                content.value = maskLexicalText(content.value, keywordPattern);
+                            }
                         }
                     }
                 }
             }
         }
-        catch {
+        catch (err) {
             // Non-fatal: if moderation check fails, don't redact
+            console.error('Redaction failed:', err);
         }
-    }
-
-    // Redact keyword in message content if needed
-    if (shouldRedactKeywords && keywordToRedact && content?.type === E_MessageType.TEXT && typeof content.value === 'string') {
-        const keywordPattern = new RegExp(`\\b${escapeRegExp(keywordToRedact)}\\b`, 'gi');
-        content.value = content.value.replace(keywordPattern, '***');
     }
 
     // Transform sender avatar using hydrateUserMedia
