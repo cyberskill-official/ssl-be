@@ -34,7 +34,8 @@ import {
 } from '#modules/notification/notification.type.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
-import { netvalveCtr, paymentCtr } from '#modules/payment/index.js';
+import { netvalveCtr, paymentCtr, paymentRequestCtr, paypalCtr } from '#modules/payment/index.js';
+import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
@@ -1307,13 +1308,14 @@ export const authnCtr = {
             });
         }
 
-        // Try to cancel subscription in NetValve (if we have a transaction ID)
+        // Try to cancel subscription in Gateway (if we have a transaction ID)
         // Note: For recurring payments, NetValve may not have a direct "cancel subscription" API
-        // The main cancellation is done by setting membershipCancelled = true to prevent future rebills
-        let netvalveCancelSuccess = false;
+        // For PayPal, we call cancelSubscription API
+        let gatewayCancelSuccess = false;
+        let gatewayName = 'NetValve';
+
         try {
             // Find the last paid subscription order to get transaction ID
-
             const ordersRes = await orderCtr.getOrders(context, {
                 filter: {
                     userId: currentUser.id,
@@ -1330,51 +1332,95 @@ export const authnCtr = {
 
             const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
             let transactionId: string | undefined;
+            let provider: string | undefined;
 
             if (lastOrder) {
-                // Try to get transaction ID from payment transaction
-                transactionId = (lastOrder as any)?.paymentTransaction?.transactionId;
+                // Try to get provider and transaction ID from payment transaction
+                const pt = (lastOrder as any)?.paymentTransaction;
+                if (pt) {
+                    transactionId = pt.transactionId;
+                    provider = pt.provider;
+                }
+
+                // Fallback attempt
                 if (!transactionId && (lastOrder as any)?.paymentTransactionId) {
                     const ptRes = await paymentCtr.getPaymentTransaction(context, {
                         filter: { id: (lastOrder as any).paymentTransactionId },
                     } as any);
-                    if (ptRes.success && ptRes.result?.transactionId) {
+                    if (ptRes.success && ptRes.result) {
                         transactionId = ptRes.result.transactionId;
+                        provider = ptRes.result.provider;
                     }
                 }
             }
 
-            // If we have a transaction ID, try to cancel in NetValve
-            // Note: NetValve cancel may not work for recurring payments, but we try anyway
-            if (transactionId) {
-                const pricing = (lastOrder as any)?.pricing;
-                const currency = pricing?.currency?.code || 'EUR';
+            if (provider === E_PaymentProvider.PAYPAL) {
+                gatewayName = 'PayPal';
+                let subscriptionId = transactionId;
 
-                const cancelRes = await netvalveCtr.cancel(context, {
-                    transactionID: String(transactionId),
-                    currency,
-                } as any);
+                // For PayPal, we need the subscription ID (starts with I-)
+                // If transactionId is missing or doesn't look like a subscription ID (e.g. might be a capture ID if mistakenly stored),
+                // check PaymentRequest which should store the detailed external order ID
+                if ((!subscriptionId || !subscriptionId.startsWith('I-')) && (lastOrder as any)?.paymentRequestId) {
+                    const prRes = await paymentRequestCtr.getPaymentRequest(context, {
+                        filter: { id: (lastOrder as any).paymentRequestId },
+                    });
+                    if (prRes.success && prRes.result?.externalOrderId) {
+                        subscriptionId = prRes.result.externalOrderId;
+                    }
+                }
 
-                if (cancelRes.success) {
-                    netvalveCancelSuccess = true;
-                    log.info(`[Membership] NetValve cancel called successfully for user ${currentUser.id}, transactionId=${transactionId}`);
+                if (subscriptionId && subscriptionId.startsWith('I-')) {
+                    const cancelRes = await paypalCtr.cancelSubscription(context, {
+                        subscriptionId,
+                        reason: 'User requested cancellation via website',
+                    });
+
+                    if (cancelRes.success) {
+                        gatewayCancelSuccess = true;
+                        log.info(`[Membership] PayPal subscription cancelled for user ${currentUser.id}, subscriptionId=${subscriptionId}`);
+                    }
+                    else {
+                        log.warn(`[Membership] PayPal cancel failed for user ${currentUser.id}: ${cancelRes.message}`);
+                    }
                 }
                 else {
-                    log.warn(`[Membership] NetValve cancel failed for user ${currentUser.id}, transactionId=${transactionId}: ${cancelRes.message}`);
-                    // Continue anyway - the main cancellation is done by setting membershipCancelled = true
+                    log.warn(`[Membership] No PayPal subscription ID found for user ${currentUser.id}, skipping PayPal cancel call`);
                 }
             }
             else {
-                log.info(`[Membership] No transaction ID found for user ${currentUser.id}, skipping NetValve cancel call`);
+                // Default to NetValve
+                // Note: NetValve cancel may not work for recurring payments, but we try anyway
+                if (transactionId) {
+                    const pricing = (lastOrder as any)?.pricing;
+                    const currency = pricing?.currency?.code || 'EUR';
+
+                    const cancelRes = await netvalveCtr.cancel(context, {
+                        transactionID: String(transactionId),
+                        currency,
+                    } as any);
+
+                    if (cancelRes.success) {
+                        gatewayCancelSuccess = true;
+                        log.info(`[Membership] NetValve cancel called successfully for user ${currentUser.id}, transactionId=${transactionId}`);
+                    }
+                    else {
+                        log.warn(`[Membership] NetValve cancel failed for user ${currentUser.id}, transactionId=${transactionId}: ${cancelRes.message}`);
+                        // Continue anyway - the main cancellation is done by setting membershipCancelled = true
+                    }
+                }
+                else {
+                    log.info(`[Membership] No transaction ID found for user ${currentUser.id}, skipping NetValve cancel call`);
+                }
             }
         }
         catch (error) {
-            log.error(`[Membership] Error calling NetValve cancel for user ${currentUser.id}:`, error);
+            log.error(`[Membership] Error calling Gateway cancel (User: ${currentUser.id}):`, error);
             // Continue anyway - the main cancellation is done by setting membershipCancelled = true
         }
 
         // Mark membership as cancelled (prevents future rebills)
-        // This is the primary way to stop recurring payments
+        // This is the primary way to stop recurring payments (especially for NetValve)
         // User keeps access until membershipExpiresAt
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
@@ -1395,7 +1441,7 @@ export const authnCtr = {
             context.req.session.user.membershipCancelled = true;
         }
 
-        log.info(`[Membership] User ${currentUser.id} cancelled membership. Access until ${currentUser.membershipExpiresAt}. NetValve cancel: ${netvalveCancelSuccess ? 'success' : 'skipped/failed'}`);
+        log.info(`[Membership] User ${currentUser.id} cancelled membership. Access until ${currentUser.membershipExpiresAt}. Gateway (${gatewayName}) cancel: ${gatewayCancelSuccess ? 'success' : 'skipped/failed'}`);
 
         return {
             success: true,

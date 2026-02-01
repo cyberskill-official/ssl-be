@@ -608,6 +608,30 @@ async function handleSubscriptionCancelled(resource: any) {
     const subscriptionId = resource.id;
     const customId = resource.custom_id;
     log.info(`[PayPal Webhook] Subscription Cancelled: ${subscriptionId}`, { userId: customId });
+
+    if (!customId) {
+        log.warn('[PayPal Webhook] handleSubscriptionCancelled - Missing custom_id (userId)', { subscriptionId });
+        return;
+    }
+
+    // Update user to mark membership as cancelled
+    // This ensures they won't be rebilled, but keeps access until expiry
+    try {
+        const updateRes = await userCtr.updateUser({} as any, {
+            filter: { id: customId },
+            update: { membershipCancelled: true },
+        });
+
+        if (updateRes.success) {
+            log.info(`[PayPal Webhook] Successfully marked membership as cancelled for user ${customId}`);
+        }
+        else {
+            log.warn(`[PayPal Webhook] Failed to update user ${customId} membership status: ${updateRes.message}`);
+        }
+    }
+    catch (error) {
+        log.error(`[PayPal Webhook] Error updating user ${customId} for subscription cancellation:`, error);
+    }
 }
 
 async function handleSubscriptionSuspended(resource: any) {
