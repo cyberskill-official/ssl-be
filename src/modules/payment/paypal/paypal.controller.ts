@@ -207,6 +207,31 @@ export const paypalCtr = {
             'get-subscription',
         );
     },
+    cancelSubscription: async (
+        _context: I_Context,
+        { subscriptionId, reason }: { subscriptionId: string; reason?: string },
+    ): Promise<I_Return<void>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        const safeSubscriptionId = encodeURIComponent(subscriptionId);
+
+        log.info('[PayPal][API][cancelSubscription]', { subscriptionId, reason });
+
+        return postPayPalRequest<void>(
+            credentials,
+            `/v1/billing/subscriptions/${safeSubscriptionId}/cancel`,
+            { reason: reason || 'Customer requested cancellation' },
+            'cancel-subscription',
+        );
+    },
     verifyWebhookSignature: async (
         _context: I_Context,
         payload: {
