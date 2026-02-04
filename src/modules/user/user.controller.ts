@@ -1018,8 +1018,15 @@ export const userCtr = {
                     context,
                     userFound.result.id,
                     temp.location,
-                    existingTempLocationId ?? undefined,
+                    undefined, // Force creation of a NEW location to satisfy the "override" requirement
                 );
+
+                if (existingTempLocationId) {
+                    // Cleanup previous temporary location (override logic)
+                    await locationCtr.deleteLocation(context, { filter: { id: existingTempLocationId } }).catch((err) => {
+                        log.warn(`[USER] Failed to cleanup previous temporary location ${existingTempLocationId}:`, err);
+                    });
+                }
 
                 update.settings.temporaryLocation.locationId = tempLocationId;
                 delete (update.settings.temporaryLocation as unknown as { location?: unknown }).location;
