@@ -942,10 +942,19 @@ export const userCtr = {
         normalizeDateField(update as Record<string, unknown>, 'membershipExpiresAt');
         normalizeDateField(update as Record<string, unknown>, 'membershipEndDate');
 
+        // Normalize nested temporary location date
+        if (update.settings?.temporaryLocation) {
+            normalizeDateField(update.settings.temporaryLocation as any, 'endAt');
+        }
+
         if (hasAtomicOperators && (update as any).$set) {
             normalizeDateField((update as any).$set as Record<string, unknown>, 'lastOnline');
             normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipExpiresAt');
             normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipEndDate');
+
+            if ((update as any).$set.settings?.temporaryLocation) {
+                normalizeDateField((update as any).$set.settings.temporaryLocation as any, 'endAt');
+            }
         }
 
         const { password } = update;
@@ -1196,6 +1205,11 @@ export const userCtr = {
                 update as Record<string, unknown>,
             );
             dedupArraysIterative(payloadToPersist);
+
+            // Normalize nested dates again after merge to ensure no junk objects arrived
+            if ((payloadToPersist as any).settings?.temporaryLocation) {
+                normalizeDateField((payloadToPersist as any).settings.temporaryLocation, 'endAt');
+            }
         }
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
@@ -1230,6 +1244,14 @@ export const userCtr = {
         }
         if (updateHasMembershipEndDate) {
             applyNormalizedDate(payloadToPersist, 'membershipEndDate', normalizedMembershipEndDate);
+        }
+
+        // Final safety check for nested temporary location date to avoid Mongoose cast error
+        const nestedSettings = (payloadToPersist as any).settings;
+        const tempLoc = nestedSettings?.temporaryLocation;
+        if (tempLoc && typeof tempLoc.endAt === 'object' && !(tempLoc.endAt instanceof Date)) {
+            // Delete if it's an empty object {} or other non-date objects
+            delete tempLoc.endAt;
         }
 
         const updateResult = await mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, payloadToPersist, options);
