@@ -118,7 +118,7 @@ export const messageCtr = {
                         const hasSpecialChars = /[^\w\s]/.test(word);
                         const pattern = hasSpecialChars
                             ? new RegExp(escapeRegExp(word), 'i')
-                            : new RegExp(`\\\\b${escapeRegExp(word)}\\\\b`, 'i');
+                            : new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
 
                         return pattern.test(textValue);
                     }) || null;
