@@ -47,7 +47,7 @@ import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User, I_UserSettings_TemporaryLocation } from './user.type.js';
+import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User, I_UserSettings, I_UserSettings_TemporaryLocation } from './user.type.js';
 
 import { UserModel } from './user.model.js';
 import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
@@ -63,6 +63,39 @@ function resolveOnlineStatus(lastOnline: unknown, now: number): boolean {
     if (Number.isNaN(lastOnlineTime))
         return false;
     return (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
+}
+
+function normalizeDateValue(value: unknown): Date | null | undefined {
+    if (value === null)
+        return null;
+    if (value instanceof Date)
+        return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    }
+    // If it's an empty object or other types, return undefined so it can be deleted/cleared
+    return undefined;
+}
+
+function normalizeDateField(target: Record<string, unknown>, field: string) {
+    if (!target || typeof target !== 'object' || !Object.prototype.hasOwnProperty.call(target, field)) {
+        return;
+    }
+    const normalized = normalizeDateValue(target[field]);
+    if (normalized === undefined) {
+        delete target[field];
+        return;
+    }
+    target[field] = normalized;
+}
+
+function normalizeUserSettings(settings?: I_UserSettings) {
+    if (!settings)
+        return;
+    if (settings.temporaryLocation) {
+        normalizeDateField(settings.temporaryLocation as any, 'endAt');
+    }
 }
 
 type T_LocationPayload = Record<string, unknown> & {
@@ -751,6 +784,8 @@ export const userCtr = {
             doc.settings.temporaryLocation = { ...restTempLocation, location };
         }
 
+        normalizeUserSettings(doc.settings);
+
         // 3) Tạo user mới với default notification settings
         // All notification settings default to true when creating account
         // Only set to true if not explicitly provided (undefined), preserve explicit false
@@ -914,46 +949,30 @@ export const userCtr = {
         if (!hasAtomicOperators) {
             dedupArraysIterative(update);
         }
-        const normalizeDateValue = (value: unknown): Date | null | undefined => {
-            if (value === null)
-                return null;
-            if (value instanceof Date)
-                return value;
-            if (typeof value === 'string' || typeof value === 'number') {
-                const parsed = new Date(value);
-                return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-            }
-            return undefined;
-        };
-
-        const normalizeDateField = (target: Record<string, unknown>, field: string) => {
-            if (!Object.prototype.hasOwnProperty.call(target, field)) {
-                return;
-            }
-            const normalized = normalizeDateValue(target[field]);
-            if (normalized === undefined) {
-                delete target[field];
-                return;
-            }
-            target[field] = normalized;
-        };
 
         normalizeDateField(update as Record<string, unknown>, 'lastOnline');
         normalizeDateField(update as Record<string, unknown>, 'membershipExpiresAt');
         normalizeDateField(update as Record<string, unknown>, 'membershipEndDate');
 
         // Normalize nested temporary location date
-        if (update.settings?.temporaryLocation) {
-            normalizeDateField(update.settings.temporaryLocation as any, 'endAt');
-        }
+        normalizeUserSettings(update.settings);
 
         if (hasAtomicOperators && (update as any).$set) {
-            normalizeDateField((update as any).$set as Record<string, unknown>, 'lastOnline');
-            normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipExpiresAt');
-            normalizeDateField((update as any).$set as Record<string, unknown>, 'membershipEndDate');
+            const $set = (update as any).$set as Record<string, any>;
+            normalizeDateField($set, 'lastOnline');
+            normalizeDateField($set, 'membershipExpiresAt');
+            normalizeDateField($set, 'membershipEndDate');
 
-            if ((update as any).$set.settings?.temporaryLocation) {
-                normalizeDateField((update as any).$set.settings.temporaryLocation as any, 'endAt');
+            if ($set['settings']) {
+                normalizeUserSettings($set['settings']);
+            }
+
+            // Handle potential flat dot-notation paths in $set
+            if ($set['settings.temporaryLocation'] && typeof $set['settings.temporaryLocation'] === 'object') {
+                normalizeDateField($set['settings.temporaryLocation'] as any, 'endAt');
+            }
+            if ($set['settings.temporaryLocation.endAt'] !== undefined) {
+                normalizeDateField($set, 'settings.temporaryLocation.endAt');
             }
         }
 
@@ -1201,15 +1220,13 @@ export const userCtr = {
         }
         else {
             payloadToPersist = deepMerge(
-                userFound.result as unknown as Record<string, unknown>,
+                (userFound.result as any).toObject ? (userFound.result as any).toObject() : JSON.parse(JSON.stringify(userFound.result)),
                 update as Record<string, unknown>,
             );
             dedupArraysIterative(payloadToPersist);
 
             // Normalize nested dates again after merge to ensure no junk objects arrived
-            if ((payloadToPersist as any).settings?.temporaryLocation) {
-                normalizeDateField((payloadToPersist as any).settings.temporaryLocation, 'endAt');
-            }
+            normalizeUserSettings((payloadToPersist as any).settings);
         }
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
@@ -1247,11 +1264,28 @@ export const userCtr = {
         }
 
         // Final safety check for nested temporary location date to avoid Mongoose cast error
-        const nestedSettings = (payloadToPersist as any).settings;
-        const tempLoc = nestedSettings?.temporaryLocation;
-        if (tempLoc && typeof tempLoc.endAt === 'object' && !(tempLoc.endAt instanceof Date)) {
-            // Delete if it's an empty object {} or other non-date objects
-            delete tempLoc.endAt;
+        if (hasAtomicOperators) {
+            const $set = (payloadToPersist as any).$set;
+            if ($set) {
+                const tempLocAttr = $set.settings?.temporaryLocation;
+                if (tempLocAttr && typeof tempLocAttr.endAt === 'object' && tempLocAttr.endAt !== null && !(tempLocAttr.endAt instanceof Date)) {
+                    delete tempLocAttr.endAt;
+                }
+                if ($set['settings.temporaryLocation.endAt'] !== undefined) {
+                    const val = $set['settings.temporaryLocation.endAt'];
+                    if (typeof val === 'object' && val !== null && !(val instanceof Date)) {
+                        delete $set['settings.temporaryLocation.endAt'];
+                    }
+                }
+            }
+        }
+        else {
+            const nestedSettings = (payloadToPersist as any).settings;
+            const tempLoc = nestedSettings?.temporaryLocation;
+            if (tempLoc && typeof tempLoc.endAt === 'object' && tempLoc.endAt !== null && !(tempLoc.endAt instanceof Date)) {
+                // Delete if it's an empty object {} or other non-date objects
+                delete tempLoc.endAt;
+            }
         }
 
         const updateResult = await mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, payloadToPersist, options);
