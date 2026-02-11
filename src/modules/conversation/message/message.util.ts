@@ -41,7 +41,7 @@ function maskLexicalText(jsonStr: string, pattern: RegExp): string {
         return jsonStr.replace(pattern, '*****');
 
     try {
-        const root = JSON.parse(jsonStr);
+        const parsed = JSON.parse(jsonStr);
         const recursiveMask = (node: any) => {
             if (!node || typeof node !== 'object')
                 return;
@@ -50,12 +50,17 @@ function maskLexicalText(jsonStr: string, pattern: RegExp): string {
                 node.text = node.text.replace(pattern, '*****');
             }
 
+            // Traverse into Lexical's root wrapper: { root: { children: [...] } }
+            if (node.root && typeof node.root === 'object') {
+                recursiveMask(node.root);
+            }
+
             if (Array.isArray(node.children)) {
                 node.children.forEach(recursiveMask);
             }
         };
-        recursiveMask(root);
-        return JSON.stringify(root);
+        recursiveMask(parsed);
+        return JSON.stringify(parsed);
     }
     catch {
         // Fallback to raw replacement if JSON is invalid but looked like JSON
@@ -71,7 +76,7 @@ export function extractLexicalText(jsonStr: string | null | undefined): string {
         return trimmed;
 
     try {
-        const root = JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed);
         let textResult = '';
         const recursiveExtract = (node: any) => {
             if (!node || typeof node !== 'object')
@@ -81,11 +86,16 @@ export function extractLexicalText(jsonStr: string | null | undefined): string {
                 textResult += (textResult ? ' ' : '') + node.text;
             }
 
+            // Traverse into Lexical's root wrapper: { root: { children: [...] } }
+            if (node.root && typeof node.root === 'object') {
+                recursiveExtract(node.root);
+            }
+
             if (Array.isArray(node.children)) {
                 node.children.forEach(recursiveExtract);
             }
         };
-        recursiveExtract(root);
+        recursiveExtract(parsed);
         return textResult;
     }
     catch {
@@ -109,7 +119,14 @@ function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined
     }
 }
 
-export async function transformMessageMedia(context: I_Context, message: I_Message | null | undefined): Promise<I_Message | null | undefined> {
+export async function transformMessageMedia(
+    context: I_Context,
+    message: I_Message | null | undefined,
+    options?: {
+        activeKeywords?: any[];
+        approveLogs?: any[];
+    },
+): Promise<I_Message | null | undefined> {
     if (!message)
         return message;
 
@@ -330,25 +347,13 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
             const viewerId = viewer?.id;
 
             // Redact for all users if keyword detected
+            // Redact for all users if keyword detected and not approved
             if (viewerId) {
-                // Check if message has WARN log (keyword detected) and no APPROVE log
-                // USE DIRECT QUERY to bypass user permission filters in moderationLogCtr
-                const query: any = {
-                    $or: [
-                        { messageId },
-                        { messageId: new mongoose.Types.ObjectId(messageId) as any },
-                    ],
-                    action: E_ModerationLogAction.WARN,
-                };
+                // Check if there's an APPROVE log for this message
+                let hasApproveLog = !!options?.approveLogs?.some(log => log.messageId === messageId);
 
-                const warnResult = await moderationLogCtr.getModerationLogs(context, {
-                    filter: query,
-                    options: { pagination: false },
-                });
-                const warnLogs = warnResult.success && warnResult.result?.docs ? warnResult.result.docs : [];
-
-                if (warnLogs && warnLogs.length > 0) {
-                    // Check if there's an APPROVE log for this message
+                // If no pre-fetched approve logs, fallback to single query for safety (though batch is preferred)
+                if (!options?.approveLogs) {
                     const approveResult = await moderationLogCtr.getModerationLogs(context, {
                         filter: {
                             $or: [
@@ -359,25 +364,31 @@ export async function transformMessageMedia(context: I_Context, message: I_Messa
                         },
                         options: { pagination: false },
                     });
-                    const approveLogs = approveResult.success && approveResult.result?.docs ? approveResult.result.docs : [];
+                    hasApproveLog = approveResult.success && (approveResult.result?.docs?.length ?? 0) > 0;
+                }
 
-                    // If no APPROVE log exists, message is still pending moderation - redact keywords
-                    if (approveLogs.length === 0) {
-                        // If flagged, mask all active keywords for robustness
-                        const activeKeywords = await keywordCtr.getActiveKeywords(context);
-                        if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
-                            for (const keyword of activeKeywords.result) {
-                                const word = keyword.word?.trim();
-                                if (!word)
-                                    continue;
+                // If no APPROVE log exists, message is still pending moderation - redact keywords
+                if (!hasApproveLog) {
+                    let activeKeywords = options?.activeKeywords;
+                    if (!activeKeywords) {
+                        const activeKeywordsRes = await keywordCtr.getActiveKeywords(context);
+                        if (activeKeywordsRes.success && Array.isArray(activeKeywordsRes.result)) {
+                            activeKeywords = activeKeywordsRes.result;
+                        }
+                    }
 
-                                const hasSpecialChars = /[^\w\s]/.test(word);
-                                const keywordPattern = hasSpecialChars
-                                    ? new RegExp(escapeRegExp(word), 'gi')
-                                    : new RegExp(`\\\\b${escapeRegExp(word)}\\\\b`, 'gi');
+                    if (activeKeywords && Array.isArray(activeKeywords)) {
+                        for (const keyword of activeKeywords) {
+                            const word = keyword.word?.trim();
+                            if (!word)
+                                continue;
 
-                                content.value = maskLexicalText(content.value, keywordPattern);
-                            }
+                            const hasSpecialChars = /[^\w\s]/.test(word);
+                            const keywordPattern = hasSpecialChars
+                                ? new RegExp(escapeRegExp(word), 'gi')
+                                : new RegExp(`\\b${escapeRegExp(word)}`, 'gi');
+
+                            content.value = maskLexicalText(content.value, keywordPattern);
                         }
                     }
                 }
@@ -508,9 +519,27 @@ export async function transformMessagesPagingResult(context: I_Context, result: 
     if (!result.success || !result.result)
         return result;
 
+    // Pre-fetch active keywords and approve logs for masking
+    const messageIds = (result.result.docs || []).map(m => m.id).filter(Boolean);
+    const [activeKeywordsRes, approveLogsRes] = await Promise.all([
+        keywordCtr.getActiveKeywords(context),
+        messageIds.length > 0
+            ? moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        messageId: { $in: messageIds },
+                        action: E_ModerationLogAction.APPROVE,
+                    },
+                    options: { pagination: false },
+                })
+            : Promise.resolve({ success: true, result: { docs: [] } } as any),
+    ]);
+
+    const activeKeywords = activeKeywordsRes.success && Array.isArray(activeKeywordsRes.result) ? activeKeywordsRes.result : undefined;
+    const approveLogs = approveLogsRes.success && approveLogsRes.result?.docs ? approveLogsRes.result.docs : undefined;
+
     const docs = await Promise.all(
         (result.result.docs || []).map(async message =>
-            await transformMessageMedia(context, message) ?? message,
+            await transformMessageMedia(context, message, { activeKeywords, approveLogs }) ?? message,
         ),
     );
 

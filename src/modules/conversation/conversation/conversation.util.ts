@@ -4,6 +4,9 @@ import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
 import { authnCtr } from '#modules/authn/index.js';
+import { keywordCtr } from '#modules/keyword/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
+import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
 import { E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
@@ -306,14 +309,21 @@ export function toPlainConversation<T>(conversation: T): T {
     return conversation;
 }
 
-export async function transformConversationMedia<T extends I_Conversation>(context: I_Context, conversation: T | null | undefined): Promise<T | null | undefined> {
+export async function transformConversationMedia<T extends I_Conversation>(
+    context: I_Context,
+    conversation: T | null | undefined,
+    options?: {
+        activeKeywords?: any[];
+        approveLogs?: any[];
+    },
+): Promise<T | null | undefined> {
     if (!conversation)
         return conversation ?? null;
 
     const plainConversation = toPlainConversation(conversation);
 
-    // Transform lastMessage (includes sender avatar blur)
-    const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage) ?? plainConversation.lastMessage;
+    // Transform lastMessage (includes sender avatar blur and keyword masking)
+    const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage, options) ?? plainConversation.lastMessage;
 
     // Get viewer context for media hydration
     let sessionUser: any;
@@ -438,8 +448,26 @@ export async function transformConversationDocs<T extends I_Conversation>(contex
     if (!docs?.length)
         return docs ?? [];
 
+    // Pre-fetch active keywords and approve logs for masking for all lastMessages
+    const lastMessageIds = docs.map(d => d.lastMessageId || (d.lastMessage as any)?.id).filter(Boolean);
+    const [activeKeywordsRes, approveLogsRes] = await Promise.all([
+        keywordCtr.getActiveKeywords(context),
+        lastMessageIds.length > 0
+            ? moderationLogCtr.getModerationLogs(context, {
+                    filter: {
+                        messageId: { $in: lastMessageIds },
+                        action: E_ModerationLogAction.APPROVE,
+                    },
+                    options: { pagination: false },
+                })
+            : Promise.resolve({ success: true, result: { docs: [] } } as any),
+    ]);
+
+    const activeKeywords = activeKeywordsRes.success && Array.isArray(activeKeywordsRes.result) ? activeKeywordsRes.result : undefined;
+    const approveLogs = approveLogsRes.success && approveLogsRes.result?.docs ? approveLogsRes.result.docs : undefined;
+
     const transformed = await Promise.all(
-        docs.map(async doc => await transformConversationMedia(context, doc) ?? doc),
+        docs.map(async doc => await transformConversationMedia(context, doc, { activeKeywords, approveLogs }) ?? doc),
     );
     return transformed;
 }

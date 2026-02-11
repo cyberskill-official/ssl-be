@@ -115,6 +115,13 @@ export const eventCtr = {
             throwError({ message: 'Event not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
+        // Block check: prevent hidden/blocked users from viewing each other's events
+        const blockedUserIds = await getBlockedUserIds(context);
+        const creatorId = eventFound.result.createdById || (eventFound.result.createdBy as any)?.id;
+        if (creatorId && blockedUserIds.has(creatorId)) {
+            throwError({ message: 'Event not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
         if (eventFound.result.image) {
             const signedImage = await signEventImage(eventFound.result.image, context, eventFound.result.createdById);
             // If signEventImage returns null, set to undefined to show default image
