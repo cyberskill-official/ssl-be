@@ -168,14 +168,13 @@ export const notificationCtr = {
                 if (n.entityType === E_NotificationEntityType.USER && n.entityId) {
                     try {
                         const entityUser = await userCtr.getUser(_context, { filter: { id: n.entityId } });
-                        // If user doesn't exist or is deleted, dismiss notification
-                        if (!entityUser.success || entityUser.result.isDel === true) {
+                        // If user is explicitly confirmed as deleted, dismiss notification
+                        if (entityUser.success && entityUser.result?.isDel === true) {
                             notificationsToDismiss.push(n.id!);
                         }
                     }
                     catch {
-                        // If check fails, dismiss to be safe
-                        notificationsToDismiss.push(n.id!);
+                        // Ignore check failures to avoid accidental dismissal
                     }
                 }
             }

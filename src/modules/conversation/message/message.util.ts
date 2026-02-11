@@ -41,7 +41,7 @@ function maskLexicalText(jsonStr: string, pattern: RegExp): string {
         return jsonStr.replace(pattern, '*****');
 
     try {
-        const root = JSON.parse(jsonStr);
+        const parsed = JSON.parse(jsonStr);
         const recursiveMask = (node: any) => {
             if (!node || typeof node !== 'object')
                 return;
@@ -50,12 +50,17 @@ function maskLexicalText(jsonStr: string, pattern: RegExp): string {
                 node.text = node.text.replace(pattern, '*****');
             }
 
+            // Traverse into Lexical's root wrapper: { root: { children: [...] } }
+            if (node.root && typeof node.root === 'object') {
+                recursiveMask(node.root);
+            }
+
             if (Array.isArray(node.children)) {
                 node.children.forEach(recursiveMask);
             }
         };
-        recursiveMask(root);
-        return JSON.stringify(root);
+        recursiveMask(parsed);
+        return JSON.stringify(parsed);
     }
     catch {
         // Fallback to raw replacement if JSON is invalid but looked like JSON
@@ -71,7 +76,7 @@ export function extractLexicalText(jsonStr: string | null | undefined): string {
         return trimmed;
 
     try {
-        const root = JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed);
         let textResult = '';
         const recursiveExtract = (node: any) => {
             if (!node || typeof node !== 'object')
@@ -81,11 +86,16 @@ export function extractLexicalText(jsonStr: string | null | undefined): string {
                 textResult += (textResult ? ' ' : '') + node.text;
             }
 
+            // Traverse into Lexical's root wrapper: { root: { children: [...] } }
+            if (node.root && typeof node.root === 'object') {
+                recursiveExtract(node.root);
+            }
+
             if (Array.isArray(node.children)) {
                 node.children.forEach(recursiveExtract);
             }
         };
-        recursiveExtract(root);
+        recursiveExtract(parsed);
         return textResult;
     }
     catch {
@@ -376,7 +386,7 @@ export async function transformMessageMedia(
                             const hasSpecialChars = /[^\w\s]/.test(word);
                             const keywordPattern = hasSpecialChars
                                 ? new RegExp(escapeRegExp(word), 'gi')
-                                : new RegExp(`\\b${escapeRegExp(word)}\\b`, 'gi');
+                                : new RegExp(`\\b${escapeRegExp(word)}`, 'gi');
 
                             content.value = maskLexicalText(content.value, keywordPattern);
                         }

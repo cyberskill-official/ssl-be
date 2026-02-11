@@ -22,13 +22,13 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
-import { blockCtr } from '#modules/block/block.controller.js';
 import { bunnyCtr, cleanFullUrl } from '#modules/bunny/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
+import { getBlockedUserIds } from '#shared/util/block-helper.js';
 import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
 
 import type {
@@ -473,30 +473,8 @@ export const locationCtr = {
 
         const docsSource = [...rawDocs, ...syntheticClubVisitDocs];
 
-        // Fetch blocked users list để filter bidirectional blocking
-        let blockedUserIds = new Set<string>();
-        try {
-            const viewer = await authnCtr.getUserFromSession(context);
-            if (viewer?.id) {
-                // Import blockCtr để fetch blocks
-                const blocks = await blockCtr.getBlocks(context, { options: { pagination: false } });
-                if (blocks.success && blocks.result?.docs) {
-                    blocks.result.docs.forEach((block) => {
-                        // Add both userId and blockId để hide bidirectional
-                        if (block.userId && block.userId !== viewer.id) {
-                            blockedUserIds.add(block.userId);
-                        }
-                        if (block.blockId && block.blockId !== viewer.id) {
-                            blockedUserIds.add(block.blockId);
-                        }
-                    });
-                }
-            }
-        }
-        catch {
-            // Nếu user chưa login hoặc fetch blocks fail, skip blocking logic
-            blockedUserIds = new Set<string>();
-        }
+        // Fetch blocked users list for bidirectional blocking (hide profile)
+        const blockedUserIds = await getBlockedUserIds(context);
 
         let forcedEntityInserted = false;
         const now = new Date();
