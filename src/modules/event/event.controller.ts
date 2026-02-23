@@ -99,8 +99,28 @@ export const eventCtr = {
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryEvent>,
     ): Promise<I_Return<I_Event>> => {
+        const now = new Date();
+        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+        const effectiveFilterAny = effectiveFilter as Record<string, any>;
+
+        // Exclude expired events (same logic as getEvents)
+        const expiryCondition = {
+            $or: [
+                { endDate: { $gt: now } },
+                { endDate: null },
+                { endDate: { $exists: false } },
+            ],
+        };
+
+        if (Array.isArray(effectiveFilterAny['$and'])) {
+            effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
+        }
+        else {
+            effectiveFilterAny['$and'] = [expiryCondition];
+        }
+
         const eventFound = await mongooseCtr.findOne(
-            filter,
+            effectiveFilterAny,
             projection,
             options,
             ensureCreatedByPopulate(populate) as any,
