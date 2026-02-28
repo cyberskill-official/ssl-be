@@ -32,19 +32,20 @@ export const tagCtr = {
         if (!isAdmin) {
             const userId = context.req?.session?.user?.id;
 
-            // Guard: if no userId, only show default (non-custom) tags
-            // This prevents Mongoose stripping `undefined` from the query
-            // which would match ALL custom tags
+            // A tag is "default" when it has no createdById (system-seeded).
+            // We check BOTH isCustom AND createdById to be resilient against
+            // data inconsistencies (e.g. old tags missing the isCustom flag).
             const scopedFilter = userId
                 ? {
                         ...filter,
                         $or: [
-                            { isCustom: { $ne: true } },
-                            { isCustom: true, createdById: userId },
+                            { createdById: { $eq: null }, isCustom: { $ne: true } },
+                            { createdById: userId },
                         ],
                     }
                 : {
                         ...filter,
+                        createdById: { $eq: null },
                         isCustom: { $ne: true },
                     };
 
