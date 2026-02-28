@@ -31,13 +31,23 @@ export const tagCtr = {
         // Admin sees all tags; regular users see default + their own custom tags
         if (!isAdmin) {
             const userId = context.req?.session?.user?.id;
-            const scopedFilter = {
-                ...filter,
-                $or: [
-                    { isCustom: { $ne: true } },
-                    { isCustom: true, createdById: userId },
-                ],
-            };
+
+            // Guard: if no userId, only show default (non-custom) tags
+            // This prevents Mongoose stripping `undefined` from the query
+            // which would match ALL custom tags
+            const scopedFilter = userId
+                ? {
+                        ...filter,
+                        $or: [
+                            { isCustom: { $ne: true } },
+                            { isCustom: true, createdById: userId },
+                        ],
+                    }
+                : {
+                        ...filter,
+                        isCustom: { $ne: true },
+                    };
+
             return mongooseCtr.findPaging(scopedFilter as any, options);
         }
 
@@ -49,6 +59,13 @@ export const tagCtr = {
     ): Promise<I_Return<I_Tag>> => {
         const isUser = await authnCtr.isUser(context);
         const userId = context.req?.session?.user?.id;
+
+        if (isUser && !userId) {
+            throwError({
+                message: 'User session invalid.',
+                status: RESPONSE_STATUS.UNAUTHORIZED,
+            });
+        }
 
         const { name, type } = doc;
 
@@ -94,6 +111,26 @@ export const tagCtr = {
             throwError({
                 message: 'Tag not found.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        // Regular users can only delete their own custom tags
+        const isAdmin = await authnCtr.isAdmin(context).catch(() => false);
+        if (!isAdmin && tagFound.result?.isCustom) {
+            const userId = context.req?.session?.user?.id;
+            if (tagFound.result.createdById !== userId) {
+                throwError({
+                    message: 'You can only delete your own custom tags.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
+        // Prevent regular users from deleting default tags
+        if (!isAdmin && !tagFound.result?.isCustom) {
+            throwError({
+                message: 'Cannot delete default tags.',
+                status: RESPONSE_STATUS.FORBIDDEN,
             });
         }
 
