@@ -23,9 +23,24 @@ export const tagCtr = {
         return mongooseCtr.findOne(filter, projection, options, populate);
     },
     getTags: async (
-        _context: I_Context,
+        context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryTag>,
     ): Promise<I_Return<T_PaginateResult<I_Tag>>> => {
+        const isAdmin = await authnCtr.isAdmin(context).catch(() => false);
+
+        // Admin sees all tags; regular users see default + their own custom tags
+        if (!isAdmin) {
+            const userId = context.req?.session?.user?.id;
+            const scopedFilter = {
+                ...filter,
+                $or: [
+                    { isCustom: { $ne: true } },
+                    { isCustom: true, createdById: userId },
+                ],
+            };
+            return mongooseCtr.findPaging(scopedFilter as any, options);
+        }
+
         return mongooseCtr.findPaging(filter, options);
     },
     createTag: async (
@@ -33,10 +48,17 @@ export const tagCtr = {
         { doc }: I_Input_CreateOne<I_Input_CreateTag>,
     ): Promise<I_Return<I_Tag>> => {
         const isUser = await authnCtr.isUser(context);
+        const userId = context.req?.session?.user?.id;
 
         const { name, type } = doc;
 
-        const tagFound = await tagCtr.getTag(context, { filter: { name, type } });
+        // Custom tags: check uniqueness per user only
+        // Default tags: check global uniqueness
+        const duplicateFilter = isUser
+            ? { name, type, createdById: userId }
+            : { name, type, isCustom: { $ne: true } };
+
+        const tagFound = await tagCtr.getTag(context, { filter: duplicateFilter as any });
 
         if (tagFound.success) {
             throwError({
@@ -45,7 +67,7 @@ export const tagCtr = {
             });
         }
 
-        return mongooseCtr.createOne({ ...doc, isCustom: isUser, createdById: context.req?.session?.user?.id });
+        return mongooseCtr.createOne({ ...doc, isCustom: isUser, createdById: userId });
     },
     updateTag: async (
         context: I_Context,
