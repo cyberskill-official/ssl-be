@@ -11,9 +11,9 @@ type T_Event {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_EventType
-    title: String
+    title: JSON
     slug: String
-    description: String
+    description: JSON
     startDate: DateTime
     endDate: DateTime
     image: String
@@ -37,9 +37,7 @@ input Input_QueryEvent {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_EventType
-    title: String
     slug: String
-    description: String
     startDate: DateTime
     endDate: DateTime
     image: String
@@ -56,8 +54,8 @@ input Input_QueryEvent {
 
 input Input_CreateEvent {
     type: E_EventType!
-    title: String
-    description: String!
+    title: JSON
+    description: JSON!
     startDate: DateTime
     endDate: DateTime
     image: String
@@ -75,8 +73,8 @@ input Input_CreateEvent {
 input Input_UpdateEvent {
     isDel: Boolean
     type: E_EventType
-    title: String
-    description: String
+    title: JSON
+    description: JSON
     startDate: DateTime
     endDate: DateTime
     image: String

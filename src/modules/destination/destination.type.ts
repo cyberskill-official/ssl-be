@@ -4,6 +4,7 @@ import type { I_Location } from '#modules/location/index.js';
 import type { I_Rating } from '#modules/rating/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/index.js';
+import type { I_LocalizedString } from '#shared/typescript/index.js';
 
 export enum E_DestinationType {
     CLUB = 'CLUB',
@@ -28,7 +29,7 @@ export interface I_Hotel {
     locationId?: string;
     location?: I_Location;
     url?: string;
-    description?: string;
+    description?: I_LocalizedString;
     image?: string;
 }
 
@@ -39,8 +40,8 @@ export interface I_Destination extends I_GenericDocument {
     websiteURL?: string;
     rating?: E_DestinationRating;
     images?: string[];
-    introductionHeadline?: string;
-    introductionContent?: string;
+    introductionHeadline?: I_LocalizedString;
+    introductionContent?: I_LocalizedString;
     introductionContentPlain?: string;
     ageGroup?: E_DestinationAgeGroup;
     ratingStar?: string;
@@ -49,18 +50,18 @@ export interface I_Destination extends I_GenericDocument {
     location?: I_Location;
     nearbyHotels?: I_Hotel[];
     wearImage?: string;
-    womenDressCode?: string;
-    menDressCode?: string;
+    womenDressCode?: I_LocalizedString;
+    menDressCode?: I_LocalizedString;
     useDefaultText?: boolean;
     atmosphereRating?: I_Rating;
     guestsRating?: I_Rating;
     facilitiesRating?: I_Rating;
     serviceRating?: I_Rating;
     xFactorRating?: I_Rating;
-    highlightSex?: string;
-    highlightWellness?: string;
-    highlightBar?: string;
-    highlightDance?: string;
+    highlightSex?: I_LocalizedString;
+    highlightWellness?: I_LocalizedString;
+    highlightBar?: I_LocalizedString;
+    highlightDance?: I_LocalizedString;
     seo?: I_Seo;
     linkTo?: string;
     isActive?: boolean;
@@ -80,8 +81,8 @@ export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Cr
     websiteURL: string;
     rating: E_DestinationRating;
     images: string[];
-    introductionHeadline: string;
-    introductionContent: string;
+    introductionHeadline: I_LocalizedString;
+    introductionContent: I_LocalizedString;
     ageGroup: E_DestinationAgeGroup;
     isActive: boolean;
 }

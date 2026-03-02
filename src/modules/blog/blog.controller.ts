@@ -125,7 +125,7 @@ export const blogCtr = {
                 thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' } });
             }
         }
-        catch {}
+        catch { }
         try {
             const [adminRole, staffRole] = await Promise.all([
                 roleCtr.getRole(context, { filter: { name: E_Role_Staff.ADMIN } }),
@@ -156,14 +156,14 @@ export const blogCtr = {
                                     gender: currentUser.partner1?.gender,
                                 },
                                 thumbnailUrl: blogResult.result.featuredImage ? thumbnailUrl : undefined,
-                                headline: blogResult.result.title,
+                                headline: typeof blogResult.result.title === 'object' ? (blogResult.result.title?.en ?? blogResult.result.title?.fr ?? blogResult.result.title?.de ?? blogResult.result.title?.da) : blogResult.result.title,
                             },
                         },
                     }),
                 ));
             }
         }
-        catch {}
+        catch { }
         return blogResult;
     },
     updateBlog: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>): Promise<I_Return<I_Blog>> => {

@@ -292,11 +292,13 @@ export const destinationCtr = {
             throwError({ message: 'At least one image is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (!doc.introductionHeadline?.trim()) {
+        const introHeadlineStr = typeof doc.introductionHeadline === 'object' ? (doc.introductionHeadline?.en ?? doc.introductionHeadline?.fr ?? doc.introductionHeadline?.de ?? doc.introductionHeadline?.da ?? '') : (doc.introductionHeadline ?? '');
+        if (!introHeadlineStr?.trim()) {
             throwError({ message: 'Introduction headline is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (!doc.introductionContent?.trim()) {
+        const introContentStr = typeof doc.introductionContent === 'object' ? (doc.introductionContent?.en ?? doc.introductionContent?.fr ?? doc.introductionContent?.de ?? doc.introductionContent?.da ?? '') : (doc.introductionContent ?? '');
+        if (!introContentStr?.trim()) {
             throwError({ message: 'Introduction content is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -434,11 +436,13 @@ export const destinationCtr = {
             throwError({ message: 'At least one image is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.introductionHeadline !== undefined && !update.introductionHeadline.trim()) {
+        const updatedHeadlineStr = typeof update.introductionHeadline === 'object' ? (update.introductionHeadline?.en ?? update.introductionHeadline?.fr ?? update.introductionHeadline?.de ?? update.introductionHeadline?.da ?? '') : (update.introductionHeadline ?? '');
+        if (update.introductionHeadline !== undefined && !updatedHeadlineStr.trim()) {
             throwError({ message: 'Introduction headline cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.introductionContent !== undefined && !update.introductionContent.trim()) {
+        const updatedContentStr = typeof update.introductionContent === 'object' ? (update.introductionContent?.en ?? update.introductionContent?.fr ?? update.introductionContent?.de ?? update.introductionContent?.da ?? '') : (update.introductionContent ?? '');
+        if (update.introductionContent !== undefined && !updatedContentStr.trim()) {
             throwError({ message: 'Introduction content cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 

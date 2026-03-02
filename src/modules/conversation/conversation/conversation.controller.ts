@@ -260,7 +260,7 @@ function extractContactMessage(raw: string | null | undefined): string {
 }
 
 export const conversationCtr = {
-// Ensure required relationships are always populated for conversation listings.
+    // Ensure required relationships are always populated for conversation listings.
     normalizePopulateOptions: (options: Record<string, any> | undefined, requiredPaths: string[]) => {
         const existingPopulate = options?.['populate'];
         const populateList = Array.isArray(existingPopulate)
@@ -828,7 +828,8 @@ export const conversationCtr = {
         if (resolvedEventId) {
             const eventFound = await eventCtr.getEvent(context, { filter: { id: resolvedEventId } });
             if (eventFound.success && eventFound.result?.title) {
-                eventTitle = eventFound.result.title;
+                const t = eventFound.result.title;
+                eventTitle = typeof t === 'object' ? (t?.en ?? t?.fr ?? t?.de ?? t?.da) : t;
             }
         }
 
@@ -1245,7 +1246,7 @@ export const conversationCtr = {
             const pRes = await participantCtr.createParticipants(context, { docs: participantDocs });
             if (!pRes.success) {
                 // cleanup
-                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => {});
+                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => { });
 
                 throwError({
                     message: pRes.message ?? 'Failed to create conversation participants.',
@@ -1262,9 +1263,9 @@ export const conversationCtr = {
             });
 
             if (!messageResult.success) {
-            // rollback
-                await participantCtr.deleteParticipants(context, { filter: { conversationId } }).catch(() => {});
-                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => {});
+                // rollback
+                await participantCtr.deleteParticipants(context, { filter: { conversationId } }).catch(() => { });
+                await mongooseCtr.deleteOne({ id: conversationId }).catch(() => { });
 
                 throwError({
                     message: messageResult.message ?? 'Failed to create support message.',
@@ -1320,7 +1321,7 @@ export const conversationCtr = {
 
         if (!guestMessageResult.success || !guestMessageResult.result) {
             // No participants to delete since we don't add them at creation time
-            await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => {});
+            await mongooseCtr.deleteOne({ id: guestConversationId }).catch(() => { });
 
             throwError({
                 message: guestMessageResult.message ?? 'Failed to record support message.',
@@ -1464,11 +1465,11 @@ export const conversationCtr = {
         const emailPayload = { email: rawEmail, message: trimmedMessage, topic: topic ?? '', requestType: validatedRequestType ?? '' };
 
         try {
-        // FIRST: check if the email belongs to a registered user
+            // FIRST: check if the email belongs to a registered user
             const userRes = await userCtr.getUser(context, { filter: { email: rawEmail } });
 
             if (userRes.success && userRes.result) {
-            // Registered user -> create/find DM and append admin message (no external email)
+                // Registered user -> create/find DM and append admin message (no external email)
                 const recipientId = userRes.result.id;
                 // If the resolved recipient is the same as the current admin account, avoid creating a DM
                 // that would post a message to the admin's own account. Prefer posting into the provided
@@ -1483,7 +1484,7 @@ export const conversationCtr = {
                             const participantRes = await participantCtr.getParticipant(context, { filter: { conversationId: providedConvId, userId: currentUser.id } });
                             if (!participantRes.success || !participantRes.result) {
                                 // try to add admin as participant (non-blocking on failure)
-                                await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => {});
+                                await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => { });
                             }
 
                             const createMsg = await messageCtr.createMessageOnly(context, {
@@ -1498,7 +1499,7 @@ export const conversationCtr = {
                                 throwError({ message: 'Failed to post reply to provided conversation.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                             }
 
-                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => {});
+                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => { });
 
                             // Update conversation status to IN_PROGRESS when admin replies
                             await mongooseCtr.updateOne(
@@ -1507,7 +1508,7 @@ export const conversationCtr = {
                                     status: E_ConversationStatus.IN_PROGRESS,
                                     lastReadByAdminAt: new Date(),
                                 },
-                            ).catch(() => {});
+                            ).catch(() => { });
 
                             // Publish WS event so admin UI updates
                             try {
@@ -1660,7 +1661,7 @@ export const conversationCtr = {
                 }
 
                 if (!targetConversationId) {
-                // if for some reason we couldn't determine/create a conversation, throw
+                    // if for some reason we couldn't determine/create a conversation, throw
                     throwError({ message: 'Failed to create or find conversation for registered user.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                 }
 
@@ -1684,7 +1685,7 @@ export const conversationCtr = {
                     await messageStatusCtr.createMessageStatusOnly(createMsg.result.id, recipientId);
 
                     // update sender lastRead
-                    await participantCtr.updateLastReadMessage(targetConversationId, currentUser.id, createMsg.result.id).catch(() => {});
+                    await participantCtr.updateLastReadMessage(targetConversationId, currentUser.id, createMsg.result.id).catch(() => { });
 
                     const finalConversationResult = await conversationCtr._populateConversationWithParticipants(targetConversationId);
                     if (finalConversationResult.success && finalConversationResult.result) {
@@ -1740,7 +1741,7 @@ export const conversationCtr = {
                 return { success: true, message: 'Reply posted to user conversation.', result: true };
             }
             else {
-            // Guest (not a registered user)
+                // Guest (not a registered user)
                 // If the admin provided a conversationId (guest support thread), prefer posting the reply
                 // into that conversation so it appears in the admin UI. If posting fails, fall back to
                 // sending an external email to the guest address.
@@ -1750,7 +1751,7 @@ export const conversationCtr = {
                         const participantRes = await participantCtr.getParticipant(context, { filter: { conversationId: providedConvId, userId: currentUser.id } });
                         if (!participantRes.success || !participantRes.result) {
                             // Add admin as participant when they reply (non-blocking on failure)
-                            await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => {});
+                            await participantCtr.createParticipants(context, { docs: [{ conversationId: providedConvId, userId: currentUser.id, role: E_ParticipantRole.ADMIN }] }).catch(() => { });
                         }
 
                         const createMsg = await messageCtr.createMessageOnly(context, {
@@ -1762,13 +1763,13 @@ export const conversationCtr = {
                         });
 
                         if (createMsg.success && createMsg.result) {
-                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => {});
+                            await conversationCtr._updateLastMessageId(providedConvId, createMsg.result.id).catch(() => { });
 
                             // Publish WS event and create message status so UI updates for other admin participants
                             try {
                                 // mark message status for all other participants could be added; at minimum mark for the admin
-                                await messageStatusCtr.createMessageStatusOnly(createMsg.result.id, currentUser.id).catch(() => {});
-                                await participantCtr.updateLastReadMessage(providedConvId, currentUser.id, createMsg.result.id).catch(() => {});
+                                await messageStatusCtr.createMessageStatusOnly(createMsg.result.id, currentUser.id).catch(() => { });
+                                await participantCtr.updateLastReadMessage(providedConvId, currentUser.id, createMsg.result.id).catch(() => { });
 
                                 const finalConversationResult = await conversationCtr._populateConversationWithParticipants(providedConvId);
                                 if (finalConversationResult.success && finalConversationResult.result) {
@@ -1863,7 +1864,7 @@ export const conversationCtr = {
             }
         }
         catch (err) {
-        // bubble up as INTERNAL_SERVER_ERROR with message
+            // bubble up as INTERNAL_SERVER_ERROR with message
             throwError({ message: (err as Error).message ?? 'Failed to send reply or post message.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
     },
@@ -2441,9 +2442,9 @@ export const conversationCtr = {
                     statusMedia,
                     moderationMediaId,
                     expiresAt:
-          conversation.type === E_ConversationType.GROUP && conversation.retentionDays
-              ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)
-              : undefined,
+                        conversation.type === E_ConversationType.GROUP && conversation.retentionDays
+                            ? new Date(Date.now() + conversation.retentionDays * 24 * 60 * 60 * 1000)
+                            : undefined,
                 },
             });
             if (!messageResult.success) {

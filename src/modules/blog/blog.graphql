@@ -19,7 +19,7 @@ type T_Blog {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    title: String
+    title: JSON
     slug: String
     authorName: String
     websiteName: String
@@ -27,9 +27,9 @@ type T_Blog {
     type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
-    contentHeadline: String
-    contentSubHeadline: String
-    content: String
+    contentHeadline: JSON
+    contentSubHeadline: JSON
+    content: JSON
     relatedBlogsIds: [String]
     relatedBlogs: [T_Blog]
     languageId: String
@@ -52,7 +52,6 @@ input Input_QueryBlog {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    title: String
     slug: String
     authorName: String
     websiteName: String
@@ -60,9 +59,6 @@ input Input_QueryBlog {
     type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
-    contentHeadline: String
-    contentSubHeadline: String
-    content: String
     relatedBlogsIds: [String]
     languageId: String
     hostName: String
@@ -78,7 +74,7 @@ input Input_QueryBlog {
 }
 
 input Input_CreateBlog {
-    title: String!
+    title: JSON!
     authorName: String
     authorId: String
     websiteName: String
@@ -86,9 +82,9 @@ input Input_CreateBlog {
     type: E_BlogType!
     category: E_BlogCategory!
     featuredImage: String!
-    contentHeadline: String!
-    contentSubHeadline: String!
-    content: String!
+    contentHeadline: JSON!
+    contentSubHeadline: JSON!
+    content: JSON!
     relatedBlogsIds: [String]
     languageId: String
     hostName: String
@@ -103,7 +99,7 @@ input Input_CreateBlog {
 
 input Input_UpdateBlog {
     isDel: Boolean
-    title: String
+    title: JSON
     authorName: String
     authorId: String
     websiteName: String
@@ -111,9 +107,9 @@ input Input_UpdateBlog {
     type: E_BlogType
     category: E_BlogCategory
     featuredImage: String
-    contentHeadline: String
-    contentSubHeadline: String
-    content: String
+    contentHeadline: JSON
+    contentSubHeadline: JSON
+    content: JSON
     relatedBlogsIds: [String]
     languageId: String
     hostName: String
