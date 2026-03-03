@@ -31,7 +31,7 @@ type T_Hotel {
     locationId: String
     location: T_Location
     url: String
-    description: String
+    description: JSON
     image: String
 }
 
@@ -39,7 +39,7 @@ input Input_Hotel {
     name: String
     location: Input_Location
     url: String
-    description: String
+    description: JSON
     image: String
 }
 
@@ -64,8 +64,8 @@ type T_Destination {
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
-    introductionHeadline: String
-    introductionContent: String
+    introductionHeadline: JSON
+    introductionContent: JSON
     introductionContentPlain: String
     ageGroup: E_DestinationAgeGroup
     ratingStar: String
@@ -74,18 +74,18 @@ type T_Destination {
     location: T_Location
     nearbyHotels: [T_Hotel]
     wearImage: String
-    womenDressCode: String
-    menDressCode: String
+    womenDressCode: JSON
+    menDressCode: JSON
     useDefaultText: Boolean
     atmosphereRating: T_Rating
     guestsRating: T_Rating
     facilitiesRating: T_Rating
     serviceRating: T_Rating
     xFactorRating: T_Rating
-    highlightSex: String
-    highlightWellness: String
-    highlightBar: String
-    highlightDance: String
+    highlightSex: JSON
+    highlightWellness: JSON
+    highlightBar: JSON
+    highlightDance: JSON
     seo: T_Seo
     linkTo: String
     isActive: Boolean
@@ -104,8 +104,6 @@ input Input_QueryDestination {
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
-    introductionHeadline: String
-    introductionContent: String
     introductionContentPlain: String
     ageGroup: E_DestinationAgeGroup
     ratingStar: String
@@ -114,18 +112,12 @@ input Input_QueryDestination {
     countryId: String
     nearbyHotels: [Input_Hotel]
     wearImage: String
-    womenDressCode: String
-    menDressCode: String
     useDefaultText: Boolean
     atmosphereRating: Input_Rating
     guestsRating: Input_Rating
     facilitiesRating: Input_Rating
     serviceRating: Input_Rating
     xFactorRating: Input_Rating
-    highlightSex: String
-    highlightWellness: String
-    highlightBar: String
-    highlightDance: String
     seo: Input_Seo
     linkTo: String
     isActive: Boolean
@@ -138,26 +130,26 @@ input Input_CreateDestination {
     websiteURL: String!
     rating: E_DestinationRating!
     images: [String]!
-    introductionHeadline: String!
-    introductionContent: String!
+    introductionHeadline: JSON!
+    introductionContent: JSON!
     ageGroup: E_DestinationAgeGroup!
     ratingStar: String
     logo: String
     location: Input_Location
     nearbyHotels: [Input_Hotel]
     wearImage: String
-    womenDressCode: String
-    menDressCode: String
+    womenDressCode: JSON
+    menDressCode: JSON
     useDefaultText: Boolean
     atmosphereRating: Input_Rating
     guestsRating: Input_Rating
     facilitiesRating: Input_Rating
     serviceRating: Input_Rating
     xFactorRating: Input_Rating
-    highlightSex: String
-    highlightWellness: String
-    highlightBar: String
-    highlightDance: String
+    highlightSex: JSON
+    highlightWellness: JSON
+    highlightBar: JSON
+    highlightDance: JSON
     seo: Input_Seo
     linkTo: String
     isActive: Boolean!
@@ -171,26 +163,26 @@ input Input_UpdateDestination {
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
-    introductionHeadline: String
-    introductionContent: String
+    introductionHeadline: JSON
+    introductionContent: JSON
     ageGroup: E_DestinationAgeGroup
     ratingStar: String
     logo: String
     location: Input_Location
     nearbyHotels: [Input_Hotel]
     wearImage: String
-    womenDressCode: String
-    menDressCode: String
+    womenDressCode: JSON
+    menDressCode: JSON
     useDefaultText: Boolean
     atmosphereRating: Input_Rating
     guestsRating: Input_Rating
     facilitiesRating: Input_Rating
     serviceRating: Input_Rating
     xFactorRating: Input_Rating
-    highlightSex: String
-    highlightWellness: String
-    highlightBar: String
-    highlightDance: String
+    highlightSex: JSON
+    highlightWellness: JSON
+    highlightBar: JSON
+    highlightDance: JSON
     seo: Input_Seo
     linkTo: String
     isActive: Boolean

@@ -3,6 +3,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 import type { I_Destination } from '#modules/destination/index.js';
 import type { I_Location } from '#modules/location/index.js';
 import type { I_User } from '#modules/user/user.type.js';
+import type { I_LocalizedString } from '#shared/typescript/index.js';
 
 export enum E_EventType {
     BOOTY_CALL = 'BOOTY_CALL',
@@ -13,9 +14,9 @@ export enum E_EventType {
 
 export interface I_Event extends I_GenericDocument {
     type?: E_EventType;
-    title?: string;
+    title?: I_LocalizedString;
     slug?: string;
-    description?: string;
+    description?: I_LocalizedString;
     startDate?: Date;
     endDate?: Date;
     image?: string;
@@ -39,8 +40,8 @@ export interface I_Input_QueryEvent extends Omit<I_Event, T_Event_Populate> { }
 
 export interface I_Input_CreateEvent extends Omit<I_Event, T_Omit_Create | T_Event_Populate> {
     type: E_EventType;
-    title: string;
-    description: string;
+    title?: I_LocalizedString;
+    description: I_LocalizedString;
     startDate: Date;
     endDate: Date;
     image: string;

@@ -393,13 +393,14 @@ export const eventCtr = {
         }
 
         // description length checks
-        if (!description || description.trim().length === 0) {
+        const descriptionEn = typeof description === 'object' ? (description?.en ?? description?.fr ?? description?.de ?? description?.da ?? '') : (description ?? '');
+        if (!descriptionEn || descriptionEn.trim().length === 0) {
             throwError({ message: 'Description is required.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        if ((description ?? '').length < 25) {
+        if (descriptionEn.length < 25) {
             throwError({ message: 'Description minimum: 25 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
-        if ((description ?? '').length > 130) {
+        if (descriptionEn.length > 130) {
             throwError({ message: 'Description maximum: 130 characters.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -481,7 +482,7 @@ export const eventCtr = {
             }
 
             const clubName = destination.name?.trim() ?? '';
-            doc.title = clubName ? `Going clubbing ${clubName}` : 'Going clubbing';
+            doc.title = { en: clubName ? `Going clubbing ${clubName}` : 'Going clubbing' };
             doc.image = (destination.images && destination.images[0]) ?? image;
 
             // persist pinStyle on the event doc to make UI rendering easier (if available)
@@ -495,7 +496,8 @@ export const eventCtr = {
 
         // TRAVEL validations
         if (type === E_EventType.TRAVEL) {
-            if (!description?.trim()) {
+            const descStr = typeof description === 'object' ? (description?.en ?? description?.fr ?? description?.de ?? description?.da ?? '') : (description ?? '');
+            if (!descStr?.trim()) {
                 throwError({ message: 'Description is required for Travel Announcements', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (!location) {
@@ -511,7 +513,8 @@ export const eventCtr = {
 
         // BOOTY_CALL validations (date only, expires at 23:59 in pin's timezone)
         if (type === E_EventType.BOOTY_CALL) {
-            if (!description?.trim()) {
+            const descStr = typeof description === 'object' ? (description?.en ?? description?.fr ?? description?.de ?? description?.da ?? '') : (description ?? '');
+            if (!descStr?.trim()) {
                 throwError({ message: 'Text description is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
             if (!startDate) {
@@ -585,7 +588,7 @@ export const eventCtr = {
         if (type === E_EventType.PRIVATE) {
             const createdConversation = await conversationCtr.createConversationInternal(context, {
                 doc: {
-                    name: doc.title ?? title,
+                    name: (typeof (doc.title ?? title) === 'object' ? ((doc.title ?? title) as any)?.en ?? ((doc.title ?? title) as any)?.fr ?? ((doc.title ?? title) as any)?.de ?? ((doc.title ?? title) as any)?.da : (doc.title ?? title)) as string | undefined,
                     type: E_ConversationType.GROUP,
                     createdById: currentUser.id,
                     entityType: E_NotificationEntityType.EVENT,
@@ -852,7 +855,7 @@ export const eventCtr = {
                     gender: currentUser.partner1?.gender,
                 },
                 redirect: eventRedirect,
-                headline: eventCreated.result.title,
+                headline: typeof eventCreated.result.title === 'object' ? (eventCreated.result.title?.en ?? eventCreated.result.title?.fr ?? eventCreated.result.title?.de ?? eventCreated.result.title?.da) : eventCreated.result.title,
                 thumbnailUrl,
             } as const;
 

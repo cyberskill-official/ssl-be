@@ -559,7 +559,7 @@ export const invitationCtr = {
                                 },
                             });
                         }
-                        catch {}
+                        catch { }
                     }
                     break;
 
@@ -594,7 +594,10 @@ export const invitationCtr = {
                                                 eventType: eventFound.result.type,
                                             },
                                             context: {
-                                                groupName: eventFound.result.title || '',
+                                                groupName: (() => {
+                                                    const t = eventFound.result.title;
+                                                    return typeof t === 'object' ? (t?.en ?? t?.fr ?? t?.de ?? t?.da ?? '') : (t ?? '');
+                                                })(),
                                             },
                                         },
                                     },

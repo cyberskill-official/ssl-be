@@ -4,6 +4,7 @@ import type { I_Language } from '#modules/language/index.js';
 import type { I_Seo } from '#modules/seo/index.js';
 import type { I_SocialLink } from '#modules/setting/index.js';
 import type { I_User } from '#modules/user/index.js';
+import type { I_LocalizedString } from '#shared/typescript/index.js';
 
 export enum E_BlogType {
     BLOG = 'BLOG',
@@ -22,7 +23,7 @@ export enum E_BlogCategory {
 }
 
 export interface I_Blog extends I_GenericDocument {
-    title?: string;
+    title?: I_LocalizedString;
     slug?: string;
     authorName?: string;
     websiteName?: string;
@@ -30,9 +31,9 @@ export interface I_Blog extends I_GenericDocument {
     type?: E_BlogType;
     category?: E_BlogCategory;
     featuredImage?: string;
-    contentHeadline?: string;
-    contentSubHeadline?: string;
-    content?: string;
+    contentHeadline?: I_LocalizedString;
+    contentSubHeadline?: I_LocalizedString;
+    content?: I_LocalizedString;
     relatedBlogsIds?: string[];
     relatedBlogs?: I_Blog[];
     languageId?: string;
@@ -55,13 +56,13 @@ export type T_Blog_Populate = 'relatedBlogs' | 'language' | 'author';
 export interface I_Input_QueryBlog extends Omit<I_Blog, T_Blog_Populate> { }
 
 export interface I_Input_CreateBlog extends Omit<I_Blog, T_Omit_Create | T_Blog_Populate> {
-    title: string;
+    title: I_LocalizedString;
     type: E_BlogType;
     category: E_BlogCategory;
     featuredImage: string;
-    contentHeadline: string;
-    contentSubHeadline: string;
-    content: string;
+    contentHeadline: I_LocalizedString;
+    contentSubHeadline: I_LocalizedString;
+    content: I_LocalizedString;
 }
 
 export interface I_Input_UpdateBlog extends Omit<I_Blog, T_Omit_Update | T_Blog_Populate> { }

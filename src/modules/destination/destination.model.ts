@@ -24,7 +24,7 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
             type: String,
         },
         description: {
-            type: String,
+            type: Object,
         },
         image: {
             type: String,
@@ -114,7 +114,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             ],
         },
         introductionHeadline: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -124,7 +124,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             ],
         },
         introductionContent: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -160,10 +160,10 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             type: String,
         },
         womenDressCode: {
-            type: String,
+            type: Object,
         },
         menDressCode: {
-            type: String,
+            type: Object,
         },
         useDefaultText: {
             type: Boolean,
@@ -185,16 +185,16 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             type: RatingSchema,
         },
         highlightSex: {
-            type: String,
+            type: Object,
         },
         highlightWellness: {
-            type: String,
+            type: Object,
         },
         highlightBar: {
-            type: String,
+            type: Object,
         },
         highlightDance: {
-            type: String,
+            type: Object,
         },
         seo: {
             type: SeoSchema,

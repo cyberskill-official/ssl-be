@@ -15,7 +15,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
     name: 'Blog',
     schema: {
         title: {
-            type: String,
+            type: Object,
             required: true,
             validate: {
                 validator: mongo.validator.isRequired(),
@@ -80,7 +80,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
             ],
         },
         contentHeadline: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -90,7 +90,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
             ],
         },
         contentSubHeadline: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -100,7 +100,7 @@ export const BlogModel = mongo.createModel<I_Blog>({
             ],
         },
         content: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {

@@ -23,13 +23,13 @@ export const EventModel = mongo.createModel<I_Event>({
             ],
         },
         title: {
-            type: String,
+            type: Object,
         },
         slug: {
             type: String,
         },
         description: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
