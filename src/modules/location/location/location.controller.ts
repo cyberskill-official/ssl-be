@@ -274,56 +274,64 @@ export const locationCtr = {
             baseFilter.entityType = filter.entityType;
         }
 
+        const basePopulate: PopulateOptions[] = [
+            { path: 'city' },
+            { path: 'country' },
+        ];
+
         const eventPopulate: PopulateOptions[] = [
+            { path: 'createdBy' },
             {
                 path: 'createdBy',
-                select: 'username accountType isOnline membershipExpiresAt hasUpcomingEvent',
                 populate: [
-                    {
-                        path: 'partner1',
-                        select: 'galleryId',
-                        populate: [{ path: 'gallery', select: 'url' }],
-                    },
-                    {
-                        path: 'partner2',
-                        select: 'galleryId',
-                        populate: [{ path: 'gallery', select: 'url' }],
-                    },
+                    { path: 'partner1', populate: [{ path: 'gallery' }] },
+                    { path: 'partner2', populate: ['gallery'] },
                 ],
+            },
+            { path: 'location' },
+            {
+                path: 'location',
+                populate: [{ path: 'country' }, { path: 'city' }],
             },
         ];
 
         const userPopulate: PopulateOptions[] = [
+            { path: 'ageVerify' }, // Add ageVerify for media hydration
             {
                 path: 'partner1',
-                select: 'galleryId locationId gender',
                 populate: [
+                    'gallery',
+                    { path: 'gallery', populate: ['uploadedBy'] },
+                    'location',
                     {
-                        path: 'gallery',
-                        select: 'url',
+                        path: 'location',
+                        populate: [{ path: 'country' }, { path: 'city' }],
                     },
                 ],
             },
             {
                 path: 'partner2',
-                select: 'galleryId locationId gender',
                 populate: [
+                    'gallery',
+                    { path: 'gallery', populate: ['uploadedBy'] },
+                    'location',
                     {
-                        path: 'gallery',
-                        select: 'url',
+                        path: 'location',
+                        populate: [{ path: 'country' }, { path: 'city' }],
                     },
                 ],
             },
+            { path: 'lookingFor' },
+            { path: 'profilePurpose' },
             {
                 path: 'settings',
-                select: 'temporaryLocation',
                 populate: [
                     {
                         path: 'temporaryLocation',
                         populate: [
                             {
                                 path: 'location',
-                                select: 'latitude longitude',
+                                populate: [{ path: 'country' }, { path: 'city' }],
                             },
                         ],
                     },
@@ -331,16 +339,18 @@ export const locationCtr = {
             },
         ];
 
-        const destinationPopulate: PopulateOptions[] = [];
+        const destinationPopulate: PopulateOptions[] = [
+            { path: 'location' },
+            {
+                path: 'location',
+                populate: [{ path: 'country' }, { path: 'city' }],
+            },
+        ];
 
         const populates: PopulateOptions[] = [
-            {
-                path: 'map',
-                select: 'latitude longitude',
-            },
+            ...basePopulate,
             {
                 path: 'entity',
-                select: 'username accountType isOnline membershipExpiresAt hasUpcomingEvent',
                 populate: [
                     ...(filter.entityType === E_LocationEntityType.EVENT
                         ? eventPopulate
@@ -366,7 +376,6 @@ export const locationCtr = {
             ...(options ?? {}),
             ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
             populate: populates,
-            select: 'id entityType entityId pinStyle map entity',
         });
 
         if (!pagingResult.success || !pagingResult.result) {
