@@ -277,18 +277,26 @@ export const locationCtr = {
         const eventPopulate: PopulateOptions[] = [
             {
                 path: 'createdBy',
-                select: 'username accountType isOnline membershipExpiresAt hasUpcomingEvent',
+                select: 'id username accountType',
                 populate: [
                     {
                         path: 'partner1',
-                        select: 'galleryId',
+                        select: 'galleryId dateOfBirth',
                         populate: [{ path: 'gallery', select: 'url' }],
                     },
                     {
                         path: 'partner2',
-                        select: 'galleryId',
+                        select: 'galleryId dateOfBirth',
                         populate: [{ path: 'gallery', select: 'url' }],
                     },
+                ],
+            },
+            {
+                path: 'location',
+                select: 'cityId countryId map',
+                populate: [
+                    { path: 'country', select: 'name iso2 emoji' },
+                    { path: 'city', select: 'name' },
                 ],
             },
         ];
@@ -333,6 +341,11 @@ export const locationCtr = {
 
         const destinationPopulate: PopulateOptions[] = [];
 
+        // entity select chỉ áp dụng cho USER entity — EVENT cần toàn bộ fields nên không set select
+        const entitySelectByType = filter.entityType === E_LocationEntityType.USER
+            ? 'username accountType isOnline membershipExpiresAt hasUpcomingEvent'
+            : undefined;
+
         const populates: PopulateOptions[] = [
             {
                 path: 'map',
@@ -340,7 +353,7 @@ export const locationCtr = {
             },
             {
                 path: 'entity',
-                select: 'username accountType isOnline membershipExpiresAt hasUpcomingEvent',
+                ...(entitySelectByType ? { select: entitySelectByType } : {}),
                 populate: [
                     ...(filter.entityType === E_LocationEntityType.EVENT
                         ? eventPopulate
@@ -362,9 +375,14 @@ export const locationCtr = {
             },
         ];
 
+        const clientWantsPagination = options?.limit !== undefined || options?.page !== undefined;
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
             ...(options ?? {}),
-            ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
+            ...(clientWantsPagination
+                ? { pagination: true }
+                : options?.pagination === undefined
+                    ? { pagination: false, limit: 50 }
+                    : {}),
             populate: populates,
             select: 'id entityType entityId pinStyle map entity',
         });
