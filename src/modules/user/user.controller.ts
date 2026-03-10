@@ -94,7 +94,7 @@ function normalizeUserSettings(settings?: I_UserSettings) {
     if (!settings)
         return;
     if (settings.temporaryLocation) {
-        normalizeDateField(settings.temporaryLocation as any, 'endAt');
+        normalizeDateField(settings.temporaryLocation as Record<string, unknown>, 'endAt');
     }
 }
 
@@ -113,6 +113,46 @@ function hasValidMap(payload?: T_LocationPayload): boolean {
         && Number.isFinite(latitude)
         && typeof longitude === 'number'
         && Number.isFinite(longitude);
+}
+
+/**
+ * Convert rolesIds and rolesNames array filters from exact-match to $all so that
+ * `rolesIds: ["id1"]` or `rolesNames: ["Admin"]` finds any user whose rolesIds/roles *contains*
+ * the specified values instead of matching only users with exact array equality.
+ *
+ * For rolesNames, we also need to convert role names to role IDs since MongoDB stores rolesIds, not rolesNames.
+ */
+async function normalizeRolesFilter(filter: Record<string, unknown>): Promise<void> {
+    // Handle rolesIds filter
+    const rolesIds = filter['rolesIds'];
+    if (Array.isArray(rolesIds) && rolesIds.length > 0) {
+        filter['rolesIds'] = { $all: rolesIds };
+    }
+
+    // Handle rolesNames filter - convert role names to IDs
+    const rolesNames = filter['rolesNames'];
+    if (Array.isArray(rolesNames) && rolesNames.length > 0) {
+        try {
+            // Lookup role IDs by names using getRoles
+            const rolesResult = await roleCtr.getRoles({} as I_Context, {
+                filter: { name: { $in: rolesNames } } as never,
+                options: { limit: 100 },
+            });
+
+            if (rolesResult.success && rolesResult.result?.docs) {
+                const foundRoleIds = rolesResult.result.docs.map(doc => doc.id);
+                if (foundRoleIds.length > 0) {
+                    filter['rolesIds'] = { $all: foundRoleIds };
+                }
+            }
+        }
+        catch (error) {
+            // If lookup fails, silently ignore rolesNames filter
+            log.warn('Failed to lookup role IDs by names', { error });
+        }
+        // Clean up rolesNames filter after processing
+        delete filter['rolesNames'];
+    }
 }
 
 async function createLocationForUser(
@@ -280,6 +320,7 @@ export const userCtr = {
             { ...(filter || {}) },
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
+        await normalizeRolesFilter(computedFilter as Record<string, unknown>);
         const lastOnlineFilter = (computedFilter as Record<string, unknown>)?.['lastOnline'];
         if (
             lastOnlineFilter
@@ -351,6 +392,7 @@ export const userCtr = {
             { ...(filter || {}) },
             [{ key: 'username', value: filter?.username, mode: 'startsWith' }],
         );
+        await normalizeRolesFilter(computedFilter as Record<string, unknown>);
         const lastOnlineFilter = (computedFilter as Record<string, unknown>)?.['lastOnline'];
         if (
             lastOnlineFilter
