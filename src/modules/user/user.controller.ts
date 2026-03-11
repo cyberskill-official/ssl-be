@@ -116,42 +116,41 @@ function hasValidMap(payload?: T_LocationPayload): boolean {
 }
 
 /**
- * Convert rolesIds and rolesNames array filters from exact-match to $all so that
- * `rolesIds: ["id1"]` or `rolesNames: ["Admin"]` finds any user whose rolesIds/roles *contains*
- * the specified values instead of matching only users with exact array equality.
- *
- * For rolesNames, we also need to convert role names to role IDs since MongoDB stores rolesIds, not rolesNames.
+ * Convert rolesIds array filter to MongoDB $in operator and resolve rolesNames to rolesIds.
+ * Changes query behavior from exact array match to "array contains any" matching.
+ * For example: `rolesIds: ["id1"]` now finds users whose rolesIds contains "id1" instead of
+ * matching users with rolesIds exactly equal to ["id1"].
  */
 async function normalizeRolesFilter(filter: Record<string, unknown>): Promise<void> {
-    // Handle rolesIds filter
+    // Handle rolesIds filter - convert array to $in operator
     const rolesIds = filter['rolesIds'];
     if (Array.isArray(rolesIds) && rolesIds.length > 0) {
-        filter['rolesIds'] = { $all: rolesIds };
+        filter['rolesIds'] = { $in: rolesIds };
     }
 
-    // Handle rolesNames filter - convert role names to IDs
+    // Handle rolesNames filter - convert role names to role IDs
     const rolesNames = filter['rolesNames'];
     if (Array.isArray(rolesNames) && rolesNames.length > 0) {
         try {
-            // Lookup role IDs by names using getRoles
+            // Lookup role IDs by names
             const rolesResult = await roleCtr.getRoles({} as I_Context, {
-                filter: { name: { $in: rolesNames } } as never,
+                filter: { name: { $in: rolesNames } },
                 options: { limit: 100 },
             });
 
             if (rolesResult.success && rolesResult.result?.docs) {
                 const foundRoleIds = rolesResult.result.docs.map(doc => doc.id);
                 if (foundRoleIds.length > 0) {
-                    filter['rolesIds'] = { $all: foundRoleIds };
+                    filter['rolesIds'] = { $in: foundRoleIds };
+                    // Clean up rolesNames filter only after successful conversion
+                    delete filter['rolesNames'];
                 }
             }
         }
         catch (error) {
-            // If lookup fails, silently ignore rolesNames filter
-            log.warn('Failed to lookup role IDs by names', { error });
+            // If lookup fails, log but preserve rolesNames filter for client inspection
+            log.warn('Failed to lookup role IDs by names', { error, rolesNames });
         }
-        // Clean up rolesNames filter after processing
-        delete filter['rolesNames'];
     }
 }
 
