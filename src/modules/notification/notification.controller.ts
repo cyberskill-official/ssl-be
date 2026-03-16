@@ -19,6 +19,7 @@ import { followCtr } from '#modules/follow/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
+import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
     I_Input_CreateNotification,
@@ -683,6 +684,12 @@ export const notificationCtr = {
 
         // Cho phép một số loại noti gửi tới user chưa hoàn tất hồ sơ (ví dụ: lời mời tham gia nhóm)
         if (!isProfileComplete && !allowIncompleteProfile) {
+            return { success: true, message: null };
+        }
+
+        // Respect blocks: do not notify if there is a bidirectional block between actor and target
+        const blockedUserIds = await getBlockedUserIds(context);
+        if (userFound.result?.id && blockedUserIds.has(userFound.result.id)) {
             return { success: true, message: null };
         }
 

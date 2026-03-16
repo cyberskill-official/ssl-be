@@ -211,6 +211,10 @@ type T_MessageReadResult {
     conversationId: String
     readAt: DateTime
 }
+type T_MessageDeletedResult {
+    messageId: String
+    conversationId: String
+}
 
 enum E_ConversationAction {
     CREATED
@@ -323,5 +327,6 @@ type Mutation {
 type Subscription {
     messageSent(input: Input_SubscribeToConversation): T_MessageSentResult
     messageRead(input: Input_SubscribeToConversation): T_MessageReadResult
+    messageDeleted(input: Input_SubscribeToConversation): T_MessageDeletedResult
     conversationEvent: T_ConversationEventResult
 }

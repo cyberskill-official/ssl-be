@@ -56,6 +56,7 @@ import type {
     I_Input_QueryConversation,
     I_Input_ResolveConversation,
     I_Input_UpdateConversationStatus,
+    I_MessageDeletedPayload,
     I_MessageReadPayload,
     I_MessageSentPayload,
     I_MessageSubscriptionFilter,
@@ -2153,6 +2154,48 @@ export const conversationCtr = {
                     default:
                         return false;
                 }
+            }
+            catch {
+                return false;
+            }
+        },
+    ),
+    subscribeToMessageDeleted: () => withFilter<I_MessageDeletedPayload, I_MessageSubscriptionFilter, I_WsContext>(
+        () => pubsub.asyncIterableIterator([E_CONVERSATION_EVENTS.MESSAGE_DELETED]),
+        async (payload, variables, context) => {
+            if (!payload || !variables || !context)
+                return false;
+
+            const userId = context.req?.session?.user?.id;
+            if (!userId)
+                return false;
+
+            const messageDeleted = payload.messageDeleted;
+            if (!messageDeleted)
+                return false;
+
+            if (variables?.conversationId && messageDeleted.conversationId !== variables.conversationId) {
+                return false;
+            }
+
+            try {
+                const conversationResult = await conversationCtr.getConversation({} as I_Context, {
+                    filter: { id: messageDeleted.conversationId },
+                    populate: ['participants'],
+                });
+
+                if (!conversationResult.success || !conversationResult.result)
+                    return false;
+
+                const conversation = conversationResult.result;
+                const participants = conversation.participants || [];
+
+                // Basic check: user must be a participant or it must be a public thread
+                if (isOpenPublicThread(conversation as I_Conversation)) {
+                    return true;
+                }
+
+                return participants.some(p => p.userId === userId) || conversation.createdById === userId;
             }
             catch {
                 return false;
