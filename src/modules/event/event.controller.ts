@@ -103,6 +103,11 @@ export const eventCtr = {
         const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
         const effectiveFilterAny = effectiveFilter as Record<string, any>;
 
+        // Exclude soft-deleted events (same logic as getEvents)
+        if (effectiveFilterAny['isDel'] === undefined) {
+            effectiveFilterAny['isDel'] = { $ne: true };
+        }
+
         // Exclude expired events (same logic as getEvents)
         const expiryCondition = {
             $or: [
@@ -409,8 +414,18 @@ export const eventCtr = {
             throwError({ message: 'Image upload is required for all events.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        // Max active announcements per user
-        const eventActiveCountResult = await mongooseCtr.count({ isActive: true, createdById: currentUser.id });
+        // Max active announcements per user (exclude soft-deleted and expired events)
+        const countNow = new Date();
+        const eventActiveCountResult = await mongooseCtr.count({
+            isActive: true,
+            isDel: { $ne: true },
+            createdById: currentUser.id,
+            $or: [
+                { endDate: { $gt: countNow } },
+                { endDate: null },
+                { endDate: { $exists: false } },
+            ],
+        });
         if (eventActiveCountResult.success && eventActiveCountResult.result >= 10) {
             throwError({
                 message: 'Maximum of 10 active announcements per user at the same time.',

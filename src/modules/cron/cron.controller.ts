@@ -174,30 +174,30 @@ export const cron = {
                     }
                 }
 
-                // Batch update all expired events
+                // Hard-delete all expired events and their locations permanently
                 const expiredIdsArray = Array.from(expiredEventIds);
                 if (expiredIdsArray.length > 0) {
-                    const updateResult = await eventCtr.updateEvents({}, {
+                    // 1. Hard-delete associated location documents first
+                    try {
+                        const locationResult = await LocationModel.deleteMany({
+                            entityType: E_LocationEntityType.EVENT,
+                            entityId: { $in: expiredIdsArray },
+                        });
+
+                        const deletedLocations = locationResult?.deletedCount ?? 0;
+                        log.success(`Permanently deleted ${deletedLocations} location(s) for expired events.`);
+                    }
+                    catch (locationError) {
+                        log.error('Failed to delete locations for expired events:', locationError);
+                    }
+
+                    // 2. Hard-delete the event documents
+                    const deleteResult = await eventCtr.deleteEvents({}, {
                         filter: { id: { $in: expiredIdsArray } },
-                        update: { isActive: false, isDel: true },
                     });
 
-                    if (updateResult.success) {
-                        try {
-                            const locationResult = await LocationModel.updateMany(
-                                {
-                                    entityType: E_LocationEntityType.EVENT,
-                                    entityId: { $in: expiredIdsArray },
-                                },
-                                { $set: { isDel: true } },
-                            );
-
-                            const updatedLocations = locationResult?.modifiedCount ?? 0;
-                            log.success(`Successfully marked ${expiredIdsArray.length} events as expired (locations updated: ${updatedLocations}).`);
-                        }
-                        catch (locationError) {
-                            log.error('Expired events updated, but failed to mark locations as deleted:', locationError);
-                        }
+                    if (deleteResult.success) {
+                        log.success(`Permanently deleted ${expiredIdsArray.length} expired event(s).`);
 
                         const ownerIds = Array.from(expiredEventOwnerIds);
                         if (ownerIds.length > 0) {
@@ -289,7 +289,7 @@ export const cron = {
                         }
                     }
                     else {
-                        log.error('Failed to update expired events:', updateResult.message);
+                        log.error('Failed to delete expired events:', deleteResult.message);
                     }
                 }
                 else {
