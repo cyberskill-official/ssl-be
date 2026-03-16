@@ -12,6 +12,7 @@ import { PAYMENT_SUCCESS, PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY } fro
 import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { emailCtr } from '#modules/email/index.js';
+import { EventModel } from '#modules/event/event.model.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_LocationEntityType, LocationModel } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';
@@ -130,80 +131,144 @@ export const cron = {
                 const expiredEventIds = new Set<string>();
                 const expiredEventOwnerIds = new Set<string>();
                 const registerExpiredEventOwner = (event?: I_Event | null) => {
-                    const ownerId = event?.createdById ?? event?.createdBy?.id;
+                    const ownerId = event?.createdById ?? (event?.createdBy as any)?.id;
                     if (ownerId) {
                         expiredEventOwnerIds.add(ownerId);
                     }
                 };
 
-                const timeBasedEvents = await eventCtr.getEvents({}, {
-                    filter: {
-                        isActive: true,
-                        startTime: { $exists: true, $ne: null },
-                        endTime: { $exists: true, $ne: null },
-                        startDate: { $exists: true, $ne: null, $lte: currentTime },
-                    },
-                    options: { pagination: false },
-                });
+                // Use EventModel directly to bypass getEvents which auto-filters expired events
+                // Query 1: Time-based events (with startTime/endTime) that may have expired
+                const timeBasedEventDocs = await EventModel.find({
+                    isActive: true,
+                    isDel: { $ne: true },
+                    startTime: { $exists: true, $ne: null },
+                    endTime: { $exists: true, $ne: null },
+                    startDate: { $exists: true, $ne: null, $lte: currentTime },
+                }).lean();
 
-                if (timeBasedEvents.success && timeBasedEvents.result?.docs) {
-                    for (const event of timeBasedEvents.result.docs) {
-                        if (!event?.id)
+                if (timeBasedEventDocs?.length) {
+                    for (const event of timeBasedEventDocs) {
+                        const eventId = (event as any).id ?? (event as any)._id?.toString();
+                        if (!eventId)
                             continue;
                         const eventEndDateTime = computeEventEndDateTime(event as I_Event);
                         if (eventEndDateTime && isAfter(currentTime, eventEndDateTime)) {
-                            expiredEventIds.add(event.id);
-                            registerExpiredEventOwner(event);
+                            expiredEventIds.add(eventId);
+                            registerExpiredEventOwner(event as I_Event);
                         }
                     }
                 }
 
                 // Query 2: Events with endDate that have expired
-                const eventsWithEndDate = await eventCtr.getEvents({}, {
-                    filter: {
-                        isActive: true,
-                        endDate: { $exists: true, $ne: null, $lt: currentTime },
-                    },
-                    options: { pagination: false },
-                });
+                const endDateExpiredDocs = await EventModel.find({
+                    isActive: true,
+                    isDel: { $ne: true },
+                    endDate: { $exists: true, $ne: null, $lt: currentTime },
+                }).lean();
 
-                if (eventsWithEndDate.success && eventsWithEndDate.result?.docs) {
-                    for (const event of eventsWithEndDate.result.docs) {
-                        expiredEventIds.add(event.id);
-                        registerExpiredEventOwner(event);
+                if (endDateExpiredDocs?.length) {
+                    for (const event of endDateExpiredDocs) {
+                        const eventId = (event as any).id ?? (event as any)._id?.toString();
+                        if (eventId) {
+                            expiredEventIds.add(eventId);
+                            registerExpiredEventOwner(event as I_Event);
+                        }
                     }
                 }
 
-                // Hard-delete all expired events and their locations permanently
+                // Soft-delete expired events (set isDel = true, isActive = false)
+                // This preserves event data for the "Expired Events" UI tab
                 const expiredIdsArray = Array.from(expiredEventIds);
                 if (expiredIdsArray.length > 0) {
-                    // 1. Hard-delete associated location documents first
+                    // 1. Soft-delete associated location documents (mark isDel = true)
                     try {
-                        const locationResult = await LocationModel.deleteMany({
-                            entityType: E_LocationEntityType.EVENT,
-                            entityId: { $in: expiredIdsArray },
-                        });
+                        const locationResult = await LocationModel.updateMany(
+                            {
+                                entityType: E_LocationEntityType.EVENT,
+                                entityId: { $in: expiredIdsArray },
+                            },
+                            { $set: { isDel: true } },
+                        );
 
-                        const deletedLocations = locationResult?.deletedCount ?? 0;
-                        log.success(`Permanently deleted ${deletedLocations} location(s) for expired events.`);
+                        const updatedLocations = locationResult?.modifiedCount ?? 0;
+                        log.success(`Soft-deleted ${updatedLocations} location(s) for expired events.`);
                     }
                     catch (locationError) {
-                        log.error('Failed to delete locations for expired events:', locationError);
+                        log.error('Failed to soft-delete locations for expired events:', locationError);
                     }
 
-                    // 2. Hard-delete the event documents
-                    const deleteResult = await eventCtr.deleteEvents({}, {
-                        filter: { id: { $in: expiredIdsArray } },
-                    });
+                    // 2. Soft-delete the event documents (isDel = true, isActive = false)
+                    try {
+                        const softDeleteResult = await EventModel.updateMany(
+                            { id: { $in: expiredIdsArray } },
+                            { $set: { isDel: true, isActive: false } },
+                        );
 
-                    if (deleteResult.success) {
-                        log.success(`Permanently deleted ${expiredIdsArray.length} expired event(s).`);
+                        log.success(`Soft-deleted ${softDeleteResult?.modifiedCount ?? 0} expired event(s).`);
+                    }
+                    catch (softDeleteError) {
+                        log.error('Failed to soft-delete expired events:', softDeleteError);
+                    }
 
-                        const ownerIds = Array.from(expiredEventOwnerIds);
-                        if (ownerIds.length > 0) {
-                            const ownerEvents = await eventCtr.getEvents({}, {
+                    // 3. Update hasUpcomingEvent flag for affected owners
+                    const ownerIds = Array.from(expiredEventOwnerIds);
+                    if (ownerIds.length > 0) {
+                        const ownerEvents = await eventCtr.getEvents({}, {
+                            filter: {
+                                createdById: { $in: ownerIds },
+                                isActive: true,
+                            },
+                            options: {
+                                pagination: false,
+                                projection: { createdById: 1 },
+                            },
+                        });
+
+                        if (ownerEvents.success) {
+                            const ownersWithActiveEvents = new Set<string>();
+                            ownerEvents.result?.docs?.forEach((event) => {
+                                const ownerId = event.createdById ?? event.createdBy?.id;
+                                if (ownerId) {
+                                    ownersWithActiveEvents.add(ownerId);
+                                }
+                            });
+
+                            const ownersToClear = ownerIds.filter(
+                                id => !ownersWithActiveEvents.has(id),
+                            );
+                            if (ownersToClear.length > 0) {
+                                await userCtr.updateUsers({}, {
+                                    filter: { id: { $in: ownersToClear } },
+                                    update: { hasUpcomingEvent: false },
+                                });
+                            }
+                        }
+                        else {
+                            log.error(
+                                'Failed to refresh owner event state after expiring events:',
+                                ownerEvents.message,
+                            );
+                        }
+                    }
+
+                    // 4. Refresh hasUpcomingEvent for all flagged users
+                    try {
+                        const flaggedUsers = await userCtr.getUsers({}, {
+                            filter: { hasUpcomingEvent: true },
+                            options: {
+                                pagination: false,
+                                projection: { id: 1 },
+                            },
+                        });
+                        const flaggedIds = flaggedUsers.success
+                            ? flaggedUsers.result?.docs?.map(u => u.id).filter(Boolean) ?? []
+                            : [];
+
+                        if (flaggedIds.length > 0) {
+                            const activeEvents = await eventCtr.getEvents({}, {
                                 filter: {
-                                    createdById: { $in: ownerIds },
+                                    createdById: { $in: flaggedIds },
                                     isActive: true,
                                 },
                                 options: {
@@ -212,84 +277,29 @@ export const cron = {
                                 },
                             });
 
-                            if (ownerEvents.success) {
-                                const ownersWithActiveEvents = new Set<string>();
-                                ownerEvents.result?.docs?.forEach((event) => {
+                            if (activeEvents.success) {
+                                const ownersWithActive = new Set<string>();
+                                activeEvents.result?.docs?.forEach((event) => {
                                     const ownerId = event.createdById ?? event.createdBy?.id;
                                     if (ownerId) {
-                                        ownersWithActiveEvents.add(ownerId);
+                                        ownersWithActive.add(ownerId);
                                     }
                                 });
 
-                                const ownersToClear = ownerIds.filter(
-                                    id => !ownersWithActiveEvents.has(id),
+                                const ownersToReset = flaggedIds.filter(
+                                    id => !ownersWithActive.has(id),
                                 );
-                                if (ownersToClear.length > 0) {
+                                if (ownersToReset.length > 0) {
                                     await userCtr.updateUsers({}, {
-                                        filter: { id: { $in: ownersToClear } },
+                                        filter: { id: { $in: ownersToReset } },
                                         update: { hasUpcomingEvent: false },
                                     });
                                 }
                             }
-                            else {
-                                log.error(
-                                    'Failed to refresh owner event state after expiring events:',
-                                    ownerEvents.message,
-                                );
-                            }
-                        }
-
-                        try {
-                            const flaggedUsers = await userCtr.getUsers({}, {
-                                filter: { hasUpcomingEvent: true },
-                                options: {
-                                    pagination: false,
-                                    projection: { id: 1 },
-                                },
-                            });
-                            const flaggedIds = flaggedUsers.success
-                                ? flaggedUsers.result?.docs?.map(u => u.id).filter(Boolean) ?? []
-                                : [];
-
-                            if (flaggedIds.length > 0) {
-                                const activeEvents = await eventCtr.getEvents({}, {
-                                    filter: {
-                                        createdById: { $in: flaggedIds },
-                                        isActive: true,
-                                    },
-                                    options: {
-                                        pagination: false,
-                                        projection: { createdById: 1 },
-                                    },
-                                });
-
-                                if (activeEvents.success) {
-                                    const ownersWithActive = new Set<string>();
-                                    activeEvents.result?.docs?.forEach((event) => {
-                                        const ownerId = event.createdById ?? event.createdBy?.id;
-                                        if (ownerId) {
-                                            ownersWithActive.add(ownerId);
-                                        }
-                                    });
-
-                                    const ownersToReset = flaggedIds.filter(
-                                        id => !ownersWithActive.has(id),
-                                    );
-                                    if (ownersToReset.length > 0) {
-                                        await userCtr.updateUsers({}, {
-                                            filter: { id: { $in: ownersToReset } },
-                                            update: { hasUpcomingEvent: false },
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        catch (flagError) {
-                            log.error('[CRON] Failed to refresh flagged users after expiring events:', flagError);
                         }
                     }
-                    else {
-                        log.error('Failed to delete expired events:', deleteResult.message);
+                    catch (flagError) {
+                        log.error('[CRON] Failed to refresh flagged users after expiring events:', flagError);
                     }
                 }
                 else {
