@@ -108,6 +108,7 @@ export enum E_CONVERSATION_EVENTS {
     CONVERSATION_CREATED = 'CONVERSATION_CREATED',
     CONVERSATION_UPDATED = 'CONVERSATION_UPDATED',
     CONVERSATION_DELETED = 'CONVERSATION_DELETED',
+    MESSAGE_DELETED = 'MESSAGE_DELETED',
 
     // Participant events
     PARTICIPANT_JOINED = 'PARTICIPANT_JOINED',
@@ -253,6 +254,12 @@ export interface I_Input_ArchiveConversation {
 
 export interface I_MessageSentPayload {
     conversation: I_Conversation;
+}
+export interface I_MessageDeletedPayload {
+    messageDeleted: {
+        messageId: string;
+        conversationId: string;
+    };
 }
 export interface I_MessageReadPayload {
     messageRead: {

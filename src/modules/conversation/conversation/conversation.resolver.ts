@@ -18,6 +18,7 @@ import type {
     I_Input_QueryConversation,
     I_Input_ResolveConversation,
     I_Input_UpdateConversationStatus,
+    I_MessageDeletedPayload,
     I_MessageReadPayload,
     I_MessageSentPayload,
 } from './conversation.type.js';
@@ -99,6 +100,10 @@ const conversationResolver = {
         messageRead: {
             subscribe: conversationCtr.subscribeToMessageRead(),
             resolve: (payload: I_MessageReadPayload) => payload.messageRead,
+        },
+        messageDeleted: {
+            subscribe: conversationCtr.subscribeToMessageDeleted(),
+            resolve: (payload: I_MessageDeletedPayload) => payload.messageDeleted,
         },
         conversationEvent: {
             subscribe: () => pubsub.asyncIterableIterator([E_CONVERSATION_EVENTS.CONVERSATION_DELETED]),

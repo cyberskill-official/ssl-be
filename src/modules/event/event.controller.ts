@@ -874,6 +874,9 @@ export const eventCtr = {
                 thumbnailUrl,
             } as const;
 
+            // Block check: avoid notifying users who have blocked/hidden the creator
+            const blockedUserIds = await getBlockedUserIds(context);
+
             // Notify followers
             const followers = await followCtr.getFollowers(context, {
                 filter: { followId: currentUser.id },
@@ -884,7 +887,7 @@ export const eventCtr = {
             if (followers.success) {
                 for (const f of followers.result.docs) {
                     const targetId = f.userId;
-                    if (!targetId || targetId === currentUser.id)
+                    if (!targetId || targetId === currentUser.id || blockedUserIds.has(targetId))
                         continue;
 
                     notifiedTargets.add(targetId);
@@ -918,7 +921,7 @@ export const eventCtr = {
 
             if (nearbyUsers.success) {
                 for (const u of nearbyUsers.result.docs) {
-                    if (!u.id || u.id === currentUser.id)
+                    if (!u.id || u.id === currentUser.id || blockedUserIds.has(u.id))
                         continue;
                     if (notifiedTargets.has(u.id))
                         continue;

@@ -25,10 +25,11 @@ import { keywordCtr } from '#modules/keyword/index.js';
 import { aiModerationCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/moderation-log/moderation-log.type.js';
+import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
-import { conversationCtr, E_ConversationType } from '../conversation/index.js';
+import { conversationCtr, E_CONVERSATION_EVENTS, E_ConversationType } from '../conversation/index.js';
 import { messageStatusCtr } from '../message-status/index.js';
 import { E_ParticipantRole } from '../participant/participant.type.js';
 import { MessageModel } from './message.model.js';
@@ -307,8 +308,27 @@ export const messageCtr = {
             'deletedAt': now,
             'redacted': true,
             'content.value': '',
+            'moderationMediaId': null,
+            'statusMedia': null,
             'expiresAt': now,
         }, options);
+
+        // Publish event for real-time update (unsend)
+        if (deleted.success && messageFound.result.conversationId) {
+            pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
+                messageDeleted: {
+                    conversationId: messageFound.result.conversationId,
+                    messageId: messageFound.result.id,
+                },
+            });
+
+            // Recalculate last message if needed
+            const convRes = await conversationCtr.getConversation(context, { filter: { id: messageFound.result.conversationId } });
+            if (convRes.success && convRes.result?.lastMessageId === messageFound.result.id) {
+                await messageCtr.recalcLastMessage(messageFound.result.conversationId);
+            }
+        }
+
         return transformMessageResult(context, deleted);
     },
 
@@ -432,12 +452,12 @@ export const messageCtr = {
             await messageCtr.recalcLastMessage(msg.conversationId);
         }
 
-        // // Publish event
-        // if (msg.conversationId) {
-        //     pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
-        //         messageDeleted: { conversationId: msg.conversationId, messageId },
-        //     });
-        // }
+        // Publish event
+        if (msg.conversationId) {
+            pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
+                messageDeleted: { conversationId: msg.conversationId, messageId },
+            });
+        }
 
         return { success: true, message: 'Message deleted', result: true };
     },

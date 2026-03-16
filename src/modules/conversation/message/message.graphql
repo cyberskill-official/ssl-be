@@ -44,6 +44,8 @@ type T_Message {
     messageStatuses: [T_MessageStatus]
     statusMedia: E_ModerationMediaStatus
     moderationMediaId: String
+    deletedAt: DateTime
+    redacted: Boolean
 }
 
 input Input_QueryMessage {
