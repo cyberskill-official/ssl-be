@@ -1269,4 +1269,751 @@ export const locationCtr = {
 
         return { success: true, result: adjustedPagingResult };
     },
+    getLocationsInViewportMap: async (
+        context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
+    ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+        if (
+            !filter
+            || typeof filter.southWestLatitude !== 'number'
+            || typeof filter.southWestLongitude !== 'number'
+            || typeof filter.northEastLatitude !== 'number'
+            || typeof filter.northEastLongitude !== 'number'
+        ) {
+            throwError({
+                message: 'Filter (southWestLatitude, southWestLongitude, northEastLatitude, northEastLongitude) must be numbers',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+
+        const locationBoundsFilter: T_QueryFilter<I_Location> = {
+            'map.latitude': {
+                $gte: filter.southWestLatitude,
+                $lte: filter.northEastLatitude,
+            },
+            ...(crossesAntimeridian
+                ? {
+                        $or: [
+                            { 'map.longitude': { $gte: filter.southWestLongitude } },
+                            { 'map.longitude': { $lte: filter.northEastLongitude } },
+                        ],
+                    }
+                : {
+                        'map.longitude': {
+                            $gte: filter.southWestLongitude,
+                            $lte: filter.northEastLongitude,
+                        },
+                    }),
+        };
+
+        const baseFilter: T_QueryFilter<I_Location> = { ...locationBoundsFilter };
+        if (filter.entityType) {
+            baseFilter.entityType = filter.entityType;
+        }
+
+        // MAP-OPTIMISED populates: only what is required for filtering logic and pin display.
+        // No gallery, no city/country, no ageVerify, no lookingFor/profilePurpose.
+
+        // Event: createdBy needed for block-check; location for coordinates.
+        const eventPopulate: PopulateOptions[] = [
+            { path: 'createdBy' },
+            { path: 'location' },
+        ];
+
+        // User: partner1/partner2 location for pinStyle + locationId matching;
+        // settings.temporaryLocation for active-temp detection.
+        const userPopulate: PopulateOptions[] = [
+            { path: 'partner1', populate: ['location'] },
+            { path: 'partner2', populate: ['location'] },
+            {
+                path: 'settings',
+                populate: [
+                    { path: 'temporaryLocation', populate: ['location'] },
+                ],
+            },
+        ];
+
+        // Destination: all critical fields (isDel, isActive, createdById) are on the document itself.
+        const destinationPopulate: PopulateOptions[] = [];
+
+        const populates: PopulateOptions[] = [
+            {
+                path: 'entity',
+                populate: [
+                    ...(filter.entityType === E_LocationEntityType.EVENT ? eventPopulate : []),
+                    ...(filter.entityType === E_LocationEntityType.USER ? userPopulate : []),
+                    ...(filter.entityType === E_LocationEntityType.DESTINATION ? destinationPopulate : []),
+                    ...(!filter.entityType ? [...eventPopulate, ...userPopulate, ...destinationPopulate] : []),
+                ],
+            },
+        ];
+
+        const pagingResult = await mongooseCtr.findPaging(baseFilter, {
+            ...(options ?? {}),
+            ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
+            populate: populates,
+        });
+
+        if (!pagingResult.success || !pagingResult.result) {
+            return pagingResult;
+        }
+
+        const rawDocs = pagingResult.result.docs ?? [];
+        const existingEventIds = new Set<string>();
+        for (const doc of rawDocs) {
+            if (doc?.entityType !== E_LocationEntityType.EVENT)
+                continue;
+            const eventFromEntity = doc.entity as I_Event | undefined;
+            const entityId = typeof doc.entityId === 'string'
+                ? doc.entityId
+                : eventFromEntity?.id;
+            if (entityId) {
+                existingEventIds.add(entityId);
+            }
+        }
+
+        const shouldInjectClubVisits
+            = filter.entityType === E_LocationEntityType.EVENT
+                && (!filter.eventType || filter.eventType === E_EventType.CLUB_VISIT);
+
+        let syntheticClubVisitDocs: I_Location[] = [];
+        if (shouldInjectClubVisits) {
+            try {
+                const destinationFilter: T_QueryFilter<I_Location> = {
+                    ...locationBoundsFilter,
+                    entityType: E_LocationEntityType.DESTINATION,
+                    isDel: { $ne: true },
+                };
+                const destinationIdsResult = await mongooseCtr.distinct('id', destinationFilter);
+                const destinationIds = destinationIdsResult.success
+                    ? (destinationIdsResult.result ?? []).filter(
+                            (value): value is string => typeof value === 'string',
+                        )
+                    : [];
+
+                if (destinationIds.length > 0) {
+                    const eventFilter: T_QueryFilter<I_Event> = {
+                        type: E_EventType.CLUB_VISIT,
+                        isActive: true,
+                        isDel: { $ne: true },
+                        locationId: { $in: destinationIds },
+                    };
+
+                    const clubEventsResult = await eventCtr.getEvents(context, {
+                        filter: eventFilter as any,
+                        options: { pagination: false, populate: eventPopulate },
+                    });
+
+                    if (clubEventsResult.success && clubEventsResult.result?.docs) {
+                        syntheticClubVisitDocs
+                            = clubEventsResult.result.docs
+                                .map((eventDoc) => {
+                                    if (!eventDoc?.id || existingEventIds.has(eventDoc.id))
+                                        return null;
+                                    const loc = eventDoc.location as I_Location | undefined;
+                                    if (!loc?.map)
+                                        return null;
+
+                                    const locPlain = typeof (loc as any).toObject === 'function'
+                                        ? (loc as any).toObject()
+                                        : { ...(loc as any) };
+                                    const {
+                                        id: baseLocationId,
+                                        entity: _omitEntity,
+                                        entityType: _omitEntityType,
+                                        entityId: _omitLocEntityId,
+                                        _id: _omitMongoId,
+                                        ...restLocation
+                                    } = locPlain;
+                                    const syntheticId = `${baseLocationId ?? eventDoc.locationId ?? eventDoc.id}-club-${eventDoc.id}`;
+                                    existingEventIds.add(eventDoc.id);
+                                    return {
+                                        ...restLocation,
+                                        id: syntheticId,
+                                        entityType: E_LocationEntityType.EVENT,
+                                        entityId: eventDoc.id,
+                                        entity: eventDoc,
+                                    } as I_Location;
+                                })
+                                .filter((doc): doc is I_Location => Boolean(doc));
+                    }
+                }
+            }
+            catch {
+                syntheticClubVisitDocs = [];
+            }
+        }
+
+        const docsSource = [...rawDocs, ...syntheticClubVisitDocs];
+
+        const blockedUserIds = await getBlockedUserIds(context);
+
+        let forcedEntityInserted = false;
+        const now = new Date();
+
+        const hasId = (o: unknown): o is { id?: string } => typeof o === 'object' && o !== null && 'id' in o;
+        const hasIsDel = (o: unknown): o is { isDel?: boolean } => typeof o === 'object' && o !== null && 'isDel' in o;
+        const isEventEntity = (o: unknown): o is I_Event => typeof o === 'object' && o !== null && ('startDate' in o || 'endDate' in o);
+        const isUserEntity = (o: unknown): o is I_User => typeof o === 'object' && o !== null && 'rolesIds' in o;
+
+        const preprocessBatch = (batch: I_Location[]): I_Location[] => {
+            const originalDocsById = new Map<string, I_Location>();
+            for (const doc of batch ?? []) {
+                if (doc?.id) {
+                    originalDocsById.set(doc.id, doc);
+                }
+            }
+
+            let filtered = (batch ?? []).filter((d) => {
+                const e = d.entity as (I_User | I_Event | I_Destination) | undefined;
+                const hasKey = hasId(e);
+                const entityDeleted = hasIsDel(e) ? Boolean(e.isDel) : false;
+                const locationDeleted = Boolean(d?.isDel);
+                const isAdminBlocked = Boolean((e as I_User)?.isAdminBlocked);
+
+                let isBlockedUser = false;
+                let isOwnerInactive = false;
+                if (d.entityType === E_LocationEntityType.USER) {
+                    const user = e as I_User;
+                    if (user?.id && blockedUserIds.has(user.id)) {
+                        isBlockedUser = true;
+                    }
+                }
+                else if (d.entityType === E_LocationEntityType.EVENT) {
+                    const event = e as I_Event;
+                    const eventOwner = (event?.createdBy ?? null) as I_User | null;
+                    const eventOwnerId = eventOwner?.id ?? event?.createdById;
+                    if (eventOwnerId && blockedUserIds.has(eventOwnerId)) {
+                        isBlockedUser = true;
+                    }
+                    if (eventOwner?.isDel === true || eventOwner?.isAdminBlocked === true) {
+                        isOwnerInactive = true;
+                    }
+                    else if (
+                        eventOwnerId
+                        && eventOwner === null
+                        && Object.prototype.hasOwnProperty.call(event ?? {}, 'createdBy')
+                    ) {
+                        isOwnerInactive = true;
+                    }
+                }
+                else if (d.entityType === E_LocationEntityType.DESTINATION) {
+                    const destination = e as I_Destination;
+                    if (destination?.createdById && blockedUserIds.has(destination.createdById)) {
+                        isBlockedUser = true;
+                    }
+                }
+
+                let isDestinationInactive = false;
+                if (d.entityType === E_LocationEntityType.DESTINATION) {
+                    const destination = e as I_Destination;
+                    if (destination?.isActive === false) {
+                        isDestinationInactive = true;
+                    }
+                }
+
+                let isEventExpired = false;
+                if (e && (filter.entityType === E_LocationEntityType.EVENT || isEventEntity(e))) {
+                    const ev = e as I_Event | undefined;
+                    const endCandidate = ev?.endDate ?? null;
+                    if (endCandidate) {
+                        const endDate = new Date(endCandidate);
+                        if (!Number.isNaN(endDate.getTime()) && endDate <= now) {
+                            isEventExpired = true;
+                        }
+                    }
+                }
+
+                let shouldHideUser = false;
+                if (d.entityType === E_LocationEntityType.USER || (!d.entityType && isUserEntity(e))) {
+                    const userEntity = e as I_User;
+                    const step = userEntity?.registerStep as E_RegisterStep | undefined;
+                    if (step && step !== E_RegisterStep.COMPLETE)
+                        shouldHideUser = true;
+                }
+
+                return (
+                    hasKey
+                    && !entityDeleted
+                    && !locationDeleted
+                    && !isAdminBlocked
+                    && !isBlockedUser
+                    && !isOwnerInactive
+                    && !isEventExpired
+                    && !isDestinationInactive
+                    && !shouldHideUser
+                );
+            });
+
+            if (filter.entityType === E_LocationEntityType.EVENT && filter.eventType) {
+                filtered = filtered.filter((d) => {
+                    const e = d.entity as I_Event | undefined;
+                    return e?.type === filter.eventType;
+                });
+            }
+
+            const seenLocationIds = new Set<string>();
+            filtered = filtered.filter((d) => {
+                if (!d.id)
+                    return true;
+                if (seenLocationIds.has(d.id))
+                    return false;
+                seenLocationIds.add(d.id);
+                return true;
+            });
+
+            const isTempActive = (tempLoc?: NonNullable<I_User['settings']>['temporaryLocation']): boolean => {
+                if (!tempLoc)
+                    return false;
+                if (!tempLoc.endAt)
+                    return true;
+                const end = new Date(tempLoc.endAt);
+                const isMidnight
+                    = end.getHours() === 0
+                        && end.getMinutes() === 0
+                        && end.getSeconds() === 0
+                        && end.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight
+                    ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1)
+                    : end;
+                return normalizedEnd > now;
+            };
+
+            const userLocationMap = new Map<string, {
+                tempLocationId?: string;
+                p1LocationId?: string;
+                p2LocationId?: string;
+                hasActiveTemp: boolean;
+                userId: string;
+            }>();
+            const tempLocationSourceByUser = new Map<string, I_Location>();
+
+            for (const d of filtered) {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    continue;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    continue;
+
+                const tempLoc = user?.settings?.temporaryLocation;
+                const tempEndAtValid = isTempActive(tempLoc);
+                const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
+                const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
+
+                const tempLocationId = tempLoc?.locationId
+                    ?? tempLoc?.location?.id
+                    ?? (tempLoc?.location?.map ? `temp:${user.id}` : undefined);
+
+                const p1LocationId = user.partner1?.locationId;
+                const p2LocationId = user.partner2?.locationId;
+
+                userLocationMap.set(user.id, {
+                    tempLocationId,
+                    p1LocationId,
+                    p2LocationId,
+                    hasActiveTemp,
+                    userId: user.id,
+                });
+            }
+
+            filtered = filtered.filter((d) => {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    return true;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return true;
+
+                const locInfo = userLocationMap.get(user.id);
+                if (!locInfo)
+                    return false;
+
+                const matchesP1 = d.id === locInfo.p1LocationId;
+                const matchesP2 = d.id === locInfo.p2LocationId;
+                const matchesTemp = d.id === locInfo.tempLocationId;
+
+                if (!matchesP1 && !matchesP2 && !matchesTemp) {
+                    return false;
+                }
+
+                if (locInfo.tempLocationId && d.id === locInfo.tempLocationId) {
+                    tempLocationSourceByUser.set(user.id, d);
+                }
+
+                if (locInfo.hasActiveTemp) {
+                    return matchesTemp;
+                }
+                else {
+                    if (matchesP1 || matchesP2)
+                        return true;
+                    return false;
+                }
+            });
+
+            const usersNeedingSynthetic = new Map<string, {
+                user: I_User;
+                tempLoc: NonNullable<I_User['settings']>['temporaryLocation'];
+                source: I_Location;
+                locationId: string;
+            }>();
+            for (const d of filtered) {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    continue;
+
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    continue;
+
+                const tempInfo = userLocationMap.get(user.id);
+                if (!tempInfo?.hasActiveTemp)
+                    continue;
+
+                const tempLoc = user?.settings?.temporaryLocation;
+                if (!tempLoc)
+                    continue;
+
+                const tempLocationSource = tempLocationSourceByUser.get(user.id)
+                    ?? (tempLoc.location as I_Location | undefined)
+                    ?? (tempInfo.tempLocationId ? originalDocsById.get(tempInfo.tempLocationId) : undefined);
+
+                const tempLocationId = tempInfo.tempLocationId;
+
+                if (tempLocationSource && tempLocationSource.map && tempLocationId) {
+                    usersNeedingSynthetic.set(user.id, {
+                        user,
+                        tempLoc,
+                        source: tempLocationSource,
+                        locationId: tempLocationId,
+                    });
+                }
+            }
+
+            const syntheticLocations: I_Location[] = [];
+            for (const [userId, { user, tempLoc, source, locationId }] of usersNeedingSynthetic) {
+                if (!tempLoc || !source?.map)
+                    continue;
+
+                const tempLocationId = locationId;
+                if (!tempLocationId)
+                    continue;
+
+                const hasTempDocument = filtered.some(doc =>
+                    doc.id === tempLocationId
+                    && doc.entityType === E_LocationEntityType.USER
+                    && (doc.entity as I_User)?.id === userId,
+                );
+
+                if (!hasTempDocument) {
+                    const userPinStyle = resolveUserPinStyle(user);
+                    const syntheticDoc: I_Location = {
+                        id: tempLocationId,
+                        map: source.map,
+                        pinStyle: userPinStyle,
+                        entityType: E_LocationEntityType.USER,
+                        entityId: user.id,
+                        entity: user,
+                    } as I_Location;
+                    syntheticLocations.push(syntheticDoc);
+                }
+            }
+
+            filtered = [...filtered, ...syntheticLocations];
+            filtered = filtered.map((d) => {
+                const user = d.entity as I_User;
+                if (!user?.id)
+                    return d;
+
+                let finalLocation: Partial<I_Location> | undefined;
+                let finalLocationId: string | undefined;
+                const tempLoc = user?.settings?.temporaryLocation;
+                const tempLocationSource = tempLocationSourceByUser.get(user.id)
+                    ?? (tempLoc?.location as I_Location | undefined)
+                    ?? (tempLoc?.locationId ? originalDocsById.get(tempLoc.locationId) : undefined);
+
+                const tempEndAtValid = isTempActive(tempLoc);
+                const hasTempLocationData = Boolean(tempLocationSource?.map || tempLoc?.locationId);
+                let finalSettings = user.settings;
+                let docOverride: Partial<I_Location> | undefined;
+
+                if (tempLoc && tempEndAtValid && hasTempLocationData) {
+                    const chosenTemp = tempLoc.location
+                        ?? tempLocationSource
+                        ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);
+                    finalLocation = chosenTemp as Partial<I_Location> | undefined;
+                    finalLocationId = tempLoc.locationId
+                        ?? tempLocationSource?.id
+                        ?? tempLoc.location?.id;
+
+                    docOverride = {
+                        map: tempLocationSource?.map ?? tempLoc.location?.map ?? d.map,
+                    } as Partial<I_Location>;
+
+                    finalSettings = {
+                        ...(user.settings ?? {}),
+                        temporaryLocation: {
+                            ...(user.settings?.temporaryLocation ?? {}),
+                            location: tempLocationSource ?? user.settings?.temporaryLocation?.location,
+                            locationId: finalLocationId ?? user.settings?.temporaryLocation?.locationId,
+                        },
+                    } as I_User['settings'];
+                }
+                else {
+                    finalLocation = user.partner1?.location;
+                    finalLocationId = user.partner1?.locationId;
+                }
+
+                const updatedDoc: I_Location = {
+                    ...d,
+                    ...(docOverride ?? {}),
+                    entity: {
+                        ...user,
+                        partner1: {
+                            ...user.partner1,
+                            location: finalLocation as I_Location | undefined,
+                            locationId: finalLocationId,
+                        },
+                        settings: finalSettings,
+                    },
+                };
+                return updatedDoc;
+            });
+
+            const userBestMap = new Map<string, I_Location>();
+            for (const d of filtered) {
+                if (d.entityType !== E_LocationEntityType.USER)
+                    continue;
+                const user = d.entity as I_User | undefined;
+                if (!user?.id)
+                    continue;
+
+                let score = 0;
+                const tempLoc = user.settings?.temporaryLocation;
+                const tempInfo = userLocationMap.get(user.id);
+                const tempLocationId = tempLoc?.locationId
+                    ?? tempLoc?.location?.id
+                    ?? tempInfo?.tempLocationId;
+                const tempActive = isTempActive(tempLoc);
+
+                if (tempActive && tempLocationId && d.id === tempLocationId)
+                    score += 100;
+                if (!tempActive && user.partner1?.locationId && d.id === user.partner1.locationId)
+                    score += 60;
+                score += 10;
+
+                const existing = userBestMap.get(user.id);
+                if (!existing) {
+                    userBestMap.set(user.id, { ...d, __score: score } as unknown as I_Location);
+                }
+                else {
+                    const existingScore = (existing as any).__score as number | undefined ?? 0;
+                    if (score > existingScore) {
+                        userBestMap.set(user.id, { ...d, __score: score } as unknown as I_Location);
+                    }
+                }
+            }
+
+            const nonUserDocsMap = filtered.filter(d => d.entityType !== E_LocationEntityType.USER);
+            const bestUserDocsMap = Array.from(userBestMap.values()).map((d) => {
+                const copy = { ...d } as any;
+                if (copy.__score !== undefined)
+                    delete copy.__score;
+                return copy as I_Location;
+            });
+
+            filtered = [...nonUserDocsMap, ...bestUserDocsMap];
+            return filtered;
+        };
+
+        let docs: I_Location[] = preprocessBatch(docsSource);
+
+        const limitCandidate = typeof pagingResult.result?.limit === 'number'
+            ? pagingResult.result!.limit
+            : (options?.limit as number | undefined);
+        const requestedLimit = limitCandidate && limitCandidate > 0
+            ? limitCandidate
+            : Math.max(docs.length, 1);
+        const pageNumber = (pagingResult.result?.page ?? options?.page ?? 1) as number;
+
+        let nextPageToFetch = (pagingResult.result?.nextPage ?? (pageNumber + 1)) as number | null;
+        let morePagesAvailable = Boolean(pagingResult.result?.hasNextPage);
+        let hasMoreAfterFill = false;
+
+        const usePagination = options?.pagination !== false;
+        if (usePagination && docs.length < requestedLimit) {
+            while (morePagesAvailable && docs.length < requestedLimit && nextPageToFetch) {
+                const nextPageResult = await mongooseCtr.findPaging(baseFilter, {
+                    ...options,
+                    page: nextPageToFetch,
+                    populate: populates,
+                });
+                if (!nextPageResult.success || !nextPageResult.result)
+                    break;
+
+                const processed = preprocessBatch(nextPageResult.result.docs ?? []);
+                const remaining = requestedLimit - docs.length;
+                if (processed.length > 0) {
+                    docs.push(...processed.slice(0, remaining));
+                    hasMoreAfterFill = processed.length > remaining
+                        ? true
+                        : Boolean(nextPageResult.result.hasNextPage);
+                }
+                else {
+                    hasMoreAfterFill = Boolean(nextPageResult.result.hasNextPage);
+                }
+
+                morePagesAvailable = Boolean(nextPageResult.result.hasNextPage);
+                nextPageToFetch = nextPageResult.result.nextPage as number | null;
+            }
+        }
+
+        const isTempStillActive = (user?: I_User | undefined): boolean => {
+            try {
+                const tempLoc = user?.settings?.temporaryLocation;
+                if (!tempLoc)
+                    return false;
+                if (!tempLoc.endAt)
+                    return true;
+                const end = new Date(tempLoc.endAt);
+                const isMidnight = end.getHours() === 0
+                    && end.getMinutes() === 0
+                    && end.getSeconds() === 0
+                    && end.getMilliseconds() === 0;
+                const normalizedEnd = isMidnight ? new Date(end.getTime() + 24 * 60 * 60 * 1000 - 1) : end;
+                return normalizedEnd > now;
+            }
+            catch {
+                return false;
+            }
+        };
+
+        const dedupeFinalDocs = (allDocs: I_Location[]): I_Location[] => {
+            const perUserBest = new Map<string, { doc: I_Location; score: number }>();
+            const nonUser: I_Location[] = [];
+
+            const extractOwnerId = (doc: I_Location): string | null => {
+                try {
+                    if (doc.entityType === E_LocationEntityType.USER) {
+                        const u = doc.entity as I_User | undefined;
+                        return u?.id ?? doc.entityId ?? null;
+                    }
+                    if (doc.entityType === E_LocationEntityType.EVENT) {
+                        const ev = doc.entity as I_Event | undefined;
+                        return (ev?.createdById ?? (ev?.createdBy as any)?.id ?? null) as string | null;
+                    }
+                    const maybe = doc.entity as any;
+                    if (maybe?.uploadedById)
+                        return maybe.uploadedById as string;
+                    if (doc.entityId && typeof doc.entityId === 'string')
+                        return doc.entityId;
+                    return null;
+                }
+                catch {
+                    return null;
+                }
+            };
+
+            for (const d of allDocs) {
+                if (d.entityType !== E_LocationEntityType.USER) {
+                    nonUser.push(d);
+                    continue;
+                }
+                const ownerId = extractOwnerId(d);
+                if (!ownerId) {
+                    nonUser.push(d);
+                    continue;
+                }
+                let score = 10;
+                const user = d.entity as I_User | undefined;
+                const tempLoc = user?.settings?.temporaryLocation;
+                const tempLocationId = tempLoc?.locationId ?? tempLoc?.location?.id;
+                const tempActive = user ? isTempStillActive(user) : false;
+                if (tempActive && tempLocationId && d.id === tempLocationId)
+                    score += 100;
+                if (!tempActive && user?.partner1?.locationId && d.id === user.partner1.locationId)
+                    score += 60;
+
+                const existing = perUserBest.get(ownerId);
+                if (!existing || score > existing.score) {
+                    perUserBest.set(ownerId, { doc: d, score });
+                }
+            }
+
+            const bestUserDocs = Array.from(perUserBest.values()).map(v => v.doc as I_Location);
+            return [...nonUser, ...bestUserDocs];
+        };
+
+        docs = dedupeFinalDocs(docs);
+        docs = dedupeUserLocationDocs(docs);
+
+        if (filter.entityId) {
+            const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
+            if (!alreadyInDocs) {
+                const focusLocation = await mongooseCtr.findOne(
+                    { entityId: filter.entityId },
+                    undefined,
+                    undefined,
+                    populates,
+                );
+                if (focusLocation.success && focusLocation.result) {
+                    const processedFocusDocs = preprocessBatch([focusLocation.result]);
+                    if (processedFocusDocs.length > 0) {
+                        forcedEntityInserted = true;
+                        docs = dedupeFinalDocs([...processedFocusDocs, ...docs]);
+                    }
+                }
+            }
+        }
+
+        if (forcedEntityInserted && usePagination && docs.length > requestedLimit) {
+            hasMoreAfterFill = true;
+            const focusIndex = docs.findIndex(doc => doc.entityId === filter.entityId);
+            if (focusIndex > 0) {
+                const [focusDoc] = docs.splice(focusIndex, 1);
+                if (focusDoc)
+                    docs.unshift(focusDoc);
+            }
+            docs = docs.slice(0, requestedLimit);
+        }
+
+        // Media hydration is intentionally skipped for the map API.
+        // Pins only need coordinates + pinStyle, not signed/blurred media URLs.
+
+        const pageSize = requestedLimit as number;
+        const currentPage = pageNumber as number;
+
+        const originalTotalDocs
+            = typeof pagingResult.result?.totalDocs === 'number'
+                ? pagingResult.result!.totalDocs
+                : undefined;
+        const computedHasNextPage = (options?.pagination !== false)
+            ? (docs.length >= pageSize && (morePagesAvailable || hasMoreAfterFill))
+            : false;
+
+        const totalDocsAdjusted = typeof originalTotalDocs === 'number'
+            ? originalTotalDocs
+            : ((currentPage - 1) * pageSize + docs.length + (computedHasNextPage ? 1 : 0));
+
+        const totalPagesAdjusted = typeof originalTotalDocs === 'number'
+            ? Math.max(1, Math.ceil(originalTotalDocs / pageSize))
+            : Math.max(1, computedHasNextPage ? currentPage + 1 : currentPage);
+
+        const adjustedPagingResult = {
+            ...pagingResult.result,
+            docs,
+            totalDocs: totalDocsAdjusted,
+            totalPages: totalPagesAdjusted,
+            limit: pageSize,
+            page: currentPage,
+            hasNextPage: computedHasNextPage,
+            hasPrevPage: currentPage > 1,
+            nextPage: computedHasNextPage ? currentPage + 1 : null,
+            prevPage: currentPage > 1 ? currentPage - 1 : null,
+        };
+
+        return { success: true, result: adjustedPagingResult };
+    },
+
 };
