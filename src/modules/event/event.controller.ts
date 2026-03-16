@@ -108,20 +108,25 @@ export const eventCtr = {
             effectiveFilterAny['isDel'] = { $ne: true };
         }
 
-        // Exclude expired events (same logic as getEvents)
-        const expiryCondition = {
-            $or: [
-                { endDate: { $gt: now } },
-                { endDate: null },
-                { endDate: { $exists: false } },
-            ],
-        };
+        // When querying for expired/soft-deleted events (isDel = true), skip the expiry filter
+        const isQueryingExpired = effectiveFilterAny['isDel'] === true;
 
-        if (Array.isArray(effectiveFilterAny['$and'])) {
-            effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
-        }
-        else {
-            effectiveFilterAny['$and'] = [expiryCondition];
+        if (!isQueryingExpired) {
+            // Exclude expired events (same logic as getEvents)
+            const expiryCondition = {
+                $or: [
+                    { endDate: { $gt: now } },
+                    { endDate: null },
+                    { endDate: { $exists: false } },
+                ],
+            };
+
+            if (Array.isArray(effectiveFilterAny['$and'])) {
+                effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
+            }
+            else {
+                effectiveFilterAny['$and'] = [expiryCondition];
+            }
         }
 
         const eventFound = await mongooseCtr.findOne(
@@ -229,22 +234,28 @@ export const eventCtr = {
             effectiveFilterAny['isDel'] = { $ne: true };
         }
 
-        const expiryCondition = {
-            $or: [
-                { endDate: { $gt: now } },
-                { endDate: null },
-                { endDate: { $exists: false } },
-            ],
-        };
+        // When querying for expired/soft-deleted events (isDel = true), skip the expiry filter
+        // so the "Expired Events" UI tab can display them
+        const isQueryingExpired = effectiveFilterAny['isDel'] === true;
 
-        if (Array.isArray(effectiveFilterAny['$and'])) {
-            effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
-        }
-        else if (effectiveFilterAny['$and']) {
-            effectiveFilterAny['$and'] = [effectiveFilterAny['$and'], expiryCondition];
-        }
-        else {
-            effectiveFilterAny['$and'] = [expiryCondition];
+        if (!isQueryingExpired) {
+            const expiryCondition = {
+                $or: [
+                    { endDate: { $gt: now } },
+                    { endDate: null },
+                    { endDate: { $exists: false } },
+                ],
+            };
+
+            if (Array.isArray(effectiveFilterAny['$and'])) {
+                effectiveFilterAny['$and'] = [...effectiveFilterAny['$and'], expiryCondition];
+            }
+            else if (effectiveFilterAny['$and']) {
+                effectiveFilterAny['$and'] = [effectiveFilterAny['$and'], expiryCondition];
+            }
+            else {
+                effectiveFilterAny['$and'] = [expiryCondition];
+            }
         }
 
         const pagingOptions = {
