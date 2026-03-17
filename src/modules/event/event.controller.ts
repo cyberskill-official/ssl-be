@@ -14,7 +14,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isAfter, startOfDay } from 'date-fns';
 
@@ -888,75 +888,80 @@ export const eventCtr = {
             // Block check: avoid notifying users who have blocked/hidden the creator
             const blockedUserIds = await getBlockedUserIds(context);
 
-            // Notify followers
-            const followers = await followCtr.getFollowers(context, {
-                filter: { followId: currentUser.id },
-                options: { pagination: false },
-            });
+            // Perform notifications in background to avoid request timeout (Failed to fetch)
+            (async () => {
+                try {
+                    // Notify followers
+                    const followers = await followCtr.getFollowers(context, {
+                        filter: { followId: currentUser.id },
+                        options: { pagination: false },
+                    });
 
-            const notifiedTargets = new Set<string>();
-            if (followers.success) {
-                for (const f of followers.result.docs) {
-                    const targetId = f.userId;
-                    if (!targetId || targetId === currentUser.id || blockedUserIds.has(targetId))
-                        continue;
+                    const notifiedTargets = new Set<string>();
+                    if (followers.success) {
+                        for (const f of followers.result.docs) {
+                            const targetId = f.userId;
+                            if (!targetId || targetId === currentUser.id || blockedUserIds.has(targetId))
+                                continue;
 
-                    notifiedTargets.add(targetId);
+                            notifiedTargets.add(targetId);
 
-                    // in-app notification (followers still receive notification)
-                    try {
-                        await notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId,
-                                type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
-                                entityType: E_NotificationEntityType.EVENT,
-                                entityId: eventCreated.result.id,
-                                actorId: currentUser.id,
-                                presentation: commonPresentation,
-                            },
-                        });
+                            try {
+                                await notificationCtr.createNotificationWithSettings(context, {
+                                    doc: {
+                                        targetId,
+                                        type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
+                                        entityType: E_NotificationEntityType.EVENT,
+                                        entityId: eventCreated.result.id,
+                                        actorId: currentUser.id,
+                                        presentation: commonPresentation,
+                                    },
+                                });
+                            }
+                            catch { /* swallow */ }
+                        }
                     }
-                    catch { /* swallow */ }
 
-                    // email per recipient (respecting their setting) - left commented like original
-                }
-            }
+                    // Notify nearby users (Limit to reasonable amount and non-blocking)
+                    const nearbyUsers = await userCtr.getUsers(context, {
+                        filter: { 'partner1.locationId': { $exists: true } },
+                        options: {
+                            pagination: true,
+                            limit: 100, // Limit to prevent massive processing
+                        },
+                    });
 
-            // Notify nearby users (no radius change)
-            const nearbyUsers = await userCtr.getUsers(context, {
-                // Include users that have a partner1.locationId regardless of their `isActive` status
-                // so offline profiles still appear on the map.
-                filter: { 'partner1.locationId': { $exists: true } },
-                options: { pagination: false },
-            });
+                    if (nearbyUsers.success) {
+                        for (const u of nearbyUsers.result.docs) {
+                            if (!u.id || u.id === currentUser.id || blockedUserIds.has(u.id))
+                                continue;
+                            if (notifiedTargets.has(u.id))
+                                continue;
 
-            if (nearbyUsers.success) {
-                for (const u of nearbyUsers.result.docs) {
-                    if (!u.id || u.id === currentUser.id || blockedUserIds.has(u.id))
-                        continue;
-                    if (notifiedTargets.has(u.id))
-                        continue;
+                            notifiedTargets.add(u.id);
 
-                    notifiedTargets.add(u.id);
-
-                    // in-app notification
-                    try {
-                        await notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId: u.id,
-                                type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
-                                entityType: E_NotificationEntityType.EVENT,
-                                entityId: eventCreated.result.id,
-                                actorId: currentUser.id,
-                                presentation: commonPresentation,
-                            },
-                        });
+                            try {
+                                await notificationCtr.createNotificationWithSettings(context, {
+                                    doc: {
+                                        targetId: u.id,
+                                        type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
+                                        entityType: E_NotificationEntityType.EVENT,
+                                        entityId: eventCreated.result.id,
+                                        actorId: currentUser.id,
+                                        presentation: commonPresentation,
+                                    },
+                                });
+                            }
+                            catch { /* swallow */ }
+                        }
                     }
-                    catch { /* swallow */ }
                 }
-            }
+                catch (notifErr) {
+                    log.error('Background notification failed:', notifErr);
+                }
+            })();
 
-            // Link event with locationId
+            // Link event with locationId and return immediately
             const updated = await mongooseCtr.updateOne({ id: eventCreated.result.id }, { locationId: finalLocationId });
             return updated;
         }
