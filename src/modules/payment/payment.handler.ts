@@ -12,7 +12,7 @@ import { authnCtr } from '#modules/authn/index.js';
 import { emailCtr } from '#modules/email/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
-import { E_OrderStatus } from '#modules/order/order.type.js';
+import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
@@ -224,15 +224,24 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                         ]);
 
                         // Apply effects immediately so user sees their new status
-                        const fullOrderRes = await orderCtr.getOrder(context, {
-                            filter: { id: order.id },
-                            populate: [
-                                { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
-                            ],
-                        });
-                        if (fullOrderRes.success && fullOrderRes.result) {
-                            await applyOrderPaidEffects(context, fullOrderRes.result);
-                            log.info('[PayPal Status] Applied order paid effects successfully');
+                        // Skip for subscription orders — membership is handled by
+                        // PAYMENT.SALE.COMPLETED webhook (handlePaymentSaleCompleted)
+                        // to avoid double-extending (30 days here + 30 days in webhook = 60 days bug)
+                        const isSubscription = externalOrderId.startsWith('I-');
+                        if (!isSubscription) {
+                            const fullOrderRes = await orderCtr.getOrder(context, {
+                                filter: { id: order.id },
+                                populate: [
+                                    { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                                ],
+                            });
+                            if (fullOrderRes.success && fullOrderRes.result) {
+                                await applyOrderPaidEffects(context, fullOrderRes.result);
+                                log.info('[PayPal Status] Applied order paid effects successfully');
+                            }
+                        }
+                        else {
+                            log.info('[PayPal Status] Subscription order — skipping applyOrderPaidEffects (handled by PAYMENT.SALE.COMPLETED webhook)');
                         }
                     }
                     catch (syncErr) {
@@ -791,6 +800,7 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
             const orderDoc = {
                 userId: currentUser.id,
                 status: E_OrderStatus.PENDING,
+                orderType: E_OrderType.SUBSCRIPTION,
                 externalOrderId,
                 amount: 0, // Will be updated by webhook on capture, or we could fetch plan price
                 gateway: E_PaymentProvider.PAYPAL,
