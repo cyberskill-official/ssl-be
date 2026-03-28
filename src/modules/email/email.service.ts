@@ -4,6 +4,8 @@ import { postmarkController } from '#modules/postmark/index.js';
 
 import type { I_EmailJobData, I_EmailJobResult } from './email.type.js';
 
+const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+
 export const emailService = {
     /**
      * Send a simple email
@@ -104,7 +106,7 @@ export const emailService = {
      * Validate email address format
      */
     validateEmail: (email: string): boolean => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+        const emailRegex = EMAIL_FORMAT_REGEX;
         return emailRegex.test(email);
     },
 

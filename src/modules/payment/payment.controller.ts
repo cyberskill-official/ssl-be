@@ -5,7 +5,6 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Input_CreateOrder } from '#modules/order/order.type.js';
-import type { I_NetvalveHppOrderPayload } from '#modules/payment/netvalve/index.js';
 import type { I_PayPalCreateOrderPayload, I_PayPalCreateOrderResponse, I_PayPalSubscriptionResponse } from '#modules/payment/paypal/paypal.type.js';
 import type { I_Pricing } from '#modules/pricing/pricing.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
@@ -16,21 +15,20 @@ import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
-import { netvalveCtr } from '#modules/payment/netvalve/index.js';
-import { applyHppMerchantRouting, ensureCredentials } from '#modules/payment/netvalve/netvalve.handler.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { ensurePayPalCredentials } from '#modules/payment/paypal/paypal.handler.js';
 import { paypalSetupService } from '#modules/payment/paypal/paypal.setup.service.js';
-import { E_PayPalIntent, E_PayPalShippingPreference, E_PayPalUserAction } from '#modules/payment/paypal/paypal.type.js';
+import { E_PayPalIntent, E_PayPalLandingPage, E_PayPalShippingPreference, E_PayPalUserAction } from '#modules/payment/paypal/paypal.type.js';
 import { calculateAmountFromPricing, pricingCtr } from '#modules/pricing/index.js';
 import { PricingModel } from '#modules/pricing/pricing.model.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 
 import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js';
 
-import { getPaymentRedirectBase, getPaymentUrls } from './payment.handler.js';
+import { getPaymentRedirectBase } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
 const pricingMongooseCtr = new MongooseController<I_Pricing>(PricingModel);
@@ -417,12 +415,14 @@ export const paymentController = {
             ? E_OrderType.SUBSCRIPTION
             : E_OrderType.A_LA_CARTE_EVENT;
 
-        const paymentProvider = input.paymentProvider ?? E_PaymentProvider.NETVALVE;
+        const requestedProvider = input.paymentProvider;
+        const paymentProvider = E_PaymentProvider.PAYPAL;
 
-        if (paymentProvider !== E_PaymentProvider.NETVALVE && paymentProvider !== E_PaymentProvider.PAYPAL) {
-            throwError({
-                status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'Unsupported payment provider',
+        if (requestedProvider && requestedProvider !== E_PaymentProvider.PAYPAL) {
+            log.warn('[Payment] Non-PayPal provider requested; forcing PayPal for compatibility', {
+                requestedProvider,
+                userId: currentUser.id,
+                pricingType,
             });
         }
 
@@ -444,8 +444,6 @@ export const paymentController = {
             });
         }
         const createdOrder = orderRes.result;
-
-        const clientOrderId = createdOrder.id;
 
         const prDoc = {
             gateway: paymentProvider,
@@ -489,23 +487,28 @@ export const paymentController = {
                 if (!paypalPlanId) {
                     log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal Plan ID. Initializing dynamic setup...`);
 
-                    const productId = await paypalSetupService.getOrCreateProduct(context);
-                    if (!productId) {
+                    const productSetup = await paypalSetupService.getOrCreateProduct(context);
+                    if (!productSetup.id) {
                         throwError({
                             status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: 'Failed to initialize PayPal product for subscription',
+                            message: `Failed to initialize PayPal product for subscription${productSetup.error ? `: ${productSetup.error}` : ''}`,
                         });
                     }
 
-                    const newPlanId = await paypalSetupService.getOrCreatePlan(context, productId!, resolvedAmount, currencyCode);
-                    if (!newPlanId) {
+                    const planSetup = await paypalSetupService.getOrCreatePlan(
+                        context,
+                        productSetup.id,
+                        resolvedAmount,
+                        currencyCode,
+                    );
+                    if (!planSetup.id) {
                         throwError({
                             status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: 'Failed to initialize PayPal plan for subscription',
+                            message: `Failed to initialize PayPal plan for subscription${planSetup.error ? `: ${planSetup.error}` : ''}`,
                         });
                     }
 
-                    paypalPlanId = newPlanId!;
+                    paypalPlanId = planSetup.id;
 
                     // Update the pricing record in DB so we don't have to create it again
                     await PricingModel.updateOne(
@@ -521,7 +524,9 @@ export const paymentController = {
                     application_context: {
                         return_url: returnUrl,
                         cancel_url: cancelUrl,
+                        landing_page: E_PayPalLandingPage.BILLING,
                         user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
+                        shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
                     },
                 };
 
@@ -607,6 +612,10 @@ export const paymentController = {
                 },
             });
 
+            const { credentials } = ensurePayPalCredentials();
+            const clientTokenRes = await paypalCtr.generateClientToken(context);
+            const clientToken = clientTokenRes.success ? clientTokenRes.result?.client_token : null;
+
             const paymentResult: I_MakePaymentResult = {
                 orderId: createdOrder.id,
                 amount: resolvedAmount,
@@ -615,6 +624,10 @@ export const paymentController = {
                 paymentStatus: E_PaymentStatus.PENDING,
                 pricingId: pricing.id,
                 redirectUrl: approvalUrl,
+                clientToken,
+                paypalOrderId: externalOrderId,
+                paypalClientId: credentials?.clientId,
+                isSubscription: pricingType === E_PricingType.MEMBERSHIP,
             };
 
             return {
@@ -624,124 +637,7 @@ export const paymentController = {
             };
         }
 
-        // Build customerDetails - email and phone are required for 3DS Visa mandate
-        // See: https://docs.netvalve.com/#tag/Hosted-Payment-Page/operation/createOrder
-        // Note: customerPhone format should be "+countrycode-phonenumber" (e.g., "+919900000000")
-        const customerDetails: Record<string, string> = {};
-        if (currentUser.email) {
-            customerDetails['customerEmail'] = currentUser.email;
-        }
-        // Get customer IP from request context
-        // Express sets req.ip if trust proxy is enabled, otherwise use socket.remoteAddress
-        const customerIp = (context.req as any)?.ip || (context.req as any)?.connection?.remoteAddress || undefined;
-        if (customerIp) {
-            customerDetails['customerIp'] = customerIp;
-        }
-        // TODO: Add customerPhone when available in user model or input
-        // customerDetails['customerPhone'] = '+1234567890'; // Format: +countrycode-phonenumber
-
-        const paymentUrls = getPaymentUrls();
-        const hppPayload: Record<string, unknown> = {
-            amount: resolvedAmount,
-            currency: currencyCode,
-            clientOrderId,
-            successUrl: paymentUrls.successUrl,
-            cancelUrl: paymentUrls.cancelUrl,
-            failedUrl: paymentUrls.failedUrl,
-            pendingUrl: paymentUrls.pendingUrl,
-        };
-        // Always include customerDetails if we have at least email (required for 3DS)
-        if (customerDetails['customerEmail'] || Object.keys(customerDetails).length > 0) {
-            hppPayload['customerDetails'] = customerDetails;
-        }
-
-        // Apply merchant routing to get netvalveMidId from request payload
-        // This ensures we save the correct merchant ID to Order for rebill
-        const { credentials } = ensureCredentials();
-        const hppPayloadWithRouting = credentials
-            ? applyHppMerchantRouting(hppPayload as I_NetvalveHppOrderPayload, credentials)
-            : hppPayload;
-
-        // Get netvalveMidId from request payload (set by applyHppMerchantRouting)
-        const netvalveMidIdFromRequest = typeof hppPayloadWithRouting['netvalveMidId'] === 'string'
-            ? hppPayloadWithRouting['netvalveMidId']
-            : undefined;
-
-        const hppResponse = await netvalveCtr.createOrder(context, hppPayloadWithRouting as I_NetvalveHppOrderPayload);
-
-        if (!hppResponse.success || !hppResponse.result) {
-            throwError({
-                status: RESPONSE_STATUS.BAD_REQUEST,
-                message: hppResponse.message ?? 'Failed to initiate payment',
-            });
-        }
-
-        const hppPayloadResult = hppResponse.result as Record<string, unknown>;
-
-        // Validate response according to Netvalve HPP documentation
-        // See: https://docs.netvalve.com/#tag/Hosted-Payment-Page
-        // responseCode "GTW_1000" and orderState "CREATED" indicate success
-        const responseCode = typeof hppPayloadResult?.['responseCode'] === 'string' ? hppPayloadResult['responseCode'] : '';
-        const orderState = typeof hppPayloadResult?.['orderState'] === 'string' ? hppPayloadResult['orderState'] : '';
-        const redirectUrl = typeof hppPayloadResult?.['redirectUrl'] === 'string' ? hppPayloadResult['redirectUrl'] : undefined;
-        const externalOrderId = hppPayloadResult?.['orderId'] ? String(hppPayloadResult['orderId']) : undefined;
-
-        // Check if order was successfully created
-        const isSuccess = responseCode === 'GTW_1000' && orderState === 'CREATED' && redirectUrl;
-        if (!isSuccess) {
-            const errorMessage = typeof hppPayloadResult?.['responseMessage'] === 'string'
-                ? hppPayloadResult['responseMessage']
-                : `Payment gateway error: responseCode=${responseCode}, orderState=${orderState}`;
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: errorMessage });
-        }
-
-        await paymentRequestCtr.updatePaymentRequest(context, {
-            filter: { id: paymentRequest.id },
-            update: {
-                $set: {
-                    status: E_PaymentRequestStatus.PENDING,
-                    paymentUrl: redirectUrl ?? null,
-                    externalOrderId: externalOrderId ?? undefined,
-                    gatewayResponse: hppPayloadResult ?? null,
-                    attempts: (paymentRequest.attempts ?? 0) + 1,
-                },
-            },
-        });
-
-        // Extract netvalveMidId: priority 1 = response, priority 2 = request payload
-        const netvalveMidId = typeof hppPayloadResult?.['netvalveMidId'] === 'string'
-            ? hppPayloadResult['netvalveMidId']
-            : typeof hppPayloadResult?.['midId'] === 'string'
-                ? hppPayloadResult['midId']
-                : netvalveMidIdFromRequest; // Fallback to request payload (set by applyHppMerchantRouting)
-
-        await orderCtr.updateOrder(context, {
-            filter: { id: createdOrder.id },
-            update: {
-                $set: {
-                    status: E_OrderStatus.PENDING,
-                    externalOrderId: externalOrderId ?? undefined,
-                    ...(netvalveMidId && { netvalveMidId }),
-                },
-            },
-        });
-
-        // Payment method will be selected by user on HPP page, default to CARD
-        const paymentResult: I_MakePaymentResult = {
-            orderId: createdOrder.id,
-            amount: resolvedAmount,
-            currencyCode,
-            paymentMethod: E_PaymentMethod.CARD, // Default, user selects on HPP
-            paymentStatus: E_PaymentStatus.PENDING,
-            pricingId: pricing.id,
-            redirectUrl,
-        };
-
-        return {
-            success: true,
-            message: hppResponse.message ?? 'Payment initiated',
-            result: paymentResult,
-        };
+        return null as any;
     },
 };
 

@@ -17,8 +17,10 @@ import type { I_Conversation, I_ConversationMeta } from './index.js';
 import { transformMessageMedia } from '../message/index.js';
 import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './index.js';
 
+const MULTI_NEWLINE_REGEX = /\n{3,}/g;
+
 /**
- * Kiểm tra người dùng có trong cuộc trò chuyện riêng không
+ * Check if user is a participant in a private conversation
  */
 export function isPrivateConversationParticipant(
     participants: { userId?: string }[],
@@ -30,7 +32,7 @@ export function isPrivateConversationParticipant(
 }
 
 /**
- * Lấy ID của người còn lại trong cuộc trò chuyện riêng
+ * Get the ID of the other participant in a private conversation
  */
 export function getOtherParticipantId(
     participants: { userId?: string }[],
@@ -43,10 +45,10 @@ export function getOtherParticipantId(
 }
 
 /**
- * Giới hạn chuỗi về 140 ký tự (có hỗ trợ Unicode)
+ * Truncate string to 140 characters (Unicode-safe)
  */
 export function safeSlice140(s: string): string {
-    return Array.from(s).slice(0, 140).join('');
+    return [...s].slice(0, 140).join('');
 }
 
 function collectPlainText(node: unknown, parts: string[]): void {
@@ -107,11 +109,11 @@ export function extractMessagePlainText(raw: unknown): string {
         const parts: string[] = [];
         collectPlainText(raw, parts);
 
-        while (parts.length && parts[parts.length - 1] === '\n')
+        while (parts.length && parts.at(-1) === '\n')
             parts.pop();
 
         const joined = parts.join('');
-        return joined.replace(/\n{3,}/g, '\n\n').trim();
+        return joined.replace(MULTI_NEWLINE_REGEX, '\n\n').trim();
     }
 
     return '';
@@ -133,7 +135,7 @@ function nameIsBlog(name?: unknown): boolean {
 }
 
 /**
- * Xác định cuộc trò chuyện mở công khai (public)
+ * Determine if a conversation is an open public thread
  */
 export function isOpenPublicThread(c: I_Conversation): boolean {
     const isProfileOpen
@@ -160,7 +162,7 @@ export function isOpenPublicThread(c: I_Conversation): boolean {
     return isProfileOpen || isBlogOpen || isGroupOpen || isDestinationOpen || isGalleryOpen;
 }
 /**
- * Xác định type cho topic admin contact
+ * Determine request types for admin contact topics
  */
 
 export function getRequestTypesByTopic(): Record<E_ContactTopic, readonly string[]> {
@@ -204,7 +206,7 @@ export function buildSupportTextBlock(params: {
 }
 
 /**
- * Phân loại hội thoại để sử dụng thống nhất ở controller
+ * Classify a conversation for unified controller usage
  */
 export function classifyConversation(c: I_Conversation): {
     isPublic: boolean;
@@ -230,23 +232,23 @@ export function classifyConversation(c: I_Conversation): {
         ? String(c.name).slice('blog:'.length)
         : undefined;
 
-    // Chủ thể cho profile
+    // Profile owner ID
     const profileOwnerId: string | undefined
         = c.profileOwnerId ?? meta.profileOwnerId ?? c.entityId ?? profileFromName;
 
-    // Chủ thể cho blog
+    // Blog owner ID
     const blogId: string | undefined
         = (c as Partial<I_Conversation> & { blogId?: string }).blogId
             ?? c.entityId
             ?? blogFromName;
 
-    // Ngữ cảnh blog
+    // Blog context
     const isBlogContext
         = c?.type === (E_ConversationType as Record<string, string>)['BLOG_COMMENT']
             || Boolean(blogId)
             || Boolean(blogFromName);
 
-    // Ngữ cảnh gallery - lấy gallery owner (uploadedById) từ entity
+    // Gallery context — get gallery owner (uploadedById) from entity
     const galleryId: string | undefined = isGalleryContext ? c.entityId : undefined;
     let galleryOwnerId: string | undefined;
     if (isGalleryContext && c.entity) {
@@ -257,7 +259,7 @@ export function classifyConversation(c: I_Conversation): {
         }
     }
 
-    // Redirect cho public (blog, gallery, destination hoặc profile)
+    // Redirect for public (blog, gallery, destination, or profile)
     let redirectKindPublic: E_RedirectType;
     if (isDestinationContext) {
         redirectKindPublic = E_RedirectType.DESTINATION;
@@ -279,8 +281,8 @@ export function classifyConversation(c: I_Conversation): {
         ? redirectKindPublic
         : E_RedirectType.CONVERSATION;
 
-    // Đích public: galleryOwnerId (gallery owner), blogId (blog), destinationId (destination) hoặc profileOwnerId (profile)
-    // Với gallery, publicTargetId là gallery owner (uploadedById) để gửi notification
+    // Public target: galleryOwnerId (gallery owner), blogId (blog), destinationId (destination), or profileOwnerId (profile)
+    // For gallery, publicTargetId is the gallery owner (uploadedById) for notification delivery
     const publicTargetId = isDestinationContext
         ? (destinationOwnerId ?? destinationId)
         : (isGalleryContext ? (galleryOwnerId ?? galleryId) : (isBlogContext ? blogId : profileOwnerId));

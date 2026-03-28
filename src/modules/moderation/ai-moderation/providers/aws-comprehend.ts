@@ -21,6 +21,7 @@ import type { I_Input_TextModeration, I_TextModerationResult } from '../ai-moder
 import { E_ModerationCategory, E_TextModerationDecision } from '../ai-moderation.type.js';
 
 const env = getEnv();
+const WHITESPACE_REGEX = /\s+/g;
 
 export class AWSComprehendProvider {
     private client?: ComprehendClient;
@@ -51,7 +52,7 @@ export class AWSComprehendProvider {
         }
 
         const cleanText = input.text
-            .replace(/\s+/g, ' ')
+            .replace(WHITESPACE_REGEX, ' ')
             .trim()
             .substring(0, 5000);
         const categories: string[] = [];

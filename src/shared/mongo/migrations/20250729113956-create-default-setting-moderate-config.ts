@@ -12,19 +12,19 @@ import { E_SettingType } from '#modules/setting/index.js';
 const moderateConfig = {
     type: E_SettingType.AI_MODERATION,
     value: {
-        // Global thresholds - cân bằng giữa bảo mật và trải nghiệm người dùng
-        autoRejectThreshold: 0.85, // Tự động từ chối khi confidence >= 85%
-        humanReviewThreshold: 0.65, // Yêu cầu review khi confidence >= 65%
+        // Global thresholds — balanced between security and user experience
+        autoRejectThreshold: 0.85, // Auto-reject when confidence >= 85%
+        humanReviewThreshold: 0.65, // Require review when confidence >= 65%
 
-        // Image thresholds - ngưỡng cho từng loại nội dung hình ảnh
+        // Image thresholds — per content-type thresholds for images
         imageThresholds: {
-            explicitNudity: 0.75, // Nội dung khiêu dâm rõ ràng
-            violence: 0.70, // Bạo lực
-            hateSymbols: 0.80, // Biểu tượng thù địch
-            drugs: 0.75, // Ma túy
-            nonExplicitNudity: 0.85, // Nội dung khiêu dâm không rõ ràng
-            swimwearOrUnderwear: 0.90, // Đồ bơi/đồ lót - cho phép với threshold cao
-            fullNudity: 0.95, // Khoả thân hoàn toàn - chặn với threshold cao
+            explicitNudity: 0.75, // Explicit nudity
+            violence: 0.70, // Violence
+            hateSymbols: 0.80, // Hate symbols
+            drugs: 0.75, // Drugs
+            nonExplicitNudity: 0.85, // Non-explicit nudity (suggestive)
+            swimwearOrUnderwear: 0.90, // Swimwear/underwear — allowed with high threshold
+            fullNudity: 0.95, // Full nudity — blocked with high threshold
         },
     },
 };

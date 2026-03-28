@@ -20,6 +20,7 @@ import { emailQueue } from './email.queue.js';
 import { emailTemplateCache } from './email.template-cache.js';
 import { emailQueueRegistryCtr } from './queue-registry/index.js';
 
+const TRAILING_SLASHES_REGEX = /\/+$/;
 const env = getEnv();
 
 export const emailCtr = {
@@ -40,7 +41,7 @@ export const emailCtr = {
             const safeTemplateData = templateData ?? {};
 
             // Get USER_APP_URL from env and ensure it doesn't end with trailing slash
-            const userAppUrl = env.USER_APP_URL ? env.USER_APP_URL.replace(/\/+$/, '') : '';
+            const userAppUrl = env.USER_APP_URL ? env.USER_APP_URL.replace(TRAILING_SLASHES_REGEX, '') : '';
 
             const renderData = {
                 ...safeTemplateData,
@@ -129,7 +130,7 @@ export const emailCtr = {
             };
         }
         catch (error) {
-            console.error('Error sending email:', error);
+            log.error('Error sending email', { error });
 
             return {
                 success: false,
@@ -169,7 +170,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error('Error sending raw email:', error);
+            log.error('Error sending raw email', { error });
 
             return {
                 success: false,
@@ -207,7 +208,7 @@ export const emailCtr = {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error('Error scheduling email:', error);
+            log.error('Error scheduling email', { error });
 
             return {
                 success: false,

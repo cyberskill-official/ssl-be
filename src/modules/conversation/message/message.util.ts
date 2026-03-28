@@ -1,6 +1,7 @@
 import type { T_PaginateResult } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
+import { log } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
 import mongoose from 'mongoose';
@@ -8,7 +9,7 @@ import mongoose from 'mongoose';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, normalizeStoragePath } from '#modules/bunny/index.js';
 import { keywordCtr } from '#modules/keyword/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
@@ -20,6 +21,8 @@ import { hasToObject } from '#shared/util/has-to-object.js';
 import type { I_Message } from './message.type.js';
 
 import { E_MessageType } from './message.type.js';
+
+const SPECIAL_CHARS_REGEX = /[^\w\s]/;
 
 const mongooseCtr = new MongooseController(UserModel);
 
@@ -116,6 +119,30 @@ function maybeSignVideoUrl(context: I_Context, url: unknown): string | undefined
     }
     catch {
         return undefined;
+    }
+}
+
+export async function removeMessageMedia(context: I_Context, message: I_Message): Promise<void> {
+    const contentType = message.content?.type;
+    const contentValue = message.content?.value;
+
+    if (typeof contentValue === 'string' && contentValue.trim()) {
+        const normalized = normalizeStoragePath(contentValue);
+
+        if (contentType === E_MessageType.VIDEO) {
+            const deletedVideo = await bunnyCtr.deleteVideoUrl(context, contentValue);
+            if (!deletedVideo.success && normalized) {
+                await bunnyCtr.deleteFile(context, normalized);
+            }
+        }
+        else if (contentType === E_MessageType.IMAGE && normalized) {
+            await bunnyCtr.deleteFile(context, normalized);
+        }
+    }
+
+    const contactAdminImage = message.content?.contactAdmin?.image;
+    if (typeof contactAdminImage === 'string' && contactAdminImage.trim()) {
+        await bunnyCtr.deleteFile(context, normalizeStoragePath(contactAdminImage));
     }
 }
 
@@ -286,11 +313,11 @@ export async function transformMessageMedia(
             }
             const viewerIsFreeMember = viewerHasFreeRole || (viewerHasPaidRole && !viewerMembershipActive);
 
-            // Case 1: Sender chưa xác thực tuổi → người khác thấy null (owner/staff/admin vẫn thấy rõ)
+            // Case 1: Sender not age-verified → other viewers see null (owner/staff/admin still see original)
             if (!senderAgeVerified && !isOwner && !viewerExempt) {
                 content.value = null as any; // Show default image for other viewers
             }
-            // Case 2: Viewer là FREE_MEMBER → blur ảnh của người khác
+            // Case 2: Viewer is FREE_MEMBER → blur other users' images
             else if (viewerIsFreeMember && !isOwner && !viewerExempt) {
                 content.value = bunnyCtr.generateBlurredUrl({ fullUrl: content.value, extraQueryParams: { class: 'blur' } });
                 try {
@@ -307,7 +334,7 @@ export async function transformMessageMedia(
                     // ignore logging failures
                 }
             }
-            // Case 3: MEMBERSHIP hoặc owner/staff/admin → ảnh rõ
+            // Case 3: MEMBERSHIP holder or owner/staff/admin → show clear image
             else {
                 try {
                     const { log } = await import('@cyberskill/shared/node/log');
@@ -383,7 +410,7 @@ export async function transformMessageMedia(
                             if (!word)
                                 continue;
 
-                            const hasSpecialChars = /[^\w\s]/.test(word);
+                            const hasSpecialChars = SPECIAL_CHARS_REGEX.test(word);
                             const keywordPattern = hasSpecialChars
                                 ? new RegExp(escapeRegExp(word), 'gi')
                                 : new RegExp(`\\b${escapeRegExp(word)}`, 'gi');
@@ -396,7 +423,7 @@ export async function transformMessageMedia(
         }
         catch (err) {
             // Non-fatal: if moderation check fails, don't redact
-            console.error('Redaction failed:', err);
+            log.error('Redaction failed', { error: err });
         }
     }
 

@@ -31,4 +31,8 @@ export interface I_MakePaymentResult {
     paymentStatus: E_PaymentStatus;
     pricingId: string;
     redirectUrl?: string | null;
+    clientToken?: string | null;
+    paypalOrderId?: string | null;
+    paypalClientId?: string | null;
+    isSubscription: boolean;
 }

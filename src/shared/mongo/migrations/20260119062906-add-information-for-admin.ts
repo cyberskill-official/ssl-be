@@ -1,11 +1,11 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
 import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { E_Role_Staff } from '#modules/authz/role/role.type.js';
+import { hashPassword } from '#shared/util/index.js';
 
 const ADMIN_EMAIL = 'admin@secretswingerlust.com';
 const DEFAULT_USERNAME = 'admin';
@@ -31,7 +31,7 @@ export async function up(db: C_Db) {
             id: uuidv4(),
             username: DEFAULT_USERNAME,
             email: ADMIN_EMAIL,
-            password: bcrypt.hashSync(DEFAULT_PASSWORD, 10),
+            password: await hashPassword(DEFAULT_PASSWORD),
             rolesIds: [adminRoleId],
             registerStep: E_RegisterStep.COMPLETE,
             isEmailVerified: true,
@@ -53,7 +53,7 @@ export async function up(db: C_Db) {
     }
 
     if (!existingAdmin['password']) {
-        updateFields['password'] = bcrypt.hashSync(DEFAULT_PASSWORD, 10);
+        updateFields['password'] = await hashPassword(DEFAULT_PASSWORD);
     }
 
     const rolesIds = Array.isArray(existingAdmin['rolesIds'])

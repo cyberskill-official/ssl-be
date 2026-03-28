@@ -238,3 +238,8 @@ export interface I_PayPalListPlansResponse {
     total_pages?: number;
     links?: I_PayPalOrderLink[];
 }
+
+export interface I_PayPalClientTokenResponse {
+    client_token: string;
+    expires_in: number;
+}

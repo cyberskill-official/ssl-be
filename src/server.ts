@@ -7,6 +7,9 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
+// TODO: [SECURITY] Re-enable authorization middleware — currently all endpoints are unprotected
+// import type { I_Context } from '#shared/typescript/index.js';
+// import { authzMiddleware } from '#modules/authz/authz.middleware.js';
 import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
@@ -52,7 +55,7 @@ const env = getEnv();
     await mongoose.connect(env.MONGO_URI, {
         autoIndex: false,
     });
-    mongoose.connection.once('error', (err) => {
+    mongoose.connection.on('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
 
@@ -104,8 +107,8 @@ const env = getEnv();
             whiteList: env.CORS_WHITELIST,
         }),
         updateUserActivity,
-        // (req, res, next) => {
-        //     authzMiddleware.checkAuthorizedRest(req as I_Context, res, next).catch(next);
+        // (req: any, _res: any, next: any) => {
+        //     authzMiddleware.checkAuthorizedRest({ req } as I_Context, next).catch(next);
         // },
         mainRouter,
     );
@@ -115,8 +118,24 @@ const env = getEnv();
 
     // Graceful shutdown
     ['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, async () => {
-        await serverCleanup?.dispose();
-        log.info('🧼 Graceful shutdown complete');
-        process.exit(0);
+        log.info(`🛑 Received ${signal}, starting graceful shutdown...`);
+        try {
+            cron.stop();
+            await apolloServer.stop();
+            await mongoose.disconnect();
+            httpServer.close(() => {
+                log.info('🧼 Graceful shutdown complete');
+                process.exit(0);
+            });
+            // Force exit if httpServer.close hangs
+            setTimeout(() => {
+                log.warn('⚠️ Forced shutdown after timeout');
+                process.exit(1);
+            }, 10_000);
+        }
+        catch (err) {
+            log.error('Shutdown error:', err);
+            process.exit(1);
+        }
     }));
 })();

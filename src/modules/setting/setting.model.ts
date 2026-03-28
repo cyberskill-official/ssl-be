@@ -70,13 +70,13 @@ const ImageThresholdsSchema = mongo.createSchema<I_ImageThresholdsConfig>({
     standalone: true,
     mongoose,
     schema: {
-        explicitNudity: { type: Number, default: 0 }, // Nội dung khiêu dâm rõ ràng
-        violence: { type: Number, default: 0 }, // Bạo lực
-        hateSymbols: { type: Number, default: 0 }, // Biểu tượng thù địch
-        drugs: { type: Number, default: 0 }, // Ma túy
-        nonExplicitNudity: { type: Number, default: 0 }, // Nội dung khiêu dâm không rõ ràng
-        swimwearOrUnderwear: { type: Number, default: 0 }, // Đồ bơi/đồ lót - cho phép với threshold cao
-        fullNudity: { type: Number, default: 0 }, // Ảnh khoả thân hoàn toàn
+        explicitNudity: { type: Number, default: 0 }, // Explicit nudity
+        violence: { type: Number, default: 0 }, // Violence
+        hateSymbols: { type: Number, default: 0 }, // Hate symbols
+        drugs: { type: Number, default: 0 }, // Drugs
+        nonExplicitNudity: { type: Number, default: 0 }, // Non-explicit nudity (suggestive)
+        swimwearOrUnderwear: { type: Number, default: 0 }, // Swimwear/underwear — allowed with high threshold
+        fullNudity: { type: Number, default: 0 }, // Full nudity
     },
 });
 

@@ -1,4 +1,4 @@
-import type { I_Input_FindOne, I_Input_FindPaging, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_FindOne, I_Input_FindPaging, T_PaginateResult, T_QueryFilter } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { MongooseController } from '@cyberskill/shared/node/mongo';
@@ -34,6 +34,6 @@ export const countryCtr = {
             ],
         );
 
-        return mongooseCtr.findPaging(computedFilter as unknown as never, options);
+        return mongooseCtr.findPaging(computedFilter as T_QueryFilter<I_Country>, options);
     },
 };

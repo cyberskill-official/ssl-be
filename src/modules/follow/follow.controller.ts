@@ -123,7 +123,7 @@ export const followCtr = {
         // Get blocked user IDs for bidirectional blocking
         const blockedUserIds = await getBlockedUserIds(context);
 
-        // lấy danh sách id của Follow hợp lệ bằng aggregate
+        // Get list of valid Follow IDs using aggregate
         const idsAgg = await mongooseCtr.aggregate([
             { $match: { followId: filter?.followId } },
             {
@@ -141,11 +141,11 @@ export const followCtr = {
                     'u.isAdminblock': { $ne: true },
                     // Filter out blocked users (bidirectional)
                     ...(blockedUserIds.size > 0 && {
-                        'u.id': { $nin: Array.from(blockedUserIds) },
+                        'u.id': { $nin: [...blockedUserIds] },
                     }),
                 },
             },
-            { $project: { _id: 0, id: '$id' } }, // giữ lại id của Follow doc
+            { $project: { _id: 0, id: '$id' } }, // keep Follow doc id
         ]) as I_Return<Array<{ id: string }>>;
 
         const ids = idsAgg?.success ? idsAgg.result.map(r => r.id) : [];
@@ -212,7 +212,7 @@ export const followCtr = {
             {
                 $lookup: {
                     from: 'users',
-                    localField: 'followId', // người được follow
+                    localField: 'followId', // the followed user
                     foreignField: 'id',
                     as: 'u',
                 },
@@ -224,7 +224,7 @@ export const followCtr = {
                     'u.isAdminblock': { $ne: true },
                     // Filter out blocked users (bidirectional)
                     ...(blockedUserIds.size > 0 && {
-                        'u.id': { $nin: Array.from(blockedUserIds) },
+                        'u.id': { $nin: [...blockedUserIds] },
                     }),
                 },
             },
@@ -341,10 +341,10 @@ export const followCtr = {
             await notificationCtr.createNotificationWithSettings(context, {
                 doc: {
                     type: [E_NotificationType.NEW_FOLLOWER],
-                    actorId: currentUser.id, // người follow
-                    targetId: followId, // người được follow
+                    actorId: currentUser.id, // the follower
+                    targetId: followId, // the followed user
                     entityType: E_NotificationEntityType.USER,
-                    entityId: currentUser.id, // profile của người follow
+                    entityId: currentUser.id, // follower's profile
                     presentation: {
                         // Only set redirect.id to username, not UUID (profile route requires username)
                         ...(currentUser.username

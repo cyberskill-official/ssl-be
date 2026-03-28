@@ -526,7 +526,7 @@ export const locationCtr = {
                     else if (
                         eventOwnerId
                         && eventOwner === null
-                        && Object.prototype.hasOwnProperty.call(event ?? {}, 'createdBy')
+                        && Object.hasOwn(event ?? {}, 'createdBy')
                     ) {
                         // createdBy virtual failed to populate (likely because the user document was removed)
                         isOwnerInactive = true;
@@ -1494,7 +1494,7 @@ export const locationCtr = {
                     else if (
                         eventOwnerId
                         && eventOwner === null
-                        && Object.prototype.hasOwnProperty.call(event ?? {}, 'createdBy')
+                        && Object.hasOwn(event ?? {}, 'createdBy')
                     ) {
                         isOwnerInactive = true;
                     }

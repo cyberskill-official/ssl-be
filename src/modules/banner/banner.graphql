@@ -5,6 +5,10 @@ type T_Banner {
     updatedAt: DateTime
     image: String
     targetURL: String
+    blogId: String
+    blog: T_Blog
+    destinationId: String
+    destination: T_Destination
     createdById: String
     createdBy: T_User
     clickCount: Float
@@ -18,6 +22,8 @@ input Input_QueryBanner {
     updatedAt: DateTime
     image: String
     targetURL: String
+    blogId: String
+    destinationId: String
     createdById: String
     clickCount: Float
     isActive: Boolean
@@ -26,6 +32,8 @@ input Input_QueryBanner {
 input Input_CreateBanner {
     image: String!
     targetURL: String!
+    blogId: String
+    destinationId: String
     isActive: Boolean
 }
 
@@ -33,6 +41,8 @@ input Input_UpdateBanner {
     isDel: Boolean
     image: String
     targetURL: String
+    blogId: String
+    destinationId: String
     isActive: Boolean
 }
 

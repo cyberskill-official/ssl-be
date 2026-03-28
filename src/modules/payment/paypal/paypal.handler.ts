@@ -8,6 +8,8 @@ import type { I_PayPalAccessTokenResponse, I_PayPalCredentials, I_PayPalErrorRes
 
 import { getPayPalCredentials } from './paypal.config.js';
 
+const VERSION_SUFFIX_REGEX = /\/v\d+$/;
+
 const TOKEN_REFRESH_BUFFER_MS = 30_000;
 
 const tokenCache: {
@@ -110,7 +112,7 @@ async function getPayPalAccessToken(credentials: I_PayPalCredentials): Promise<I
         return { success: true, result: tokenCache.accessToken };
     }
 
-    const authBaseUrl = credentials.baseUrl.replace(/\/v\d+$/, '');
+    const authBaseUrl = credentials.baseUrl.replace(VERSION_SUFFIX_REGEX, '');
     const basicToken = Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString('base64');
     const body = new URLSearchParams({ grant_type: 'client_credentials' });
 

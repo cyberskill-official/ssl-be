@@ -22,6 +22,7 @@ import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog 
 import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
+const LEADING_SLASHES_REGEX = /^\/+/u;
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
@@ -215,12 +216,12 @@ export const blogCtr = {
                 return undefined;
             try {
                 const url = new URL(normalized);
-                return url.pathname.replace(/^\/+/u, '');
+                return url.pathname.replace(LEADING_SLASHES_REGEX, '');
             }
             catch {
                 return normalized
                     .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
-                    .replace(/^\/+/u, '');
+                    .replace(LEADING_SLASHES_REGEX, '');
             }
         };
 

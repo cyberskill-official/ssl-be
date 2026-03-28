@@ -60,12 +60,12 @@ async function updateRegistryWithMeta(
 }
 
 async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I_EmailJobResult> {
-    const jobId = String(job.id); // Lấy ID để log cho dễ
+    const jobId = String(job.id); // Get ID for logging
     try {
         const startTime = Date.now();
         const { emailJob } = job.data;
 
-        // LOG 1: Kiểm tra kích thước nội dung khi bắt đầu
+        // LOG 1: Check content size at start
         const htmlLength = emailJob.html?.length || 0;
         log.info(`[JOB_START] Processing Job ${jobId} | Subject: ${emailJob.subject} | HTML Size: ${(htmlLength / 1024).toFixed(2)} KB`);
 
@@ -119,7 +119,7 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
                 const progress = Math.round(((i + 1) / batches.length) * 100);
                 await job.progress(progress);
 
-                // LOG 2: Theo dõi thời gian xử lý từng Batch
+                // LOG 2: Track processing time per batch
                 log.info(`[BATCH_DONE] Job ${jobId} Batch ${i + 1}/${batches.length} | Time: ${Date.now() - batchStartTime}ms | Sent: ${batch.length}`);
 
                 if (i < batches.length - 1) {
@@ -165,7 +165,7 @@ function initializeQueues(): void {
         log.error('Redis connection error in email queue:', err);
     });
 
-    // Thêm log để theo dõi khi có job bị stalled
+    // Add listener to track stalled jobs
     bulkQueue.on('stalled', (job) => {
         log.warn(`[STALLED_WARNING] Job ${job.id} bị kẹt (Lock timeout). Kiểm tra độ trễ Event Loop hoặc kích thước HTML.`);
     });

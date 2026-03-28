@@ -2,9 +2,9 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import fetch from 'node-fetch';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -17,11 +17,20 @@ import { isValidReadableStream } from './bunny.util.js';
 
 const env = getEnv();
 
+const TRAILING_SLASH_REGEX = /\/+$/u;
+const LEADING_SLASH_REGEX = /^\/+/u;
+const LEADING_SLASHES_REGEX = /^\/+/;
+const BASE64_PLUS_REGEX = /\+/g;
+const BASE64_SLASH_REGEX = /\//g;
+const BASE64_TRAILING_EQUALS_REGEX = /=+$/;
+const BASE64_NEWLINE_REGEX = /\n/g;
+const EMBED_URL_REGEX = /^\/embed\/([^/]+)\/([^/?#]+)/;
+
 const canonicalCdn = (() => {
     const raw = env.BUNNY_CDN_HOSTNAME?.trim();
     if (!raw)
         return null;
-    const sanitized = raw.replace(/\/+$/u, '');
+    const sanitized = raw.replace(TRAILING_SLASH_REGEX, '');
     try {
         const url = new URL(sanitized);
         return { origin: url.origin, host: url.hostname.toLowerCase() };
@@ -56,15 +65,15 @@ export function normalizeStoragePath(value: string): string {
     const withoutQuery = withoutHash.split('?')[0] ?? '';
     try {
         const parsed = new URL(withoutQuery);
-        return parsed.pathname.replace(/^\/+/u, '');
+        return parsed.pathname.replace(LEADING_SLASH_REGEX, '');
     }
     catch {
-        return withoutQuery.replace(/^\/+/u, '');
+        return withoutQuery.replace(LEADING_SLASH_REGEX, '');
     }
 }
 
 export function cleanFullUrl(value: string): string {
-    const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(/\/+$/u, '');
+    const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(TRAILING_SLASH_REGEX, '');
     const path = normalizeStoragePath(value);
     return `${domain}/${path}`;
 }
@@ -114,14 +123,16 @@ export const bunnyCtr = {
         fileStream: NodeJS.ReadableStream,
     ): Promise<I_Return<void>> => {
         const url = `https://video.bunnycdn.com/library/${env.BUNNY_STREAM_LIBRARY_ID}/videos/${videoId}`;
+        const body = Readable.toWeb(fileStream as Readable) as unknown as BodyInit;
 
-        const options = {
+        const options: RequestInit & { duplex: 'half' } = {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/octet-stream',
                 'AccessKey': env.BUNNY_STREAM_API_KEY,
             },
-            body: fileStream,
+            body,
+            duplex: 'half',
         };
 
         try {
@@ -256,8 +267,8 @@ export const bunnyCtr = {
         try {
             await BunnyFile.upload(storageZone, `${storagePath}`, fileStreamOrBuffer as any);
             // Chuẩn hóa domain và path để không bị dư dấu /
-            const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(/\/+$/u, '');
-            const path = (storagePath || '').replace(/^\/+/, '');
+            const domain = (env.BUNNY_CDN_HOSTNAME || '').replace(TRAILING_SLASH_REGEX, '');
+            const path = (storagePath || '').replace(LEADING_SLASHES_REGEX, '');
             const publicUrl = `${domain}/${path}`;
             return { success: true, result: publicUrl };
         }
@@ -308,10 +319,10 @@ export const bunnyCtr = {
             const hash = createHash('sha256').update(hashInput).digest();
             const token = Buffer.from(hash)
                 .toString('base64')
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=+$/, '')
-                .replace(/\n/g, '');
+                .replace(BASE64_PLUS_REGEX, '-')
+                .replace(BASE64_SLASH_REGEX, '_')
+                .replace(BASE64_TRAILING_EQUALS_REGEX, '')
+                .replace(BASE64_NEWLINE_REGEX, '');
 
             const query = new URLSearchParams({
                 token,
@@ -346,7 +357,7 @@ export const bunnyCtr = {
             ...(extraQueryParams ?? {}),
         };
 
-        const hasCustomClass = Object.prototype.hasOwnProperty.call(mergedParams, 'class');
+        const hasCustomClass = Object.hasOwn(mergedParams, 'class');
 
         if (!hasCustomClass && BUNNY_OPTIMIZER_DEFAULTS.blurClass) {
             mergedParams['class'] = BUNNY_OPTIMIZER_DEFAULTS.blurClass;
@@ -373,7 +384,7 @@ export const bunnyCtr = {
 
         const u = new URL(fullUrl);
 
-        const m = u.pathname.match(/^\/embed\/([^/]+)\/([^/?#]+)/);
+        const m = u.pathname.match(EMBED_URL_REGEX);
         if (!m)
             throw new Error('Invalid Bunny iframe URL');
         const libId = m[1];

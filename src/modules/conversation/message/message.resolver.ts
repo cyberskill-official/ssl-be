@@ -23,6 +23,7 @@ const messageResolver = {
         createMessage: (_parent: unknown, args: I_Input_CreateOne<I_Input_CreateMessage>, context: I_Context) => messageCtr.createMessage(context, args),
         updateMessage: (_parent: unknown, args: I_Input_UpdateOne<I_Input_UpdateMessage>, context: I_Context) => messageCtr.updateMessage(context, args),
         deleteMessage: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryMessage>, context: I_Context) => messageCtr.deleteMessage(context, args),
+        unsendMessage: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryMessage>, context: I_Context) => messageCtr.unsendMessage(context, args),
     },
 };
 

@@ -23,7 +23,7 @@ export interface I_Order extends I_GenericDocument {
     paymentTransactionId?: string;
     paymentTransaction?: I_PaymentTransaction;
     paymentRequestId?: string; // Link to PaymentRequest for tracking payment attempts
-    netvalveMidId?: string; // NetValve Merchant ID used for this order (for rebill)
+
     customerDetails?: Record<string, unknown>;
     meta?: Record<string, unknown>;
     pricingId?: string;

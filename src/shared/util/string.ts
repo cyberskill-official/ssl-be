@@ -1,1 +1,5 @@
-export const toCapitalized = (w: string): string => w?.[0]?.toUpperCase() + w.slice(1).toLowerCase();
+export function toCapitalized(w: string): string {
+    if (!w)
+        return '';
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+}

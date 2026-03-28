@@ -8,7 +8,6 @@ import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
 import { E_UploadType } from '@cyberskill/shared/node/upload';
 import bcrypt from 'bcryptjs';
-import ejs from 'ejs';
 import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
@@ -17,11 +16,9 @@ import type { I_Input_UpdateUser, I_User } from '#modules/user/index.js';
 import type { I_Request } from '#shared/typescript/express.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, E_Role_Staff, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
-import { emailTemplateCtr } from '#modules/email-template/index.js';
-import { emailService } from '#modules/email/email.service.js';
 import { emailCtr } from '#modules/email/index.js';
 import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
@@ -34,20 +31,21 @@ import {
 } from '#modules/notification/notification.type.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
-import { netvalveCtr, paymentCtr, paymentRequestCtr, paypalCtr } from '#modules/payment/index.js';
+import { paymentCtr, paymentRequestCtr, paypalCtr } from '#modules/payment/index.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
 import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import {
-    E_VerificationContext,
     E_VerificationMethod,
     verificationCtr,
 } from '#modules/verification/index.js';
+import { isAdminUser, userHasRole } from '#shared/auth-context/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 import { date, helper, validate } from '#shared/util/index.js';
+import { cleanIp, extractClientIp, isLocalIp } from '#shared/util/ip.js';
 
 import type {
     I_AgeVerify,
@@ -69,9 +67,9 @@ import type {
     I_SessionPayload,
 } from './authn.type.js';
 
+import { authPasswordService } from './auth-password.service.js';
 import {
     EMAIL_VERIFICATION,
-    FORGOT_PASSWORD,
     GUARDIAN_VISIT_TOKEN_EXPIRES,
     TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
@@ -79,9 +77,26 @@ import {
 import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
-const disableOtpEnforcement = String(
-    ((env as unknown) as Record<string, unknown>)?.['DISABLE_OTP_ENFORCEMENT'] ?? 'true',
-).toLowerCase() !== 'false';
+const OTP_FORMAT_REGEX = /^[A-Z0-9]{6}$/;
+const disableOtpEnforcement = env.DISABLE_OTP_ENFORCEMENT !== 'false';
+
+/** Apply admin-level overrides to a sanitized user (force active, verified, complete registration, no guardian view). */
+function applyAdminOverrides(user: I_User): void {
+    user.isActive = true;
+    user.isEmailVerified = true;
+    user.registerStep = user.registerStep ?? E_RegisterStep.COMPLETE;
+    user.isGuardianView = false;
+    user.guardianOwnerId = undefined;
+}
+
+/** Apply guardian-view overrides to a sanitized user (force active, verified, complete registration, set guardian fields). */
+function applyGuardianOverrides(user: I_User, ownerId: string): void {
+    user.isGuardianView = true;
+    user.guardianOwnerId = ownerId;
+    user.isActive = true;
+    user.isEmailVerified = true;
+    user.registerStep = user.registerStep ?? E_RegisterStep.COMPLETE;
+}
 
 function clearSessionCookie(req?: I_Request): void {
     const res = (req as any)?.res;
@@ -105,39 +120,6 @@ function clearSessionCookie(req?: I_Request): void {
 
 interface I_GuardianTokenPayload extends I_SessionPayload {
     guardian: true;
-}
-
-let cachedAdminRoleId: string | null = null;
-
-async function getAdminRoleId(context: I_Context): Promise<string> {
-    if (cachedAdminRoleId)
-        return cachedAdminRoleId;
-
-    const adminRole = await roleCtr.getRole(context, {
-        filter: { name: E_Role_Staff.ADMIN },
-    });
-    if (!adminRole.success) {
-        throwError({
-            message: 'Admin role not found.',
-            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-        });
-    }
-    cachedAdminRoleId = adminRole.result.id;
-    return cachedAdminRoleId;
-}
-
-function userHasRoleId(user: I_User | undefined, roleId: string): boolean {
-    if (!user || !roleId)
-        return false;
-
-    if (Array.isArray(user.roles) && user.roles.some(role =>
-        role.id === roleId
-        || (Array.isArray(role.ancestorsIds) && role.ancestorsIds.includes(roleId)),
-    )) {
-        return true;
-    }
-
-    return Array.isArray(user.rolesIds) && user.rolesIds.includes(roleId);
 }
 
 async function assignSessionUser(session: I_Request['session'], user: I_User) {
@@ -180,14 +162,10 @@ async function updateUserIpFromRequest(
     ipFromArgs?: string,
     existingIp?: string,
 ): Promise<void> {
-    const clean = (ip: string | undefined): string => {
-        if (!ip || typeof ip !== 'string')
-            return '';
-        const trimmed = ip.trim();
-        if (trimmed === '::1')
-            return '127.0.0.1';
-        return trimmed.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim() || '';
-    };
+    const normalizedUserId = String(userId ?? '').trim();
+    if (!normalizedUserId) {
+        return;
+    }
 
     let clientIp: string | undefined;
 
@@ -196,50 +174,34 @@ async function updateUserIpFromRequest(
         clientIp = ipFromArgs.trim() || undefined;
     }
 
-    // Fallback: Try to get IP from request headers if not provided
+    // Fallback: extract IP from request headers
     if (!clientIp && context.req) {
-        const headers = context.req.headers || {};
-        const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
-        if (forwardedFor && typeof forwardedFor === 'string') {
-            clientIp = forwardedFor.split(',')[0]?.trim();
-        }
-        if (!clientIp) {
-            clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
-        }
-        if (!clientIp) {
-            clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
-        }
+        clientIp = extractClientIp(context.req) || undefined;
     }
 
-    const newIpCleaned = clean(clientIp);
+    const newIpCleaned = cleanIp(clientIp);
     if (newIpCleaned) {
-        const oldIpCleaned = clean(existingIp);
+        const oldIpCleaned = cleanIp(existingIp);
 
-        // Smarter update: don't overwrite a "real" (public) IP with a "local" IP (127.0.0.1, 192.168.x.x, etc.)
-        const isNewLocal = newIpCleaned === '127.0.0.1' || newIpCleaned.startsWith('192.168.') || newIpCleaned.startsWith('10.') || newIpCleaned.startsWith('172.');
-        const isOldReal = oldIpCleaned && oldIpCleaned !== '127.0.0.1' && !oldIpCleaned.startsWith('192.168.') && !oldIpCleaned.startsWith('10.');
-
-        if (isNewLocal && isOldReal) {
+        // Don't overwrite a "real" (public) IP with a local IP
+        if (isLocalIp(newIpCleaned) && oldIpCleaned && !isLocalIp(oldIpCleaned)) {
             log.info(`[Register] Preservation: Keeping real IP ${oldIpCleaned} instead of local IP ${newIpCleaned} for user: ${userId}`);
             return;
         }
 
         try {
-            // Use atomic operator for reliability
             await userCtr.updateUser(context, {
-                filter: { id: userId },
+                filter: { id: normalizedUserId },
                 update: { $set: { lastLoginIp: newIpCleaned } },
             });
 
-            // Update session if it's the current user
-            if (context.req?.session?.user?.id === userId) {
+            if (context.req?.session?.user?.id === normalizedUserId) {
                 context.req.session.user.lastLoginIp = newIpCleaned;
             }
 
-            log.info(`[Register] Updated lastLoginIp to: ${newIpCleaned} for user: ${userId}`);
+            log.info(`[Register] Updated lastLoginIp to: ${newIpCleaned} for user: ${normalizedUserId}`);
         }
         catch (error) {
-            // Don't block registration if IP update fails
             log.warn(`[Register] Failed to update user IP: ${(error as Error).message}`);
         }
     }
@@ -276,7 +238,7 @@ export const authnCtr = {
 
         const otp = helper.generateOTP();
 
-        // Lưu OTP và thời gian tạo vào user
+        // Store OTP and creation timestamp on user
         await userCtr.updateUser(context, {
             filter: { id: userFound.result.id },
             update: {
@@ -313,7 +275,7 @@ export const authnCtr = {
             // best-effort: continue to send email even if verification creation fails
         }
 
-        // Gửi email OTP
+        // Send OTP email
         const emailResult = await emailCtr.sendEmail(
             EMAIL_VERIFICATION,
             emailLowerCase,
@@ -393,8 +355,7 @@ export const authnCtr = {
                 };
             }
 
-            const adminRoleId = await getAdminRoleId(context);
-            const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+            const isAdmin = await isAdminUser(context, userFound.result);
 
             if (!isAdmin && userFound.result.isAdminBlocked) {
                 return { success: false, message: 'Account is blocked by admin.', code: RESPONSE_STATUS.UNAUTHORIZED.CODE };
@@ -402,9 +363,7 @@ export const authnCtr = {
 
             const sanitizedUser = omit(userFound.result, 'password') as I_User;
             if (isAdmin) {
-                sanitizedUser.isActive = true;
-                sanitizedUser.isEmailVerified = true;
-                sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+                applyAdminOverrides(sanitizedUser);
             }
 
             return {
@@ -480,7 +439,7 @@ export const authnCtr = {
             });
         }
 
-        // Cập nhật lại lastActivity ngay sau khi xác thực user thành công
+        // Update lastActivity immediately after successful user verification
         await assignSessionUser(context.req.session, userFound.result);
 
         const guardianViewMeta = context.req.session.guardianView;
@@ -489,8 +448,7 @@ export const authnCtr = {
             && guardianViewMeta.ownerId === context.req.session.user.id,
         );
 
-        const adminRoleId = await getAdminRoleId(context);
-        const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+        const isAdmin = await isAdminUser(context, userFound.result);
 
         if (isGuardianSession && !isAdmin) {
             context.req.session.destroy(() => { });
@@ -557,30 +515,16 @@ export const authnCtr = {
 
         const sanitizedUser = omit(userFound.result, 'password') as I_User;
         if (isGuardianSession) {
-            sanitizedUser.isGuardianView = true;
-            sanitizedUser.guardianOwnerId = guardianViewMeta?.ownerId;
-            sanitizedUser.isActive = true;
-            sanitizedUser.isEmailVerified = true;
-            sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+            applyGuardianOverrides(sanitizedUser, guardianViewMeta?.ownerId ?? '');
         }
 
         if (isAdmin) {
-            sanitizedUser.isActive = true;
-            sanitizedUser.isEmailVerified = true;
-            sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
-            sanitizedUser.isGuardianView = false;
-            sanitizedUser.guardianOwnerId = undefined;
+            applyAdminOverrides(sanitizedUser);
         }
 
         await assignSessionUser(context.req.session, sanitizedUser);
 
-        try {
-            // Prefer client IP from request headers (proxied environments)
-            // Skip server-side IP extraction; rely on FE-provided IP at login
-        }
-        catch (error) {
-            log.warn('Failed to update user IP in checkAuth:', error);
-        }
+        // IP update is handled by the frontend at login time
 
         // Hydrate user media (sign/blur profile images) before returning
         // This ensures auth?.user has correctly signed URLs for partner1 and partner2 gallery images
@@ -612,62 +556,29 @@ export const authnCtr = {
     isStaff: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const staffRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role.STAFF },
+        return userHasRole(context, currentUser, E_Role.STAFF, {
+            notFoundMessage: 'Staff role not found.',
         });
-
-        if (!staffRole.success) {
-            throwError({
-                message: 'Staff role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const staffRoleId = staffRole.result.id;
-
-        return !!currentUser.roles?.some(role =>
-            (role.id === staffRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(staffRoleId)),
-        );
     },
 
     isAdmin: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const adminRoleId = await getAdminRoleId(context);
-
-        return userHasRoleId(currentUser, adminRoleId);
+        return isAdminUser(context, currentUser);
     },
 
     // add near other role helpers in authnCtr
     isPaidMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const [paidMemberRole, promoRole] = await Promise.all([
-            roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
-            roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        const [hasPaidRole, hasPromoRole] = await Promise.all([
+            userHasRole(context, currentUser, E_Role_User.PAID_MEMBER, {
+                notFoundMessage: 'Paid member role not found.',
+            }),
+            userHasRole(context, currentUser, E_Role_User.PROMO_MEMBER, {
+                allowMissing: true,
+            }),
         ]);
-
-        if (!paidMemberRole.success) {
-            throwError({
-                message: 'Paid member role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const paidMemberRoleId = paidMemberRole.result.id;
-        const promoRoleId = promoRole.success ? promoRole.result.id : null;
-
-        const hasPaidRole = !!currentUser.roles?.some(role =>
-            (role.id === paidMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
-        );
-        const hasPromoRole = promoRoleId
-            ? !!currentUser.roles?.some(role =>
-                    (role.id === promoRoleId)
-                    || (role.ancestorsIds && role.ancestorsIds.includes(promoRoleId)),
-                )
-            : false;
 
         // Even if user has PAID_MEMBER role, check if membership has expired
         // If expired, treat as free member
@@ -681,58 +592,24 @@ export const authnCtr = {
     isUser: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const userRole = await roleCtr.getRole(context, {
-            filter: { name: E_Role.USER },
+        return userHasRole(context, currentUser, E_Role.USER, {
+            notFoundMessage: 'User role not found.',
         });
-
-        if (!userRole.success) {
-            throwError({
-                message: 'User role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const userRoleId = userRole.result.id;
-
-        return !!currentUser.roles?.some(role =>
-            (role.id === userRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(userRoleId)),
-        );
     },
     isFreeMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        const [freeMemberRole, paidMemberRole, promoRole] = await Promise.all([
-            roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } }),
-            roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } }),
-            roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        const [hasFreeRole, hasPaidRole, hasPromoRole] = await Promise.all([
+            userHasRole(context, currentUser, E_Role_User.FREE_MEMBER, {
+                notFoundMessage: 'Free member role not found.',
+            }),
+            userHasRole(context, currentUser, E_Role_User.PAID_MEMBER, {
+                notFoundMessage: 'Paid member role not found.',
+            }),
+            userHasRole(context, currentUser, E_Role_User.PROMO_MEMBER, {
+                allowMissing: true,
+            }),
         ]);
-
-        if (!freeMemberRole.success || !paidMemberRole.success) {
-            throwError({
-                message: 'Free member role not found.',
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-
-        const freeMemberRoleId = freeMemberRole.result.id;
-        const paidMemberRoleId = paidMemberRole.result.id;
-        const promoRoleId = promoRole.success ? promoRole.result.id : null;
-
-        const hasFreeRole = !!currentUser.roles?.some(role =>
-            (role.id === freeMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(freeMemberRoleId)),
-        );
-        const hasPaidRole = !!currentUser.roles?.some(role =>
-            (role.id === paidMemberRoleId)
-            || (role.ancestorsIds && role.ancestorsIds.includes(paidMemberRoleId)),
-        );
-        const hasPromoRole = promoRoleId
-            ? !!currentUser.roles?.some(role =>
-                    (role.id === promoRoleId)
-                    || (role.ancestorsIds && role.ancestorsIds.includes(promoRoleId)),
-                )
-            : false;
 
         // If user has FREE_MEMBER role, they are free
         if (hasFreeRole) {
@@ -803,24 +680,9 @@ export const authnCtr = {
             clientIp = doc.ip.trim() || undefined;
         }
 
-        // Fallback: Try to get IP from request headers if FE doesn't provide
+        // Fallback: extract IP from request headers
         if (!clientIp && context.req) {
-            const headers = context.req.headers || {};
-            const forwardedFor = headers['x-forwarded-for'] || headers['X-Forwarded-For'];
-            if (forwardedFor && typeof forwardedFor === 'string') {
-                // x-forwarded-for can contain multiple IPs, take the first one
-                clientIp = forwardedFor.split(',')[0]?.trim();
-            }
-            if (!clientIp) {
-                clientIp = (headers['x-real-ip'] || headers['X-Real-IP'] || headers['cf-connecting-ip'] || headers['CF-Connecting-IP']) as string | undefined;
-            }
-            if (!clientIp) {
-                clientIp = context.req.ip || (context.req as any).connection?.remoteAddress || (context.req as any).socket?.remoteAddress;
-            }
-            // Clean up IP (remove IPv6 prefix, port, etc.)
-            if (clientIp) {
-                clientIp = clientIp.replace(/^::ffff:/, '').split(':')[0]?.split('%')[0]?.trim();
-            }
+            clientIp = extractClientIp(context.req) || undefined;
         }
 
         log.info(`[Register] IP from FE: ${doc.ip || 'NOT PROVIDED'}, Final IP: ${clientIp || 'NOT FOUND'}, doc.ip type: ${typeof doc.ip}`);
@@ -874,8 +736,7 @@ export const authnCtr = {
             });
         }
 
-        const adminRoleId = await getAdminRoleId(context);
-        const isAdmin = userHasRoleId(userFound.result, adminRoleId);
+        const isAdmin = await isAdminUser(context, userFound.result);
 
         if (!isAdmin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
@@ -951,14 +812,14 @@ export const authnCtr = {
             });
         }
 
-        const adminRoleIdLogin = await getAdminRoleId(context);
-        const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
+        const isAdminLogin = await isAdminUser(context, userFound.result);
 
         if (!isAdminLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         const identifier = `${EMAIL_VERIFICATION}:${emailLowerCase}`;
+        const userId = String(userFound.result.id ?? (userFound.result as { _id?: unknown })._id).trim();
 
         const checkResult = await verificationCtr.checkVerification(context, {
             identifier,
@@ -978,7 +839,7 @@ export const authnCtr = {
         });
 
         const userUpdated = await userCtr.updateUser(context, {
-            filter: { id: userFound.result.id },
+            filter: { id: userId },
             update: {
                 isEmailVerified: true,
                 registerStep: E_RegisterStep.PERSONAL_INFO,
@@ -993,7 +854,7 @@ export const authnCtr = {
         }
 
         // Update IP when user continues registration
-        await updateUserIpFromRequest(context, userFound.result.id, ip, userFound.result.lastLoginIp);
+        await updateUserIpFromRequest(context, userId, ip, userFound.result.lastLoginIp);
         return {
             success: true,
             result: {
@@ -1251,15 +1112,15 @@ export const authnCtr = {
             }),
         };
 
-        // PROMO: Set membershipExpiresAt và freeEventCount = 1 (mỗi tháng được 1 tin miễn phí)
+        // PROMO: Set membershipExpiresAt and freeEventCount = 1 (1 free event per month)
         if (type === E_MembershipType.PROMO && membershipExpiresAt) {
             updatePayload['membershipExpiresAt'] = membershipExpiresAt;
-            // Mỗi tháng membership = 1 lần tạo event miễn phí
+            // Each month of membership = 1 free event creation
             updatePayload['freeEventCount'] = 1;
         }
 
-        // PAID: Không cần set freeEventCount ở đây vì đã được xử lý trong order.effect.ts
-        // khi thanh toán thành công (payment callback sẽ gọi applyOrderPaidEffects)
+        // PAID: No need to set freeEventCount here as it's handled in order.effect.ts
+        // when payment succeeds (payment callback calls applyOrderPaidEffects)
 
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
@@ -1308,11 +1169,10 @@ export const authnCtr = {
             });
         }
 
-        // Try to cancel subscription in Gateway (if we have a transaction ID)
-        // Note: For recurring payments, NetValve may not have a direct "cancel subscription" API
-        // For PayPal, we call cancelSubscription API
+        // Try remote cancellation at the payment provider when possible.
+        // Local membership cancellation (membershipCancelled=true) remains the source of truth.
         let gatewayCancelSuccess = false;
-        let gatewayName = 'NetValve';
+        let gatewayName = 'Unknown';
 
         try {
             // Find the last paid subscription order to get transaction ID
@@ -1389,28 +1249,13 @@ export const authnCtr = {
                 }
             }
             else {
-                // Default to NetValve
-                // Note: NetValve cancel may not work for recurring payments, but we try anyway
-                if (transactionId) {
-                    const pricing = (lastOrder as any)?.pricing;
-                    const currency = pricing?.currency?.code || 'EUR';
+                gatewayName = provider || 'Unknown';
 
-                    const cancelRes = await netvalveCtr.cancel(context, {
-                        transactionID: String(transactionId),
-                        currency,
-                    } as any);
-
-                    if (cancelRes.success) {
-                        gatewayCancelSuccess = true;
-                        log.info(`[Membership] NetValve cancel called successfully for user ${currentUser.id}, transactionId=${transactionId}`);
-                    }
-                    else {
-                        log.warn(`[Membership] NetValve cancel failed for user ${currentUser.id}, transactionId=${transactionId}: ${cancelRes.message}`);
-                        // Continue anyway - the main cancellation is done by setting membershipCancelled = true
-                    }
+                if (!provider) {
+                    log.info(`[Membership] No payment provider found for user ${currentUser.id}, skipping remote gateway cancel`);
                 }
                 else {
-                    log.info(`[Membership] No transaction ID found for user ${currentUser.id}, skipping NetValve cancel call`);
+                    log.info(`[Membership] Provider ${provider} has no remote cancel integration, skipping gateway cancel for user ${currentUser.id}`);
                 }
             }
         }
@@ -1420,7 +1265,7 @@ export const authnCtr = {
         }
 
         // Mark membership as cancelled (prevents future rebills)
-        // This is the primary way to stop recurring payments (especially for NetValve)
+        // This is the primary and provider-agnostic cancellation gate.
         // User keeps access until membershipExpiresAt
         const userUpdated = await userCtr.updateUser(context, {
             filter: { id: currentUser.id },
@@ -1460,9 +1305,9 @@ export const authnCtr = {
         }
 
         const currentUser = await authnCtr.getUserFromSession(context);
-        const adminRoleId = await getAdminRoleId(context);
+        const isAdmin = await isAdminUser(context, currentUser);
 
-        if (!userHasRoleId(currentUser, adminRoleId)) {
+        if (!isAdmin) {
             throwError({
                 message: 'Forbidden.',
                 status: RESPONSE_STATUS.FORBIDDEN,
@@ -1528,8 +1373,7 @@ export const authnCtr = {
             });
         }
 
-        const adminRoleId = await getAdminRoleId(context);
-        if (!userHasRoleId(adminUser.result, adminRoleId)) {
+        if (!(await isAdminUser(context, adminUser.result))) {
             throwError({
                 message: 'Forbidden.',
                 status: RESPONSE_STATUS.FORBIDDEN,
@@ -1542,11 +1386,7 @@ export const authnCtr = {
         }).catch(() => { /* best-effort */ });
 
         const sanitizedUser = omit(adminUser.result, 'password') as I_User;
-        sanitizedUser.isGuardianView = true;
-        sanitizedUser.guardianOwnerId = adminUser.result.id;
-        sanitizedUser.isActive = true;
-        sanitizedUser.isEmailVerified = true;
-        sanitizedUser.registerStep = sanitizedUser.registerStep ?? E_RegisterStep.COMPLETE;
+        applyGuardianOverrides(sanitizedUser, adminUser.result.id);
 
         await assignSessionUser(context.req.session, sanitizedUser);
         context.req.session.guardianView = {
@@ -1615,8 +1455,7 @@ export const authnCtr = {
             });
         }
 
-        const adminRoleIdLogin = await getAdminRoleId(context);
-        const isAdminLogin = userHasRoleId(userFound.result, adminRoleIdLogin);
+        const isAdminLogin = await isAdminUser(context, userFound.result);
         const otpValue = userFound.result.tempOtp;
         const otpCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt) : null;
         const otpAgeMs = otpCreatedAt ? Date.now() - otpCreatedAt.getTime() : null;
@@ -1646,7 +1485,7 @@ export const authnCtr = {
             const otpProvided = rawOtp && rawOtp !== 'null' && rawOtp !== 'undefined';
             // Accept alphanumeric OTPs (letters + digits), 6 chars; normalize to uppercase
             const rawOtpNormalized = otpProvided ? rawOtp.toUpperCase() : '';
-            const isValidOtpFormat = otpProvided && (/^[A-Z0-9]{6}$/.test(rawOtpNormalized));
+            const isValidOtpFormat = otpProvided && (OTP_FORMAT_REGEX.test(rawOtpNormalized));
 
             if (!otpProvided) {
                 throwError({ message: 'OTP not provided.', status: RESPONSE_STATUS.BAD_REQUEST });
@@ -1749,14 +1588,10 @@ export const authnCtr = {
         const sanitizedLoginUser = omit(userObj, 'password') as I_User;
 
         if (isAdminLogin) {
-            sanitizedLoginUser.isActive = true;
-            sanitizedLoginUser.isEmailVerified = true;
-            sanitizedLoginUser.registerStep = sanitizedLoginUser.registerStep ?? E_RegisterStep.COMPLETE;
-            sanitizedLoginUser.isGuardianView = false;
-            sanitizedLoginUser.guardianOwnerId = undefined;
+            applyAdminOverrides(sanitizedLoginUser);
         }
 
-        // Xóa tempOtp và tempOtpCreatedAt sau khi đăng nhập thành công
+        // Clear tempOtp and tempOtpCreatedAt after successful login
         // await userCtr.updateUser(context, {
         //     filter: { id: userFound.result.id },
         //     update: { tempOtp: null, tempOtpCreatedAt: null },
@@ -1832,215 +1667,15 @@ export const authnCtr = {
         context: I_Context,
         args: I_Input_ForgotPasswordRequest,
     ): Promise<I_Return<I_Response_Auth>> => {
-        args.email = args.email.toLowerCase();
-
-        validate.email.validate(args.email);
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { email: args.email },
-        });
-
-        if (!userFound.success || !userFound.result) {
-            throwError({
-                message: 'Email not found.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        if (userFound.result.isAdminBlocked) {
-            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
-        }
-
-        await authnCtr.sendForgotPasswordEmail(context, args.email);
-
-        return {
-            success: true,
-            message: 'OTP sent to email.',
-            result: {
-                user: omit(userFound.result, 'password'),
-            },
-        };
+        return authPasswordService.forgotPasswordRequest(context, args);
     },
     resetPassword: async (
         context: I_Context,
         { email: inputEmail, otp, newPassword }: I_Input_ResetPassword,
     ): Promise<I_Return<I_Response_Auth>> => {
-        const email = inputEmail.toLowerCase();
-
-        validate.email.validate(email);
-        validate.password.validate(newPassword);
-
-        const identifier = `${FORGOT_PASSWORD}:${email}`;
-
-        const checkResult = await verificationCtr.checkVerification(context, {
-            identifier,
-            value: otp,
-            method: E_VerificationMethod.EMAIL_OTP,
-        });
-
-        if (!checkResult.success) {
-            throwError({
-                message: checkResult.message,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        const userFound = await userCtr.getUser(context, {
-            filter: { email },
-        });
-
-        if (!userFound.success || !userFound.result) {
-            throwError({
-                message: 'User not found.',
-                status: RESPONSE_STATUS.NOT_FOUND,
-            });
-        }
-
-        if (userFound.result.isAdminBlocked) {
-            throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
-        }
-
-        const updateResult = await userCtr.updateUser(context, {
-            filter: { id: userFound.result.id },
-            update: { password: newPassword },
-        });
-
-        if (!updateResult.success) {
-            throwError({
-                message: updateResult.message || 'Failed to reset password.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        await verificationCtr.deleteVerifications(context, {
-            filter: { identifier },
-        });
-
-        return {
-            success: true,
-            message: 'Password reset successfully.',
-            result: {
-                user: omit(updateResult.result, 'password'),
-            },
-        };
+        return authPasswordService.resetPassword(context, { email: inputEmail, otp, newPassword });
     },
-    sendForgotPasswordEmail: async (context: I_Context, inputEmail: string) => {
-        const email = inputEmail.toLowerCase();
-        validate.email.validate(email);
-
-        const otp = helper.generateOTP();
-
-        const expiresAt = date.getDate(
-            VERIFICATION_EXPIRES.FORGOT_PASSWORD,
-            'sec',
-        );
-
-        const verificationCreated = await verificationCtr.createVerification(
-            context,
-            {
-                doc: {
-                    identifier: `${FORGOT_PASSWORD}:${email}`,
-                    value: otp,
-                    expiresAt,
-                    maxAttempts: 5,
-                    method: E_VerificationMethod.EMAIL_OTP,
-                    meta: {
-                        context: E_VerificationContext.RESET_PASSWORD,
-                    },
-                },
-            },
-        );
-
-        if (!verificationCreated.success) {
-            throwError({
-                message:
-                    verificationCreated.message
-                    || 'Failed to create verification.',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
-        }
-
-        // Try to send immediately (bypass queue) to ensure OTP delivery even if queue/redis/workers
-        let emailSent = false;
-        let lastError: string | undefined;
-
-        // Prepare email template once
-        const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
-        let subjectText = '[No Subject]';
-        let html: string;
-
-        if (tpl.success && tpl.result) {
-            const { content, subject: tplSubject } = tpl.result;
-            if (tplSubject) {
-                subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-            }
-            if (content) {
-                html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-            }
-            else {
-                html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-            }
-        }
-        else {
-            subjectText = '[Reset password]';
-            html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
-        }
-
-        // Retry immediate send up to 3 times before falling back to queue
-        const maxRetries = 3;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
-                if (sendResult.success) {
-                    emailSent = true;
-                    break;
-                }
-                else {
-                    lastError = sendResult.error || 'Unknown error';
-                    // Wait a bit before retry (exponential backoff: 500ms, 1000ms, 2000ms)
-                    if (attempt < maxRetries) {
-                        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
-                    }
-                }
-            }
-            catch (err) {
-                lastError = err instanceof Error ? err.message : 'Unknown error';
-                // Wait a bit before retry
-                if (attempt < maxRetries) {
-                    await new Promise(resolve => setTimeout(resolve, 500 * attempt));
-                }
-            }
-        }
-
-        // Fallback to queue-based send if immediate send failed
-        if (!emailSent) {
-            try {
-                const queueResult = await emailCtr.sendEmail(FORGOT_PASSWORD, email, {
-                    otp,
-                    expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
-                    email,
-                });
-
-                if (queueResult.success) {
-                    emailSent = true;
-                }
-                else {
-                    lastError = queueResult.message || lastError || 'Queue send failed';
-                }
-            }
-            catch (queueErr) {
-                lastError = queueErr instanceof Error ? queueErr.message : 'Queue send error';
-            }
-        }
-
-        // If both methods failed, throw error to inform the caller
-        if (!emailSent) {
-            throwError({
-                message: `Failed to send forgot password email. ${lastError ? `Error: ${lastError}` : 'Please try again later.'}`,
-                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-            });
-        }
-    },
+    sendForgotPasswordEmail: async (context: I_Context, inputEmail: string) => authPasswordService.sendForgotPasswordEmail(context, inputEmail),
     verifyAge: async (context: I_Context, args: I_Input_UploadMany): Promise<I_Return<I_User>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
@@ -2158,7 +1793,7 @@ export const authnCtr = {
             },
         });
 
-        // Sync session với ageVerify mới để tránh user phải login lại
+        // Sync session with new ageVerify to avoid requiring re-login
         if (userUpdated.success && context.req?.session?.user) {
             context.req.session.user.ageVerify = userUpdated.result.ageVerify;
         }

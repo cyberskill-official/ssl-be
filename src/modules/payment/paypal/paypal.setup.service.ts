@@ -10,11 +10,16 @@ import {
     E_PayPalTenureType,
 } from './paypal.type.js';
 
+interface I_PayPalSetupResult {
+    id: string | null;
+    error?: string;
+}
+
 export const paypalSetupService = {
     /**
      * Finds or creates a standard Membership product on PayPal
      */
-    async getOrCreateProduct(context: I_Context): Promise<string | null> {
+    async getOrCreateProduct(context: I_Context): Promise<I_PayPalSetupResult> {
         const productName = 'SSL Membership';
 
         // 1. Try to find existing
@@ -23,7 +28,7 @@ export const paypalSetupService = {
             const existing = listRes.result.products.find(p => p.name === productName);
             if (existing) {
                 log.info(`[PayPal Setup] Found existing product: ${existing.id}`);
-                return existing.id;
+                return { id: existing.id };
             }
         }
 
@@ -38,11 +43,14 @@ export const paypalSetupService = {
 
         if (createRes.success && createRes.result) {
             log.success(`[PayPal Setup] Product created: ${createRes.result.id}`);
-            return createRes.result.id;
+            return { id: createRes.result.id };
         }
 
         log.error(`[PayPal Setup] Failed to get or create product: ${createRes.message}`);
-        return null;
+        return {
+            id: null,
+            error: createRes.message ?? listRes.message ?? 'Unknown PayPal product setup error',
+        };
     },
 
     /**
@@ -53,7 +61,7 @@ export const paypalSetupService = {
         productId: string,
         price: number,
         currency: string,
-    ): Promise<string | null> {
+    ): Promise<I_PayPalSetupResult> {
         const targetPrice = price.toFixed(2);
         const planName = `Monthly Membership ${targetPrice} ${currency}`;
 
@@ -69,7 +77,7 @@ export const paypalSetupService = {
 
             if (existing) {
                 log.info(`[PayPal Setup] Found existing plan: ${existing.id}`);
-                return existing.id;
+                return { id: existing.id };
             }
         }
 
@@ -105,10 +113,13 @@ export const paypalSetupService = {
         if (createRes.success && createRes.result) {
             log.success(`[PayPal Setup] Plan created: ${createRes.result.id}`);
             // Note: Plan is created as ACTIVE by default in v1/billing/plans
-            return createRes.result.id;
+            return { id: createRes.result.id };
         }
 
         log.error(`[PayPal Setup] Failed to get or create plan: ${createRes.message}`);
-        return null;
+        return {
+            id: null,
+            error: createRes.message ?? listRes.message ?? 'Unknown PayPal plan setup error',
+        };
     },
 };

@@ -38,6 +38,7 @@ import {
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
+import { createSystemContext } from '#shared/util/context.js';
 import { getBlockedUserIds, validate } from '#shared/util/index.js';
 
 import type { I_Message, I_MessageContent } from '../message/index.js';
@@ -240,13 +241,15 @@ async function getAdminUsers(context: I_Context): Promise<I_User[]> {
     return admins.result.docs;
 }
 
+const NEWLINE_SPLIT_REGEX = /\r?\n/;
+
 function extractContactMessage(raw: string | null | undefined): string {
     const message = (raw ?? '').trim();
 
     if (!message)
         return '';
 
-    const lines = message.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const lines = message.split(NEWLINE_SPLIT_REGEX).map(line => line.trim()).filter(Boolean);
 
     const labeledLine = lines.find(line => line.toLowerCase().startsWith('message:'));
     if (labeledLine) {
@@ -255,7 +258,7 @@ function extractContactMessage(raw: string | null | undefined): string {
     }
 
     if (lines.length)
-        return lines[lines.length - 1] ?? '';
+        return lines.at(-1) ?? '';
 
     return message;
 }
@@ -377,9 +380,7 @@ export const conversationCtr = {
             E_ConversationType.ADMIN_BROADCAST,
         );
 
-        const supportConversationIds = Array.from(
-            new Set([...(privateConversationIds || []), ...(pushChatConversationIds || []), ...(adminBroadcastIds || [])]),
-        );
+        const supportConversationIds = [...new Set([...(privateConversationIds || []), ...(pushChatConversationIds || []), ...(adminBroadcastIds || [])])];
 
         const supportFilter: Record<string, any> = {
             ...(supportConversationIds.length ? { id: { $in: supportConversationIds } } : {}),
@@ -445,7 +446,7 @@ export const conversationCtr = {
             currentUser.id,
             E_ConversationType.ADMIN_BROADCAST,
         );
-        const userConversationIds = Array.from(new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds]));
+        const userConversationIds = [...new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds])];
 
         const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
         if (!result.success || !result.result)
@@ -2017,7 +2018,7 @@ export const conversationCtr = {
             const bulk = await messageStatusCtr.markManyAsRead(idsToMark, userId);
             const totalMarked = bulk.result?.modifiedCount ?? idsToMark.length;
 
-            const latest = messages[messages.length - 1];
+            const latest = messages.at(-1);
             if (latest?.id) {
                 await participantCtr.updateLastReadMessage(conversationId, userId, latest.id);
             }
@@ -2121,7 +2122,7 @@ export const conversationCtr = {
             }
 
             try {
-                const conversationResult = await conversationCtr.getConversation({} as I_Context, {
+                const conversationResult = await conversationCtr.getConversation(createSystemContext(), {
                     filter: { id: messageRead.conversationId },
                     populate: ['participants'],
                 });
@@ -2143,8 +2144,8 @@ export const conversationCtr = {
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
                         if (isOpen)
-                            return false; // không track read cho public
-                        const participantCheck = await participantCtr.getParticipant({} as I_Context, {
+                            return false; // don't track read for public threads
+                        const participantCheck = await participantCtr.getParticipant(createSystemContext(), {
                             filter: { conversationId: messageRead.conversationId, userId },
                         });
                         return participantCheck.success && !!participantCheck.result;
@@ -2179,7 +2180,7 @@ export const conversationCtr = {
             }
 
             try {
-                const conversationResult = await conversationCtr.getConversation({} as I_Context, {
+                const conversationResult = await conversationCtr.getConversation(createSystemContext(), {
                     filter: { id: messageDeleted.conversationId },
                     populate: ['participants'],
                 });
@@ -2428,7 +2429,7 @@ export const conversationCtr = {
             }
             else {
                 isParticipant = conversation.participants?.some(p => p.userId === senderId) ?? false;
-                const isPublicThread = isOpenPublicThread(conversation); // đã nhận diện BLOG/PROFILE/GROUP mở
+                const isPublicThread = isOpenPublicThread(conversation); // identified BLOG/PROFILE/GROUP as open
                 if (!isParticipant && !isPublicThread) {
                     throwError({
                         message: 'You are not a participant in this group conversation',

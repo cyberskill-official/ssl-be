@@ -24,6 +24,10 @@ type T_Payment {
     paymentStatus: E_PaymentStatus
     pricingId: String
     redirectUrl: String
+    clientToken: String
+    paypalOrderId: String
+    paypalClientId: String
+    isSubscription: Boolean!
 }
 
 input Input_QueryMakePayment {

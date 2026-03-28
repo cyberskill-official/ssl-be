@@ -7,6 +7,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
     I_PayPalCaptureOrderResponse,
+    I_PayPalClientTokenResponse,
     I_PayPalCreateOrderPayload,
     I_PayPalCreateOrderResponse,
     I_PayPalListPlansResponse,
@@ -300,6 +301,26 @@ export const paypalCtr = {
             credentials,
             `/v1/billing/plans?product_id=${safeProductId}`,
             'list-plans',
+        );
+    },
+    generateClientToken: async (
+        _context: I_Context,
+    ): Promise<I_Return<I_PayPalClientTokenResponse>> => {
+        const { credentials, error } = ensurePayPalCredentials();
+
+        if (!credentials) {
+            return {
+                success: false,
+                message: error || 'PayPal credentials are misconfigured',
+                code: RESPONSE_STATUS.INTERNAL_SERVER_ERROR.CODE,
+            };
+        }
+
+        return postPayPalRequest<I_PayPalClientTokenResponse>(
+            credentials,
+            '/v1/identity/generate-token',
+            {},
+            'generate-client-token',
         );
     },
 };

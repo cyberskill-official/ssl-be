@@ -11,7 +11,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import validator from 'validator';
 
@@ -116,13 +116,13 @@ export const destinationCtr = {
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryDestination>,
     ): Promise<I_Return<T_PaginateResult<I_Destination>>> => {
-        // nested mặc định cho location
+        // Default nested populate for location
         const locationDefaultNested: PopulateOptions[] = [
             { path: 'country' },
             { path: 'city' },
         ];
 
-        // Lấy mảng incoming populate (string | PopulateOptions | Array)
+        // Get incoming populate array (string | PopulateOptions | Array)
         const incomingPopulate = (() => {
             const p = options?.populate as any;
             if (!p)
@@ -130,21 +130,21 @@ export const destinationCtr = {
             return Array.isArray(p) ? p.slice() : [p];
         })();
 
-        // Chuẩn hoá string -> { path: string }
+        // Normalize string -> { path: string }
         const normalized = incomingPopulate.map((it: any) =>
             typeof it === 'string' ? ({ path: it } as PopulateOptions) : (it as PopulateOptions),
         );
 
-        // Tìm entry 'location'
-        // tìm entry 'location'
+        // Find 'location' entry
+        // find 'location' entry
         const locIdx = normalized.findIndex(n => n.path === 'location');
 
         if (locIdx === -1) {
-            // client không cung cấp location -> push default nested
+            // client didn't provide location -> push default nested
             normalized.push({ path: 'location', populate: locationDefaultNested });
         }
         else {
-            // dùng non-null assertion vì locIdx !== -1
+            // use non-null assertion since locIdx !== -1
             const loc = normalized[locIdx]! as PopulateOptions;
 
             if (!loc.populate) {
@@ -187,7 +187,7 @@ export const destinationCtr = {
 
         const docs = Array.isArray(destinations.result?.docs) ? destinations.result.docs : [];
 
-        // Sign ảnh (ratingStar, logo, wearImage, images) — tương thích sync/async bunnyCtr
+        // Sign images (ratingStar, logo, wearImage, images) — supports sync/async bunnyCtr
         const signedDocs = await Promise.all(
             docs.map(async (destination: any) => {
                 const doc: any = typeof destination?.toObject === 'function' ? destination.toObject() : { ...destination };
@@ -568,7 +568,7 @@ export const destinationCtr = {
                         const locationDeleted = await locationCtr.deleteLocation(context, { filter: { id: location.id } });
                         if (!locationDeleted.success) {
                             // Log but continue - don't block if one deletion fails
-                            console.warn(`[DESTINATION] Failed to delete hotel location ${location.id}:`, locationDeleted.message);
+                            log.warn(`[DESTINATION] Failed to delete hotel location ${location.id}:`, locationDeleted.message);
                         }
                     }
                 }
@@ -747,7 +747,7 @@ export const destinationCtr = {
                 countriesAccumulator.set(countryId, { id: countryId, name: countryNameFromPopulate });
             }
 
-            const accumulatorArray = Array.from(countriesAccumulator.values());
+            const accumulatorArray = [...countriesAccumulator.values()];
 
             for (const summary of accumulatorArray) {
                 if (summary.name) {

@@ -42,8 +42,8 @@ export interface I_ImageThresholdsConfig {
     hateSymbols: number;
     drugs: number;
     nonExplicitNudity: number;
-    swimwearOrUnderwear: number; // Thêm threshold cho swimwear
-    fullNudity: number; // Threshold cho ảnh khoả thân hoàn toàn
+    swimwearOrUnderwear: number; // Threshold for swimwear
+    fullNudity: number; // Threshold for full nudity
 }
 
 export interface I_BannedWordsConfig {

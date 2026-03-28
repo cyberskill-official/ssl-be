@@ -10,7 +10,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type Bull from 'bull';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_BulkEmailJobData, I_EmailJobData } from '#modules/email/email.type.js';
@@ -47,7 +47,7 @@ export const emailCampaignCtr = {
                     await emailCtr.deleteJobFromRegistry(jobId);
                 }
                 catch (error) {
-                    console.warn(`Failed to remove job ${jobId}:`, error);
+                    log.warn(`Failed to remove job ${jobId}:`, error);
                 }
             }
         }
@@ -330,7 +330,7 @@ export const emailCampaignCtr = {
             }
         }
         catch (error) {
-            console.error('Failed to update email queue for campaign:', error);
+            log.error('Failed to update email queue for campaign:', error);
             throwError({
                 message: 'Failed to update email scheduling. Please try again.',
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -378,7 +378,7 @@ export const emailCampaignCtr = {
                 await emailCampaignCtr._removeAllCampaignJobs(campaign.result);
             }
             catch (error) {
-                console.error('Failed to cleanup jobs for deleted campaign:', error);
+                log.error('Failed to cleanup jobs for deleted campaign:', error);
             }
         }
 
@@ -458,7 +458,7 @@ export const emailCampaignCtr = {
             );
         }
         catch (error) {
-            console.error('Failed to send campaign immediately:', error);
+            log.error('Failed to send campaign immediately:', error);
             throwError({
                 message: 'Failed to send campaign. Please try again.',
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -510,7 +510,7 @@ export const emailCampaignCtr = {
             );
         }
         catch (error) {
-            console.error('Failed to cancel scheduled campaign:', error);
+            log.error('Failed to cancel scheduled campaign:', error);
             throwError({
                 message: 'Failed to cancel campaign. Please try again.',
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
@@ -537,7 +537,7 @@ export const emailCampaignCtr = {
             };
         }
         catch (error) {
-            console.error('Failed to get job status:', error);
+            log.error('Failed to get job status:', error);
             return {
                 success: false,
                 message: 'Failed to get job status.',

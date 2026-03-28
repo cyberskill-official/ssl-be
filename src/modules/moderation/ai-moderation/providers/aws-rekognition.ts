@@ -23,6 +23,7 @@ import { isBloodGoreLabel, isChildrenLabel, isRejectedLabel, isWeaponLabel } fro
 import { AWSMediaUtils } from './aws-utils.js';
 
 const env = getEnv();
+const S3_URI_REGEX = /^s3:\/\/([^/]+)\/(.+)$/;
 
 const normaliseLabelName = (name?: string): string => (name || '').toLowerCase();
 
@@ -356,7 +357,7 @@ export class AWSRekognitionProvider {
                         videoFileName = s3Key;
                     }
                     else {
-                        const s3UriMatch = s3Uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
+                        const s3UriMatch = s3Uri.match(S3_URI_REGEX);
                         if (s3UriMatch) {
                             const [, bucket, key] = s3UriMatch;
                             if (!bucket || !key) {

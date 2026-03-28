@@ -161,7 +161,7 @@ export const uploadCtr = {
 
         const extension = filename.substring(lastDotIndex);
         const nameWithoutExtension = filename.substring(0, lastDotIndex);
-        const timestamp = new Date().getTime();
+        const timestamp = Date.now();
         const fullPath = `${nameWithoutExtension}-${timestamp}${extension}`;
 
         const resolvedEntityId = entityId ?? currentUser.id;
@@ -242,7 +242,7 @@ export const uploadCtr = {
             try {
                 const myIpInfo = await Promise.race([
                     ipInfoCtr.getMyIp(),
-                    new Promise<{ success: boolean; result: unknown }>(resolve => setTimeout(() => resolve({ success: false, result: null }), 2000)), // 2s timeout
+                    new Promise<{ success: boolean; result: unknown }>(resolve => setTimeout(resolve, 2000, { success: false, result: null })), // 2s timeout
                 ]);
                 clientIp = (myIpInfo?.result as any)?.ip as string | undefined;
             }

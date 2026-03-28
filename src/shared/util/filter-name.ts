@@ -1,6 +1,7 @@
 export interface T_RegexFilter { $regex: string; $options?: 'i' | 'm' | 's' | 'u' | 'y' | 'g' }
 
-export const escapeRegex = (input: string): string => input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const REGEX_SPECIAL_CHARS_RE = /[.*+?^${}()|[\]\\]/g;
+export const escapeRegex = (input: string): string => input.replace(REGEX_SPECIAL_CHARS_RE, '\\$&');
 
 export function buildStartsWithFilter(raw: unknown): T_RegexFilter | undefined {
     if (typeof raw !== 'string')

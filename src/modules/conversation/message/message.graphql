@@ -111,4 +111,5 @@ type Mutation {
     createMessage(doc: Input_CreateMessage!): T_Response_Message!
     updateMessage(filter: Input_QueryMessage!, update: Input_UpdateMessage, options: JSON): T_Response_Message!
     deleteMessage(filter: Input_QueryMessage!, options: JSON): T_Response_Message!
+    unsendMessage(filter: Input_QueryMessage!, options: JSON): T_Response_Message!
 }

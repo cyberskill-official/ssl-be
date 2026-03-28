@@ -90,7 +90,7 @@ export const emailTemplateCache = {
         keys: string[];
         memoryUsage: number;
     } => {
-        const keys = Array.from(cache.keys());
+        const keys = [...cache.keys()];
         let memoryUsage = 0;
 
         for (const item of cache.values()) {

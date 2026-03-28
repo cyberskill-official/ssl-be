@@ -9,8 +9,6 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { paymentCtr } from '#modules/payment/index.js';
-import { getNetvalveCredentials } from '#modules/payment/netvalve/index.js';
-import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 
 import type { I_Input_CreateOrder, I_Input_QueryOrder, I_Input_UpdateOrder, I_Order } from './order.type.js';
 
@@ -106,13 +104,7 @@ export const orderCtr = {
     },
 
     async createOrder(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreateOrder>): Promise<I_Return<I_Order>> {
-        const metaProvider = doc.meta && typeof doc.meta === 'object'
-            ? (doc.meta as Record<string, unknown>)['paymentProvider']
-            : undefined;
-        const requestedProvider = typeof metaProvider === 'string' ? metaProvider : undefined;
-        const isNetvalveOrder = !requestedProvider || requestedProvider === E_PaymentProvider.NETVALVE;
-
-        // If paymentTransactionId is provided, validate provider and ensure gateway configuration is available
+        // If paymentTransactionId is provided, validate provider
         if (doc.paymentTransactionId) {
             const paymentTransactionRes = await paymentCtr.getPaymentTransaction(context, {
                 filter: { id: doc.paymentTransactionId },
@@ -122,41 +114,6 @@ export const orderCtr = {
                 throwError({
                     message: 'Payment transaction not found',
                     status: RESPONSE_STATUS.NOT_FOUND,
-                });
-            }
-
-            const paymentTransaction = paymentTransactionRes.result;
-
-            if (requestedProvider && paymentTransaction.provider !== requestedProvider) {
-                throwError({
-                    message: `Payment transaction provider must be ${requestedProvider}`,
-                    status: RESPONSE_STATUS.BAD_REQUEST,
-                });
-            }
-
-            if (paymentTransaction.provider === E_PaymentProvider.NETVALVE) {
-                // Validate Netvalve credentials are configured for NETVALVE transactions
-                try {
-                    getNetvalveCredentials();
-                }
-                catch (error) {
-                    throwError({
-                        message: error instanceof Error ? error.message : 'Netvalve is not configured on server',
-                        status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                    });
-                }
-            }
-        }
-        else if (isNetvalveOrder) {
-            // If no paymentTransactionId, still validate Netvalve credentials are configured
-            // This ensures payment gateway is properly set up before creating orders
-            try {
-                getNetvalveCredentials();
-            }
-            catch (error) {
-                throwError({
-                    message: error instanceof Error ? error.message : 'Netvalve is not configured on server',
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                 });
             }
         }

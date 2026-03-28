@@ -27,6 +27,12 @@ export const BannerModel = mongo.createModel<I_Banner>({
                 },
             ],
         },
+        blogId: {
+            type: String,
+        },
+        destinationId: {
+            type: String,
+        },
         createdById: {
             type: String,
             required: true,
@@ -52,6 +58,24 @@ export const BannerModel = mongo.createModel<I_Banner>({
             options: {
                 ref: 'User',
                 localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'blog',
+            options: {
+                ref: 'Blog',
+                localField: 'blogId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'destination',
+            options: {
+                ref: 'Destination',
+                localField: 'destinationId',
                 foreignField: 'id',
                 justOne: true,
             },

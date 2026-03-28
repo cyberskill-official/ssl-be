@@ -1,4 +1,3 @@
-export * from './netvalve/netvalve.controller.js';
 // Re-export gateway setting and gateway modules
 export * from './payment-gateway-setting/payment-gateway-setting.controller.js';
 

@@ -1,7 +1,7 @@
 import { loadEnvFile } from '@cyberskill/shared/config/env';
 import { E_Environment } from '@cyberskill/shared/typescript';
 import { mapEnvironment } from '@cyberskill/shared/util';
-import { cleanEnv, json, port, str } from 'envalid';
+import { cleanEnv, json, num, port, str } from 'envalid';
 import process from 'node:process';
 
 import type { I_Environment } from './env.type.js';
@@ -78,15 +78,9 @@ export function getEnv(): I_Environment {
         BUNNY_STREAM_SECURITY_KEY: str(),
         BUNNY_OPTIMIZER_BLUR_CLASS: str({ default: BUNNY_OPTIMIZER_BLUR_CLASS }),
         POSTMARK_SERVER_API_TOKEN: str(),
-        SESSION_INACTIVITY_MINUTES: port({ default: SESSION_INACTIVITY_MINUTES }),
+        SESSION_INACTIVITY_MINUTES: num({ default: SESSION_INACTIVITY_MINUTES }),
         ADMIN_PANEL_ORIGINS: json({ default: [] }),
-        NETVALVE_API_HPP_BASE_URL: str({ default: '' }),
-        NETVALVE_API_SANDBOX_BASE_URL: str({ default: '' }),
-        NETVALVE_CLIENT_ID: str({ default: '' }),
-        NETVALVE_API_KEY: str({ default: '' }),
-        NETVALVE_SITE_ID: str({ default: '' }),
-        NETVALVE_MID_EUR: str({ default: '' }),
-        NETVALVE_MID_USD: str({ default: '' }),
+
         PAYPAL_API_BASE_URL: str({ default: '' }),
         PAYPAL_CLIENT_ID: str({ default: '' }),
         PAYPAL_CLIENT_SECRET: str({ default: '' }),
@@ -95,6 +89,7 @@ export function getEnv(): I_Environment {
         MONGO_URI: str({ default: '' }),
         PAYPAL_WEBHOOK_ID: str({ default: '' }),
         EMAIL_LOGO_URL: str({ default: '' }),
+        DISABLE_OTP_ENFORCEMENT: str({ choices: ['true', 'false'], default: 'true' }),
     });
 
     return {

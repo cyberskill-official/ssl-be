@@ -12,7 +12,7 @@ export const mongoBackup = {
         try {
             const list: string[] = [];
 
-            readdirSync(env.MONGO_BACKUP_FOLDER).forEach(file =>
+            readdirSync(env.MONGO_BACKUP_FOLDER).forEach((file: string) =>
                 list.push(file),
             );
 

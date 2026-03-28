@@ -14,12 +14,13 @@ interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 
 // Use static logo URL (prefer EMAIL_LOGO_URL, fallback USER_APP_URL/images/Logo_secretswingerlust_white.png)
 fileURLToPath(import.meta.url); // keep for consistency with other migrations
+const TRAILING_SLASHES_RE = /\/+$/;
 const USER_APP_BASE_URL = (() => {
     const raw = process.env['USER_APP_URL']?.trim();
     if (!raw) {
         return 'https://development.secretswingerlust.com/home';
     }
-    return raw.replace(/\/+$/, '');
+    return raw.replace(TRAILING_SLASHES_RE, '');
 })();
 const EMAIL_LOGO_URL = process.env['EMAIL_LOGO_URL']?.trim();
 const LOGO_BASE64 = EMAIL_LOGO_URL || `${USER_APP_BASE_URL}/images/Logo_secretswingerlust_white.png`;

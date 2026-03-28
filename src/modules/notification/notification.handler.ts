@@ -1,3 +1,5 @@
+import { log } from '@cyberskill/shared/node/log';
+
 import { emailCtr } from '#modules/email/email.controller.js';
 import { getEnv } from '#shared/env/index.js';
 
@@ -5,12 +7,16 @@ import { E_NotificationType } from './notification.type.js';
 
 const env = getEnv();
 
+const TRAILING_SLASHES_REGEX = /\/+$/;
+const LEADING_TRAILING_SLASHES_REGEX = /^\/+|\/+$/g;
+
 const USER_APP_BASE_URL = (() => {
     const raw = env.USER_APP_URL;
     if (!raw) {
-        return 'https://develop.secretswingerlust.com/home';
+        log.warn('[Notification] USER_APP_URL is not set; email links will be broken');
+        return '';
     }
-    return raw.replace(/\/+$/, '');
+    return raw.replace(TRAILING_SLASHES_REGEX, '');
 })();
 
 const EMAIL_LOGO_URL = (() => {
@@ -24,7 +30,7 @@ const EMAIL_LOGO_URL = (() => {
 export function sanitizeSlug(value?: string | null): string | undefined {
     if (!value)
         return undefined;
-    return encodeURIComponent(value.toString().trim().replace(/^\/+|\/+$/g, ''));
+    return encodeURIComponent(value.toString().trim().replace(LEADING_TRAILING_SLASHES_REGEX, ''));
 }
 
 export function buildMediaLikedLink(username?: string | null, mediaId?: string | null | undefined): string {

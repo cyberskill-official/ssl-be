@@ -16,10 +16,8 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { E_UploadType, getAndValidateFile, getFileWebStream } from '@cyberskill/shared/node/upload';
 import { deepMerge } from '@cyberskill/shared/util';
-import bcrypt from 'bcryptjs';
 import path from 'node:path';
 
-import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
@@ -35,226 +33,52 @@ import { eventCtr } from '#modules/event/index.js';
 import { FollowModel } from '#modules/follow/follow.model.js';
 import { galleryCtr } from '#modules/gallery/index.js';
 import { likeCtr } from '#modules/like/index.js';
-import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
+import { E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { E_ModerationLogAction, E_ModerationLogType, E_ModerationMediaStatus, E_ModerationMediaType, moderationMediaCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
-import { notificationCtr } from '#modules/notification/index.js';
-import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
+import { ModerationLogModel } from '#modules/moderation/moderation-log/moderation-log.model.js';
+import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
-import { applyNameFilters, dedupArraysIterative, validate } from '#shared/util/index.js';
+import { applyNameFilters, dedupArraysIterative, hashPassword, validate } from '#shared/util/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User, I_UserSettings, I_UserSettings_TemporaryLocation } from './user.type.js';
+import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar, I_User } from './user.type.js';
 
+import { userAdminService } from './user-admin.service.js';
 import { UserModel } from './user.model.js';
+import { broadcastNewMemberInArea, createLocationForUser, ensurePopulateIncludes, hasValidMap, isTemporaryLocationActive, normalizeDateField, normalizeDateValue, normalizeRolesFilter, normalizeUserSettings, refreshSessionUser, resolveOnlineStatus, sanitizeRolesIds, upsertLocationForUser } from './user.util.js';
 import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
-const ONLINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const LEADING_SLASHES_REGEX = /^\/+/;
+const NON_WORD_CHARS_REGEX = /[^\w-]/g;
 
-function resolveOnlineStatus(lastOnline: unknown, now: number): boolean {
-    if (!lastOnline)
-        return false;
-    const lastOnlineTime = new Date(lastOnline as string | number | Date).getTime();
-    if (Number.isNaN(lastOnlineTime))
-        return false;
-    return (now - lastOnlineTime) <= ONLINE_TIMEOUT_MS;
-}
-
-function normalizeDateValue(value: unknown): Date | null | undefined {
-    if (value === null)
-        return null;
-    if (value instanceof Date)
-        return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-    }
-    // If it's an empty object or other types, return undefined so it can be deleted/cleared
-    return undefined;
-}
-
-function normalizeDateField(target: Record<string, unknown>, field: string) {
-    if (!target || typeof target !== 'object' || !Object.prototype.hasOwnProperty.call(target, field)) {
-        return;
-    }
-    const normalized = normalizeDateValue(target[field]);
-    if (normalized === undefined) {
-        delete target[field];
-        return;
-    }
-    target[field] = normalized;
-}
-
-function normalizeUserSettings(settings?: I_UserSettings) {
-    if (!settings)
-        return;
-    if (settings.temporaryLocation) {
-        normalizeDateField(settings.temporaryLocation as Record<string, unknown>, 'endAt');
-    }
-}
-
-type T_LocationPayload = Record<string, unknown> & {
-    map?: {
-        latitude?: number | null;
-        longitude?: number | null;
-    } | null;
-};
-
-function hasValidMap(payload?: T_LocationPayload): boolean {
-    if (!payload?.map)
-        return false;
-    const { latitude, longitude } = payload.map;
-    return typeof latitude === 'number'
-        && Number.isFinite(latitude)
-        && typeof longitude === 'number'
-        && Number.isFinite(longitude);
-}
-
-/**
- * Convert rolesIds array filter to MongoDB $in operator and resolve rolesNames to rolesIds.
- * Changes query behavior from exact array match to "array contains any" matching.
- * For example: `rolesIds: ["id1"]` now finds users whose rolesIds contains "id1" instead of
- * matching users with rolesIds exactly equal to ["id1"].
- */
-async function normalizeRolesFilter(filter: Record<string, unknown>): Promise<void> {
-    // Handle rolesIds filter - convert array to $in operator
-    const rolesIds = filter['rolesIds'];
-    if (Array.isArray(rolesIds) && rolesIds.length > 0) {
-        filter['rolesIds'] = { $in: rolesIds };
+function normalizeDocumentId<T extends { id?: unknown; _id?: unknown }>(document: T | null | undefined): T | null | undefined {
+    if (!document) {
+        return document;
     }
 
-    // Handle rolesNames filter - convert role names to role IDs
-    const rolesNames = filter['rolesNames'];
-    if (Array.isArray(rolesNames) && rolesNames.length > 0) {
-        try {
-            // Lookup role IDs by names
-            const rolesResult = await roleCtr.getRoles({} as I_Context, {
-                filter: { name: { $in: rolesNames } },
-                options: { limit: 100 },
-            });
+    const resolvedId = document.id ?? document._id;
+    if (resolvedId === undefined || resolvedId === null) {
+        return document;
+    }
 
-            if (rolesResult.success && rolesResult.result?.docs) {
-                const foundRoleIds = rolesResult.result.docs.map(doc => doc.id);
-                if (foundRoleIds.length > 0) {
-                    filter['rolesIds'] = { $in: foundRoleIds };
-                    // Clean up rolesNames filter only after successful conversion
-                    delete filter['rolesNames'];
-                }
-            }
+    if (typeof (document as any).toObject === 'function') {
+        const docAny = document as any;
+        if (!docAny.id) {
+            docAny.id = String(resolvedId);
         }
-        catch (error) {
-            // If lookup fails, log but preserve rolesNames filter for client inspection
-            log.warn('Failed to lookup role IDs by names', { error, rolesNames });
-        }
-    }
-}
-
-async function createLocationForUser(
-    context: I_Context,
-    userId: string,
-    payload: T_LocationPayload,
-): Promise<string> {
-    // Determine pinStyle based on user's account type if not already set in payload
-    let pinStyle: E_User_PinStyle | undefined = payload['pinStyle'] as E_User_PinStyle | undefined;
-    if (!pinStyle) {
-        const userFound = await mongooseCtr.findOne(
-            { id: userId },
-            { accountType: 1, partner1: 1, partner2: 1 },
-            { populate: ['partner1.location', 'partner2.location'] },
-        );
-        if (userFound.success && userFound.result) {
-            pinStyle = resolveUserPinStyle(userFound.result as I_User);
-        }
+        return document;
     }
 
-    const locationCreated = await locationCtr.createLocation(context, {
-        doc: {
-            ...payload,
-            pinStyle,
-            entityType: E_LocationEntityType.USER,
-            entityId: userId,
-            map: (payload.map && typeof payload.map.latitude === 'number' && typeof payload.map.longitude === 'number')
-                ? { latitude: payload.map.latitude, longitude: payload.map.longitude }
-                : undefined,
-        },
-    });
-    if (!locationCreated.success) {
-        throwError({ message: locationCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-    }
-    return locationCreated.result.id;
-}
-
-async function upsertLocationForUser(
-    context: I_Context,
-    userId: string,
-    payload: T_LocationPayload,
-    existingLocationId?: string | null,
-): Promise<string> {
-    if (!existingLocationId) {
-        return createLocationForUser(context, userId, payload);
-    }
-
-    try {
-        const existing = await locationCtr.getLocation(context, { filter: { id: existingLocationId } });
-        if (existing.success && existing.result) {
-            // Preserve existing pinStyle if not provided in payload, or determine from user if needed
-            let pinStyle = payload['pinStyle'] as E_User_PinStyle | undefined;
-            if (!pinStyle) {
-                pinStyle = existing.result.pinStyle as E_User_PinStyle | undefined;
-                if (!pinStyle) {
-                    // If no pinStyle in existing location, determine from user
-                    const userFound = await mongooseCtr.findOne(
-                        { id: userId },
-                        { accountType: 1, partner1: 1, partner2: 1 },
-                        { populate: ['partner1.location', 'partner2.location'] },
-                    );
-                    if (userFound.success && userFound.result) {
-                        pinStyle = resolveUserPinStyle(userFound.result as I_User);
-                    }
-                }
-            }
-
-            const updated = await locationCtr.updateLocation(context, {
-                filter: { id: existingLocationId },
-                update: {
-                    ...payload,
-                    ...(pinStyle ? { pinStyle } : {}),
-                },
-            });
-            if (updated.success) {
-                return existingLocationId;
-            }
-        }
-    }
-    catch {
-        // fall back to creating a new location
-    }
-
-    return createLocationForUser(context, userId, payload);
-}
-
-function ensurePopulateIncludes(populate: any, paths: (string | Record<string, any>)[]): any {
-    const arr = Array.isArray(populate) ? [...populate] : (populate ? [populate] : []);
-    for (const p of paths) {
-        if (typeof p === 'string') {
-            if (!arr.some(entry => (typeof entry === 'string' ? entry === p : entry?.path === p))) {
-                arr.push(p);
-            }
-        }
-        else {
-            // For object paths, check by path property
-            const pathValue = p?.['path'];
-            if (pathValue && !arr.some(entry => (typeof entry === 'string' ? entry === pathValue : entry?.path === pathValue))) {
-                arr.push(p);
-            }
-        }
-    }
-    return arr;
+    return {
+        ...document,
+        id: String(resolvedId),
+    } as T;
 }
 
 export const userCtr = {
@@ -262,55 +86,7 @@ export const userCtr = {
         context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        // Get session user from session directly to avoid circular dependency
-        // We'll populate roles and ageVerify separately if needed, but only if not fetching the same user
-        const sessionUserId = context?.req?.session?.user?.id;
-        const isFetchingSessionUser = filter?.id === sessionUserId;
-        let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
-
-        // If we need full user data for blur logic and we're not fetching the session user itself,
-        // we can safely fetch it. But to avoid circular dependency, we'll use a direct query
-        const needsSessionRefresh = sessionUser
-            && !isFetchingSessionUser
-            && (!sessionUser.roles || !sessionUser.ageVerify || sessionUser.membershipExpiresAt === undefined);
-
-        if (needsSessionRefresh) {
-            try {
-                // Direct query to avoid circular dependency with getUserFromSession/checkAuth
-                const sessionUserPopulated = await mongooseCtr.findOne(
-                    { id: sessionUserId },
-                    {
-                        id: 1,
-                        roles: 1,
-                        rolesIds: 1,
-                        ageVerify: 1,
-                        membershipExpiresAt: 1,
-                        membershipEndDate: 1,
-                        partner1: 1,
-                        partner2: 1,
-                    } as any,
-                    undefined,
-                    [
-                        { path: 'roles' },
-                        { path: 'ageVerify' },
-                        {
-                            path: 'partner1',
-                            populate: [{ path: 'gallery' }],
-                        },
-                        {
-                            path: 'partner2',
-                            populate: [{ path: 'gallery' }],
-                        },
-                    ],
-                );
-                if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                    sessionUser = sessionUserPopulated.result;
-                }
-            }
-            catch {
-                // Query failed, use session user as is
-            }
-        }
+        const sessionUser = await refreshSessionUser(context, typeof filter?.id === 'string' ? filter.id : undefined);
 
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
@@ -332,7 +108,7 @@ export const userCtr = {
 
         let effectiveFilter;
         if (isAdmin) {
-            // Admin có thể xem tất cả user (kể cả admin blocked và deleted)
+            // Admin can view all users (including admin-blocked and deleted)
             effectiveFilter = computedFilter as Record<string, unknown>;
         }
         else {
@@ -379,6 +155,7 @@ export const userCtr = {
         userFound.result.isOnline = resolveOnlineStatus(userFound.result.lastOnline, now);
 
         hydrateUserMedia(userFound.result, viewerMediaOptions);
+        userFound.result = normalizeDocumentId(userFound.result as I_User & { _id?: unknown }) as I_User;
 
         return userFound;
     },
@@ -402,72 +179,28 @@ export const userCtr = {
             delete (computedFilter as Record<string, unknown>)['lastOnline'];
         }
 
-        // Get session user from session directly to avoid circular dependency
-        let sessionUser: I_User | undefined = context?.req?.session?.user as I_User | undefined;
-        const sessionUserId = sessionUser?.id;
-
-        // If session user exists but doesn't have roles/ageVerify/membership populated, fetch it directly
-        const needsSessionRefresh = sessionUser && sessionUserId
-            && (!sessionUser.roles || !sessionUser.ageVerify || sessionUser.membershipExpiresAt === undefined);
-
-        if (needsSessionRefresh) {
-            try {
-                // Direct query to avoid circular dependency with getUserFromSession/checkAuth
-                const sessionUserPopulated = await mongooseCtr.findOne(
-                    { id: sessionUserId },
-                    {
-                        id: 1,
-                        roles: 1,
-                        rolesIds: 1,
-                        ageVerify: 1,
-                        membershipExpiresAt: 1,
-                        membershipEndDate: 1,
-                        partner1: 1,
-                        partner2: 1,
-                    } as any,
-                    undefined,
-                    [
-                        { path: 'roles' },
-                        { path: 'ageVerify' },
-                        {
-                            path: 'partner1',
-                            populate: [{ path: 'gallery' }],
-                        },
-                        {
-                            path: 'partner2',
-                            populate: [{ path: 'gallery' }],
-                        },
-                    ],
-                );
-                if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                    sessionUser = sessionUserPopulated.result;
-                }
-            }
-            catch {
-                // Query failed, use session user as is
-            }
-        }
+        const sessionUser = await refreshSessionUser(context);
 
         const { mediaOptions: viewerMediaOptions, isAdmin } = getViewerMediaContext(sessionUser);
 
-        let effectiveFilter: Record<string, unknown> | undefined;
+        let effectiveFilter: T_QueryFilter<I_User> | undefined;
         if (isAdmin) {
-            effectiveFilter = computedFilter as Record<string, unknown>;
+            effectiveFilter = computedFilter as T_QueryFilter<I_User>;
         }
         else {
             // Normalize isDel filter: convert isDel: false to isDel: { $ne: true }
             // This ensures we properly exclude deleted users including those with isDel: null/undefined
-            const normalizedFilter = { ...computedFilter } as Record<string, unknown>;
+            const normalizedFilter = { ...computedFilter } as T_QueryFilter<I_User>;
             if (normalizedFilter['isDel'] === false) {
                 normalizedFilter['isDel'] = { $ne: true };
             }
 
-            const userBaseConds: Array<Record<string, unknown>> = [{ isAdminBlocked: { $ne: true } }];
+            const userBaseConds: T_QueryFilter<I_User>[] = [{ isAdminBlocked: { $ne: true } } as T_QueryFilter<I_User>];
             // Add isDel filter if not already present
             if (normalizedFilter['isDel'] === undefined) {
-                userBaseConds.push({ isDel: { $ne: true } });
+                userBaseConds.push({ isDel: { $ne: true } } as T_QueryFilter<I_User>);
             }
-            effectiveFilter = { $and: [...userBaseConds, normalizedFilter] };
+            effectiveFilter = { $and: [...userBaseConds, normalizedFilter] } as T_QueryFilter<I_User>;
         }
 
         const effectiveOptions = { ...(options ?? {}) } as any;
@@ -482,7 +215,7 @@ export const userCtr = {
             { path: 'partner2', populate: [{ path: 'gallery' }] },
         ]);
 
-        const users = await mongooseCtr.findPaging(effectiveFilter as unknown as never, effectiveOptions);
+        const users = await mongooseCtr.findPaging(effectiveFilter, effectiveOptions);
         if (!users.success)
             return users;
 
@@ -492,7 +225,7 @@ export const userCtr = {
             user.isOnline = resolveOnlineStatus(user.lastOnline, now);
 
             hydrateUserMedia(user, viewerMediaOptions);
-            return user;
+            return normalizeDocumentId(user as I_User & { _id?: unknown }) as I_User;
         });
 
         return users;
@@ -548,6 +281,7 @@ export const userCtr = {
             galleryUrl?: string;
             previousGalleryId?: string;
             previousRelativePath?: string;
+            rejectedByModeration?: boolean;
         }> = [];
 
         // process up to two files: index 0 -> partner1, index 1 -> partner2 (unless overridden)
@@ -577,7 +311,7 @@ export const userCtr = {
             const previousRelativePath = previousGalleryUrl
                 ?.split('?')[0]
                 ?.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
-                ?.replace(/^\/+/, '');
+                ?.replace(LEADING_SLASHES_REGEX, '');
 
             const { filename } = validated.result;
             const extension = path.extname(filename);
@@ -589,7 +323,7 @@ export const userCtr = {
             }
 
             const baseName = path.basename(filename, extension);
-            const safeBaseName = baseName.replace(/[^\w-]/g, '_');
+            const safeBaseName = baseName.replace(NON_WORD_CHARS_REGEX, '_');
             const timestamp = Date.now();
             const sanitizedName = `${safeBaseName}-${timestamp}${extension}`;
             const uploadPath = path.posix.join('USER', currentUser.id, 'avatar', sanitizedName);
@@ -618,6 +352,7 @@ export const userCtr = {
 
             let galleryCreatedId: string | undefined;
             let galleryUrl: string | undefined = fullUrl;
+            let rejectedByModeration = false;
             try {
                 const moderationCreated = await moderationMediaCtr.createModerationMedia(context, {
                     doc: {
@@ -634,29 +369,61 @@ export const userCtr = {
                     const moderationId = moderationCreated.result.id;
                     galleryCreatedId = moderationCreated.result.entityId ?? undefined;
 
-                    await moderationMediaCtr.updateModerationMedia(context, {
-                        filter: { id: moderationId },
-                        update: {
-                            status: E_ModerationMediaStatus.APPROVED,
-                            isPublished: true,
-                        },
-                        options: { new: true },
-                    });
+                    if (moderationCreated.result.status === E_ModerationMediaStatus.REJECTED) {
+                        rejectedByModeration = true;
 
-                    if (galleryCreatedId) {
-                        await galleryCtr.updateGallery(context, {
-                            filter: { id: galleryCreatedId },
+                        // Keep rejected avatar from being attached to user profile.
+                        await moderationMediaCtr.updateModerationMedia(context, {
+                            filter: { id: moderationId },
+                            update: {
+                                status: E_ModerationMediaStatus.REJECTED,
+                                isPublished: false,
+                            },
+                            options: { new: true },
+                        });
+
+                        if (galleryCreatedId) {
+                            await galleryCtr.deleteGallery(context, { filter: { id: galleryCreatedId } });
+                            galleryCreatedId = undefined;
+                        }
+
+                        const rejectedRelativePath = fullUrl
+                            ? (fullUrl.split('?')[0] ?? '')
+                                    .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                                    .replace(LEADING_SLASHES_REGEX, '')
+                            : '';
+
+                        if (rejectedRelativePath) {
+                            await bunnyCtr.deleteFile(context, rejectedRelativePath);
+                        }
+
+                        galleryUrl = undefined;
+                    }
+                    else {
+                        await moderationMediaCtr.updateModerationMedia(context, {
+                            filter: { id: moderationId },
                             update: {
                                 status: E_ModerationMediaStatus.APPROVED,
                                 isPublished: true,
                             },
+                            options: { new: true },
                         });
-                        galleryUrl = fullUrl;
+
+                        if (galleryCreatedId) {
+                            await galleryCtr.updateGallery(context, {
+                                filter: { id: galleryCreatedId },
+                                update: {
+                                    status: E_ModerationMediaStatus.APPROVED,
+                                    isPublished: true,
+                                },
+                            });
+                            galleryUrl = fullUrl;
+                        }
                     }
                 }
             }
             catch (error) {
-                console.warn('Failed to sync avatar gallery:', error);
+                log.warn('Failed to sync avatar gallery:', error);
             }
 
             uploadedResults.push({
@@ -665,24 +432,31 @@ export const userCtr = {
                 galleryUrl,
                 previousGalleryId,
                 previousRelativePath,
+                rejectedByModeration,
             });
         }
 
         // build update payloads for DB
         const updatePayload: Record<string, unknown> = {};
+        const unsetPayload: Record<string, unknown> = {};
         for (const r of uploadedResults) {
             if (r.galleryCreatedId) {
                 updatePayload[`${r.partner}.galleryId`] = r.galleryCreatedId;
             }
+            else if (r.rejectedByModeration) {
+                // Force default avatar fallback on rejected uploads.
+                unsetPayload[`${r.partner}.galleryId`] = 1;
+            }
         }
 
-        const updateObj: Record<string, unknown> = {
+        const updateObj: I_Input_UpdateOne<I_Input_UpdateUser>['update'] = {
             ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
+            ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
         };
 
         const updatedUser = await mongooseCtr.updateOne(
             { id: currentUser.id },
-            updateObj as unknown as never,
+            updateObj,
             { new: true },
         );
 
@@ -749,14 +523,15 @@ export const userCtr = {
                         try {
                             await bunnyCtr.deleteFile(context, uploadPathCandidate);
                         }
-                        catch {
-                            // ignore cleanup errors
+                        catch (error) {
+                            // Non-fatal: cleanup failure should not block avatar upload response.
+                            log.debug('Failed to cleanup previous avatar file after upload', { error, uploadPathCandidate });
                         }
                     }
                 }
             }
             catch (error) {
-                console.warn('Failed to remove previous avatar gallery or file:', error);
+                log.warn('Failed to remove previous avatar gallery or file:', error);
             }
         }
 
@@ -782,13 +557,13 @@ export const userCtr = {
         validate.username.validate(username);
         validate.password.validate(password);
 
-        // 1) Chặn nếu email thuộc hồ sơ admin-blocked
+        // 1) Block if email belongs to an admin-blocked profile
         const adminBlocked = await mongooseCtr.findOne({ email, isAdminBlocked: true });
         if (adminBlocked.success) {
             throwError({ message: 'User is admin-blocked.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
-        // 2) Chặn nếu trùng username/email với hồ sơ CHƯA XOÁ
+        // 2) Block if username/email matches a non-deleted profile
         // (Deleted users are completely removed, so no need to check isDel)
         const existed = await mongooseCtr.findOne(
             { $or: [{ username }, { email }] },
@@ -827,7 +602,7 @@ export const userCtr = {
 
         normalizeUserSettings(doc.settings);
 
-        // 3) Tạo user mới với default notification settings
+        // 3) Create new user with default notification settings
         // All notification settings default to true when creating account
         // Only set to true if not explicitly provided (undefined), preserve explicit false
         const userSettings = doc.settings || {};
@@ -857,73 +632,22 @@ export const userCtr = {
         // Validate rolesIds: enforce single membership role (PAID_MEMBER > PROMO_MEMBER > FREE_MEMBER)
         let sanitizedRolesIds = doc.rolesIds;
         if (Array.isArray(doc.rolesIds) && doc.rolesIds.length > 0) {
-            sanitizedRolesIds = Array.from(new Set(
-                doc.rolesIds
-                    .map((roleId) => {
-                        if (typeof roleId === 'string')
-                            return roleId.trim();
-                        if (roleId == null)
-                            return '';
-                        return String(roleId).trim();
-                    })
-                    .filter(roleId => roleId.length > 0),
-            ));
-
-            // Get FREE_MEMBER, PAID_MEMBER, PROMO_MEMBER role IDs for validation
-            const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
-            const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
-            const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
-
-            const paidRoleId = paidRole.success ? paidRole.result.id : null;
-            const freeRoleId = freeRole.success ? freeRole.result.id : null;
-            const promoRoleId = promoRole.success ? promoRole.result.id : null;
-
-            const hasPromo = promoRoleId ? sanitizedRolesIds.includes(promoRoleId) : false;
-            const hasPaid = paidRoleId ? sanitizedRolesIds.includes(paidRoleId) : false;
-            const hasFree = freeRoleId ? sanitizedRolesIds.includes(freeRoleId) : false;
-
-            if (hasPaid) {
-                if (hasPromo || hasFree) {
-                    log.warn('[USER] createUser: PAID_MEMBER set; removing PROMO_MEMBER/FREE_MEMBER to enforce exclusivity.');
-                }
-                if (promoRoleId) {
-                    const index = sanitizedRolesIds.indexOf(promoRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-                if (freeRoleId) {
-                    const index = sanitizedRolesIds.indexOf(freeRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-            }
-            else if (hasPromo) {
-                if (hasFree) {
-                    log.warn('[USER] createUser: PROMO_MEMBER set; removing FREE_MEMBER to enforce exclusivity.');
-                }
-                if (freeRoleId) {
-                    const index = sanitizedRolesIds.indexOf(freeRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-            }
+            const sanitized = await sanitizeRolesIds(context, doc.rolesIds, '[USER] createUser');
+            sanitizedRolesIds = sanitized.sanitizedRolesIds;
         }
 
         const userCreated = await mongooseCtr.createOne({
             ...doc,
             rolesIds: sanitizedRolesIds,
-            email, // lưu email đã chuẩn hoá
-            password: bcrypt.hashSync(password),
+            email, // save normalized email
+            password: await hashPassword(password),
             settings: finalSettings,
         });
         if (!userCreated.success) {
             throwError({ message: userCreated.message, status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
 
-        // 4) Tạo location mặc định nếu có payload hợp lệ
+        // 4) Create default location if a valid payload is provided
         let partnerLocationId: string | undefined;
         if (partner1LocationPayload && hasValidMap(partner1LocationPayload)) {
             partnerLocationId = await createLocationForUser(
@@ -933,7 +657,7 @@ export const userCtr = {
             );
         }
 
-        // 5) Tạo temporary location nếu có payload hợp lệ
+        // 5) Create temporary location if a valid payload is provided
         let temporaryLocationId: string | undefined;
         if (tempLocationPayload && hasValidMap(tempLocationPayload)) {
             temporaryLocationId = await createLocationForUser(
@@ -943,7 +667,7 @@ export const userCtr = {
             );
         }
 
-        // 6) Cập nhật lại user với locationId khi cần
+        // 6) Update user with locationId when needed
         let finalUser = userCreated;
         const updatePayload: Record<string, unknown> = {};
         if (partnerLocationId) {
@@ -975,10 +699,10 @@ export const userCtr = {
         }
 
         if (doc.registerStep === E_RegisterStep.COMPLETE) {
-            await broadcastNewMemberInArea(context, finalUser.result.id);
+            await broadcastNewMemberInArea(context, finalUser.result.id, userCtr);
         }
 
-        // 7) Trả kết quả cuối cùng
+        // 7) Return final result
         return finalUser;
     },
 
@@ -986,6 +710,13 @@ export const userCtr = {
         context: I_Context,
         { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateUser>,
     ): Promise<I_Return<I_User>> => {
+        type T_UpdatePayload = I_Input_UpdateOne<I_Input_UpdateUser>['update'];
+        type T_UpdateRecord = T_UpdatePayload & {
+            $set?: Record<string, unknown>;
+            $setOnInsert?: Record<string, unknown>;
+        };
+        const updateRecord = update as T_UpdateRecord;
+
         const hasAtomicOperators = Object.keys(update || {}).some(k => k.startsWith('$'));
         if (!hasAtomicOperators) {
             dedupArraysIterative(update);
@@ -998,19 +729,19 @@ export const userCtr = {
         // Normalize nested temporary location date
         normalizeUserSettings(update.settings);
 
-        if (hasAtomicOperators && (update as any).$set) {
-            const $set = (update as any).$set as Record<string, any>;
+        if (hasAtomicOperators && updateRecord.$set) {
+            const $set = updateRecord.$set;
             normalizeDateField($set, 'lastOnline');
             normalizeDateField($set, 'membershipExpiresAt');
             normalizeDateField($set, 'membershipEndDate');
 
             if ($set['settings']) {
-                normalizeUserSettings($set['settings']);
+                normalizeUserSettings($set['settings'] as I_Input_UpdateUser['settings']);
             }
 
             // Handle potential flat dot-notation paths in $set
             if ($set['settings.temporaryLocation'] && typeof $set['settings.temporaryLocation'] === 'object') {
-                normalizeDateField($set['settings.temporaryLocation'] as any, 'endAt');
+                normalizeDateField($set['settings.temporaryLocation'] as Record<string, unknown>, 'endAt');
             }
             if ($set['settings.temporaryLocation.endAt'] !== undefined) {
                 normalizeDateField($set, 'settings.temporaryLocation.endAt');
@@ -1020,7 +751,7 @@ export const userCtr = {
         const { password } = update;
         if (password) {
             validate.password.validate(password);
-            update.password = bcrypt.hashSync(password);
+            update.password = await hashPassword(password);
         }
 
         if (update.settings?.temporaryLocation) {
@@ -1051,7 +782,7 @@ export const userCtr = {
             });
         }
 
-        // cập nhật location nếu có
+        // Update location if provided
         if (update?.partner1?.location) {
             if (!hasValidMap(update.partner1.location)) {
                 throwError({
@@ -1107,50 +838,24 @@ export const userCtr = {
 
         // Check for rolesIds in both direct update and atomic operators ($set)
         const rolesIdsToValidate = hasAtomicOperators
-            ? (update as any).$set?.rolesIds
+            ? updateRecord.$set?.['rolesIds']
             : update.rolesIds;
 
         let sanitizedRolesIds: string[] | undefined;
-        if (Array.isArray(rolesIdsToValidate)) {
-            sanitizedRolesIds = Array.from(new Set(
-                rolesIdsToValidate
-                    .map((roleId) => {
-                        if (typeof roleId === 'string')
-                            return roleId.trim();
-                        if (roleId == null)
-                            return '';
-                        return String(roleId).trim();
-                    })
-                    .filter(roleId => roleId.length > 0),
-            ));
-
-            // Update the source (either direct or $set)
-            if (hasAtomicOperators) {
-                if (!(update as any).$set) {
-                    (update as any).$set = {};
-                }
-                (update as any).$set.rolesIds = sanitizedRolesIds;
-            }
-            else {
-                update.rolesIds = sanitizedRolesIds;
-            }
-        }
-
-        let paidRoleId: string | null = null;
-        let freeRoleId: string | null = null;
         let promoRoleId: string | null = null;
         let shouldSendPromoExpiryNotice = false;
+        const updateSetRecord = updateRecord.$set ?? {};
         const updateHasMembershipExpiresAt = hasAtomicOperators
-            ? Object.prototype.hasOwnProperty.call((update as any).$set ?? {}, 'membershipExpiresAt')
-            : Object.prototype.hasOwnProperty.call(update, 'membershipExpiresAt');
+            ? Object.hasOwn(updateSetRecord, 'membershipExpiresAt')
+            : Object.hasOwn(update, 'membershipExpiresAt');
         const updateHasMembershipEndDate = hasAtomicOperators
-            ? Object.prototype.hasOwnProperty.call((update as any).$set ?? {}, 'membershipEndDate')
-            : Object.prototype.hasOwnProperty.call(update, 'membershipEndDate');
+            ? Object.hasOwn(updateSetRecord, 'membershipEndDate')
+            : Object.hasOwn(update, 'membershipEndDate');
         const rawMembershipExpiresAt = updateHasMembershipExpiresAt
-            ? (hasAtomicOperators ? (update as any).$set?.membershipExpiresAt : (update as any).membershipExpiresAt)
+            ? (hasAtomicOperators ? updateSetRecord['membershipExpiresAt'] : updateRecord['membershipExpiresAt'])
             : undefined;
         const rawMembershipEndDate = updateHasMembershipEndDate
-            ? (hasAtomicOperators ? (update as any).$set?.membershipEndDate : (update as any).membershipEndDate)
+            ? (hasAtomicOperators ? updateSetRecord['membershipEndDate'] : updateRecord['membershipEndDate'])
             : undefined;
         const normalizedMembershipExpiresAt = updateHasMembershipExpiresAt
             ? normalizeDateValue(rawMembershipExpiresAt)
@@ -1165,65 +870,25 @@ export const userCtr = {
                 : undefined;
         const previousExpiry = userFound.result.membershipExpiresAt !== undefined
             ? userFound.result.membershipExpiresAt
-            : (userFound.result as any).membershipEndDate;
+            : (userFound.result as I_User & { membershipEndDate?: unknown }).membershipEndDate;
         const now = new Date();
 
-        // Get FREE_MEMBER, PAID_MEMBER, PROMO_MEMBER role IDs for validation
-        if (sanitizedRolesIds) {
-            const paidRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PAID_MEMBER } });
-            if (paidRole.success) {
-                paidRoleId = paidRole.result.id;
-            }
+        if (Array.isArray(rolesIdsToValidate)) {
+            const sanitized = await sanitizeRolesIds(
+                context,
+                rolesIdsToValidate,
+                `[USER] updateUser(${userFound.result.id})`,
+            );
 
-            const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
-            if (freeRole.success) {
-                freeRoleId = freeRole.result.id;
-            }
+            sanitizedRolesIds = sanitized.sanitizedRolesIds;
+            promoRoleId = sanitized.roleIds.promoRoleId;
 
-            const promoRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.PROMO_MEMBER } });
-            if (promoRole.success) {
-                promoRoleId = promoRole.result.id;
-            }
-
-            const hasPromo = promoRoleId ? sanitizedRolesIds.includes(promoRoleId) : false;
-            const hasPaid = paidRoleId ? sanitizedRolesIds.includes(paidRoleId) : false;
-            const hasFree = freeRoleId ? sanitizedRolesIds.includes(freeRoleId) : false;
-
-            if (hasPaid) {
-                if (hasPromo || hasFree) {
-                    log.warn(`[USER] User ${userFound.result.id} has PAID_MEMBER with other membership roles. Removing PROMO_MEMBER/FREE_MEMBER.`);
-                }
-                if (promoRoleId) {
-                    const index = sanitizedRolesIds.indexOf(promoRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-                if (freeRoleId) {
-                    const index = sanitizedRolesIds.indexOf(freeRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-            }
-            else if (hasPromo) {
-                if (hasFree) {
-                    log.warn(`[USER] User ${userFound.result.id} has PROMO_MEMBER with FREE_MEMBER. Removing FREE_MEMBER.`);
-                }
-                if (freeRoleId) {
-                    const index = sanitizedRolesIds.indexOf(freeRoleId);
-                    if (index > -1) {
-                        sanitizedRolesIds.splice(index, 1);
-                    }
-                }
-            }
-
-            // Update the source (either direct or $set) if we mutated roles
+            // Update the source (either direct or $set)
             if (hasAtomicOperators) {
-                if (!(update as any).$set) {
-                    (update as any).$set = {};
+                if (!updateRecord.$set) {
+                    updateRecord.$set = {};
                 }
-                (update as any).$set.rolesIds = sanitizedRolesIds;
+                updateRecord.$set['rolesIds'] = sanitizedRolesIds;
             }
             else {
                 update.rolesIds = sanitizedRolesIds;
@@ -1260,14 +925,23 @@ export const userCtr = {
             payloadToPersist = { ...update };
         }
         else {
+            const userResultPlain = userFound.result as I_User & { toObject?: () => I_User };
+            let userBaseDoc: I_User;
+            if (typeof userResultPlain.toObject === 'function') {
+                userBaseDoc = userResultPlain.toObject();
+            }
+            else {
+                // Deep clone safely without corrupting ObjectId or other nested instances
+                userBaseDoc = JSON.parse(JSON.stringify(userResultPlain));
+            }
             payloadToPersist = deepMerge(
-                (userFound.result as any).toObject ? (userFound.result as any).toObject() : JSON.parse(JSON.stringify(userFound.result)),
+                userBaseDoc,
                 update as Record<string, unknown>,
             );
             dedupArraysIterative(payloadToPersist);
 
             // Normalize nested dates again after merge to ensure no junk objects arrived
-            normalizeUserSettings((payloadToPersist as any).settings);
+            normalizeUserSettings((payloadToPersist['settings'] as I_Input_UpdateUser['settings']) ?? undefined);
         }
 
         const intendsToSoftDelete = update.isDel === true && userFound.result.isDel !== true;
@@ -1306,11 +980,13 @@ export const userCtr = {
 
         // Final safety check for nested temporary location date to avoid Mongoose cast error
         if (hasAtomicOperators) {
-            const $set = (payloadToPersist as any).$set;
+            const $set = payloadToPersist['$set'] as Record<string, unknown> | undefined;
             if ($set) {
-                const tempLocAttr = $set.settings?.temporaryLocation;
-                if (tempLocAttr && typeof tempLocAttr.endAt === 'object' && tempLocAttr.endAt !== null && !(tempLocAttr.endAt instanceof Date)) {
-                    delete tempLocAttr.endAt;
+                const settings = $set['settings'] as Record<string, unknown> | undefined;
+                const tempLocAttr = settings?.['temporaryLocation'] as Record<string, unknown> | undefined;
+                const tempEndAt = tempLocAttr?.['endAt'];
+                if (tempLocAttr && typeof tempEndAt === 'object' && tempEndAt !== null && !(tempEndAt instanceof Date)) {
+                    delete tempLocAttr['endAt'];
                 }
                 if ($set['settings.temporaryLocation.endAt'] !== undefined) {
                     const val = $set['settings.temporaryLocation.endAt'];
@@ -1321,11 +997,12 @@ export const userCtr = {
             }
         }
         else {
-            const nestedSettings = (payloadToPersist as any).settings;
-            const tempLoc = nestedSettings?.temporaryLocation;
-            if (tempLoc && typeof tempLoc.endAt === 'object' && tempLoc.endAt !== null && !(tempLoc.endAt instanceof Date)) {
+            const nestedSettings = payloadToPersist['settings'] as Record<string, unknown> | undefined;
+            const tempLoc = nestedSettings?.['temporaryLocation'] as Record<string, unknown> | undefined;
+            const endAt = tempLoc?.['endAt'];
+            if (tempLoc && typeof endAt === 'object' && endAt !== null && !(endAt instanceof Date)) {
                 // Delete if it's an empty object {} or other non-date objects
-                delete tempLoc.endAt;
+                delete tempLoc['endAt'];
             }
         }
 
@@ -1335,15 +1012,16 @@ export const userCtr = {
             return updateResult;
         }
 
-        const updatedUser = updateResult.result;
+        const updatedUser = normalizeDocumentId(updateResult.result as I_User & { _id?: unknown }) as I_User | null;
+        updateResult.result = updatedUser as I_User;
         const targetEmail = updatedUser?.email ?? userFound.result.email;
 
         if (intendsToCompleteRegistration && updatedUser?.registerStep === E_RegisterStep.COMPLETE && targetEmail) {
             const emailResponse = await emailCtr.sendEmail(WELCOME_PUSH_NOTIFICATION, targetEmail);
             if (!emailResponse.success) {
-                console.error('[USER] Failed to queue welcome email:', emailResponse.message);
+                log.error('[USER] Failed to queue welcome email', { error: emailResponse.message });
             }
-            await broadcastNewMemberInArea(context, updatedUser.id);
+            await broadcastNewMemberInArea(context, updatedUser.id, userCtr);
         }
 
         const tempLocationUpdated = Boolean(update.settings?.temporaryLocation);
@@ -1354,21 +1032,21 @@ export const userCtr = {
             const providedLocationObject = Boolean(update.settings?.temporaryLocation?.location);
             const locationChanged = tempLocationId !== previousTempLocationId || providedLocationObject;
             if (hasLocationData && locationChanged && isTemporaryLocationActive(tempSettings)) {
-                await broadcastNewMemberInArea(context, updatedUser.id);
+                await broadcastNewMemberInArea(context, updatedUser.id, userCtr);
             }
         }
 
         if (intendsToSoftDelete && targetEmail) {
             const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, targetEmail);
             if (!emailResponse.success) {
-                console.error('[USER] Failed to queue account suspended email:', emailResponse.message);
+                log.error('[USER] Failed to queue account suspended email', { error: emailResponse.message });
             }
         }
 
         if (shouldSendPromoExpiryNotice && promoRoleId && targetEmail) {
             const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
             if (!emailResponse.success) {
-                console.error('[USER] Failed to queue membership downgrade email:', emailResponse.message);
+                log.error('[USER] Failed to queue membership downgrade email', { error: emailResponse.message });
             }
         }
 
@@ -1379,18 +1057,14 @@ export const userCtr = {
         _: I_Context,
         { filter, update, options }: I_Input_UpdateMany<I_Input_UpdateUser>,
     ): Promise<I_Return<{ modifiedCount: number }>> => {
-        const hasAtomicOperators = Object.keys(update || {}).some(k => k.startsWith('$'));
-        const normalizeDateValue = (value: unknown): Date | null | undefined => {
-            if (value === null)
-                return null;
-            if (value instanceof Date)
-                return value;
-            if (typeof value === 'string' || typeof value === 'number') {
-                const parsed = new Date(value);
-                return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-            }
-            return undefined;
+        type T_UpdateManyPayload = I_Input_UpdateMany<I_Input_UpdateUser>['update'] & {
+            $set?: Record<string, unknown>;
+            $setOnInsert?: Record<string, unknown>;
+            lastOnline?: unknown;
         };
+        const updateRecord = update as T_UpdateManyPayload;
+
+        const hasAtomicOperators = Object.keys(update || {}).some(k => k.startsWith('$'));
 
         const normalizedFilter = { ...(filter || {}) } as Record<string, unknown>;
         const lastOnlineFilter = normalizedFilter['lastOnline'];
@@ -1403,31 +1077,31 @@ export const userCtr = {
             delete normalizedFilter['lastOnline'];
         }
 
-        if (Object.prototype.hasOwnProperty.call(update, 'lastOnline')) {
-            const normalized = normalizeDateValue((update as any).lastOnline);
+        if (Object.hasOwn(update, 'lastOnline')) {
+            const normalized = normalizeDateValue(updateRecord.lastOnline);
             if (normalized === undefined) {
-                delete (update as any).lastOnline;
+                delete updateRecord.lastOnline;
             }
             else {
-                (update as any).lastOnline = normalized;
+                updateRecord.lastOnline = normalized;
             }
         }
-        if (hasAtomicOperators && (update as any).$set?.lastOnline !== undefined) {
-            const normalized = normalizeDateValue((update as any).$set.lastOnline);
+        if (hasAtomicOperators && updateRecord.$set?.['lastOnline'] !== undefined) {
+            const normalized = normalizeDateValue(updateRecord.$set['lastOnline']);
             if (normalized === undefined) {
-                delete (update as any).$set.lastOnline;
+                delete updateRecord.$set['lastOnline'];
             }
             else {
-                (update as any).$set.lastOnline = normalized;
+                updateRecord.$set['lastOnline'] = normalized;
             }
         }
-        if (hasAtomicOperators && (update as any).$setOnInsert?.lastOnline !== undefined) {
-            const normalized = normalizeDateValue((update as any).$setOnInsert.lastOnline);
+        if (hasAtomicOperators && updateRecord.$setOnInsert?.['lastOnline'] !== undefined) {
+            const normalized = normalizeDateValue(updateRecord.$setOnInsert['lastOnline']);
             if (normalized === undefined) {
-                delete (update as any).$setOnInsert.lastOnline;
+                delete updateRecord.$setOnInsert['lastOnline'];
             }
             else {
-                (update as any).$setOnInsert.lastOnline = normalized;
+                updateRecord.$setOnInsert['lastOnline'] = normalized;
             }
         }
 
@@ -1467,7 +1141,7 @@ export const userCtr = {
                 userId,
                 E_ConversationType.ADMIN_BROADCAST,
             );
-            const allConversationIds = Array.from(new Set([...privateConversationIds, ...groupConversationIds, ...adminBroadcastIds]));
+            const allConversationIds = [...new Set([...privateConversationIds, ...groupConversationIds, ...adminBroadcastIds])];
 
             // Get conversations created by user
             const conversationsCreated = await conversationCtr.getConversations(context, {
@@ -1477,7 +1151,7 @@ export const userCtr = {
             const createdConversationIds = conversationsCreated.success && conversationsCreated.result
                 ? conversationsCreated.result.docs.map(c => c.id)
                 : [];
-            const allConversationIdsToDelete = Array.from(new Set([...allConversationIds, ...createdConversationIds]));
+            const allConversationIdsToDelete = [...new Set([...allConversationIds, ...createdConversationIds])];
 
             // Delete all messages from user or in user's conversations
             await messageCtr.deleteMessages(context, {
@@ -1500,25 +1174,10 @@ export const userCtr = {
             });
 
             // Delete all conversations directly using MongooseController (admin can delete any conversation)
-            // First delete messages and participants, then delete conversation
+            // Messages and participants are already removed in bulk above; delete conversations in one DB call.
             const conversationMongooseCtr = new MongooseController(ConversationModel);
-            for (const conversationId of allConversationIdsToDelete) {
-                try {
-                    // Delete messages in this conversation
-                    await messageCtr.deleteMessages(context, {
-                        filter: { conversationId },
-                    });
-                    // Delete participants in this conversation
-                    await participantCtr.deleteParticipants(context, {
-                        filter: { conversationId },
-                    });
-                    // Finally delete the conversation
-                    await conversationMongooseCtr.deleteOne({ id: conversationId });
-                }
-                catch (error) {
-                    // Log but continue with other conversations
-                    log.warn(`Failed to delete conversation ${conversationId}:`, error);
-                }
+            if (allConversationIdsToDelete.length > 0) {
+                await conversationMongooseCtr.deleteMany({ id: { $in: allConversationIdsToDelete } });
             }
 
             // Delete all events created by user
@@ -1546,21 +1205,14 @@ export const userCtr = {
                 filter: { userId },
             });
 
-            // Delete all notifications for user or from user
-            const notifications = await notificationCtr.getNotifications(context, {
-                filter: {
-                    $or: [
-                        { userId },
-                        { 'context.actorId': userId },
-                    ],
-                },
-                options: { pagination: false },
+            // Delete all notifications for user or generated by user in one DB call.
+            const notificationMongooseCtr = new MongooseController(NotificationModel);
+            await notificationMongooseCtr.deleteMany({
+                $or: [
+                    { targetId: userId },
+                    { 'context.actorId': userId },
+                ],
             });
-            if (notifications.success && notifications.result) {
-                for (const notification of notifications.result.docs) {
-                    await notificationCtr.deleteNotification(context, { filter: { id: notification.id } });
-                }
-            }
 
             // Delete all locations created by user
             const locations = await locationCtr.getLocations(context, {
@@ -1589,16 +1241,9 @@ export const userCtr = {
                 }
             }
 
-            // Delete all moderation logs for user
-            const moderationLogs = await moderationLogCtr.getModerationLogs(context, {
-                filter: { userId },
-                options: { pagination: false },
-            });
-            if (moderationLogs.success && moderationLogs.result) {
-                for (const log of moderationLogs.result.docs) {
-                    await moderationLogCtr.deleteModerationLog(context, { filter: { id: log.id } });
-                }
-            }
+            // Delete all moderation logs for user in one DB call.
+            const moderationLogMongooseCtr = new MongooseController(ModerationLogModel);
+            await moderationLogMongooseCtr.deleteMany({ userId });
 
             // Delete all orders for user
             const orders = await orderCtr.getOrders(context, {
@@ -1608,24 +1253,24 @@ export const userCtr = {
             const orderIds: string[] = [];
             if (orders.success && orders.result) {
                 for (const order of orders.result.docs) {
-                    orderIds.push(order.id);
-                    await orderCtr.deleteOrder(context, { filter: { id: order.id } });
+                    if (order.id) {
+                        orderIds.push(order.id);
+                    }
+                }
+                if (orderIds.length > 0) {
+                    await orderCtr.deleteOrders(context, {
+                        filter: { id: { $in: orderIds } },
+                    });
                 }
             }
 
             // Delete all payment requests for user's orders
             if (orderIds.length > 0) {
-                const paymentRequests = await paymentRequestCtr.getPaymentRequests(context, {
+                await paymentRequestCtr.deletePaymentRequests(context, {
                     filter: {
                         'meta.orderId': { $in: orderIds },
                     },
-                    options: { pagination: false },
                 });
-                if (paymentRequests.success && paymentRequests.result) {
-                    for (const paymentRequest of paymentRequests.result.docs) {
-                        await paymentRequestCtr.deletePaymentRequest(context, { filter: { id: paymentRequest.id } });
-                    }
-                }
             }
 
             // Delete user's galleries without visibility checks
@@ -1650,8 +1295,9 @@ export const userCtr = {
                         },
                     });
                 }
-                catch {
-                    // Non-fatal: logging failure shouldn't block the response
+                catch (error) {
+                    // Non-fatal: moderation log failure shouldn't block account deletion.
+                    log.debug('Failed to create moderation log after deleting user', { error, userId });
                 }
             }
 
@@ -1692,7 +1338,7 @@ export const userCtr = {
         if (userFound.result.email && userFound.result.isDel !== true) {
             const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, userFound.result.email);
             if (!emailResponse.success) {
-                console.error('[USER] Failed to queue account suspended email:', emailResponse.message);
+                log.error('[USER] Failed to queue account suspended email', { error: emailResponse.message });
             }
         }
 
@@ -1761,212 +1407,14 @@ export const userCtr = {
         context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_AdminBlockUser>,
     ): Promise<I_Return<I_User>> => {
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        const sessionUser = context?.req?.session?.user as I_User | undefined;
-        let isAdmin = false;
-        try {
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
-
-        if (!isAdmin) {
-            throwError({ status: RESPONSE_STATUS.FORBIDDEN, message: 'Forbidden' });
-        }
-
-        const { userId } = doc;
-        if (!userId) {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Missing userId' });
-        }
-
-        const userFound = await userCtr.getUser(context, { filter: { id: userId } });
-        if (!userFound.success) {
-            throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'User not found' });
-        }
-        if (userFound.result.isAdminBlocked && userFound.result.isDel) {
-            return { success: true } as I_Return<I_User>; // idempotent
-        }
-
-        // Block user: set isAdminBlocked: true, soft delete, and send violation email
-        // updateUser will automatically send ACCOUNT_SUSPENDED email when isDel changes to true
-        const updateResult = await userCtr.updateUser(context, {
-            filter: { id: userId },
-            update: { isAdminBlocked: true, isDel: true },
-        });
-
-        if (updateResult.success && sessionUser?.id && userFound.result?.id) {
-            try {
-                await moderationLogCtr.createModerationLog(context, {
-                    doc: {
-                        action: E_ModerationLogAction.SUSPEND,
-                        type: E_ModerationLogType.ACCOUNT,
-                        userId: sessionUser.id,
-                        targetUserId: userFound.result.id,
-                    },
-                });
-            }
-            catch {
-                // Non-fatal: logging failure shouldn't block the response
-            }
-        }
-
-        return updateResult;
+        return userAdminService.adminBlockUser(context, { doc });
     },
 
     adminUnBlockUser: async (
         context: I_Context,
         { filter }: I_Input_DeleteOne<I_Input_AdminUnBlockUser>,
     ): Promise<I_Return<I_User>> => {
-        // Avoid circular dependency by checking session directly instead of calling isAdmin
-        const sessionUser = context?.req?.session?.user as I_User | undefined;
-        let isAdmin = false;
-        try {
-            if (sessionUser?.roles && Array.isArray(sessionUser.roles)) {
-                isAdmin = sessionUser.roles.some(role =>
-                    role.name === 'ADMIN' || (role.ancestorsIds && role.ancestorsIds.includes('ADMIN')),
-                );
-            }
-        }
-        catch {
-            // Ignore error and default to false
-        }
-
-        if (!isAdmin) {
-            throwError({ status: RESPONSE_STATUS.FORBIDDEN, message: 'Forbidden' });
-        }
-
-        const { userId } = filter || {};
-
-        if (!userId || typeof userId !== 'string') {
-            throwError({ status: RESPONSE_STATUS.BAD_REQUEST, message: 'Missing userId' });
-        }
-
-        const userFound = await userCtr.getUser(context, { filter: { id: userId } });
-        if (!userFound.success) {
-            throwError({ status: RESPONSE_STATUS.NOT_FOUND, message: 'User not found' });
-        }
-        if (!userFound.result.isAdminBlocked) {
-            return { success: true } as I_Return<I_User>; // idempotent
-        }
-
-        // Unblock user: set isAdminBlocked: false and isDel: false to restore user access
-        const updateResult = await userCtr.updateUser(context, {
-            filter: { id: userId },
-            update: { isAdminBlocked: false, isDel: false },
-        });
-
-        if (updateResult.success && sessionUser?.id) {
-            try {
-                const targetLabel = userFound.result.username || userFound.result.email || userId;
-                await moderationLogCtr.createModerationLog(context, {
-                    doc: {
-                        action: E_ModerationLogAction.UN_SUSPEND,
-                        type: E_ModerationLogType.ACCOUNT,
-                        userId: sessionUser.id,
-                        targetUserId: userFound.result.id,
-                        reason: `User unblocked: ${targetLabel}`,
-                    },
-                });
-            }
-            catch {
-                // Non-fatal: logging failure shouldn't block the response
-            }
-        }
-
-        return updateResult;
+        return userAdminService.adminUnBlockUser(context, { filter });
     },
 
 };
-
-function isTemporaryLocationActive(temp?: I_UserSettings_TemporaryLocation | null): boolean {
-    if (!temp)
-        return false;
-    if (!temp.endAt)
-        return true;
-    try {
-        const rawEnd = new Date(temp.endAt);
-        if (Number.isNaN(rawEnd.getTime()))
-            return false;
-        const isMidnight = rawEnd.getHours() === 0
-            && rawEnd.getMinutes() === 0
-            && rawEnd.getSeconds() === 0
-            && rawEnd.getMilliseconds() === 0;
-        const normalizedEnd = isMidnight
-            ? new Date(rawEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
-            : rawEnd;
-        return normalizedEnd > new Date();
-    }
-    catch {
-        return false;
-    }
-}
-
-async function broadcastNewMemberInArea(context: I_Context, newUserId: string) {
-    try {
-        const [newUserRes, recipientsRes] = await Promise.all([
-            userCtr.getUser(context, {
-                filter: { id: newUserId },
-                populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
-            }),
-            userCtr.getUsers(context, { filter: { isActive: true }, options: { pagination: false } }),
-        ]);
-
-        if (!newUserRes.success || !newUserRes.result) {
-            return;
-        }
-
-        if (!recipientsRes.success || !Array.isArray(recipientsRes.result?.docs)) {
-            return;
-        }
-
-        const newUser = newUserRes.result;
-        const hasLocation = Boolean(
-            newUser.partner1?.locationId
-            || newUser.partner2?.locationId
-            || newUser.settings?.temporaryLocation?.locationId,
-        );
-        if (!hasLocation) {
-            return;
-        }
-
-        const tasks = recipientsRes.result.docs
-            .filter(u => u.id && u.id !== newUser.id)
-            .map(u =>
-                notificationCtr.createNotificationWithSettings(context, {
-                    doc: {
-                        targetId: u.id,
-                        type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
-                        entityType: E_NotificationEntityType.USER,
-                        entityId: newUser.id,
-                        actorId: newUser.id,
-                        presentation: {
-                            // Only set redirect.id to username, not UUID (profile route requires username)
-                            ...(newUser.username
-                                ? {
-                                        redirect: { kind: E_RedirectType.PROFILE, id: newUser.username },
-                                    }
-                                : {}),
-                            actor: {
-                                username: newUser.username,
-                                accountType: newUser.accountType,
-                                avatarUrl: newUser.partner1?.gallery?.url,
-                                gender: newUser.partner1?.gender,
-                            },
-                        },
-                    },
-                }).catch(() => undefined),
-            );
-
-        if (tasks.length > 0) {
-            await Promise.allSettled(tasks);
-        }
-    }
-    catch (error) {
-        console.error('[USER] Failed to broadcast new member notification:', error);
-    }
-}

@@ -1,5 +1,5 @@
 export function dedupArraysIterative(root: any) {
-    const uniq = <T>(a: T[]) => Array.from(new Set(a));
+    const uniq = <T>(a: T[]) => [...new Set(a)];
     const isPrim = (v: unknown) => ['string', 'number', 'boolean'].includes(typeof v);
 
     if (!root || typeof root !== 'object')

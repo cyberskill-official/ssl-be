@@ -25,6 +25,7 @@ import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/index.js';
+import { createSystemContext } from '#shared/util/context.js';
 
 import type {
     I_Input_CreateInvitation,
@@ -220,7 +221,7 @@ export const invitationCtr = {
         });
 
         // Load conversation to include group name in notification context
-        const conversationFound = await conversationCtr.getConversation({} as I_Context, { filter: { id: conversationId } });
+        const conversationFound = await conversationCtr.getConversation(createSystemContext(), { filter: { id: conversationId } });
         const inviter = (populateInvitationResult.result as any)?.inviter;
         const actorPresentation = inviter
             ? {

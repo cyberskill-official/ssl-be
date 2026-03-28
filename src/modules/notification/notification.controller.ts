@@ -289,7 +289,7 @@ export const notificationCtr = {
                 if (actorIds.size > 0) {
                     // Query actors with roles and galleries for avatarUrl
                     const actorsResult = await userCtr.getUsers(_context, {
-                        filter: { id: { $in: Array.from(actorIds) } },
+                        filter: { id: { $in: [...actorIds] } },
                         options: {
                             pagination: false,
                         },
@@ -330,7 +330,7 @@ export const notificationCtr = {
                                 try {
                                     const usersCollection = mongoose.connection.db.collection('users');
                                     const ageVerifyDocs = await usersCollection.find(
-                                        { id: { $in: Array.from(actorsWithoutAgeVerify) } },
+                                        { id: { $in: [...actorsWithoutAgeVerify] } },
                                         { projection: { id: 1, ageVerify: 1 } },
                                     ).toArray();
 
@@ -347,7 +347,7 @@ export const notificationCtr = {
                                 }
                                 catch {
                                     // Fallback to userCtr.getUser for each actor
-                                    const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+                                    const ageVerifyPromises = Array.from(actorsWithoutAgeVerify, async (actorId) => {
                                         try {
                                             const userResult = await userCtr.getUser(_context, {
                                                 filter: { id: actorId },
@@ -371,7 +371,7 @@ export const notificationCtr = {
                             }
                             else {
                                 // Fallback to userCtr.getUser if mongoose.connection.db is not available
-                                const ageVerifyPromises = Array.from(actorsWithoutAgeVerify).map(async (actorId) => {
+                                const ageVerifyPromises = Array.from(actorsWithoutAgeVerify, async (actorId) => {
                                     try {
                                         const userResult = await userCtr.getUser(_context, {
                                             filter: { id: actorId },
@@ -416,7 +416,7 @@ export const notificationCtr = {
                 const galleryOwnerAgeVerifyMap = new Map<string, boolean>();
                 if (galleryEntityIds.size > 0) {
                     const galleriesResult = await galleryCtr.getGalleries(_context, {
-                        filter: { id: { $in: Array.from(galleryEntityIds) } },
+                        filter: { id: { $in: [...galleryEntityIds] } },
                         options: { pagination: false },
                     });
 
@@ -441,7 +441,7 @@ export const notificationCtr = {
                 const eventCreatorAgeVerifyMap = new Map<string, boolean>();
                 if (eventEntityIds.size > 0) {
                     const eventsResult = await eventCtr.getEvents(_context, {
-                        filter: { id: { $in: Array.from(eventEntityIds) } },
+                        filter: { id: { $in: [...eventEntityIds] } },
                         options: { pagination: false },
                     });
 
@@ -984,7 +984,7 @@ export const notificationCtr = {
                 channelSet.add(E_NotificationChannel.EMAIL);
             }
 
-            channels = Array.from(channelSet);
+            channels = [...channelSet];
         }
         const persistType = (types.length === 1 ? types[0] : types) as unknown as I_Notification['type'];
 

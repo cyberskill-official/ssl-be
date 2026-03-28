@@ -11,7 +11,7 @@ import type { I_Destination } from './destination.type.js';
 
 export function sortDestinationsByRating<T extends { rating?: string }>(destinations: T[]): T[] {
     const ratingOrder: Record<string, number> = { GOLD: 0, SILVER: 1, BRONZE: 2 };
-    return destinations.slice().sort((a, b) => {
+    return destinations.toSorted((a, b) => {
         const aRating = typeof a.rating === 'string' ? a.rating.toUpperCase() : '';
         const bRating = typeof b.rating === 'string' ? b.rating.toUpperCase() : '';
         const aOrder = ratingOrder[aRating] ?? 99;
@@ -96,11 +96,9 @@ export async function buildCountryNameFilter(
     }
 
     const destinationIds = (destinationIdsResult.result as Array<string | null | undefined> | undefined) ?? [];
-    const uniqueDestinationIds = Array.from(
-        new Set(
-            destinationIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
-        ),
-    );
+    const uniqueDestinationIds = [...new Set(
+        destinationIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+    )];
 
     return {
         id: {
@@ -131,13 +129,11 @@ export async function buildCountryIdFilter(
         });
     }
 
-    const destinationIds = Array.from(
-        new Set(
-            ((destinationIdsResult.result as Array<string | null | undefined> | undefined) ?? [])
-                .map(id => (typeof id === 'string' ? id.trim() : ''))
-                .filter((id): id is string => id.length > 0),
-        ),
-    );
+    const destinationIds = [...new Set(
+        ((destinationIdsResult.result as Array<string | null | undefined> | undefined) ?? [])
+            .map(id => (typeof id === 'string' ? id.trim() : ''))
+            .filter((id): id is string => id.length > 0),
+    )];
 
     return {
         id: {

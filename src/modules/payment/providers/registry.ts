@@ -14,5 +14,5 @@ export function getProvider(name: T_ProviderName): I_PaymentProvider | undefined
 }
 
 export function listProviders(): I_PaymentProvider[] {
-    return Array.from(providers.values());
+    return [...providers.values()];
 }

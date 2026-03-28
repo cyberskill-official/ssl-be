@@ -275,7 +275,7 @@ export interface I_ConversationEventPayload {
         conversationId: string;
         type: E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT | E_ConversationType.GROUP;
         action: E_ConversationAction;
-        // Có thể mở rộng thêm các trường cho các action khác:
+        // Can be extended with additional fields for other actions:
         // conversation?: I_Conversation;  // cho CREATED/UPDATED
         // oldName?: string;             // cho UPDATED (rename)
         // newName?: string;             // cho UPDATED (rename)

@@ -22,6 +22,10 @@ import { VerificationModel } from './verification.model.js';
 
 const mongooseCtr = new MongooseController<I_Verification>(VerificationModel);
 
+function normalizeVerificationId(document: I_Verification | null | undefined): string {
+    return String(document?.id ?? (document as I_Verification & { _id?: unknown } | null | undefined)?._id ?? '').trim();
+}
+
 export const verificationCtr = {
     getVerification: async (
         _: I_Context,
@@ -54,7 +58,12 @@ export const verificationCtr = {
             });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const normalizedFilter = { ...filter } as Record<string, unknown>;
+        if (Object.hasOwn(normalizedFilter, 'id')) {
+            normalizedFilter['id'] = String(normalizedFilter['id'] ?? '').trim();
+        }
+
+        return mongooseCtr.updateOne(normalizedFilter, update, options);
     },
     deleteVerification: async (
         context: I_Context,
@@ -69,7 +78,12 @@ export const verificationCtr = {
             });
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        const normalizedFilter = { ...filter } as Record<string, unknown>;
+        if (Object.hasOwn(normalizedFilter, 'id')) {
+            normalizedFilter['id'] = String(normalizedFilter['id'] ?? '').trim();
+        }
+
+        return mongooseCtr.deleteOne(normalizedFilter, options);
     },
     deleteVerifications: async (
         _context: I_Context,
@@ -115,8 +129,10 @@ export const verificationCtr = {
         }
 
         // Increment attempt count
+        const verificationId = normalizeVerificationId(verificationFound.result);
+
         await verificationCtr.updateVerification(context, {
-            filter: { id: verificationFound.result.id },
+            filter: { id: verificationId },
             update: { $inc: { attemptCount: 1 } },
         });
 

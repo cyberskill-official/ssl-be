@@ -2,8 +2,10 @@
  * Extract variables from email template content
  * Variables are defined using {{variableName}} syntax
  */
+const EJS_VARIABLE_REGEX = /<%[-=]\s*([\w.]+)\s*%>/g;
+
 export function extractVariablesFromContent(content: string): string[] {
-    const variableRegex = /<%[-=]\s*([\w.]+)\s*%>/g;
+    const variableRegex = new RegExp(EJS_VARIABLE_REGEX.source, EJS_VARIABLE_REGEX.flags);
     const variables = new Set<string>();
     let match = variableRegex.exec(content);
 
@@ -17,5 +19,5 @@ export function extractVariablesFromContent(content: string): string[] {
         match = variableRegex.exec(content);
     }
 
-    return Array.from(variables).sort();
+    return [...variables].sort();
 }

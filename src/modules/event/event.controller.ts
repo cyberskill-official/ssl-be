@@ -378,7 +378,7 @@ export const eventCtr = {
         } = doc;
 
         doc.createdById = currentUser.id;
-        // tránh persist nhầm trường location thô trên Event (luôn dùng locationId)
+        // avoid persisting raw location field on Event (always use locationId)
         if ('location' in doc)
             delete (doc as Partial<I_Input_CreateEvent>).location;
 
@@ -553,7 +553,7 @@ export const eventCtr = {
                 throwError({ message: 'Location with valid coordinates is required for Booty Calls.', status: RESPONSE_STATUS.BAD_REQUEST });
             }
 
-            // Sử dụng validateTimeBasedEvent cho BOOTY_CALL chỉ truyền startDate, endDate, location
+            // Use validateTimeBasedEvent for BOOTY_CALL; only pass startDate, endDate, location
             const validation = validateTimeBasedEvent({
                 startDate,
                 endDate,
@@ -844,7 +844,7 @@ export const eventCtr = {
             }
             catch { /* ignore */ }
 
-            // Actor avatar (signed) nếu có
+            // Actor avatar (signed) if available
             let actorAvatarUrl: string | undefined;
             try {
                 const rawAvatar
@@ -860,7 +860,7 @@ export const eventCtr = {
             }
             catch { /* ignore */ }
 
-            // Build redirect 1 lần from locationCreated.result.map
+            // Build redirect once from locationCreated.result.map
             const locMap = locMapForRedirect;
             const eventRedirect = {
                 kind: E_RedirectType.EVENT,
@@ -1014,11 +1014,11 @@ export const eventCtr = {
                 }
             }
             else {
-                // CLUB_VISIT: không tạo hay cập nhật location riêng; sử dụng location của destination
-                // Bỏ qua yêu cầu cập nhật location để tránh ghi đè dữ liệu của club
+                // CLUB_VISIT: do not create or update location; use destination's existing location
+                // Skip location update request to avoid overwriting club data
                 pinStyle = undefined;
                 update.location = undefined;
-                // tiếp tục xử lý các trường khác
+                // continue processing other fields
             }
 
             if (update.location) {

@@ -145,7 +145,7 @@ export const permissionCtr = {
             // 4. Delete obsolete permissions
             const obsoletePermissions = dbPermissions.filter((dbPerm) => {
                 const key = `${dbPerm.type}_${dbPerm.method}_${dbPerm.target}`;
-                return !allPermissions.find(p => `${p.type}_${p.method}_${p.target}` === key);
+                return !allPermissions.some(p => `${p.type}_${p.method}_${p.target}` === key);
             });
 
             if (obsoletePermissions.length > 0) {

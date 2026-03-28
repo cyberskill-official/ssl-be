@@ -9,11 +9,13 @@ import {
     USERNAME_MIN_LENGTH,
 } from '#modules/user/user.constant.js';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/;
+const INVALID_USERNAME_CHAR_RE = /[^\w-]/;
+
 export const validate = {
     email: {
         format: {
             validator: (email: string): boolean => {
-                const EMAIL_REGEX = /^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/;
                 return EMAIL_REGEX.test(email);
             },
             message: 'Invalid email format',
@@ -36,7 +38,7 @@ export const validate = {
             message: `Username must be between ${USERNAME_MIN_LENGTH} and ${USERNAME_MAX_LENGTH} characters`,
         },
         format: {
-            validator: (username: string) => !/[^\w-]/.test(username),
+            validator: (username: string) => !INVALID_USERNAME_CHAR_RE.test(username),
             message:
                 'Username can only contain letters, numbers, underscores and hyphens',
         },

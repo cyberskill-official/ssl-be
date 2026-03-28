@@ -45,6 +45,8 @@ import { E_ModerationMediaStatus, E_ModerationMediaType } from './moderation-med
 import { mapModerationMediaTypeTo } from './moderation-media.util.js';
 
 const mongooseCtr = new MongooseController<I_ModerationMedia>(ModerationMediaModel);
+const ESCAPE_REGEX_PATTERN = /[.*+?^${}()|[\]\\]/g;
+const LEADING_SLASH_REGEX = /^\//;
 
 export const moderationMediaCtr = {
     getModerationMedia: async (
@@ -146,13 +148,13 @@ export const moderationMediaCtr = {
             const [galleriesResult, cataloguesResult] = await Promise.all([
                 galleryEntityIds.size > 0
                     ? galleryMongooseCtr.findPaging(
-                            { id: { $in: Array.from(galleryEntityIds) }, isDel: { $ne: true } },
+                            { id: { $in: [...galleryEntityIds] }, isDel: { $ne: true } },
                             { pagination: false },
                         )
                     : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Gallery>>),
                 catalogueEntityIds.size > 0
                     ? catalogueMongooseCtr.findPaging(
-                            { id: { $in: Array.from(catalogueEntityIds) }, isDel: { $ne: true } },
+                            { id: { $in: [...catalogueEntityIds] }, isDel: { $ne: true } },
                             { pagination: false },
                         )
                     : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Catalogue>>),
@@ -266,10 +268,10 @@ export const moderationMediaCtr = {
 
             const bypassAiModeration = isStaff || isAdmin;
 
-            // Mặc định: conversation thì pending, ngoài ra sẽ do AI quyết định (APPROVED hoặc REJECTED)
+            // Default: conversation media is pending, otherwise AI decides (APPROVED or REJECTED)
             let initialStatus: E_ModerationMediaStatus = (entity === E_UploadEntity.CONVERSATION)
                 ? E_ModerationMediaStatus.PENDING
-                : E_ModerationMediaStatus.APPROVED; // sẽ cập nhật lại bên dưới nếu có AI
+                : E_ModerationMediaStatus.APPROVED; // will be updated below if AI moderation is applied
 
             let reason: string | undefined;
 
@@ -325,12 +327,12 @@ export const moderationMediaCtr = {
                         || aiRiskLevel === E_RiskLevel.CRITICAL;
 
                 if (entity === E_UploadEntity.CONVERSATION) {
-                    // Luôn để PENDING cho media thuộc conversation, bất kể AI phát hiện gì
+                    // Always set PENDING for media belonging to a conversation, regardless of AI detection
                     initialStatus = E_ModerationMediaStatus.PENDING;
                     reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
                 }
                 else {
-                    // Ngoài conversation, status sẽ theo đúng quyết định của AI
+                    // For non-conversation media, status follows AI decision
                     if (!aiDecision) {
                         initialStatus = E_ModerationMediaStatus.REJECTED;
                         reason = 'AI System Error: No decision returned';
@@ -368,14 +370,15 @@ export const moderationMediaCtr = {
             switch (entity) {
                 case E_UploadEntity.GALLERY: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
-                        doc: Object.assign({
+                        doc: {
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
                             url: moderationCreated.result.url!,
                             uploadedById: moderationCreated.result.uploadedById!,
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
-                        }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
+                            ...(moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {}),
+                        },
                     });
                     if (galleryCreated.success && galleryCreated.result?.id) {
                         await mongooseCtr.updateOne(
@@ -388,14 +391,15 @@ export const moderationMediaCtr = {
 
                 case E_UploadEntity.USER: {
                     const galleryCreated = await galleryCtr.createGallery(context, {
-                        doc: Object.assign({
+                        doc: {
                             moderationMediaId: moderationCreatedId,
                             type: mapModerationMediaTypeTo(moderationCreated.result.type!, E_GalleryType)!,
                             url: moderationCreated.result.url!,
                             uploadedById: moderationCreated.result.uploadedById!,
                             status: moderationCreated.result.status,
                             isPublished: moderationCreated.result.isPublished,
-                        }, (moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {})),
+                            ...(moderationCreated.result.thumbnailUrl ? { thumbnailUrl: moderationCreated.result.thumbnailUrl } : {}),
+                        },
                         bypassAgeVerification: true,
                     });
 
@@ -646,7 +650,7 @@ export const moderationMediaCtr = {
                         { 'content.value': baseUrl },
                     ];
                     if (pathname) {
-                        urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                        urlConditions.push({ 'content.value': { $regex: pathname.replace(ESCAPE_REGEX_PATTERN, '\\$&'), $options: 'i' } });
                     }
 
                     const messageMongooseCtr = new MongooseController(MessageModel);
@@ -826,7 +830,7 @@ export const moderationMediaCtr = {
                         { 'content.value': baseUrl },
                     ];
                     if (pathname) {
-                        urlConditions.push({ 'content.value': { $regex: pathname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' } });
+                        urlConditions.push({ 'content.value': { $regex: pathname.replace(ESCAPE_REGEX_PATTERN, '\\$&'), $options: 'i' } });
                     }
 
                     // Find and redact messages immediately
@@ -1147,7 +1151,7 @@ export const moderationMediaCtr = {
                 let storagePath = media.url;
                 try {
                     const u = new URL(media.url);
-                    storagePath = u.pathname.replace(/^\//, '');
+                    storagePath = u.pathname.replace(LEADING_SLASH_REGEX, '');
                 }
                 catch {
                     // assume already a storage path
@@ -1273,7 +1277,7 @@ export const moderationMediaCtr = {
     },
 };
 
-// Ví dụ sử dụng moderationLogCtr để ghi log khi duyệt media
+// Example: using moderationLogCtr to create a log entry when media is moderated
 // import { E_ModerationLogAction } from '../moderation-log/moderation-log.type.js';
 //
 // await moderationLogCtr.createModerationLog(context, {

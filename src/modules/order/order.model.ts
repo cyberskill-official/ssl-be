@@ -15,7 +15,7 @@ export const OrderModel = mongo.createModel<I_Order>({
         status: { type: String, enum: Object.values(E_OrderStatus) },
         orderType: { type: String, enum: Object.values(E_OrderType) },
         paymentTransactionId: { type: String },
-        netvalveMidId: { type: String }, // NetValve Merchant ID used for this order (for rebill)
+
         customerDetails: { type: mongoose.Schema.Types.Mixed },
         meta: { type: mongoose.Schema.Types.Mixed, default: {} },
         pricingId: { type: String },

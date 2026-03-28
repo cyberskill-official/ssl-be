@@ -115,9 +115,18 @@ export const tagCtr = {
             });
         }
 
-        // Regular users can only delete their own custom tags
+        // Default tags are system-seeded and must never be deleted.
+        // Deleting them breaks existing catalogue records that still reference the tag id.
+        if (!tagFound.result?.isCustom) {
+            throwError({
+                message: 'Cannot delete default tags.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        // Regular users can only delete their own custom tags.
         const isAdmin = await authnCtr.isAdmin(context).catch(() => false);
-        if (!isAdmin && tagFound.result?.isCustom) {
+        if (!isAdmin) {
             const userId = context.req?.session?.user?.id;
             if (tagFound.result.createdById !== userId) {
                 throwError({
@@ -125,14 +134,6 @@ export const tagCtr = {
                     status: RESPONSE_STATUS.FORBIDDEN,
                 });
             }
-        }
-
-        // Prevent regular users from deleting default tags
-        if (!isAdmin && !tagFound.result?.isCustom) {
-            throwError({
-                message: 'Cannot delete default tags.',
-                status: RESPONSE_STATUS.FORBIDDEN,
-            });
         }
 
         return mongooseCtr.deleteOne(filter, options);

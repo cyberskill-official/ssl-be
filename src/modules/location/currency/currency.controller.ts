@@ -1,4 +1,4 @@
-import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult } from '@cyberskill/shared/node/mongo';
+import type { I_Input_CreateOne, I_Input_FindOne, I_Input_FindPaging, I_Input_UpdateOne, T_PaginateResult, T_QueryFilter } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
@@ -33,7 +33,7 @@ export const currencyCtr = {
             ],
         );
 
-        return mongooseCtr.findPaging(computedFilter as unknown as never, options);
+        return mongooseCtr.findPaging(computedFilter as T_QueryFilter<I_Currency>, options);
     },
     createCurrency: async (
         _context: I_Context,

@@ -1,5 +1,17 @@
 import { Buffer } from 'node:buffer';
 
+const IMAGE_EXT_REGEX = /\.jpe?g$|\.png$/i;
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DMY_MDY_DATE_REGEX = /^\d{2}\/\d{2}\/\d{4}$/;
+const YMD_DATE_REGEX = /^\d{4}\/\d{2}\/\d{2}$/;
+const HYPHEN_REGEX = /-/g;
+const NEWLINE_REGEX = /[\n\r]+/;
+const SIX_DIGITS_REGEX = /^\d{6}$/;
+const SIX_DIGIT_SEQ_REGEX = /(\d{6})/g;
+const MRZ_LINE_REGEX = /^[A-Z0-9<]{30,44}$/m;
+const MRZ_BIRTHDATE_REGEX = /[A-Z0-9<]{6,}\d{6}[A-Z0-9<]{6,}/;
+const MRZ_PADDING_REGEX = /<{2,}/;
+
 /**
  * Converts a readable stream to a Buffer
  * @param {NodeJS.ReadableStream} stream - The readable stream to convert
@@ -21,7 +33,7 @@ export async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buf
  * @returns {boolean} True if the file is JPEG or PNG, false otherwise
  */
 export function verifyImageExtension(filename: string): boolean {
-    return /\.jpe?g$|\.png$/i.test(filename);
+    return IMAGE_EXT_REGEX.test(filename);
 }
 /**
  * Calculates age from birth date string supporting multiple formats
@@ -37,9 +49,9 @@ export function calculateAgeFromBirthDate(birthDate: string): number | null {
     }
 
     const dateFormats: [RegExp, RegExp, RegExp] = [
-        /^\d{4}-\d{2}-\d{2}$/, // ISO YYYY-MM-DD
-        /^\d{2}\/\d{2}\/\d{4}$/, // DD/MM/YYYY or MM/DD/YYYY
-        /^\d{4}\/\d{2}\/\d{2}$/, // YYYY/MM/DD
+        ISO_DATE_REGEX,
+        DMY_MDY_DATE_REGEX,
+        YMD_DATE_REGEX,
     ];
 
     let birth: Date | null = null;
@@ -48,9 +60,9 @@ export function calculateAgeFromBirthDate(birthDate: string): number | null {
         // ISO format (YYYY-MM-DD)
         birth = new Date(birthDate);
     }
-    else if (dateFormats[1].test(birthDate.replace(/-/g, '/'))) {
+    else if (dateFormats[1].test(birthDate.replace(HYPHEN_REGEX, '/'))) {
         // Ambiguous DD/MM/YYYY or MM/DD/YYYY
-        const [a, b, year] = birthDate.replace(/-/g, '/').split('/').map(Number);
+        const [a, b, year] = birthDate.replace(HYPHEN_REGEX, '/').split('/').map(Number);
 
         if (
             typeof a === 'number' && !Number.isNaN(a)
@@ -61,8 +73,8 @@ export function calculateAgeFromBirthDate(birthDate: string): number | null {
             birth = new Date(year, month - 1, day);
         }
     }
-    else if (dateFormats[2].test(birthDate.replace(/-/g, '/'))) {
-        const [year, month, day] = birthDate.replace(/-/g, '/').split('/').map(Number);
+    else if (dateFormats[2].test(birthDate.replace(HYPHEN_REGEX, '/'))) {
+        const [year, month, day] = birthDate.replace(HYPHEN_REGEX, '/').split('/').map(Number);
 
         if (
             typeof year === 'number' && !Number.isNaN(year)
@@ -111,7 +123,7 @@ export function extractBirthDateFromMRZ(mrzText: string): string | null {
     }
 
     // Split MRZ into lines and process the second line which typically contains personal data
-    const lines = mrzText.split(/[\n\r]+/);
+    const lines = mrzText.split(NEWLINE_REGEX);
 
     for (const line of lines) {
         // For passport MRZ (TD3), the birth date is typically in positions 13-18 of the second line
@@ -121,7 +133,7 @@ export function extractBirthDateFromMRZ(mrzText: string): string | null {
         if (line.length >= 18) {
             // Try extracting from standard MRZ position (characters 13-18)
             const standardBirthDate = line.substring(13, 19);
-            if (/^\d{6}$/.test(standardBirthDate)) {
+            if (SIX_DIGITS_REGEX.test(standardBirthDate)) {
                 const parsed = parseMRZDate(standardBirthDate);
                 if (parsed)
                     return parsed;
@@ -129,7 +141,7 @@ export function extractBirthDateFromMRZ(mrzText: string): string | null {
         }
 
         // Fallback: Search for any 6-digit sequences that could be dates
-        const mrzPattern = /(\d{6})/g;
+        const mrzPattern = new RegExp(SIX_DIGIT_SEQ_REGEX.source, SIX_DIGIT_SEQ_REGEX.flags);
         const matches = line.match(mrzPattern);
 
         if (matches) {
@@ -150,7 +162,7 @@ export function extractBirthDateFromMRZ(mrzText: string): string | null {
  * @returns {string | null} Formatted date string or null if invalid
  */
 function parseMRZDate(dateStr: string): string | null {
-    if (!/^\d{6}$/.test(dateStr)) {
+    if (!SIX_DIGITS_REGEX.test(dateStr)) {
         return null;
     }
 
@@ -191,9 +203,9 @@ export function containsMRZPattern(text: string): boolean {
     // - Specific characters like '<' for padding
     // - Consistent format across lines
     const mrzPatterns = [
-        /^[A-Z0-9<]{30,44}$/m, // Standard MRZ line length
-        /[A-Z0-9<]{6,}\d{6}[A-Z0-9<]{6,}/, // Pattern with birth date
-        /<{2,}/, // Multiple padding characters
+        MRZ_LINE_REGEX,
+        MRZ_BIRTHDATE_REGEX,
+        MRZ_PADDING_REGEX,
     ];
 
     return mrzPatterns.some(pattern => pattern.test(text));

@@ -1,5 +1,6 @@
 import type { NextFunction } from '@cyberskill/shared/node/express';
 
+import { log } from '@cyberskill/shared/node/log';
 import jwt from 'jsonwebtoken';
 
 import type { I_Request, I_Response } from '#shared/typescript/express.js';
@@ -88,7 +89,7 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
                         },
                     }).catch((err) => {
                         // Don't block if update fails (user might have been deleted between check and update)
-                        console.warn('Failed to update user activity in database:', err);
+                        log.warn('Failed to update user activity in database:', err);
                     });
 
                     // Update last update timestamp only if user exists
@@ -127,7 +128,7 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
                 }
                 catch (err) {
                     // don't block if session save fails
-                    console.warn('Failed to update session lastActivity:', err);
+                    log.warn('Failed to update session lastActivity:', err);
                 }
             }
         }
@@ -136,7 +137,7 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
     }
     catch (error) {
         // Don't block the request if updating activity fails
-        console.warn('Failed to update user activity:', error);
+        log.warn('Failed to update user activity:', error);
         next();
     }
 }

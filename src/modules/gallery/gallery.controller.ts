@@ -5,11 +5,12 @@ import type {
     I_Input_FindPaging,
     I_Input_UpdateOne,
     T_PaginateResult,
+    T_QueryFilter,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isValidObjectId, Types } from 'mongoose';
 
@@ -356,7 +357,7 @@ export const galleryCtr = {
             }
         }
 
-        // ép filter + status
+        // Apply filter + status
         let modifiedFilter = { ...(filter || {}) };
         if (filter?.uploadedByIds && (filter.uploadedByIds as string[]).length > 0) {
             modifiedFilter = {
@@ -459,7 +460,7 @@ export const galleryCtr = {
                     return { gallery, shouldInclude: false };
                 }
 
-                // Cho phép hiển thị cả ảnh/video PENDING cho tất cả user
+                // Allow both PENDING and APPROVED images/videos to be shown to all users
                 if (!isOwner && !isApprovedOrPending) {
                     return { gallery, shouldInclude: false };
                 }
@@ -835,7 +836,7 @@ export const galleryCtr = {
                 }
             }
             catch (error) {
-                console.warn(`Failed to delete gallery asset ${gallery.id ?? 'unknown'}:`, error);
+                log.warn(`Failed to delete gallery asset ${gallery.id ?? 'unknown'}:`, error);
             }
 
             try {
@@ -843,11 +844,11 @@ export const galleryCtr = {
                     await mongooseCtr.deleteOne({ id: gallery.id });
                 }
                 else if ((gallery as { _id?: unknown })._id) {
-                    await mongooseCtr.deleteOne({ _id: (gallery as { _id?: unknown })._id } as unknown as never);
+                    await mongooseCtr.deleteOne({ _id: (gallery as { _id?: unknown })._id } as T_QueryFilter<I_Gallery>);
                 }
             }
             catch (error) {
-                console.warn(`Failed to delete gallery record ${gallery.id ?? 'unknown'}:`, error);
+                log.warn(`Failed to delete gallery record ${gallery.id ?? 'unknown'}:`, error);
             }
         }
     },

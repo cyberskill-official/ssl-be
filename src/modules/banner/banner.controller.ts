@@ -16,11 +16,14 @@ import validator from 'validator';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/authn.controller.js';
+import { blogCtr } from '#modules/blog/blog.controller.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
+import { destinationCtr } from '#modules/destination/destination.controller.js';
 
 import type { I_Banner, I_Input_CreateBanner, I_Input_QueryBanner, I_Input_UpdateBanner } from './banner.type.js';
 
 import { BannerModel } from './banner.model.js';
+import { mergeBannerPopulate } from './banner.populate.js';
 
 const mongooseCtr = new MongooseController<I_Banner>(BannerModel);
 
@@ -29,13 +32,13 @@ export const bannerCtr = {
         _context: I_Context,
         { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBanner>,
     ): Promise<I_Return<I_Banner>> => {
-        return mongooseCtr.findOne(filter, projection, options, populate);
+        return mongooseCtr.findOne(filter, projection, options, mergeBannerPopulate(populate));
     },
     getBanners: async (
         _context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_QueryBanner>,
     ): Promise<I_Return<T_PaginateResult<I_Banner>>> => {
-        return mongooseCtr.findPaging(filter, options);
+        return mongooseCtr.findPaging(filter, options ? { ...options, populate: mergeBannerPopulate(options.populate) } : { populate: mergeBannerPopulate() });
     },
     createBanner: async (
         context: I_Context,
@@ -51,14 +54,104 @@ export const bannerCtr = {
             throwError({ message: 'Valid target URL is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
+        const resolvedBlogId = doc.blogId?.trim();
+        const resolvedDestinationId = doc.destinationId?.trim();
+
+        if (!!resolvedBlogId === !!resolvedDestinationId) {
+            throwError({ message: 'Banner must belong to exactly one blog or one destination', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (resolvedDestinationId) {
+            const destinationFound = await destinationCtr.getDestination(context, {
+                filter: {
+                    id: resolvedDestinationId,
+                    isActive: true,
+                },
+            });
+
+            if (!destinationFound.success || !destinationFound.result?.id) {
+                throwError({ message: `Destination ${resolvedDestinationId} does not exist or is inactive`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (resolvedBlogId) {
+            const blogFound = await blogCtr.getBlog(context, {
+                filter: {
+                    id: resolvedBlogId,
+                    isActive: true,
+                },
+            });
+
+            if (!blogFound.success || !blogFound.result?.id) {
+                throwError({ message: `Blog ${resolvedBlogId} does not exist or is inactive`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        const createdBanner = await mongooseCtr.createOne({ ...doc, createdById: currentUser.id });
+
+        if (!createdBanner.success || !createdBanner.result?.id) {
+            return createdBanner;
+        }
+
+        return bannerCtr.getBanner(context, { filter: { id: createdBanner.result.id } });
     },
     updateBanner: async (
         context: I_Context,
         { filter, update }: I_Input_UpdateOne<I_Input_UpdateBanner>,
     ): Promise<I_Return<I_Banner>> => {
-        if (update?.targetURL?.trim() && !validator.isURL(update.targetURL)) {
-            throwError({ message: 'Invalid target URL format', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (Object.hasOwn(update, 'image') && !update.image?.trim()) {
+            throwError({ message: 'Banner image cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'targetURL')) {
+            if (!update.targetURL?.trim()) {
+                throwError({ message: 'Banner target URL cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            if (!validator.isURL(update.targetURL)) {
+                throwError({ message: 'Invalid target URL format', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (Object.hasOwn(update, 'blogId') || Object.hasOwn(update, 'destinationId')) {
+            const existingBanner = await bannerCtr.getBanner(context, { filter });
+
+            if (!existingBanner.success || !existingBanner.result) {
+                throwError({ message: 'Banner not found', status: RESPONSE_STATUS.NOT_FOUND });
+            }
+
+            const resolvedBlogId = update.blogId ?? existingBanner.result.blogId;
+            const resolvedDestinationId = update.destinationId ?? existingBanner.result.destinationId;
+
+            if (!!resolvedBlogId === !!resolvedDestinationId) {
+                throwError({ message: 'Banner must belong to exactly one blog or one destination', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+
+            if (resolvedDestinationId) {
+                const destinationFound = await destinationCtr.getDestination(context, {
+                    filter: {
+                        id: resolvedDestinationId,
+                        isActive: true,
+                    },
+                });
+
+                if (!destinationFound.success || !destinationFound.result?.id) {
+                    throwError({ message: `Destination ${resolvedDestinationId} does not exist or is inactive`, status: RESPONSE_STATUS.BAD_REQUEST });
+                }
+            }
+
+            if (resolvedBlogId) {
+                const blogFound = await blogCtr.getBlog(context, {
+                    filter: {
+                        id: resolvedBlogId,
+                        isActive: true,
+                    },
+                });
+
+                if (!blogFound.success || !blogFound.result?.id) {
+                    throwError({ message: `Blog ${resolvedBlogId} does not exist or is inactive`, status: RESPONSE_STATUS.BAD_REQUEST });
+                }
+            }
         }
 
         if (update.image) {
@@ -69,7 +162,13 @@ export const bannerCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update);
+        const updatedBanner = await mongooseCtr.updateOne(filter, update);
+
+        if (!updatedBanner.success || !updatedBanner.result?.id) {
+            return updatedBanner;
+        }
+
+        return bannerCtr.getBanner(context, { filter: { id: updatedBanner.result.id } });
     },
     deleteBanner: async (
         context: I_Context,
@@ -84,11 +183,23 @@ export const bannerCtr = {
         return mongooseCtr.deleteOne(filter);
     },
     clickBanner: async (
-        _context: I_Context,
+        context: I_Context,
         { filter }: I_Input_FindOne<I_Input_QueryBanner>,
     ): Promise<I_Return<I_Banner>> => {
+        if (typeof filter?.id !== 'string' || !filter.id.trim()) {
+            throwError({ message: 'Banner id is required', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const bannerFound = await bannerCtr.getBanner(context, {
+            filter: { ...filter, isActive: true, isDel: false },
+        });
+
+        if (!bannerFound.success || !bannerFound.result?.id) {
+            throwError({ message: 'Active banner not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
         return mongooseCtr.updateOne(
-            { id: filter.id },
+            { id: bannerFound.result.id },
             { $inc: { clickCount: 1 } },
             { new: true },
         );

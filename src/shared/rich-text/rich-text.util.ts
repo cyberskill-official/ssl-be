@@ -1,3 +1,5 @@
+const MULTI_NEWLINE_RE = /\n{2,}/g;
+
 export function extractPlainTextFromRichContent(value?: string | null): string | undefined {
     if (typeof value !== 'string')
         return undefined;
@@ -20,7 +22,7 @@ export function extractPlainTextFromRichContent(value?: string | null): string |
             return text;
         };
         const rootChildren = Array.isArray(json?.root?.children) ? json.root.children : [];
-        const result = rootChildren.map(collect).join('').replace(/\n{2,}/g, '\n').trim();
+        const result = rootChildren.map(collect).join('').replace(MULTI_NEWLINE_RE, '\n').trim();
         return result || undefined;
     }
     catch {

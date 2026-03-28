@@ -1,3 +1,4 @@
+import { log } from '@cyberskill/shared/node/log';
 import axios from 'axios';
 
 import { getEnv } from '#shared/env/index.js';
@@ -39,7 +40,7 @@ export const ipInfoCtr = {
             };
         }
         catch (error) {
-            console.error('IPinfo API error:', error);
+            log.error('IPinfo API error', { error });
             return {
                 success: false,
                 message: 'Failed to get IP information',

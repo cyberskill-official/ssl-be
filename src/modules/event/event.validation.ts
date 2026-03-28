@@ -11,6 +11,11 @@ import type { I_Input_TimeBasedEventData, I_TimeBasedEventValidation } from './e
 
 import { E_EventType } from './event.type.js';
 
+const MERIDIAN_REGEX = /\bAM\b|\bPM\b/i;
+const BLUR_QUERY_PARAM_REGEX = /([?&]class=)blur(?=&|$)/gi;
+const BLUR_QUOTED_CLASS_REGEX = /\bclass=("|')blur\1/gi;
+const BLUR_UNQUOTED_CLASS_REGEX = /\bclass=blur\b/gi;
+
 export function mapEventTypeToPinStyle(eventType?: E_EventType) {
     if (!eventType)
         return undefined;
@@ -58,8 +63,8 @@ export function validateTimeBasedEvent(
     }
 
     // Support both 12h (with AM/PM) and 24h (HH:mm) formats for other event types
-    const hasMeridianStart = /\bAM\b|\bPM\b/i.test(startTime ?? '');
-    const hasMeridianEnd = /\bAM\b|\bPM\b/i.test(endTime ?? '');
+    const hasMeridianStart = MERIDIAN_REGEX.test(startTime ?? '');
+    const hasMeridianEnd = MERIDIAN_REGEX.test(endTime ?? '');
 
     const startFormat = hasMeridianStart ? 'hh:mm a' : 'HH:mm';
     const endFormat = hasMeridianEnd ? 'hh:mm a' : 'HH:mm';
@@ -206,9 +211,9 @@ export function normalizeBlurredMedia<T>(input: T): T {
     if (typeof input === 'string') {
         let normalized = input as string;
 
-        normalized = normalized.replace(/([?&]class=)blur(?=&|$)/gi, '$1normal');
-        normalized = normalized.replace(/\bclass=("|')blur\1/gi, (_match, quote: string) => `class=${quote}normal${quote}`);
-        normalized = normalized.replace(/\bclass=blur\b/gi, 'class=normal');
+        normalized = normalized.replace(BLUR_QUERY_PARAM_REGEX, '$1normal');
+        normalized = normalized.replace(BLUR_QUOTED_CLASS_REGEX, (_match, quote: string) => `class=${quote}normal${quote}`);
+        normalized = normalized.replace(BLUR_UNQUOTED_CLASS_REGEX, 'class=normal');
 
         return normalized as unknown as T;
     }

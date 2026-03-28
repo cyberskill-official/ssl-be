@@ -137,7 +137,7 @@ export class AWSMediaUtils {
                     || (bytes[0] === 0x4D && bytes[1] === 0x4D && bytes[2] === 0x00 && bytes[3] === 0x2A);
 
                 if (!isJPEG && !isPNG && !isGIF && !isBMP && !isWebP && !isTIFF) {
-                    const firstBytes = Array.from(bytes.slice(0, 12)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    const firstBytes = Array.from(bytes.slice(0, 12), b => b.toString(16).padStart(2, '0')).join(' ');
                     throw new Error(`Unsupported image format detected. First 12 bytes: ${firstBytes}. URL: ${cleanUrl}`);
                 }
             }

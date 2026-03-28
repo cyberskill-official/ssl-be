@@ -25,11 +25,10 @@ import { keywordCtr } from '#modules/keyword/index.js';
 import { aiModerationCtr } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/moderation-log/moderation-log.type.js';
-import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
-import { conversationCtr, E_CONVERSATION_EVENTS, E_ConversationType } from '../conversation/index.js';
+import { conversationCtr, E_ConversationType } from '../conversation/index.js';
 import { messageStatusCtr } from '../message-status/index.js';
 import { E_ParticipantRole } from '../participant/participant.type.js';
 import { MessageModel } from './message.model.js';
@@ -39,11 +38,13 @@ import {
 } from './message.type.js';
 import {
     extractLexicalText,
+    removeMessageMedia,
     transformMessageMedia,
     transformMessageResult,
     transformMessagesPagingResult,
 } from './message.util.js';
 
+const SPECIAL_CHARS_REGEX = /[^\w\s]/;
 const mongooseCtr = new MongooseController<I_Message>(MessageModel);
 
 export const messageCtr = {
@@ -116,7 +117,7 @@ export const messageCtr = {
 
                         // Use a more relaxed pattern if the keyword contains special characters
                         // Word boundaries (\b) only work for word characters (\w)
-                        const hasSpecialChars = /[^\w\s]/.test(word);
+                        const hasSpecialChars = SPECIAL_CHARS_REGEX.test(word);
                         const pattern = hasSpecialChars
                             ? new RegExp(escapeRegExp(word), 'i')
                             : new RegExp(`\\b${escapeRegExp(word)}`, 'i');
@@ -283,8 +284,17 @@ export const messageCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryMessage>,
     ): Promise<I_Return<I_Message>> => {
+        if (typeof filter?.id !== 'string' || !filter.id.trim()) {
+            throwError({
+                message: 'Message id is required',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const messageId = filter.id.trim();
+
         const currentUser = await authnCtr.getUserFromSession(context);
-        const messageFound = await mongooseCtr.findOne(filter);
+        const messageFound = await mongooseCtr.findOne({ id: messageId });
 
         if (!messageFound.success) {
             throwError({
@@ -302,34 +312,23 @@ export const messageCtr = {
             });
         }
 
+        await removeMessageMedia(context, messageFound.result);
+
         // Soft delete: set deletedAt, redact content, set expiresAt
         const now = new Date();
-        const deleted = await mongooseCtr.updateOne(filter, {
+        const deleted = await mongooseCtr.updateOne({ id: messageId }, {
             'deletedAt': now,
             'redacted': true,
             'content.value': '',
-            'moderationMediaId': null,
-            'statusMedia': null,
             'expiresAt': now,
         }, options);
-
-        // Publish event for real-time update (unsend)
-        if (deleted.success && messageFound.result.conversationId) {
-            pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
-                messageDeleted: {
-                    conversationId: messageFound.result.conversationId,
-                    messageId: messageFound.result.id,
-                },
-            });
-
-            // Recalculate last message if needed
-            const convRes = await conversationCtr.getConversation(context, { filter: { id: messageFound.result.conversationId } });
-            if (convRes.success && convRes.result?.lastMessageId === messageFound.result.id) {
-                await messageCtr.recalcLastMessage(messageFound.result.conversationId);
-            }
-        }
-
         return transformMessageResult(context, deleted);
+    },
+    unsendMessage: async (
+        context: I_Context,
+        input: I_Input_DeleteOne<I_Input_QueryMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        return messageCtr.deleteMessage(context, input);
     },
 
     createMessageOnly: async (
@@ -375,7 +374,7 @@ export const messageCtr = {
         if (!messageIds?.length)
             return { success: true, message: '0 statuses purged', result: 0 };
 
-        const ids = Array.from(new Set(messageIds));
+        const ids = [...new Set(messageIds)];
         const CHUNK = 5_000;
         let deleted = 0;
         for (let i = 0; i < ids.length; i += CHUNK) {
@@ -394,10 +393,26 @@ export const messageCtr = {
     },
 
     // Helper: Remove message files (placeholder - implement based on your storage)
-    _removeMessageFiles: async (messageIds: string[]): Promise<I_Return<number>> => {
-        // TODO: Implement file removal from storage (e.g., AWS S3, Bunny, etc.)
-        // For now, just return success
-        return { success: true, message: 'Files removed (placeholder)', result: messageIds.length };
+    _removeMessageFiles: async (context: I_Context, messageIds: string[]): Promise<I_Return<number>> => {
+        const uniqueIds = [...new Set(messageIds.filter(Boolean))];
+        if (!uniqueIds.length) {
+            return { success: true, message: 'Files removed', result: 0 };
+        }
+
+        const messages = await MessageModel.find({ id: { $in: uniqueIds } }).select('id content').lean();
+
+        let removed = 0;
+        for (const message of messages) {
+            try {
+                await removeMessageMedia(context, message as I_Message);
+                removed += 1;
+            }
+            catch {
+                // Best-effort cleanup: message can still be removed even if file deletion fails.
+            }
+        }
+
+        return { success: true, message: 'Files removed', result: removed };
     },
 
     // Helper: Recalc last message for conversation
@@ -445,19 +460,19 @@ export const messageCtr = {
         // Soft delete
         await messageCtr.redactMessages({ id: messageId });
         await messageCtr._purgeMessageStatuses([messageId]);
-        await messageCtr._removeMessageFiles([messageId]);
+        await messageCtr._removeMessageFiles(context, [messageId]);
 
         // Recalc last message if needed
         if (conversation.result.lastMessageId === messageId && msg.conversationId) {
             await messageCtr.recalcLastMessage(msg.conversationId);
         }
 
-        // Publish event
-        if (msg.conversationId) {
-            pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
-                messageDeleted: { conversationId: msg.conversationId, messageId },
-            });
-        }
+        // // Publish event
+        // if (msg.conversationId) {
+        //     pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
+        //         messageDeleted: { conversationId: msg.conversationId, messageId },
+        //     });
+        // }
 
         return { success: true, message: 'Message deleted', result: true };
     },
@@ -467,12 +482,14 @@ export const messageCtr = {
     ): Promise<I_Return<T_DeleteResult>> => {
         const messageIds = await messageCtr._messageDistinct('id', filter) as I_Return<string[]>;
 
+        if (messageIds.success && messageIds.result.length > 0) {
+            await messageCtr._removeMessageFiles(_context, messageIds.result.map(id => String(id)));
+        }
+
         const deleteResult = await mongooseCtr.deleteMany(filter, options);
-        // TODO: handle delete file if content type is file/image/video
-        // await messageCtr._removeMessageFiles(messageIds.result);
 
         if (messageIds.success && messageIds.result.length > 0) {
-            await messageCtr._purgeMessageStatuses(messageIds.result);
+            await messageCtr._purgeMessageStatuses(messageIds.result.map(id => String(id)));
         }
 
         return deleteResult;
