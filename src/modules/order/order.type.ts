@@ -27,6 +27,7 @@ export interface I_Order extends I_GenericDocument {
     customerDetails?: Record<string, unknown>;
     meta?: Record<string, unknown>;
     pricingId?: string;
+    effectsAppliedAt?: Date;
 }
 
 export type T_Order_Populate = 'user' | 'pricing' | 'paymentTransaction';

@@ -252,8 +252,19 @@ export async function refreshSessionUser(
     if (excludeUserId && sessionUserId === String(excludeUserId).trim())
         return sessionUser;
 
-    const needsRefresh = !sessionUser.roles
+    // Detect drift between rolesIds (IDs) and roles (populated objects)
+    const sessionRolesIds = sessionUser.rolesIds || [];
+    const populatedRolesIds = Array.isArray(sessionUser.roles)
+        ? sessionUser.roles.map(r => (typeof r === 'string' ? r : (r as any).id || (r as any)._id)).filter(Boolean)
+        : [];
+
+    const rolesDrifted = sessionRolesIds.length !== populatedRolesIds.length
+        || sessionRolesIds.some(id => !populatedRolesIds.includes(id));
+
+    const needsRefresh = rolesDrifted
+        || !sessionUser.roles
         || !sessionUser.ageVerify
+        || !sessionUser.registerStep
         || sessionUser.membershipExpiresAt === undefined;
 
     if (!needsRefresh)
@@ -262,7 +273,7 @@ export async function refreshSessionUser(
     try {
         const result = await mongooseCtr.findOne(
             { id: sessionUserId },
-            { id: 1, roles: 1, rolesIds: 1, ageVerify: 1, membershipExpiresAt: 1, membershipEndDate: 1, partner1: 1, partner2: 1 } as any,
+            { id: 1, roles: 1, rolesIds: 1, ageVerify: 1, registerStep: 1, membershipExpiresAt: 1, membershipEndDate: 1, partner1: 1, partner2: 1, freeEventCount: 1, membershipCancelled: 1 } as any,
             undefined,
             [
                 { path: 'roles' },
@@ -271,9 +282,24 @@ export async function refreshSessionUser(
                 { path: 'partner2', populate: [{ path: 'gallery' }] },
             ],
         );
-        return result.success && result.result ? result.result : sessionUser;
+
+        if (result.success && result.result) {
+            const freshUser = result.result;
+            // Sync session object to prevent further needsRefresh triggers in the same request
+            if (context.req?.session) {
+                context.req.session.user = {
+                    ...sessionUser,
+                    ...freshUser,
+                };
+                return context.req.session.user;
+            }
+            return freshUser;
+        }
+
+        return sessionUser;
     }
-    catch {
+    catch (error) {
+        log.warn('[USER] Failed to refresh session user:', error);
         return sessionUser;
     }
 }

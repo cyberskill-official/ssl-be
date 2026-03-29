@@ -105,13 +105,127 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                     paymentRequestRes = { success: true, result: foundPr };
                 }
                 else {
-                    log.warn('[PayPal Status] Fallback search found no matches in active requests');
+                    log.warn('[PayPal Status] Fallback search found no matches in active requests, trying user-basis fallback...');
+
+                    // NEW: User-basis fallback. If we know who is calling, look for their pending requests.
+                    const currentUser = await authnCtr.getUserFromSession(context);
+                    if (currentUser) {
+                        const userActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
+                            filter: {
+                                'gateway': E_PaymentProvider.PAYPAL,
+                                'status': { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
+                                'meta.userId': currentUser.id,
+                            },
+                            options: { limit: 5, sort: { createdAt: -1 } },
+                        });
+
+                        if (userActivePRs.success && userActivePRs.result?.docs?.length) {
+                            // If there's only one, or if we can match it somehow, use it.
+                            // For now, if we found active ones for this user specifically, pick the most recent one.
+                            const latestPr = userActivePRs.result.docs[0] as any;
+                            log.info('[PayPal Status] User-basis fallback found match:', { id: latestPr.id, userId: currentUser.id });
+                            paymentRequestRes = { success: true, result: latestPr };
+                        }
+                    }
+                    else {
+                        log.warn('[PayPal Status] Fallback search found no matches and user not authenticated');
+                    }
                 }
             }
         }
 
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.warn('[PayPal Status] Payment request not found', { paypalOrderId });
+            log.warn('[PayPal Status] Payment request not found, initiating Dynamic Recovery check...', { paypalOrderId });
+
+            // DYNAMIC RECOVERY: Ask PayPal directly what this ID is
+            let recoveredGatewayResponse: any = null;
+            let recoveredStatus: 'SUCCESS' | 'PENDING' | 'FAILED' = 'PENDING';
+            let recoveredOrderType: E_OrderType = E_OrderType.A_LA_CARTE_EVENT;
+            let recoveredExternalId: string = paypalOrderId;
+
+            // Run Subscription and Order checks in parallel for speed
+            const [subCheck, orderCheck] = await Promise.allSettled([
+                paypalCtr.getSubscription(context, { subscriptionId: paypalOrderId }),
+                !paypalOrderId.startsWith('I-')
+                    ? paypalCtr.getOrder(context, { orderId: paypalOrderId })
+                    : Promise.resolve({ success: false, result: null } as any),
+            ]);
+
+            // Evaluate Subscription Result
+            if (subCheck.status === 'fulfilled' && subCheck.value.success && subCheck.value.result) {
+                const sub = subCheck.value.result as any;
+                if (sub.status === 'ACTIVE') {
+                    recoveredStatus = 'SUCCESS';
+                    recoveredGatewayResponse = sub;
+                    recoveredOrderType = E_OrderType.SUBSCRIPTION;
+                    recoveredExternalId = sub.id;
+                }
+            }
+
+            // Evaluate Order Result if Subscription didn't win
+            if (recoveredStatus !== 'SUCCESS' && orderCheck.status === 'fulfilled' && orderCheck.value.success && orderCheck.value.result) {
+                const po = orderCheck.value.result as any;
+                if (po.status === 'COMPLETED') {
+                    recoveredStatus = 'SUCCESS';
+                    recoveredGatewayResponse = po;
+                    recoveredOrderType = E_OrderType.A_LA_CARTE_EVENT;
+                    recoveredExternalId = po.id;
+                }
+            }
+
+            if (recoveredStatus === 'SUCCESS') {
+                log.info('[PayPal Status] Dynamic Recovery SUCCESS! Creating missing records...', { recoveredExternalId });
+                const currentUser = await authnCtr.getUserFromSession(context);
+                if (!currentUser) {
+                    res.status(404).json({ success: false, message: 'Payment confirmed but user session lost. Please log in.' });
+                    return;
+                }
+
+                // Create Order
+                const newOrder = await orderCtr.createOrder(context, {
+                    doc: {
+                        userId: currentUser.id,
+                        status: E_OrderStatus.PAID,
+                        orderType: recoveredOrderType,
+                        amount: 0,
+                        meta: { externalOrderId: recoveredExternalId },
+                    },
+                });
+
+                if (newOrder.success && newOrder.result) {
+                    // Create Payment Request
+                    await paymentRequestCtr.createPaymentRequest(context, {
+                        doc: {
+                            gateway: E_PaymentProvider.PAYPAL,
+                            status: E_PaymentRequestStatus.PAID,
+                            externalOrderId: recoveredExternalId,
+                            gatewayResponse: recoveredGatewayResponse,
+                            meta: { userId: currentUser.id, orderId: newOrder.result.id },
+                        },
+                    });
+
+                    // Trigger effects
+                    const fullOrder = await orderCtr.getOrder(context, {
+                        filter: { id: newOrder.result.id },
+                        populate: [{ path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] }],
+                    });
+                    if (fullOrder.success && fullOrder.result) {
+                        await applyOrderPaidEffects(context, fullOrder.result);
+                    }
+
+                    // Re-run the lookup logic or just return manually
+                    res.status(200).json({
+                        success: true,
+                        orderId: newOrder.result.id,
+                        status: 'SUCCESS',
+                        transactionId: recoveredExternalId,
+                        registerStep: currentUser.registerStep, // might be updated now
+                        isPaidMember: true,
+                    });
+                    return;
+                }
+            }
+
             res.status(404).json({ success: false, message: 'Payment request not found' });
             return;
         }
@@ -143,6 +257,17 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
         let status: 'SUCCESS' | 'FAILED' | 'PENDING' | 'CANCEL' = 'PENDING';
         if (orderStatus === E_OrderStatus.PAID) {
             status = 'SUCCESS';
+
+            // Sync effects/session immediately if already PAID but session is stale
+            // (e.g. Webhook finished in another process, but the current user session doesn't know)
+            // Using applyOrderPaidEffects ensures roles, expiry, and session are all aligned.
+            const fullOrderRes = await orderCtr.getOrder(context, {
+                filter: { id: order.id },
+                populate: [{ path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] }],
+            });
+            if (fullOrderRes.success && fullOrderRes.result) {
+                await applyOrderPaidEffects(context, fullOrderRes.result);
+            }
         }
         else if (orderStatus === E_OrderStatus.FAILED) {
             status = 'FAILED';
@@ -224,24 +349,16 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                         ]);
 
                         // Apply effects immediately so user sees their new status
-                        // Skip for subscription orders — membership is handled by
-                        // PAYMENT.SALE.COMPLETED webhook (handlePaymentSaleCompleted)
-                        // to avoid double-extending (30 days here + 30 days in webhook = 60 days bug)
-                        const isSubscription = externalOrderId.startsWith('I-');
-                        if (!isSubscription) {
-                            const fullOrderRes = await orderCtr.getOrder(context, {
-                                filter: { id: order.id },
-                                populate: [
-                                    { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
-                                ],
-                            });
-                            if (fullOrderRes.success && fullOrderRes.result) {
-                                await applyOrderPaidEffects(context, fullOrderRes.result);
-                                log.info('[PayPal Status] Applied order paid effects successfully');
-                            }
-                        }
-                        else {
-                            log.info('[PayPal Status] Subscription order — skipping applyOrderPaidEffects (handled by PAYMENT.SALE.COMPLETED webhook)');
+                        // Now safe (idempotent) to call for both one-time and subscription orders
+                        const fullOrderRes = await orderCtr.getOrder(context, {
+                            filter: { id: order.id },
+                            populate: [
+                                { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
+                            ],
+                        });
+                        if (fullOrderRes.success && fullOrderRes.result) {
+                            await applyOrderPaidEffects(context, fullOrderRes.result);
+                            log.info('[PayPal Status] Applied order paid effects successfully');
                         }
                     }
                     catch (syncErr) {
@@ -286,6 +403,9 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             ? (order.meta as Record<string, unknown>)['eventCreatedId']
             : null;
 
+        const latestUserRes = await userCtr.getUser(context, { filter: { id: order.userId } });
+        const latestUser = latestUserRes.success ? latestUserRes.result : null;
+
         res.status(200).json({
             success: true,
             orderId: order.id,
@@ -293,6 +413,9 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             transactionId,
             eventCreated: Boolean(eventCreatedId),
             eventId: typeof eventCreatedId === 'string' ? eventCreatedId : null,
+            registerStep: latestUser?.registerStep || null,
+            isPaidMember: latestUser ? await authnCtr.isPaidMember({ req: { session: { user: latestUser } } } as any) : false,
+            membershipExpiresAt: latestUser?.membershipExpiresAt || null,
         });
     }
     catch (error) {

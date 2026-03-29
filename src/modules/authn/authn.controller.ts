@@ -1144,6 +1144,14 @@ export const authnCtr = {
                 context.req.session.user.membershipExpiresAt = membershipExpiresAt;
                 context.req.session.user.freeEventCount = 1;
             }
+            await new Promise<void>((resolve, reject) => {
+                context.req!.session!.save((err: any) => {
+                    if (err)
+                        reject(err);
+                    else
+                        resolve();
+                });
+            });
         }
 
         // Update IP when user continues registration

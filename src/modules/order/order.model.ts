@@ -19,6 +19,7 @@ export const OrderModel = mongo.createModel<I_Order>({
         customerDetails: { type: mongoose.Schema.Types.Mixed },
         meta: { type: mongoose.Schema.Types.Mixed, default: {} },
         pricingId: { type: String },
+        effectsAppliedAt: { type: Date },
     },
     virtuals: [
         {

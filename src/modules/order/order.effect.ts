@@ -180,6 +180,14 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
                 context.req.session.user.registerStep = updatedUserRes.result.registerStep;
             }
         }
+        await new Promise<void>((resolve) => {
+            if (context.req?.session?.save) {
+                context.req.session.save(() => resolve());
+            }
+            else {
+                resolve();
+            }
+        });
     }
 
     return newExpiry;
@@ -231,6 +239,14 @@ async function addFreeEventCountForAnnouncement(context: I_Context, order: I_Ord
         if (updatedUserRes.success && typeof updatedUserRes.result.freeEventCount === 'number') {
             context.req.session.user.freeEventCount = updatedUserRes.result.freeEventCount;
         }
+        await new Promise<void>((resolve) => {
+            if (context.req?.session?.save) {
+                context.req.session.save(() => resolve());
+            }
+            else {
+                resolve();
+            }
+        });
     }
 }
 
@@ -330,7 +346,43 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
     }
     else if (effectivePricingType === E_PricingType.MEMBERSHIP) {
         // MEMBERSHIP: +1 tháng membership (không cộng freeEventCount)
-        result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
+        // Idempotency check: Only apply membership extension if not applied recently for this order
+        const lastApplied = order.effectsAppliedAt ? new Date(order.effectsAppliedAt).getTime() : 0;
+        const ONE_HOUR = 60 * 60 * 1000;
+        if (Date.now() - lastApplied > ONE_HOUR) {
+            result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
+            await orderCtr.updateOrder(context, {
+                filter: { id: order.id },
+                update: { $set: { effectsAppliedAt: new Date() } },
+            });
+        }
+        else {
+            // Already extended recently (e.g. by another process like Webhook or Polling)
+            // Still sync the session for the current request to ensure user sees updated state
+            const userId = order.userId;
+            if (userId && context.req?.session?.user?.id === userId) {
+                const updatedUserRes = await userCtr.getUser(context, { filter: { id: userId } });
+                if (updatedUserRes.success && updatedUserRes.result) {
+                    const u = updatedUserRes.result;
+                    context.req.session.user.membershipExpiresAt = u.membershipExpiresAt;
+                    context.req.session.user.rolesIds = u.rolesIds;
+                    context.req.session.user.registerStep = u.registerStep;
+                    context.req.session.user.membershipCancelled = u.membershipCancelled;
+                    if (typeof u.freeEventCount === 'number') {
+                        context.req.session.user.freeEventCount = u.freeEventCount;
+                    }
+
+                    await new Promise<void>((resolve) => {
+                        if (context.req?.session?.save) {
+                            context.req.session.save(() => resolve());
+                        }
+                        else {
+                            resolve();
+                        }
+                    });
+                }
+            }
+        }
     }
 
     return result;
