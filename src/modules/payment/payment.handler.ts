@@ -143,12 +143,15 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             let recoveredOrderType: E_OrderType = E_OrderType.A_LA_CARTE_EVENT;
             let recoveredExternalId: string = paypalOrderId;
 
-            // Run Subscription and Order checks in parallel for speed
+            // Run Subscription and Order checks based on ID format to avoid 400 errors from PayPal
+            const isSubscriptionId = paypalOrderId.startsWith('I-');
             const [subCheck, orderCheck] = await Promise.allSettled([
-                paypalCtr.getSubscription(context, { subscriptionId: paypalOrderId }),
-                !paypalOrderId.startsWith('I-')
+                isSubscriptionId
+                    ? paypalCtr.getSubscription(context, { subscriptionId: paypalOrderId })
+                    : Promise.resolve({ success: false, message: 'Skipped: Not a subscription ID format' } as any),
+                !isSubscriptionId
                     ? paypalCtr.getOrder(context, { orderId: paypalOrderId })
-                    : Promise.resolve({ success: false, result: null } as any),
+                    : Promise.resolve({ success: false, message: 'Skipped: Not a one-time order ID format' } as any),
             ]);
 
             // Evaluate Subscription Result

@@ -1044,22 +1044,33 @@ export const authnCtr = {
                 break;
             }
             case E_MembershipType.PAID: {
-                // TODO: Handle payment logic
-                const roleFound = await roleCtr.getRole(context, {
-                    filter: {
-                        name: E_Role_User.PAID_MEMBER,
-                    },
-                });
-
-                if (!roleFound.success) {
+                // PAID membership roles and registerStep are handled by the order processing flow
+                // (see order.effect.ts:applyOrderPaidEffects).
+                // We verify that the user has indeed become a paid member before proceeding.
+                const isPaid = await authnCtr.isPaidMember(context);
+                if (!isPaid) {
                     throwError({
-                        message: 'Role not found.',
+                        message: 'Payment confirmation pending. If you just paid, please wait a moment.',
+                        status: RESPONSE_STATUS.ACCEPTED, // 202 Accepted - processing
+                    });
+                }
+
+                // If they are already a paid member, the order effects have already run.
+                // We don't need to do anything here, but we return success to allow the FE to progress.
+                const updatedUser = await userCtr.getUser(context, { filter: { id: currentUser.id } });
+                if (!updatedUser.success) {
+                    throwError({
+                        message: 'Failed to fetch updated user data.',
                         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
                     });
                 }
 
-                roleId = roleFound.result.id;
-                break;
+                return {
+                    success: true,
+                    result: {
+                        user: omit(updatedUser.result, 'password') as I_User,
+                    },
+                };
             }
         }
 
@@ -1090,10 +1101,6 @@ export const authnCtr = {
         if (type === E_MembershipType.PROMO) {
             removeRole(freeMemberRoleId);
             removeRole(paidMemberRoleId);
-        }
-        else if (type === E_MembershipType.PAID) {
-            removeRole(freeMemberRoleId);
-            removeRole(promoRoleId);
         }
         else if (type === E_MembershipType.FREE) {
             removeRole(paidMemberRoleId);
@@ -2168,9 +2175,10 @@ export const authnCtr = {
             ? user.membershipExpiresAt
             : (user as any).membershipEndDate;
 
-        // If missing expiry (undefined), assume active to avoid misclassifying paid members with missing data
+        // If missing expiry (undefined), we MUST consider it INACTIVE for paid/promo checks.
+        // FREE_MEMBER status is handled separately by role membership.
         if (expiresAt === undefined) {
-            return true;
+            return false;
         }
 
         // If expiry is explicitly null, treat as inactive
