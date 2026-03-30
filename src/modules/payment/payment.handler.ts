@@ -52,85 +52,59 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
             filter: { externalOrderId: paypalOrderId, gateway: E_PaymentProvider.PAYPAL },
         });
 
-        // Declare allActivePRs in the outer scope for later use
-
-        // Fallback: If not found by externalOrderId, try to find by searching in gatewayResponse or meta
-        // This is common when Frontend polls using a "token" (from return URL) instead of Subscription ID/Order ID
+        // Fallback: If not found by externalOrderId, try direct lookups using findOne
+        // NOTE: We use getPaymentRequest (findOne) instead of getPaymentRequests (paginate)
+        // because mongoose-paginate-v2 returns empty results for status $in queries.
         if (!paymentRequestRes.success || !paymentRequestRes.result) {
-            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback search:', { paypalOrderId });
-            const allActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: {
-                    gateway: E_PaymentProvider.PAYPAL,
-                    status: { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
-                },
-                options: { limit: 100, sort: { createdAt: -1 } },
-            });
+            log.info('[PayPal Status] Payment request not found by externalOrderId, trying fallback lookups...', { paypalOrderId });
 
-            if (allActivePRs.success && allActivePRs.result?.docs) {
-                const foundPr = allActivePRs.result.docs.find((pr) => {
-                    const meta = pr.meta as any;
-                    const gr = pr.gatewayResponse as any;
+            // Try 1: Look up by ba_token in paymentUrl (subscriptions store the ba_token in paymentUrl)
+            const baToken = (req.query?.['ba_token'] as string) || null;
+            if (baToken) {
+                const baTokenPR = await paymentRequestCtr.getPaymentRequest(context, {
+                    filter: {
+                        gateway: E_PaymentProvider.PAYPAL,
+                        paymentUrl: { $regex: baToken },
+                    } as any,
+                });
+                if (baTokenPR.success && baTokenPR.result) {
+                    log.info('[PayPal Status] ba_token fallback found match:', {
+                        id: baTokenPR.result.id,
+                        externalOrderId: baTokenPR.result.externalOrderId,
+                        status: baTokenPR.result.status,
+                    });
+                    paymentRequestRes = baTokenPR;
+                }
+            }
+        }
 
-                    // 1. Check explicitly stored token or orderId in meta
-                    if (meta?.token === paypalOrderId || meta?.orderId === paypalOrderId || meta?.internalOrderId === paypalOrderId) {
-                        return true;
-                    }
-
-                    // 2. Check externalOrderId (direct match or prefix mismatch)
-                    if (pr.externalOrderId === paypalOrderId || pr.externalOrderId === `I-${paypalOrderId}`) {
-                        return true;
-                    }
-
-                    // 3. Fallback search in gatewayResponse
-                    if (gr) {
-                        // Check if it's the main ID in gatewayResponse
-                        if (gr.id === paypalOrderId || gr.id === `I-${paypalOrderId}`) {
-                            return true;
-                        }
-
-                        // Check if the token exists in links
-                        const links = gr.links as any[];
-                        if (Array.isArray(links)) {
-                            if (links.some(l => typeof l.href === 'string' && l.href.includes(paypalOrderId))) {
-                                return true;
-                            }
-                        }
-                    }
-
-                    return false;
+        // Try 2: User-basis fallback - find the most recent PayPal PaymentRequest for this user
+        if (!paymentRequestRes.success || !paymentRequestRes.result) {
+            const currentUser = await authnCtr.getUserFromSession(context);
+            if (currentUser) {
+                const userPR = await paymentRequestCtr.getPaymentRequest(context, {
+                    filter: {
+                        'gateway': E_PaymentProvider.PAYPAL,
+                        'meta.userId': currentUser.id,
+                    } as any,
+                    options: { sort: { createdAt: -1 } },
                 });
 
-                if (foundPr) {
-                    log.info('[PayPal Status] Fallback search found match:', { id: foundPr.id, externalOrderId: foundPr.externalOrderId });
-                    paymentRequestRes = { success: true, result: foundPr };
+                if (userPR.success && userPR.result) {
+                    log.info('[PayPal Status] User-basis fallback found match:', {
+                        id: userPR.result.id,
+                        externalOrderId: userPR.result.externalOrderId,
+                        status: userPR.result.status,
+                        userId: currentUser.id,
+                    });
+                    paymentRequestRes = userPR;
                 }
                 else {
-                    log.warn('[PayPal Status] Fallback search found no matches in active requests, trying user-basis fallback...');
-
-                    // NEW: User-basis fallback. If we know who is calling, look for their pending requests.
-                    const currentUser = await authnCtr.getUserFromSession(context);
-                    if (currentUser) {
-                        const userActivePRs = await paymentRequestCtr.getPaymentRequests(context, {
-                            filter: {
-                                'gateway': E_PaymentProvider.PAYPAL,
-                                'status': { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
-                                'meta.userId': currentUser.id,
-                            },
-                            options: { limit: 5, sort: { createdAt: -1 } },
-                        });
-
-                        if (userActivePRs.success && userActivePRs.result?.docs?.length) {
-                            // If there's only one, or if we can match it somehow, use it.
-                            // For now, if we found active ones for this user specifically, pick the most recent one.
-                            const latestPr = userActivePRs.result.docs[0] as any;
-                            log.info('[PayPal Status] User-basis fallback found match:', { id: latestPr.id, userId: currentUser.id });
-                            paymentRequestRes = { success: true, result: latestPr };
-                        }
-                    }
-                    else {
-                        log.warn('[PayPal Status] Fallback search found no matches and user not authenticated');
-                    }
+                    log.warn('[PayPal Status] User-basis fallback found no results for user:', { userId: currentUser.id });
                 }
+            }
+            else {
+                log.warn('[PayPal Status] Cannot perform user-basis fallback - user not authenticated');
             }
         }
 
@@ -431,16 +405,18 @@ function resolvePayPalOrderId(req: Request): string | null {
     const query = req.query as Record<string, unknown> | undefined;
 
     const candidates: Array<unknown> = [
+        // Prioritize subscription_id (I-...) which directly matches externalOrderId in DB
+        body?.['subscription_id'],
+        query?.['subscription_id'],
         body?.['orderId'],
         body?.['paypalOrderId'],
-        body?.['token'],
-        body?.['ba_token'],
-        body?.['subscription_id'],
         query?.['orderId'],
         query?.['paypalOrderId'],
-        query?.['token'],
+        // token/ba_token are ambiguous fallbacks - PayPal redirect tokens may not match stored values
+        body?.['ba_token'],
         query?.['ba_token'],
-        query?.['subscription_id'],
+        body?.['token'],
+        query?.['token'],
     ];
 
     for (const candidate of candidates) {
@@ -883,9 +859,9 @@ mainRouter.post('/payment/paypal/subscription/setup', async (req, res, next) => 
         const redirectBase = getPaymentRedirectBase();
         const defaultAppContext = {
             user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
+            shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
             return_url: appendQueryParams(redirectBase, { status: 'SUCCESS', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),
             cancel_url: appendQueryParams(redirectBase, { status: 'CANCEL', provider: E_PaymentProvider.PAYPAL, flow: 'subscription' }),
-            shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
         };
 
         subscriptionPayload.application_context = {

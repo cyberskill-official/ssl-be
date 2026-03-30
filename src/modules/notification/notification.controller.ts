@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteMany, I_Input_DeleteOne, I_Input_
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 import mongoose, { isValidObjectId, Types } from 'mongoose';
@@ -856,55 +856,66 @@ export const notificationCtr = {
         };
 
         // If notification type is a 'new member in your area' then perform geofence check
+        // If location data is missing for actor or recipient, ALLOW the notification (don't silently skip)
+        // Users who opted into this notification setting should receive it regardless of location availability
         if (has(E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST)) {
             try {
                 // Actor / new member id is in doc.entityId or doc.actorId
                 const actorId = String(doc.actorId ?? doc.entityId ?? '').trim();
                 if (!actorId) {
-                    // Can't determine actor location → skip sending
+                    log.info('[Notification] NEW_MEMBER: no actorId — skipping', { targetId: tid });
                     return { success: true, message: null };
                 }
 
                 // Fetch actor (new user) with needed location data
                 const actorFound = await userCtr.getUser(context, { filter: { id: actorId }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] }).catch(() => null);
                 if (!actorFound?.success || !actorFound.result) {
+                    log.info('[Notification] NEW_MEMBER: actor user not found — skipping', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
                 const actorMap = getEffectiveMap(actorFound.result as any);
                 if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
-                    return { success: true, message: null };
+                    // Actor has no location → still send notification (user opted in)
+                    log.info('[Notification] NEW_MEMBER: actor has no location — sending anyway', { actorId, targetId: tid });
+                    // Fall through to create notification (no geofence filter applied)
                 }
+                else {
+                    // Actor has location → perform geofence check against recipient
+                    const recipient = await loadInterestRecipient();
+                    if (!recipient?.success || !recipient.result) {
+                        log.info('[Notification] NEW_MEMBER: recipient not found — sending anyway', { actorId, targetId: tid });
+                        // Fall through to create notification
+                    }
+                    else {
+                        const recipientMap = getEffectiveMap(recipient.result as any);
+                        if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
+                            // Recipient has no location → still send notification (user opted in)
+                            log.info('[Notification] NEW_MEMBER: recipient has no location — sending anyway', { actorId, targetId: tid });
+                            // Fall through to create notification
+                        }
+                        else {
+                            // Both have locations → perform geofence check
+                            const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
+                            const radiusKm = convertLevelToRadius(zoomLevel);
+                            const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
 
-                // Fetch recipient (target) with location & zoom data so we can test area-of-interest
-                const recipient = await loadInterestRecipient();
-                if (!recipient?.success || !recipient.result) {
-                    return { success: true, message: null };
-                }
+                            if (!isPointInsideViewport(actorMap.latitude, actorMap.longitude, interestViewport)) {
+                                log.info('[Notification] NEW_MEMBER: actor outside recipient viewport — skipping', { actorId, targetId: tid, radiusKm });
+                                return { success: true, message: null };
+                            }
 
-                const recipientMap = getEffectiveMap(recipient.result as any);
-                if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
-                    // recipient has no center for area-of-interest → skip
-                    return { success: true, message: null };
-                }
-
-                // Determine radius from recipient zoomLevel setting (fallback to default)
-                const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
-                const radiusKm = convertLevelToRadius(zoomLevel);
-                const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
-
-                if (!isPointInsideViewport(actorMap.latitude, actorMap.longitude, interestViewport)) {
-                    return { success: true, message: null };
-                }
-
-                const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
-                if (distanceKm > radiusKm) {
-                    // Actor is outside recipient's area of interest → do not notify
-                    return { success: true, message: null };
+                            const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
+                            if (distanceKm > radiusKm) {
+                                log.info('[Notification] NEW_MEMBER: actor outside radius — skipping', { actorId, targetId: tid, distanceKm, radiusKm });
+                                return { success: true, message: null };
+                            }
+                        }
+                    }
                 }
             }
-            catch {
-                // On any error during geofence check, be conservative and skip notifying
-                return { success: true, message: null };
+            catch (err) {
+                // On geofence error, be permissive and allow notification
+                log.warn('[Notification] NEW_MEMBER: geofence check error — sending anyway', { targetId: tid, error: err });
             }
         }
 
@@ -914,38 +925,53 @@ export const notificationCtr = {
                 try {
                     const redirectMap = doc.presentation?.redirect?.map;
                     if (!isValidMap(redirectMap)) {
-                        return { success: true, message: null };
+                        // Event has no valid location → still send notification (user opted in)
+                        log.info('[Notification] NEW_ANNOUNCEMENT: event has no valid map — sending anyway', { targetId: tid, actorId: doc.actorId });
+                        // Fall through to create notification
                     }
+                    else {
+                        const recipient = await loadInterestRecipient();
+                        if (!recipient?.success || !recipient.result) {
+                            log.info('[Notification] NEW_ANNOUNCEMENT: recipient not found — sending anyway', { targetId: tid });
+                            // Fall through to create notification
+                        }
+                        else {
+                            const recipientMap = getEffectiveMap(recipient.result as any);
+                            if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
+                                // Recipient has no location → still send notification (user opted in)
+                                log.info('[Notification] NEW_ANNOUNCEMENT: recipient has no location — sending anyway', { targetId: tid });
+                                // Fall through to create notification
+                            }
+                            else {
+                                // Both have locations → perform geofence check
+                                // redirectMap is guaranteed valid here (we're in the else branch of isValidMap check)
+                                const eventLat = redirectMap!.latitude!;
+                                const eventLng = redirectMap!.longitude!;
+                                const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
+                                const radiusKm = convertLevelToRadius(zoomLevel);
+                                const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
+                                if (!isPointInsideViewport(eventLat, eventLng, interestViewport)) {
+                                    log.info('[Notification] NEW_ANNOUNCEMENT: event outside recipient viewport — skipping', { targetId: tid, radiusKm });
+                                    return { success: true, message: null };
+                                }
 
-                    const recipient = await loadInterestRecipient();
-                    if (!recipient?.success || !recipient.result) {
-                        return { success: true, message: null };
-                    }
-
-                    const recipientMap = getEffectiveMap(recipient.result as any);
-                    if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
-                        return { success: true, message: null };
-                    }
-
-                    const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
-                    const radiusKm = convertLevelToRadius(zoomLevel);
-                    const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
-                    if (!redirectMap || !isPointInsideViewport(redirectMap.latitude!, redirectMap.longitude!, interestViewport)) {
-                        return { success: true, message: null };
-                    }
-
-                    const distanceKm = haversineKm(
-                        recipientMap.latitude,
-                        recipientMap.longitude,
-                        redirectMap.latitude!,
-                        redirectMap.longitude!,
-                    );
-                    if (distanceKm > radiusKm) {
-                        return { success: true, message: null };
+                                const distanceKm = haversineKm(
+                                    recipientMap.latitude,
+                                    recipientMap.longitude,
+                                    eventLat,
+                                    eventLng,
+                                );
+                                if (distanceKm > radiusKm) {
+                                    log.info('[Notification] NEW_ANNOUNCEMENT: event outside radius — skipping', { targetId: tid, distanceKm, radiusKm });
+                                    return { success: true, message: null };
+                                }
+                            }
+                        }
                     }
                 }
-                catch {
-                    return { success: true, message: null };
+                catch (err) {
+                    // On geofence error, be permissive and allow notification
+                    log.warn('[Notification] NEW_ANNOUNCEMENT: geofence check error — sending anyway', { targetId: tid, error: err });
                 }
             }
         }

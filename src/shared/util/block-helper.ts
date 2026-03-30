@@ -1,7 +1,9 @@
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { authnCtr } from '#modules/authn/index.js';
-import { blockCtr } from '#modules/block/block.controller.js';
+// NOTE: authnCtr and blockCtr are imported lazily inside functions to break
+// a circular dependency: shared/util/index → block-helper → authn/index →
+// authn.controller → user/index → user.model → shared/util/index.
+// Static imports here would cause `validate` to be undefined in user.model.ts.
 
 /**
  * Fetch blocked user IDs for the current user (bidirectional)
@@ -33,6 +35,9 @@ import { blockCtr } from '#modules/block/block.controller.js';
  */
 export async function getBlockedUserIds(context: I_Context): Promise<Set<string>> {
     try {
+        const { authnCtr } = await import('#modules/authn/index.js');
+        const { blockCtr } = await import('#modules/block/block.controller.js');
+
         // Get current user from session - wrap in try-catch as it may throw for unauthenticated contexts
         let viewer;
         try {

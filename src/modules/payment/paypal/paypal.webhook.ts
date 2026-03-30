@@ -70,26 +70,61 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
                 log.info(`[PayPal Webhook] Subscription Created: ${resource.id}`, { customId: resource.custom_id });
                 break;
             case 'BILLING.SUBSCRIPTION.ACTIVATED':
-                await handleSubscriptionActivated(resource);
+                try {
+                    await handleSubscriptionActivated(resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handleSubscriptionActivated crashed:', err);
+                }
                 break;
             case 'PAYMENT.SALE.COMPLETED':
-                await handlePaymentSaleCompleted(resource);
+                try {
+                    await handlePaymentSaleCompleted(resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handlePaymentSaleCompleted crashed:', err);
+                }
                 break;
             case 'CHECKOUT.ORDER.APPROVED':
-                await handleCheckoutOrderApproved(req, resource);
+                try {
+                    await handleCheckoutOrderApproved(req, resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handleCheckoutOrderApproved crashed:', err);
+                }
                 break;
             case 'CHECKOUT.ORDER.COMPLETED':
-                await handleCheckoutOrderCompleted(req, resource);
+                try {
+                    await handleCheckoutOrderCompleted(req, resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handleCheckoutOrderCompleted crashed:', err);
+                }
                 break;
             case 'PAYMENTS.CAPTURE.COMPLETED':
-                await handlePaymentCaptureCompleted(req, resource);
+                try {
+                    await handlePaymentCaptureCompleted(req, resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handlePaymentCaptureCompleted crashed:', err);
+                }
                 break;
             case 'BILLING.SUBSCRIPTION.CANCELLED':
-                await handleSubscriptionCancelled(resource);
+                try {
+                    await handleSubscriptionCancelled(resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handleSubscriptionCancelled crashed:', err);
+                }
                 break;
             case 'BILLING.SUBSCRIPTION.SUSPENDED':
             case 'PAYMENT.SALE.DENIED':
-                await handleSubscriptionSuspended(resource);
+                try {
+                    await handleSubscriptionSuspended(resource);
+                }
+                catch (err) {
+                    log.error('[PayPal Webhook] handleSubscriptionSuspended crashed:', err);
+                }
                 break;
             default:
                 log.info(`[PayPal Webhook] Unhandled event type: ${eventType}`);
@@ -184,7 +219,7 @@ async function handlePaymentSaleCompleted(resource: any) {
     }
 
     // 2. Identification Fallback (Old Logic)
-    if (!userId) {
+    if (!userId && subscriptionId?.startsWith('I-')) {
         try {
             // Mock context for internal call
             const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });

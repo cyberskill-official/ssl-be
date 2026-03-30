@@ -1,5 +1,5 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { addMonths } from 'date-fns';
 
 import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js';
@@ -302,8 +302,17 @@ async function createEventFromOrder(context: I_Context, order: I_Order): Promise
 export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
     const result: I_OrderPaidEffectsResult = {};
     if (!order || order.status !== E_OrderStatus.PAID) {
+        log.info('[OrderEffects] Skipped: order missing or not PAID', { orderId: order?.id, status: order?.status });
         return result;
     }
+
+    log.info('[OrderEffects] Applying paid effects', {
+        orderId: order.id,
+        userId: order.userId,
+        orderType: order.orderType,
+        pricingId: order.pricingId,
+        effectsAppliedAt: order.effectsAppliedAt,
+    });
 
     // Get pricingType from pricingId
     let pricingType: E_PricingType | undefined;
@@ -328,8 +337,15 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
     }
 
     if (!effectivePricingType) {
+        log.warn('[OrderEffects] No effectivePricingType resolved — skipping effects', {
+            orderId: order.id,
+            orderType,
+            pricingType,
+        });
         return result;
     }
+
+    log.info('[OrderEffects] Resolved effectivePricingType', { orderId: order.id, effectivePricingType });
 
     if (effectivePricingType === E_PricingType.ANNOUNCEMENT) {
         // ANNOUNCEMENT: Add +1 freeEventCount when user pays for announcement
@@ -349,8 +365,11 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         // Idempotency check: Only apply membership extension if not applied recently for this order
         const lastApplied = order.effectsAppliedAt ? new Date(order.effectsAppliedAt).getTime() : 0;
         const ONE_HOUR = 60 * 60 * 1000;
-        if (Date.now() - lastApplied > ONE_HOUR) {
+        const timeSinceLastApplied = Date.now() - lastApplied;
+        if (timeSinceLastApplied > ONE_HOUR) {
+            log.info('[OrderEffects] Extending membership by 1 month', { orderId: order.id, userId: order.userId, timeSinceLastApplied });
             result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
+            log.info('[OrderEffects] Membership extended successfully', { orderId: order.id, newExpiry: result.membershipExpiresAt });
             await orderCtr.updateOrder(context, {
                 filter: { id: order.id },
                 update: { $set: { effectsAppliedAt: new Date() } },
@@ -359,6 +378,7 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         else {
             // Already extended recently (e.g. by another process like Webhook or Polling)
             // Still sync the session for the current request to ensure user sees updated state
+            log.info('[OrderEffects] Idempotency guard: skipping extension (applied within last hour)', { orderId: order.id, lastApplied: new Date(lastApplied), timeSinceLastApplied });
             const userId = order.userId;
             if (userId && context.req?.session?.user?.id === userId) {
                 const updatedUserRes = await userCtr.getUser(context, { filter: { id: userId } });

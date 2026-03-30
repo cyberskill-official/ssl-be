@@ -326,7 +326,9 @@ export async function broadcastNewMemberInArea(
             || newUser.settings?.temporaryLocation?.locationId,
         );
         if (!hasLocation) {
-            return;
+            // User has no location yet — still broadcast notification
+            // The geofence check in createNotificationWithSettings will allow it through
+            log.info('[USER] broadcastNewMemberInArea: new user has no location — broadcasting anyway', { newUserId });
         }
 
         const PAGE_SIZE = 200;

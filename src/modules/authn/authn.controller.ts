@@ -1055,13 +1055,45 @@ export const authnCtr = {
                     });
                 }
 
-                // If they are already a paid member, the order effects have already run.
-                // We don't need to do anything here, but we return success to allow the FE to progress.
+                // Double-check: user must have membershipExpiresAt set by order effects.
+                // This prevents a race condition where the role is granted but expiry is missing.
                 const updatedUser = await userCtr.getUser(context, { filter: { id: currentUser.id } });
                 if (!updatedUser.success) {
                     throwError({
                         message: 'Failed to fetch updated user data.',
                         status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                    });
+                }
+
+                if (!updatedUser.result.membershipExpiresAt) {
+                    log.warn('[registerMembership] User has PAID role but missing membershipExpiresAt — payment effects incomplete', {
+                        userId: currentUser.id,
+                        rolesIds: updatedUser.result.rolesIds,
+                    });
+                    throwError({
+                        message: 'Payment is being processed. Please wait a moment.',
+                        status: RESPONSE_STATUS.ACCEPTED, // 202 Accepted - still processing
+                    });
+                }
+
+                // Verify at least one PAID order exists for this user
+                const paidOrderRes = await orderCtr.getOrders(context, {
+                    filter: {
+                        userId: currentUser.id,
+                        status: E_OrderStatus.PAID,
+                    },
+                    options: { pagination: false, limit: 1 },
+                } as any);
+                const hasPaidOrder = paidOrderRes.success && paidOrderRes.result?.docs?.length > 0;
+
+                if (!hasPaidOrder) {
+                    log.warn('[registerMembership] User has PAID role but no PAID order found — possible data inconsistency', {
+                        userId: currentUser.id,
+                        membershipExpiresAt: updatedUser.result.membershipExpiresAt,
+                    });
+                    throwError({
+                        message: 'Payment verification in progress. Please wait a moment.',
+                        status: RESPONSE_STATUS.ACCEPTED,
                     });
                 }
 

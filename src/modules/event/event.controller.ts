@@ -922,16 +922,29 @@ export const eventCtr = {
                         }
                     }
 
-                    // Notify nearby users (Limit to reasonable amount and non-blocking)
-                    const nearbyUsers = await userCtr.getUsers(context, {
-                        filter: { 'partner1.locationId': { $exists: true } },
-                        options: {
-                            pagination: true,
-                            limit: 100, // Limit to prevent massive processing
-                        },
-                    });
+                    // Notify nearby users using pagination loop to cover ALL users (not just first 100)
+                    const NEARBY_PAGE_SIZE = 200;
+                    let nearbyPage = 1;
 
-                    if (nearbyUsers.success) {
+                    while (true) {
+                        const nearbyUsers = await userCtr.getUsers(context, {
+                            filter: {
+                                isActive: true,
+                                isDel: { $ne: true },
+                                id: { $ne: currentUser.id },
+                            },
+                            options: {
+                                pagination: true,
+                                page: nearbyPage,
+                                limit: NEARBY_PAGE_SIZE,
+                                projection: { id: 1 },
+                            },
+                        });
+
+                        if (!nearbyUsers.success || !Array.isArray(nearbyUsers.result?.docs) || nearbyUsers.result.docs.length === 0) {
+                            break;
+                        }
+
                         for (const u of nearbyUsers.result.docs) {
                             if (!u.id || u.id === currentUser.id || blockedUserIds.has(u.id))
                                 continue;
@@ -954,6 +967,11 @@ export const eventCtr = {
                             }
                             catch { /* swallow */ }
                         }
+
+                        if (!nearbyUsers.result.hasNextPage) {
+                            break;
+                        }
+                        nearbyPage += 1;
                     }
                 }
                 catch (notifErr) {
