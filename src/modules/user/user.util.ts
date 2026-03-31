@@ -361,6 +361,37 @@ export async function broadcastNewMemberInArea(
             }
         }
 
+        // ── 1. Fetch actor (new user) ONCE with full populated data ──
+        // Retry once in case location wasn't propagated yet (race condition after createUser)
+        let newUser: I_User | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0) {
+                // Short delay to let MongoDB replicate the location doc
+                await new Promise(r => setTimeout(r, 500));
+            }
+            const newUserRes = await userReadApi.getUser(context, {
+                filter: { id: newUserId },
+                populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
+            });
+            if (newUserRes.success && newUserRes.result) {
+                newUser = newUserRes.result;
+                const hasLocation = Boolean(
+                    newUser.partner1?.locationId
+                    || newUser.partner2?.locationId
+                    || newUser.settings?.temporaryLocation?.locationId,
+                );
+                // If we have location on first attempt, no need to retry
+                if (hasLocation || attempt > 0) {
+                    break;
+                }
+                log.info('[USER] broadcastNewMemberInArea: no location on attempt 0 — retrying', { newUserId });
+            }
+            else {
+                log.warn('[USER] broadcastNewMemberInArea: user not found — aborting', { newUserId });
+                return;
+            }
+        }
+
         if (!newUser) {
             return;
         }
