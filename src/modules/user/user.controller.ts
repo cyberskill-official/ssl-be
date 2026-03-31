@@ -81,6 +81,11 @@ function normalizeDocumentId<T extends { id?: unknown; _id?: unknown }>(document
     } as T;
 }
 
+/**
+ * Refresh session user with populated roles, ageVerify, membership, and partner data.
+ * Avoids circular dependency by querying directly via mongooseCtr.
+ */
+
 export const userCtr = {
     getUser: async (
         context: I_Context,
