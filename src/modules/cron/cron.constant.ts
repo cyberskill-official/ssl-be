@@ -7,4 +7,5 @@ export const CRON_JOB_SCHEDULE = {
     CLEANUP_VERIFICATION: '*/3 * * * *',
     DISABLE_EXPIRED_ADS: '0 * * * *',
     EVERY_15_MINUTES: '*/15 * * * *',
+    EVERY_NIGHT_2AM: '0 2 * * *',
 };

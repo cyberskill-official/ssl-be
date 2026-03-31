@@ -880,15 +880,15 @@ export const cron = {
     },
 
     // Auto-recover pending PayPal orders by checking their actual status via PayPal API
-    // Runs every 15 minutes to catch orders stuck due to missed/failed webhooks
+    // Runs nightly at 2 AM to catch orders stuck due to missed/failed webhooks
     recoverPendingPayPalOrders: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_15_MINUTES, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_NIGHT_2AM, async () => {
             try {
                 log.info('[CRON] ========== RECOVER PENDING PAYPAL ORDERS STARTED ==========');
                 const systemContext = createSystemContext();
 
-                // Find PaymentRequests that are PENDING with PayPal for more than 30 minutes
-                const PENDING_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+                // Find PaymentRequests that are PENDING with PayPal for more than 2 hours
+                const PENDING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
                 const cutoffDate = new Date(Date.now() - PENDING_THRESHOLD_MS);
 
                 const pendingPRRes = await paymentRequestCtr.getPaymentRequests(systemContext, {
@@ -953,7 +953,19 @@ export const cron = {
                                 }
                             }
                             else {
-                                log.warn(`[CRON] Failed to fetch subscription ${externalOrderId}:`, subRes.message);
+                                // If the response failed, check if it was a 404 (Resource Not Found)
+                                const isNotFound = subRes.message?.includes('RESOURCE_NOT_FOUND')
+                                    || (subRes as any).error?.name === 'RESOURCE_NOT_FOUND'
+                                    || (subRes as any).error?.message?.includes('RESOURCE_NOT_FOUND');
+
+                                if (isNotFound) {
+                                    log.warn(`[CRON] Subscription ${externalOrderId} NOT FOUND on PayPal, marking as FAILED`);
+                                    isConfirmedFailed = true;
+                                    paypalStatus = 'RESOURCE_NOT_FOUND';
+                                }
+                                else {
+                                    log.warn(`[CRON] Failed to fetch subscription ${externalOrderId}:`, subRes.message);
+                                }
                             }
                         }
                         else {
@@ -975,7 +987,19 @@ export const cron = {
                                 }
                             }
                             else {
-                                log.warn(`[CRON] Failed to fetch order ${externalOrderId}:`, orderRes.message);
+                                // If the response failed, check if it was a 404 (Resource Not Found)
+                                const isNotFound = orderRes.message?.includes('RESOURCE_NOT_FOUND')
+                                    || (orderRes as any).error?.name === 'RESOURCE_NOT_FOUND'
+                                    || (orderRes as any).error?.message?.includes('RESOURCE_NOT_FOUND');
+
+                                if (isNotFound) {
+                                    log.warn(`[CRON] Order ${externalOrderId} NOT FOUND on PayPal, marking as FAILED`);
+                                    isConfirmedFailed = true;
+                                    paypalStatus = 'RESOURCE_NOT_FOUND';
+                                }
+                                else {
+                                    log.warn(`[CRON] Failed to fetch order ${externalOrderId}:`, orderRes.message);
+                                }
                             }
                         }
 
