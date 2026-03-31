@@ -304,6 +304,27 @@ export async function refreshSessionUser(
     }
 }
 
+/**
+ * Controls concurrency: at most CONCURRENCY_LIMIT notifications are in-flight.
+ * This prevents MongoDB connection pool exhaustion that caused intermittent delivery failures.
+ */
+const BROADCAST_CONCURRENCY = 10;
+const BROADCAST_PAGE_SIZE = 200;
+
+async function processChunked<T, R>(
+    items: T[],
+    concurrency: number,
+    fn: (item: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+    const results: PromiseSettledResult<R>[] = [];
+    for (let i = 0; i < items.length; i += concurrency) {
+        const chunk = items.slice(i, i + concurrency);
+        const chunkResults = await Promise.allSettled(chunk.map(fn));
+        results.push(...chunkResults);
+    }
+    return results;
+}
+
 export async function broadcastNewMemberInArea(
     context: I_Context,
     newUserId: string,
@@ -312,43 +333,71 @@ export async function broadcastNewMemberInArea(
     try {
         log.info('[USER] broadcastNewMemberInArea: START', { newUserId });
 
-        const newUserRes = await userReadApi.getUser(context, {
-            filter: { id: newUserId },
-            populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
-        });
+        // ── 1. Fetch actor (new user) ONCE with full populated data ──
+        // Retry once in case location wasn't propagated yet (race condition after createUser)
+        let newUser: I_User | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            if (attempt > 0) {
+                // Short delay to let MongoDB replicate the location doc
+                await new Promise(r => setTimeout(r, 500));
+            }
+            const newUserRes = await userReadApi.getUser(context, {
+                filter: { id: newUserId },
+                populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
+            });
+            if (newUserRes.success && newUserRes.result) {
+                newUser = newUserRes.result;
+                const hasLocation = Boolean(
+                    newUser.partner1?.locationId
+                    || newUser.partner2?.locationId
+                    || newUser.settings?.temporaryLocation?.locationId,
+                );
+                // If we have location on first attempt, no need to retry
+                if (hasLocation || attempt > 0) {
+                    break;
+                }
+                log.info('[USER] broadcastNewMemberInArea: no location on attempt 0 — retrying', { newUserId });
+            }
+            else {
+                log.warn('[USER] broadcastNewMemberInArea: user not found — aborting', { newUserId });
+                return;
+            }
+        }
 
-        if (!newUserRes.success || !newUserRes.result) {
-            log.info('[USER] broadcastNewMemberInArea: new user not found — aborting', { newUserId });
+        if (!newUser) {
             return;
         }
 
-        const newUser = newUserRes.result;
         const hasLocation = Boolean(
             newUser.partner1?.locationId
             || newUser.partner2?.locationId
             || newUser.settings?.temporaryLocation?.locationId,
         );
 
-        log.info('[USER] broadcastNewMemberInArea: new user info', {
-            newUserId,
-            username: newUser.username,
-            hasLocation,
-            partner1LocationId: newUser.partner1?.locationId,
-            hasPartner1Location: Boolean(newUser.partner1?.location),
-            hasPartner1LocationMap: Boolean((newUser.partner1?.location as any)?.map),
-            partner1LocationMap: (newUser.partner1?.location as any)?.map,
-        });
-
         if (!hasLocation) {
-            // User has no location yet — still broadcast notification
-            // The geofence check in createNotificationWithSettings will allow it through
-            log.info('[USER] broadcastNewMemberInArea: new user has no location — broadcasting anyway', { newUserId });
+            log.info('[USER] broadcastNewMemberInArea: no location — skipping', { newUserId });
+            return;
         }
 
-        const PAGE_SIZE = 200;
+        // ── 2. Cache presentation data to avoid rebuilding per-recipient ──
+        const cachedPresentation = {
+            ...(newUser.username
+                ? { redirect: { kind: E_RedirectType.PROFILE, id: newUser.username } }
+                : {}),
+            actor: {
+                username: newUser.username,
+                accountType: newUser.accountType,
+                avatarUrl: newUser.partner1?.gallery?.url,
+                gender: newUser.partner1?.gender,
+            },
+        };
+
+        // ── 3. Paginate recipients with concurrency control ──
         let page = 1;
         let totalRecipients = 0;
         let totalSent = 0;
+        let totalSkipped = 0;
+        const failedRecipientIds: string[] = [];
 
         while (true) {
             const recipientsRes = await userReadApi.getUsers(context, {
@@ -360,7 +409,7 @@ export async function broadcastNewMemberInArea(
                 } as any,
                 options: {
                     page,
-                    limit: PAGE_SIZE,
+                    limit: BROADCAST_PAGE_SIZE,
                     pagination: true,
                     projection: { id: 1 } as any,
                 } as any,
@@ -371,45 +420,44 @@ export async function broadcastNewMemberInArea(
                 break;
             }
 
-            const eligibleRecipients = recipientsRes.result.docs.filter(u => u.id && u.id !== newUser.id);
+            const eligibleRecipients = recipientsRes.result.docs.filter(u => u.id && u.id !== newUser!.id);
             totalRecipients += eligibleRecipients.length;
-            log.info('[USER] broadcastNewMemberInArea: processing page', { page, recipientsOnPage: eligibleRecipients.length, totalRecipients });
 
-            const tasks = eligibleRecipients
-                .map(u =>
-                    notificationCtr.createNotificationWithSettings(context, {
+            // Process in controlled chunks instead of firing all 200 concurrently
+            const results = await processChunked(
+                eligibleRecipients,
+                BROADCAST_CONCURRENCY,
+                async (u) => {
+                    const res = await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
                             targetId: u.id,
                             type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
                             entityType: E_NotificationEntityType.USER,
-                            entityId: newUser.id,
-                            actorId: newUser.id,
-                            presentation: {
-                                ...(newUser.username
-                                    ? {
-                                            redirect: { kind: E_RedirectType.PROFILE, id: newUser.username },
-                                        }
-                                    : {}),
-                                actor: {
-                                    username: newUser.username,
-                                    accountType: newUser.accountType,
-                                    avatarUrl: newUser.partner1?.gallery?.url,
-                                    gender: newUser.partner1?.gender,
-                                },
-                            },
+                            entityId: newUser!.id,
+                            actorId: newUser!.id,
+                            presentation: cachedPresentation,
                         },
-                    }).then((res) => {
-                        if (res && 'result' in res && res.result) {
-                            totalSent++;
-                        }
-                        return res;
-                    }).catch((err) => {
-                        log.warn(`[USER] broadcastNewMemberInArea: notification failed for ${u.id}:`, err);
-                        return undefined;
-                    }),
-                );
+                    });
+                    return { recipientId: u.id, res };
+                },
+            );
 
-            await Promise.allSettled(tasks);
+            for (const result of results) {
+                if (result.status === 'fulfilled') {
+                    const { res } = result.value;
+                    if (res && 'result' in res && res.result) {
+                        totalSent++;
+                    }
+                    else {
+                        totalSkipped++;
+                    }
+                }
+                else {
+                    // Track failed for retry
+                    failedRecipientIds.push('unknown');
+                    log.warn('[USER] broadcastNewMemberInArea: notification failed:', result.reason);
+                }
+            }
 
             if (!recipientsRes.result.hasNextPage) {
                 break;
@@ -417,7 +465,18 @@ export async function broadcastNewMemberInArea(
             page += 1;
         }
 
-        log.info('[USER] broadcastNewMemberInArea: COMPLETED', { newUserId, totalRecipients, totalSent });
+        // ── 4. Log failures if any ──
+        if (failedRecipientIds.length > 0) {
+            log.warn('[USER] broadcastNewMemberInArea: some notifications failed', { count: failedRecipientIds.length });
+        }
+
+        log.info('[USER] broadcastNewMemberInArea: COMPLETED', {
+            newUserId,
+            totalRecipients,
+            totalSent,
+            totalSkipped,
+            totalFailed: failedRecipientIds.length,
+        });
     }
     catch (error) {
         log.error('[USER] Failed to broadcast new member notification:', error);

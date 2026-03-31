@@ -704,7 +704,12 @@ export const userCtr = {
         }
 
         if (doc.registerStep === E_RegisterStep.COMPLETE) {
-            await broadcastNewMemberInArea(context, finalUser.result.id, userCtr);
+            // Fire-and-forget: broadcast can take minutes for large user bases,
+            // must not block the registration response. Errors handled internally.
+            setImmediate(() => {
+                broadcastNewMemberInArea(context, finalUser.result.id, userCtr)
+                    .catch(err => log.error('[USER] broadcastNewMemberInArea fire-and-forget error:', err));
+            });
         }
 
         // 7) Return final result
@@ -1026,7 +1031,11 @@ export const userCtr = {
             if (!emailResponse.success) {
                 log.error('[USER] Failed to queue welcome email', { error: emailResponse.message });
             }
-            await broadcastNewMemberInArea(context, updatedUser.id, userCtr);
+            // Fire-and-forget: must not block the update response
+            setImmediate(() => {
+                broadcastNewMemberInArea(context, updatedUser.id, userCtr)
+                    .catch(err => log.error('[USER] broadcastNewMemberInArea fire-and-forget error:', err));
+            });
         }
 
         const tempLocationUpdated = Boolean(update.settings?.temporaryLocation);
@@ -1037,7 +1046,11 @@ export const userCtr = {
             const providedLocationObject = Boolean(update.settings?.temporaryLocation?.location);
             const locationChanged = tempLocationId !== previousTempLocationId || providedLocationObject;
             if (hasLocationData && locationChanged && isTemporaryLocationActive(tempSettings)) {
-                await broadcastNewMemberInArea(context, updatedUser.id, userCtr);
+                // Fire-and-forget: must not block the update response
+                setImmediate(() => {
+                    broadcastNewMemberInArea(context, updatedUser.id, userCtr)
+                        .catch(err => log.error('[USER] broadcastNewMemberInArea fire-and-forget error:', err));
+                });
             }
         }
 
