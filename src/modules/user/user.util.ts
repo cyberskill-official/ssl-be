@@ -416,7 +416,6 @@ export async function broadcastNewMemberInArea(
             });
 
             if (!recipientsRes.success || !Array.isArray(recipientsRes.result?.docs) || recipientsRes.result.docs.length === 0) {
-                log.info('[USER] broadcastNewMemberInArea: no more recipients', { page, totalRecipients });
                 break;
             }
 

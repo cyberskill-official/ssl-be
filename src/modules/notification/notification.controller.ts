@@ -869,20 +869,10 @@ export const notificationCtr = {
                 // Fetch actor (new user) with needed location data
                 const actorFound = await userCtr.getUser(context, { filter: { id: actorId }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] }).catch(() => null);
                 if (!actorFound?.success || !actorFound.result) {
-                    log.info('[Notification] NEW_MEMBER skip: actor not found', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
                 const actorMap = getEffectiveMap(actorFound.result as any);
-                log.info('[Notification] NEW_MEMBER: actor location debug', {
-                    actorId,
-                    targetId: tid,
-                    actorMap,
-                    hasPartner1Location: Boolean(actorFound.result.partner1?.location),
-                    hasPartner1LocationMap: Boolean((actorFound.result.partner1 as any)?.location?.map),
-                    partner1LocationId: actorFound.result.partner1?.locationId,
-                });
                 if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
-                    log.info('[Notification] NEW_MEMBER skip: actor no location', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
 
@@ -893,17 +883,7 @@ export const notificationCtr = {
                 }
 
                 const recipientMap = getEffectiveMap(recipient.result as any);
-                log.info('[Notification] NEW_MEMBER: recipient location debug', {
-                    actorId,
-                    targetId: tid,
-                    recipientMap,
-                    hasPartner1Location: Boolean(recipient.result.partner1?.location),
-                    hasPartner1LocationMap: Boolean((recipient.result.partner1 as any)?.location?.map),
-                    partner1LocationId: recipient.result.partner1?.locationId,
-                    zoomLevel: recipient.result.settings?.zoomLevel,
-                });
                 if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
-                    log.info('[Notification] NEW_MEMBER skip: recipient no location', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
 
@@ -916,11 +896,8 @@ export const notificationCtr = {
                 const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
 
                 if (!insideViewport || distanceKm > radiusKm) {
-                    log.info('[Notification] NEW_MEMBER skip: outside area', { actorId, targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                     return { success: true, message: null };
                 }
-
-                log.info('[Notification] NEW_MEMBER pass: will send', { actorId, targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
             }
             catch (err) {
                 // On geofence error, skip notification to avoid global notifications
@@ -931,11 +908,6 @@ export const notificationCtr = {
 
         if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED)) {
             const isFollowingActor = await isTargetFollowingActor();
-            log.info('[Notification] NEW_ANNOUNCEMENT: check start', {
-                targetId: tid,
-                actorId: doc.actorId,
-                isFollowingActor,
-            });
             if (isFollowingActor) {
                 // Target is following the actor → always send
                 // Fall through to create notification
@@ -944,13 +916,6 @@ export const notificationCtr = {
                 // Target is NOT following → must pass area-of-interest geofence check
                 try {
                     const redirectMap = doc.presentation?.redirect?.map;
-                    log.info('[Notification] NEW_ANNOUNCEMENT: event map check', {
-                        targetId: tid,
-                        redirectMap,
-                        hasValidRedirectMap: isValidMap(redirectMap),
-                        presentationKeys: doc.presentation ? Object.keys(doc.presentation) : [],
-                        redirectKeys: doc.presentation?.redirect ? Object.keys(doc.presentation.redirect) : [],
-                    });
                     if (!isValidMap(redirectMap)) {
                         return { success: true, message: null };
                     }
@@ -961,14 +926,6 @@ export const notificationCtr = {
                     }
 
                     const recipientMap = getEffectiveMap(recipient.result as any);
-                    log.info('[Notification] NEW_ANNOUNCEMENT: recipient location debug', {
-                        targetId: tid,
-                        recipientMap,
-                        hasPartner1Location: Boolean(recipient.result.partner1?.location),
-                        hasPartner1LocationMap: Boolean((recipient.result.partner1 as any)?.location?.map),
-                        partner1LocationId: recipient.result.partner1?.locationId,
-                        zoomLevel: recipient.result.settings?.zoomLevel,
-                    });
                     if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
                         return { success: true, message: null };
                     }
@@ -989,11 +946,8 @@ export const notificationCtr = {
                     );
 
                     if (!insideViewport || distanceKm > radiusKm) {
-                        log.info('[Notification] NEW_ANNOUNCEMENT skip: outside area', { targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                         return { success: true, message: null };
                     }
-
-                    log.info('[Notification] NEW_ANNOUNCEMENT pass: will send (nearby)', { targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                 }
                 catch (err) {
                     // On geofence error, skip notification to avoid global notifications
