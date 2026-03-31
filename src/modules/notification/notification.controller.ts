@@ -805,14 +805,19 @@ export const notificationCtr = {
             if (!u)
                 return null;
             const temp = u.settings?.temporaryLocation;
-            if (temp && isTempActive(temp)) {
+            // Only consider temp location if it has a locationId AND is active
+            // An empty temporaryLocation object (no locationId) should NOT block partner location fallback
+            if (temp && temp.locationId && isTempActive(temp)) {
                 if (temp.location?.map) {
                     return temp.location.map;
                 }
-                // If Temp Location is ACTIVE but map data is missing,
-                // assume user is 'somewhere else' (unknown) but NOT at home.
-                // Do NOT fallback to partner location.
-                return null;
+                // Temp location is active with a locationId but map data is missing (populate failed or no coords)
+                // Fall through to partner location as fallback instead of returning null
+                log.info('[Notification] getEffectiveMap: temp location active but no map data — falling back to partner location', {
+                    tempLocationId: temp.locationId,
+                    hasLocation: Boolean(temp.location),
+                    hasMap: Boolean(temp.location?.map),
+                });
             }
             if (u.partner1?.location?.map)
                 return u.partner1.location.map;
@@ -874,6 +879,14 @@ export const notificationCtr = {
                     return { success: true, message: null };
                 }
                 const actorMap = getEffectiveMap(actorFound.result as any);
+                log.info('[Notification] NEW_MEMBER: actor location debug', {
+                    actorId,
+                    targetId: tid,
+                    actorMap,
+                    hasPartner1Location: Boolean(actorFound.result.partner1?.location),
+                    hasPartner1LocationMap: Boolean((actorFound.result.partner1 as any)?.location?.map),
+                    partner1LocationId: actorFound.result.partner1?.locationId,
+                });
                 if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
                     // Actor has no location → skip (only notify within area of interest)
                     log.info('[Notification] NEW_MEMBER: actor has no location — skipping', { actorId, targetId: tid });
@@ -888,6 +901,15 @@ export const notificationCtr = {
                 }
 
                 const recipientMap = getEffectiveMap(recipient.result as any);
+                log.info('[Notification] NEW_MEMBER: recipient location debug', {
+                    actorId,
+                    targetId: tid,
+                    recipientMap,
+                    hasPartner1Location: Boolean(recipient.result.partner1?.location),
+                    hasPartner1LocationMap: Boolean((recipient.result.partner1 as any)?.location?.map),
+                    partner1LocationId: recipient.result.partner1?.locationId,
+                    zoomLevel: recipient.result.settings?.zoomLevel,
+                });
                 if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
                     // Recipient has no location → skip (can't determine area of interest)
                     log.info('[Notification] NEW_MEMBER: recipient has no location — skipping', { actorId, targetId: tid });
@@ -899,16 +921,33 @@ export const notificationCtr = {
                 const radiusKm = convertLevelToRadius(zoomLevel);
                 const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
 
-                if (!isPointInsideViewport(actorMap.latitude, actorMap.longitude, interestViewport)) {
+                const insideViewport = isPointInsideViewport(actorMap.latitude, actorMap.longitude, interestViewport);
+                const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
+                log.info('[Notification] NEW_MEMBER: geofence check result', {
+                    actorId,
+                    targetId: tid,
+                    actorLat: actorMap.latitude,
+                    actorLng: actorMap.longitude,
+                    recipientLat: recipientMap.latitude,
+                    recipientLng: recipientMap.longitude,
+                    zoomLevel,
+                    radiusKm,
+                    distanceKm,
+                    insideViewport,
+                    willSend: insideViewport && distanceKm <= radiusKm,
+                });
+
+                if (!insideViewport) {
                     log.info('[Notification] NEW_MEMBER: actor outside recipient viewport — skipping', { actorId, targetId: tid, radiusKm });
                     return { success: true, message: null };
                 }
 
-                const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
                 if (distanceKm > radiusKm) {
                     log.info('[Notification] NEW_MEMBER: actor outside radius — skipping', { actorId, targetId: tid, distanceKm, radiusKm });
                     return { success: true, message: null };
                 }
+
+                log.info('[Notification] NEW_MEMBER: ✅ PASSED geofence — will send notification', { actorId, targetId: tid, distanceKm, radiusKm });
             }
             catch (err) {
                 // On geofence error, skip notification to avoid global notifications
@@ -919,14 +958,27 @@ export const notificationCtr = {
 
         if (has(E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED)) {
             const isFollowingActor = await isTargetFollowingActor();
+            log.info('[Notification] NEW_ANNOUNCEMENT: check start', {
+                targetId: tid,
+                actorId: doc.actorId,
+                isFollowingActor,
+            });
             if (isFollowingActor) {
                 // Target is following the actor → always send (follower notification)
+                log.info('[Notification] NEW_ANNOUNCEMENT: ✅ target is follower — will send', { targetId: tid, actorId: doc.actorId });
                 // Fall through to create notification
             }
             else {
                 // Target is NOT following → must pass area-of-interest geofence check
                 try {
                     const redirectMap = doc.presentation?.redirect?.map;
+                    log.info('[Notification] NEW_ANNOUNCEMENT: event map check', {
+                        targetId: tid,
+                        redirectMap,
+                        hasValidRedirectMap: isValidMap(redirectMap),
+                        presentationKeys: doc.presentation ? Object.keys(doc.presentation) : [],
+                        redirectKeys: doc.presentation?.redirect ? Object.keys(doc.presentation.redirect) : [],
+                    });
                     if (!isValidMap(redirectMap)) {
                         // Event has no valid location → skip (only notify within area of interest)
                         log.info('[Notification] NEW_ANNOUNCEMENT: event has no valid map — skipping', { targetId: tid, actorId: doc.actorId });
@@ -940,6 +992,14 @@ export const notificationCtr = {
                     }
 
                     const recipientMap = getEffectiveMap(recipient.result as any);
+                    log.info('[Notification] NEW_ANNOUNCEMENT: recipient location debug', {
+                        targetId: tid,
+                        recipientMap,
+                        hasPartner1Location: Boolean(recipient.result.partner1?.location),
+                        hasPartner1LocationMap: Boolean((recipient.result.partner1 as any)?.location?.map),
+                        partner1LocationId: recipient.result.partner1?.locationId,
+                        zoomLevel: recipient.result.settings?.zoomLevel,
+                    });
                     if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
                         // Recipient has no location → skip (can't determine area of interest)
                         log.info('[Notification] NEW_ANNOUNCEMENT: recipient has no location — skipping', { targetId: tid });
@@ -952,21 +1012,38 @@ export const notificationCtr = {
                     const zoomLevel = recipient.result.settings?.zoomLevel as number | undefined;
                     const radiusKm = convertLevelToRadius(zoomLevel);
                     const interestViewport = viewport(recipientMap.latitude, recipientMap.longitude, zoomLevel);
-                    if (!isPointInsideViewport(eventLat, eventLng, interestViewport)) {
-                        log.info('[Notification] NEW_ANNOUNCEMENT: event outside recipient viewport — skipping', { targetId: tid, radiusKm });
-                        return { success: true, message: null };
-                    }
 
+                    const insideViewport = isPointInsideViewport(eventLat, eventLng, interestViewport);
                     const distanceKm = haversineKm(
                         recipientMap.latitude,
                         recipientMap.longitude,
                         eventLat,
                         eventLng,
                     );
+                    log.info('[Notification] NEW_ANNOUNCEMENT: geofence check result', {
+                        targetId: tid,
+                        eventLat,
+                        eventLng,
+                        recipientLat: recipientMap.latitude,
+                        recipientLng: recipientMap.longitude,
+                        zoomLevel,
+                        radiusKm,
+                        distanceKm,
+                        insideViewport,
+                        willSend: insideViewport && distanceKm <= radiusKm,
+                    });
+
+                    if (!insideViewport) {
+                        log.info('[Notification] NEW_ANNOUNCEMENT: event outside recipient viewport — skipping', { targetId: tid, radiusKm });
+                        return { success: true, message: null };
+                    }
+
                     if (distanceKm > radiusKm) {
                         log.info('[Notification] NEW_ANNOUNCEMENT: event outside radius — skipping', { targetId: tid, distanceKm, radiusKm });
                         return { success: true, message: null };
                     }
+
+                    log.info('[Notification] NEW_ANNOUNCEMENT: ✅ PASSED geofence — will send notification', { targetId: tid, distanceKm, radiusKm });
                 }
                 catch (err) {
                     // On geofence error, skip notification to avoid global notifications

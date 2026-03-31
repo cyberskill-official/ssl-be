@@ -310,12 +310,15 @@ export async function broadcastNewMemberInArea(
     userReadApi: IUserReadApi,
 ) {
     try {
+        log.info('[USER] broadcastNewMemberInArea: START', { newUserId });
+
         const newUserRes = await userReadApi.getUser(context, {
             filter: { id: newUserId },
             populate: ['partner1.gallery', 'partner2.gallery', 'partner1.location', 'partner2.location', 'settings.temporaryLocation.location'],
         });
 
         if (!newUserRes.success || !newUserRes.result) {
+            log.info('[USER] broadcastNewMemberInArea: new user not found — aborting', { newUserId });
             return;
         }
 
@@ -325,6 +328,17 @@ export async function broadcastNewMemberInArea(
             || newUser.partner2?.locationId
             || newUser.settings?.temporaryLocation?.locationId,
         );
+
+        log.info('[USER] broadcastNewMemberInArea: new user info', {
+            newUserId,
+            username: newUser.username,
+            hasLocation,
+            partner1LocationId: newUser.partner1?.locationId,
+            hasPartner1Location: Boolean(newUser.partner1?.location),
+            hasPartner1LocationMap: Boolean((newUser.partner1?.location as any)?.map),
+            partner1LocationMap: (newUser.partner1?.location as any)?.map,
+        });
+
         if (!hasLocation) {
             // User has no location yet — still broadcast notification
             // The geofence check in createNotificationWithSettings will allow it through
@@ -333,6 +347,8 @@ export async function broadcastNewMemberInArea(
 
         const PAGE_SIZE = 200;
         let page = 1;
+        let totalRecipients = 0;
+        let totalSent = 0;
 
         while (true) {
             const recipientsRes = await userReadApi.getUsers(context, {
@@ -351,11 +367,15 @@ export async function broadcastNewMemberInArea(
             });
 
             if (!recipientsRes.success || !Array.isArray(recipientsRes.result?.docs) || recipientsRes.result.docs.length === 0) {
+                log.info('[USER] broadcastNewMemberInArea: no more recipients', { page, totalRecipients });
                 break;
             }
 
-            const tasks = recipientsRes.result.docs
-                .filter(u => u.id && u.id !== newUser.id)
+            const eligibleRecipients = recipientsRes.result.docs.filter(u => u.id && u.id !== newUser.id);
+            totalRecipients += eligibleRecipients.length;
+            log.info('[USER] broadcastNewMemberInArea: processing page', { page, recipientsOnPage: eligibleRecipients.length, totalRecipients });
+
+            const tasks = eligibleRecipients
                 .map(u =>
                     notificationCtr.createNotificationWithSettings(context, {
                         doc: {
@@ -378,7 +398,15 @@ export async function broadcastNewMemberInArea(
                                 },
                             },
                         },
-                    }).catch(() => undefined),
+                    }).then((res) => {
+                        if (res && 'result' in res && res.result) {
+                            totalSent++;
+                        }
+                        return res;
+                    }).catch((err) => {
+                        log.warn(`[USER] broadcastNewMemberInArea: notification failed for ${u.id}:`, err);
+                        return undefined;
+                    }),
                 );
 
             await Promise.allSettled(tasks);
@@ -388,8 +416,10 @@ export async function broadcastNewMemberInArea(
             }
             page += 1;
         }
+
+        log.info('[USER] broadcastNewMemberInArea: COMPLETED', { newUserId, totalRecipients, totalSent });
     }
     catch (error) {
-        console.error('[USER] Failed to broadcast new member notification:', error);
+        log.error('[USER] Failed to broadcast new member notification:', error);
     }
 }

@@ -872,6 +872,13 @@ export const eventCtr = {
                 ...(isValidMap(locMap) ? { map: { latitude: locMap!.latitude!, longitude: locMap!.longitude! } } : {}),
             } as const;
 
+            log.info('[CreateEvent] Notification redirect map:', {
+                hasValidMap: isValidMap(locMap),
+                locMap,
+                finalLocationId,
+                eventId: eventCreated.result.id,
+            });
+
             // Common presentation
             const commonPresentation = {
                 actor: {
@@ -907,7 +914,7 @@ export const eventCtr = {
                             notifiedTargets.add(targetId);
 
                             try {
-                                await notificationCtr.createNotificationWithSettings(context, {
+                                const notiResult = await notificationCtr.createNotificationWithSettings(context, {
                                     doc: {
                                         targetId,
                                         type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
@@ -917,8 +924,13 @@ export const eventCtr = {
                                         presentation: commonPresentation,
                                     },
                                 });
+                                if (notiResult?.success) {
+                                    log.info(`[CreateEvent] Follower notification sent to ${targetId}`);
+                                }
                             }
-                            catch { /* swallow */ }
+                            catch (followerNotiErr) {
+                                log.warn(`[CreateEvent] Failed to send follower notification to ${targetId}:`, followerNotiErr);
+                            }
                         }
                     }
 
@@ -954,7 +966,7 @@ export const eventCtr = {
                             notifiedTargets.add(u.id);
 
                             try {
-                                await notificationCtr.createNotificationWithSettings(context, {
+                                const notiResult = await notificationCtr.createNotificationWithSettings(context, {
                                     doc: {
                                         targetId: u.id,
                                         type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
@@ -964,8 +976,13 @@ export const eventCtr = {
                                         presentation: commonPresentation,
                                     },
                                 });
+                                if (notiResult?.success) {
+                                    log.info(`[CreateEvent] Nearby notification sent to ${u.id}`);
+                                }
                             }
-                            catch { /* swallow */ }
+                            catch (nearbyNotiErr) {
+                                log.warn(`[CreateEvent] Failed to send nearby notification to ${u.id}:`, nearbyNotiErr);
+                            }
                         }
 
                         if (!nearbyUsers.result.hasNextPage) {
