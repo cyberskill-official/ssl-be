@@ -873,6 +873,7 @@ export const notificationCtr = {
                     return { success: true, message: null };
                 }
                 const actorMap = getEffectiveMap(actorFound.result as any);
+
                 if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
                     log.info('[Notification] NEW_MEMBER skip: actor no location', { actorId, targetId: tid });
                     return { success: true, message: null };
@@ -932,6 +933,7 @@ export const notificationCtr = {
                     }
 
                     const recipientMap = getEffectiveMap(recipient.result as any);
+
                     if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
                         return { success: true, message: null };
                     }
