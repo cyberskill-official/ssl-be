@@ -504,11 +504,11 @@ export const cron = {
     },
 
     membershipMaintenance: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
-            log.info('[CRON] Starting daily membership maintenance (Rebill -> Downgrade serialization)');
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_NIGHT_2AM, async () => {
+            log.info('[CRON] Starting nightly membership maintenance (Downgrade expired memberships)');
 
             await cron.executeDowngradeExpiredMemberships();
-            log.info('[CRON] Daily membership maintenance completed');
+            log.info('[CRON] Nightly membership maintenance completed');
         });
     },
 
