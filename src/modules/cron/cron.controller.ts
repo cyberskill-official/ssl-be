@@ -34,6 +34,7 @@ import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 const env = getEnv();
 
 const AM_PM_REGEX = /\bAM\b|\bPM\b/i;
+const PAYPAL_SUBSCRIPTION_ID_REGEX = /^I-/;
 
 function parseTimeToClock(value?: string | null): { hours: number; minutes: number } | null {
     if (!value || typeof value !== 'string')
@@ -503,7 +504,7 @@ export const cron = {
     },
 
     membershipMaintenance: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERYDAY_MIDNIGHT, async () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
             log.info('[CRON] Starting daily membership maintenance (Rebill -> Downgrade serialization)');
 
             await cron.executeDowngradeExpiredMemberships();
@@ -515,6 +516,25 @@ export const cron = {
         try {
             const now = new Date();
             log.info('[CRON] Checking for expired memberships...', { now: now.toISOString(), localTime: now.toString() });
+
+            // Sanitize bad data: convert non-date membershipExpiresAt values (e.g. "N/A") to null
+            try {
+                const db = mongoose.connection.db;
+                if (db) {
+                    const sanitizeResult = await db.collection('users').updateMany(
+                        {
+                            membershipExpiresAt: { $exists: true, $not: { $type: 'date' }, $ne: null },
+                        },
+                        { $set: { membershipExpiresAt: null } },
+                    );
+                    if (sanitizeResult.modifiedCount > 0) {
+                        log.warn(`[CRON] Sanitized ${sanitizeResult.modifiedCount} user(s) with invalid membershipExpiresAt values`);
+                    }
+                }
+            }
+            catch (sanitizeErr) {
+                log.warn('[CRON] Failed to sanitize membershipExpiresAt values:', sanitizeErr);
+            }
 
             const [paidRole, promoRole] = await Promise.all([
                 roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
@@ -532,8 +552,11 @@ export const cron = {
 
             const expirationFilter = {
                 $or: [
-                    { membershipExpiresAt: { $exists: true, $ne: null, $lte: now } },
-                    { membershipEndDate: { $exists: true, $ne: null, $lte: now } }, // legacy field support
+                    { membershipExpiresAt: { $type: 'date' as const, $lte: now } },
+                    { membershipEndDate: { $type: 'date' as const, $lte: now } }, // legacy field support
+                    // Also downgrade if expiration fields are missing or null
+                    { membershipExpiresAt: { $exists: false } },
+                    { membershipExpiresAt: null },
                 ],
             };
 
@@ -576,6 +599,60 @@ export const cron = {
                         membershipEndDate: (user as any).membershipEndDate,
                         membershipCancelled: user.membershipCancelled,
                     });
+
+                    // Skip if user has NOT cancelled and has an active/suspended PayPal subscription.
+                    // IMPORTANT: If the PayPal API is unreachable, we SKIP the user rather than
+                    // downgrade — this prevents mass downgrades during PayPal outages.
+                    if (!user.membershipCancelled) {
+                        try {
+                            // Find last payment request with a PayPal subscription ID (starts with I-)
+                            const lastPaymentReq = await paymentRequestCtr.getPaymentRequests({}, {
+                                filter: {
+                                    userId: user.id,
+                                    gateway: E_PaymentProvider.PAYPAL,
+                                    externalOrderId: { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
+                                },
+                                options: { sort: { createdAt: -1 }, pagination: false },
+                            });
+
+                            const subscriptionId = lastPaymentReq.success
+                                ? lastPaymentReq.result?.docs?.[0]?.externalOrderId
+                                : null;
+
+                            if (subscriptionId) {
+                                const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });
+                                const subStatus = subRes.success ? (subRes.result as any)?.status : null;
+
+                                log.info(`[CRON] PayPal subscription check for user ${user.id}`, {
+                                    subscriptionId,
+                                    status: subStatus,
+                                    apiSuccess: subRes.success,
+                                });
+
+                                // If PayPal API failed entirely, skip this user to avoid wrongful downgrade
+                                if (!subRes.success || !subStatus) {
+                                    log.warn(`[CRON] PayPal API unreachable for user ${user.id}, skipping downgrade to avoid false positive`);
+                                    continue;
+                                }
+
+                                // ACTIVE: subscription is running, PayPal will bill → skip
+                                // SUSPENDED: PayPal is retrying failed payment (up to 3 attempts) → skip
+                                if (subStatus === 'ACTIVE' || subStatus === 'SUSPENDED') {
+                                    log.info(`[CRON] Skipping downgrade for user ${user.id} - PayPal subscription ${subscriptionId} status: ${subStatus}`);
+                                    continue;
+                                }
+
+                                // Only proceed with downgrade for terminal statuses:
+                                // CANCELLED, EXPIRED, or unexpected statuses
+                                log.info(`[CRON] PayPal subscription ${subscriptionId} is terminal (${subStatus}), proceeding with downgrade for user ${user.id}`);
+                            }
+                        }
+                        catch (subError) {
+                            // API call threw an exception — skip to be safe
+                            log.warn(`[CRON] Could not verify PayPal subscription for user ${user.id}, skipping downgrade to be safe:`, subError);
+                            continue;
+                        }
+                    }
 
                     const nextRoles = (user.rolesIds ?? []).filter(roleId =>
                         roleId !== paidRoleId && (!promoRoleId || roleId !== promoRoleId),
@@ -671,7 +748,7 @@ export const cron = {
                         $or: [
                             { membershipExpiresAt: { $exists: false } },
                             { membershipExpiresAt: null },
-                            { membershipExpiresAt: { $lte: now } },
+                            { membershipExpiresAt: { $type: 'date' as const, $lte: now } },
                         ],
                     },
                 ];

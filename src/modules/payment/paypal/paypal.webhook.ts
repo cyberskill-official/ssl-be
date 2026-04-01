@@ -24,7 +24,6 @@ const env = getEnv();
 
 export async function paypalWebhookHandler(req: Request, res: Response) {
     try {
-        log.info('[PayPal Webhook] Raw payload:', { headers: req.headers, body: req.body });
         const webhookId = env.PAYPAL_WEBHOOK_ID;
 
         // 1. Signature Verification
