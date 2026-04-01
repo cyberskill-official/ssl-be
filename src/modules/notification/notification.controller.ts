@@ -869,12 +869,10 @@ export const notificationCtr = {
                 // Fetch actor (new user) with needed location data
                 const actorFound = await userCtr.getUser(context, { filter: { id: actorId }, populate: ['partner1.location', 'partner2.location', 'settings.temporaryLocation.location'] }).catch(() => null);
                 if (!actorFound?.success || !actorFound.result) {
-                    log.info('[Notification] NEW_MEMBER skip: actor not found', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
                 const actorMap = getEffectiveMap(actorFound.result as any);
                 if (!actorMap || typeof actorMap.latitude !== 'number' || typeof actorMap.longitude !== 'number') {
-                    log.info('[Notification] NEW_MEMBER skip: actor no location', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
 
@@ -886,7 +884,6 @@ export const notificationCtr = {
 
                 const recipientMap = getEffectiveMap(recipient.result as any);
                 if (!recipientMap || typeof recipientMap.latitude !== 'number' || typeof recipientMap.longitude !== 'number') {
-                    log.info('[Notification] NEW_MEMBER skip: recipient no location', { actorId, targetId: tid });
                     return { success: true, message: null };
                 }
 
@@ -899,11 +896,8 @@ export const notificationCtr = {
                 const distanceKm = haversineKm(recipientMap.latitude, recipientMap.longitude, actorMap.latitude, actorMap.longitude);
 
                 if (!insideViewport || distanceKm > radiusKm) {
-                    log.info('[Notification] NEW_MEMBER skip: outside area', { actorId, targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                     return { success: true, message: null };
                 }
-
-                log.info('[Notification] NEW_MEMBER pass: will send', { actorId, targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
             }
             catch (err) {
                 // On geofence error, skip notification to avoid global notifications
@@ -952,11 +946,8 @@ export const notificationCtr = {
                     );
 
                     if (!insideViewport || distanceKm > radiusKm) {
-                        log.info('[Notification] NEW_ANNOUNCEMENT skip: outside area', { targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                         return { success: true, message: null };
                     }
-
-                    log.info('[Notification] NEW_ANNOUNCEMENT pass: will send (nearby)', { targetId: tid, distanceKm: Math.round(distanceKm), radiusKm });
                 }
                 catch (err) {
                     // On geofence error, skip notification to avoid global notifications

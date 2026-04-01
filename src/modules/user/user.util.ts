@@ -354,7 +354,6 @@ export async function broadcastNewMemberInArea(
                 if (hasLocation || attempt > 0) {
                     break;
                 }
-                log.info('[USER] broadcastNewMemberInArea: no location on attempt 0 — retrying', { newUserId });
             }
             else {
                 log.warn('[USER] broadcastNewMemberInArea: user not found — aborting', { newUserId });
