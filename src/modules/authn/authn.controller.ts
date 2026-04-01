@@ -198,8 +198,6 @@ async function updateUserIpFromRequest(
             if (context.req?.session?.user?.id === normalizedUserId) {
                 context.req.session.user.lastLoginIp = newIpCleaned;
             }
-
-            log.info(`[Register] Updated lastLoginIp to: ${newIpCleaned} for user: ${normalizedUserId}`);
         }
         catch (error) {
             log.warn(`[Register] Failed to update user IP: ${(error as Error).message}`);
@@ -684,8 +682,6 @@ export const authnCtr = {
         if (!clientIp && context.req) {
             clientIp = extractClientIp(context.req) || undefined;
         }
-
-        log.info(`[Register] IP from FE: ${doc.ip || 'NOT PROVIDED'}, Final IP: ${clientIp || 'NOT FOUND'}, doc.ip type: ${typeof doc.ip}`);
 
         const userCreated = await userCtr.createUser(context, {
             doc: {

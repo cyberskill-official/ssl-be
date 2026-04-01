@@ -1,5 +1,3 @@
-import { log } from '@cyberskill/shared/node/log';
-
 import { emailCtr } from '#modules/email/email.controller.js';
 import { getEnv } from '#shared/env/index.js';
 
@@ -13,7 +11,6 @@ const LEADING_TRAILING_SLASHES_REGEX = /^\/+|\/+$/g;
 const USER_APP_BASE_URL = (() => {
     const raw = env.USER_APP_URL;
     if (!raw) {
-        log.warn('[Notification] USER_APP_URL is not set; email links will be broken');
         return '';
     }
     return raw.replace(TRAILING_SLASHES_REGEX, '');

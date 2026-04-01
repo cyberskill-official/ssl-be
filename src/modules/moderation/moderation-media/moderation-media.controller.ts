@@ -279,14 +279,12 @@ export const moderationMediaCtr = {
                 try {
                     if (doc.type === E_ModerationMediaType.IMAGE) {
                         const imageModerationResult = await aiModerationCtr.moderateImage(context, { imageUrl: doc.buffer || doc.url });
-                        log.info('AI Image Moderation Result:', imageModerationResult);
                         if (imageModerationResult.success) {
                             aiModerationResult = imageModerationResult.result;
                         }
                     }
                     else if (doc.type === E_ModerationMediaType.VIDEO) {
                         const videoModerationResult = await aiModerationCtr.moderateVideo(context, { videoUrl: doc.buffer || doc.url });
-                        log.info('AI Video Moderation Result:', videoModerationResult);
                         if (videoModerationResult.success) {
                             aiModerationResult = videoModerationResult.result;
                         }
@@ -347,8 +345,6 @@ export const moderationMediaCtr = {
                     }
                 }
             }
-
-            log.info('Creating Moderation Media with status:', { initialStatus, reason, uploadedBy: currentUser.id, bypassAiModeration });
 
             const moderationCreated = await mongooseCtr.createOne({
                 ...doc,
@@ -533,12 +529,6 @@ export const moderationMediaCtr = {
                         ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                         ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                     };
-                    log.warn('[MODERATION][GALLERY] applying status update', {
-                        moderationId: moderation.id,
-                        entityId: moderation.entityId,
-                        status,
-                        galleryUpdate,
-                    });
                     await galleryCtr.updateGallery(context, {
                         filter: { moderationMediaId: moderation.id },
                         update: galleryUpdate,
@@ -550,11 +540,6 @@ export const moderationMediaCtr = {
                             update: galleryUpdate,
                         });
                     }
-                    log.warn('[MODERATION][GALLERY] status update applied', {
-                        moderationId: moderation.id,
-                        entityId: moderation.entityId,
-                        status,
-                    });
                     if (
                         status === E_ModerationMediaStatus.APPROVED
                         && currentStatus !== E_ModerationMediaStatus.APPROVED

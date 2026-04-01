@@ -513,21 +513,23 @@ export const cron = {
 
     executeDowngradeExpiredMemberships: async () => {
         try {
-            log.info('[CRON] Checking for expired memberships...');
-
             const now = new Date();
+            log.info('[CRON] Checking for expired memberships...', { now: now.toISOString(), localTime: now.toString() });
+
             const [paidRole, promoRole] = await Promise.all([
                 roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
                 roleCtr.getRole({}, { filter: { name: E_Role_User.PROMO_MEMBER } }),
             ]);
 
             if (!paidRole.success) {
-                log.warn('[CRON] Paid member role not found; skipping membership downgrade check.');
+                log.warn('[CRON] Paid member role not found; skipping membership downgrade check.', { paidRoleResult: paidRole });
                 return;
             }
 
             const paidRoleId = paidRole.result.id;
             const promoRoleId = promoRole.success ? promoRole.result.id : null;
+            log.info('[CRON] Role IDs resolved', { paidRoleId, promoRoleId });
+
             const expirationFilter = {
                 $or: [
                     { membershipExpiresAt: { $exists: true, $ne: null, $lte: now } },
@@ -536,14 +538,23 @@ export const cron = {
             };
 
             const paidRoleIds = promoRoleId ? [paidRoleId, promoRoleId] : [paidRoleId];
+            const fullFilter = {
+                isDel: { $ne: true },
+                isAdminBlocked: { $ne: true },
+                rolesIds: { $in: paidRoleIds },
+                ...expirationFilter,
+            };
+            log.info('[CRON] Downgrade query filter', { filter: JSON.stringify(fullFilter) });
+
             const candidatesRes = await userCtr.getUsers({}, {
-                filter: {
-                    isDel: { $ne: true },
-                    isAdminBlocked: { $ne: true },
-                    rolesIds: { $in: paidRoleIds },
-                    ...expirationFilter,
-                },
+                filter: fullFilter,
                 options: { pagination: false },
+            });
+
+            log.info('[CRON] Downgrade candidates query result', {
+                success: candidatesRes.success,
+                count: (candidatesRes as any).result?.docs?.length ?? 0,
+                message: candidatesRes.message,
             });
 
             if (!candidatesRes.success || !candidatesRes.result?.docs?.length) {
@@ -558,6 +569,14 @@ export const cron = {
 
             for (const user of candidatesRes.result.docs) {
                 try {
+                    log.info(`[CRON] Processing downgrade for user ${user.id}`, {
+                        username: user.username,
+                        rolesIds: user.rolesIds,
+                        membershipExpiresAt: user.membershipExpiresAt,
+                        membershipEndDate: (user as any).membershipEndDate,
+                        membershipCancelled: user.membershipCancelled,
+                    });
+
                     const nextRoles = (user.rolesIds ?? []).filter(roleId =>
                         roleId !== paidRoleId && (!promoRoleId || roleId !== promoRoleId),
                     );
@@ -565,6 +584,12 @@ export const cron = {
                     if (freeRoleId && !nextRoles.includes(freeRoleId)) {
                         nextRoles.push(freeRoleId);
                     }
+
+                    log.info(`[CRON] Downgrade update payload for user ${user.id}`, {
+                        previousRoles: user.rolesIds,
+                        nextRoles,
+                        freeRoleId,
+                    });
 
                     const updateRes = await userCtr.updateUser({}, {
                         filter: { id: user.id },

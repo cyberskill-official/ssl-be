@@ -331,8 +331,6 @@ export async function broadcastNewMemberInArea(
     userReadApi: IUserReadApi,
 ) {
     try {
-        log.info('[USER] broadcastNewMemberInArea: START', { newUserId });
-
         // ── 1. Fetch actor (new user) ONCE with full populated data ──
         // Retry once in case location wasn't propagated yet (race condition after createUser)
         let newUser: I_User | null = null;
@@ -356,7 +354,6 @@ export async function broadcastNewMemberInArea(
                 if (hasLocation || attempt > 0) {
                     break;
                 }
-                log.info('[USER] broadcastNewMemberInArea: no location on attempt 0 — retrying', { newUserId });
             }
             else {
                 log.warn('[USER] broadcastNewMemberInArea: user not found — aborting', { newUserId });

@@ -66,12 +66,9 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
         const { emailJob } = job.data;
 
         // LOG 1: Check content size at start
-        const htmlLength = emailJob.html?.length || 0;
-        log.info(`[JOB_START] Processing Job ${jobId} | Subject: ${emailJob.subject} | HTML Size: ${(htmlLength / 1024).toFixed(2)} KB`);
 
         const validation = emailService.validateEmailJob(emailJob);
         if (!validation.isValid) {
-            log.error(`[VALIDATION_FAILED] Job ${jobId}`, { errors: validation.errors });
             throw new Error(`Invalid email job data: ${validation.errors.join(', ')}`);
         }
 
@@ -79,7 +76,6 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
             = typeof emailJob.to === 'string' || (Array.isArray(emailJob.to) && emailJob.to.length === 1);
 
         if (isSingleRecipient && emailJob.type === 'transactional') {
-            log.info(`[SINGLE_SEND] Job ${jobId} sending to single recipient`);
             const result = await emailService.sendEmail(emailJob);
             return result;
         }
@@ -93,8 +89,6 @@ async function processBulkEmailJob(job: Bull.Job<I_BulkEmailJobData>): Promise<I
         let totalSent = 0;
         let totalFailed = 0;
         const failedEmails: string[] = [];
-
-        log.info(`[BULK_START] Job ${jobId} divided into ${batches.length} batches`);
 
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
@@ -177,7 +171,6 @@ function initializeQueues(): void {
 
 function setupEventListeners(): void {
     bulkQueue.on('completed', async (job, result) => {
-        log.info(`[EVENT_COMPLETED] Job ${job.id} finished successfully`);
         emitEvent('job.completed', String(job.id), { job: job.data, result });
 
         emailQueueRegistryService.updateJob(String(job.id), {
@@ -272,7 +265,6 @@ function setupEventListeners(): void {
     });
 
     bulkQueue.on('active', (job) => {
-        log.info(`[EVENT_ACTIVE] Job ${job.id} is being processed by worker`);
         emitEvent('job.processing', String(job.id), { job: job.data });
 
         emailQueueRegistryService.updateJob(String(job.id), {
@@ -311,7 +303,6 @@ export const emailQueue = {
 
         const jobOptions = { ...options, priority: EMAIL_PRIORITY.HIGH };
         const job = await bulkQueue.add(bulkData, jobOptions);
-        log.info(`[QUEUE_ADD] Transactional job added: ${job.id}`);
 
         emailQueueRegistryService.addJob({
             jobId: String(job.id),
