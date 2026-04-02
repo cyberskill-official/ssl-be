@@ -63,7 +63,7 @@ export const paypalSetupService = {
         currency: string,
     ): Promise<I_PayPalSetupResult> {
         const targetPrice = price.toFixed(2);
-        const planName = `Monthly Membership ${targetPrice} ${currency}`;
+        const planName = `Test 2-Day Membership ${targetPrice} ${currency}`;
 
         // 1. Try to find existing plan under this product
         const listRes = await paypalCtr.listPlans(context, { productId });
@@ -72,26 +72,28 @@ export const paypalSetupService = {
                 const cycle = p.billing_cycles?.[0];
                 return cycle?.pricing_scheme?.fixed_price?.value === targetPrice
                     && cycle?.pricing_scheme?.fixed_price?.currency_code === currency
+                    && cycle?.frequency?.interval_unit === E_PayPalIntervalUnit.DAY
+                    && cycle?.frequency?.interval_count === 2
                     && p.status === 'ACTIVE';
             });
 
             if (existing) {
-                log.info(`[PayPal Setup] Found existing plan: ${existing.id}`);
+                log.info(`[PayPal Setup] Found existing test plan: ${existing.id}`);
                 return { id: existing.id };
             }
         }
 
         // 2. Create if not found
-        log.info(`[PayPal Setup] Plan "${planName}" not found, creating...`);
+        log.info(`[PayPal Setup] Test plan "${planName}" not found, creating...`);
         const createRes = await paypalCtr.createPlan(context, {
             product_id: productId,
             name: planName,
-            description: `Monthly membership at ${targetPrice} ${currency}`,
+            description: `Test membership at ${targetPrice} ${currency} every 2 days`,
             billing_cycles: [
                 {
                     frequency: {
-                        interval_unit: E_PayPalIntervalUnit.MONTH,
-                        interval_count: 1,
+                        interval_unit: E_PayPalIntervalUnit.DAY,
+                        interval_count: 2,
                     },
                     tenure_type: E_PayPalTenureType.REGULAR,
                     sequence: 1,
