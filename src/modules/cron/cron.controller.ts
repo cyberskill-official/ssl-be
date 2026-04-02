@@ -16,10 +16,8 @@ import { E_LocationEntityType, LocationModel } from '#modules/location/index.js'
 import { notificationCtr } from '#modules/notification/notification.controller.js';
 import { E_NotificationChannel, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { orderCtr } from '#modules/order/index.js';
-import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
-import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
 import { userCtr } from '#modules/user/index.js';
@@ -29,6 +27,7 @@ import { mongoBackup } from '#shared/mongo/index.js';
 import { createSystemContext } from '#shared/util/context.js';
 
 import { AdvertisementModel } from '../advertisement/advertisement.model.js';
+import { PromoCodeModel } from '../promo-code/promo-code/promo-code.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
@@ -103,7 +102,7 @@ export const cron = {
             cron.membershipMaintenance(),
             cron.cleanupInactiveFreeUsers(),
             cron.cleanupUnpaidOrders(),
-            cron.recoverPendingPayPalOrders(),
+            cron.deactivateExpiredPromoCodes(),
         ];
         for (const job of jobs) {
             job.start();
@@ -983,207 +982,30 @@ export const cron = {
 
     // Auto-recover pending PayPal orders by checking their actual status via PayPal API
     // Runs nightly at 2 AM to catch orders stuck due to missed/failed webhooks
-    recoverPendingPayPalOrders: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_NIGHT_2AM, async () => {
+    // Auto-deactivate promo codes whose expiresAt date has passed
+    deactivateExpiredPromoCodes: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
             try {
-                log.info('[CRON] ========== RECOVER PENDING PAYPAL ORDERS STARTED ==========');
-                const systemContext = createSystemContext();
+                const now = new Date();
+                log.info('[CRON] Checking for expired promo codes...');
 
-                // Find PaymentRequests that are PENDING with PayPal for more than 2 hours
-                const PENDING_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
-                const cutoffDate = new Date(Date.now() - PENDING_THRESHOLD_MS);
-
-                const pendingPRRes = await paymentRequestCtr.getPaymentRequests(systemContext, {
-                    filter: {
-                        status: E_PaymentRequestStatus.PENDING,
-                        gateway: E_PaymentProvider.PAYPAL,
-                        createdAt: { $lt: cutoffDate },
+                const result = await PromoCodeModel.updateMany(
+                    {
+                        isActive: true,
+                        expiresAt: { $type: 'date', $lte: now },
                     },
-                    options: { pagination: false },
-                } as any);
+                    { $set: { isActive: false } },
+                );
 
-                if (!pendingPRRes.success || !pendingPRRes.result?.docs?.length) {
-                    log.info('[CRON] No pending PayPal payment requests found for recovery');
-                    log.info('[CRON] ========== RECOVER PENDING PAYPAL ORDERS COMPLETED ==========');
-                    return;
+                if (result.modifiedCount > 0) {
+                    log.success(`[CRON] Deactivated ${result.modifiedCount} expired promo code(s).`);
                 }
-
-                const pendingPRs = pendingPRRes.result.docs;
-                log.info(`[CRON] Found ${pendingPRs.length} pending PayPal payment request(s) to check`);
-
-                let recoveredCount = 0;
-                let failedCount = 0;
-                let stillPendingCount = 0;
-
-                for (const pr of pendingPRs) {
-                    try {
-                        const externalOrderId = pr.externalOrderId;
-                        const meta = pr.meta as Record<string, unknown> | null | undefined;
-                        const orderId = meta && typeof meta === 'object' && typeof meta['orderId'] === 'string'
-                            ? meta['orderId']
-                            : null;
-
-                        if (!externalOrderId) {
-                            log.warn(`[CRON] PaymentRequest ${pr.id} has no externalOrderId, skipping`);
-                            continue;
-                        }
-
-                        log.info(`[CRON] Checking PayPal status for PR ${pr.id}`, { externalOrderId, orderId });
-
-                        let paypalStatus = 'UNKNOWN';
-                        let isConfirmedPaid = false;
-                        let isConfirmedFailed = false;
-                        let gatewayResponse: any = null;
-
-                        // Check PayPal API based on ID format
-                        if (externalOrderId.startsWith('I-')) {
-                            // Subscription ID
-                            const subRes = await paypalCtr.getSubscription(systemContext, {
-                                subscriptionId: externalOrderId,
-                            });
-
-                            if (subRes.success && subRes.result) {
-                                gatewayResponse = subRes.result;
-                                paypalStatus = (subRes.result as any).status || 'UNKNOWN';
-                                const normalized = paypalStatus.toUpperCase();
-
-                                if (normalized === 'ACTIVE') {
-                                    isConfirmedPaid = true;
-                                }
-                                else if (['CANCELLED', 'SUSPENDED', 'EXPIRED'].includes(normalized)) {
-                                    isConfirmedFailed = true;
-                                }
-                            }
-                            else {
-                                // If the response failed, check if it was a 404 (Resource Not Found)
-                                const isNotFound = subRes.message?.includes('RESOURCE_NOT_FOUND')
-                                    || (subRes as any).error?.name === 'RESOURCE_NOT_FOUND'
-                                    || (subRes as any).error?.message?.includes('RESOURCE_NOT_FOUND');
-
-                                if (isNotFound) {
-                                    log.warn(`[CRON] Subscription ${externalOrderId} NOT FOUND on PayPal, marking as FAILED`);
-                                    isConfirmedFailed = true;
-                                    paypalStatus = 'RESOURCE_NOT_FOUND';
-                                }
-                                else {
-                                    log.warn(`[CRON] Failed to fetch subscription ${externalOrderId}:`, subRes.message);
-                                }
-                            }
-                        }
-                        else {
-                            // One-time order ID
-                            const orderRes = await paypalCtr.getOrder(systemContext, {
-                                orderId: externalOrderId,
-                            });
-
-                            if (orderRes.success && orderRes.result) {
-                                gatewayResponse = orderRes.result;
-                                paypalStatus = (orderRes.result as any).status || 'UNKNOWN';
-                                const normalized = paypalStatus.toUpperCase();
-
-                                if (normalized === 'COMPLETED') {
-                                    isConfirmedPaid = true;
-                                }
-                                else if (['VOIDED', 'CANCELLED', 'DECLINED', 'FAILED', 'EXPIRED'].includes(normalized)) {
-                                    isConfirmedFailed = true;
-                                }
-                            }
-                            else {
-                                // If the response failed, check if it was a 404 (Resource Not Found)
-                                const isNotFound = orderRes.message?.includes('RESOURCE_NOT_FOUND')
-                                    || (orderRes as any).error?.name === 'RESOURCE_NOT_FOUND'
-                                    || (orderRes as any).error?.message?.includes('RESOURCE_NOT_FOUND');
-
-                                if (isNotFound) {
-                                    log.warn(`[CRON] Order ${externalOrderId} NOT FOUND on PayPal, marking as FAILED`);
-                                    isConfirmedFailed = true;
-                                    paypalStatus = 'RESOURCE_NOT_FOUND';
-                                }
-                                else {
-                                    log.warn(`[CRON] Failed to fetch order ${externalOrderId}:`, orderRes.message);
-                                }
-                            }
-                        }
-
-                        if (isConfirmedPaid) {
-                            log.info(`[CRON] ✅ PR ${pr.id} confirmed PAID on PayPal (${paypalStatus})`, { externalOrderId });
-
-                            // 1. Update PaymentRequest to PAID
-                            await paymentRequestCtr.updatePaymentRequest(systemContext, {
-                                filter: { id: pr.id },
-                                update: {
-                                    $set: {
-                                        status: E_PaymentRequestStatus.PAID,
-                                        gatewayResponse,
-                                    },
-                                },
-                            });
-
-                            // 2. Update associated Order to PAID and apply effects
-                            if (orderId) {
-                                await orderCtr.updateOrder(systemContext, {
-                                    filter: { id: orderId },
-                                    update: { $set: { status: E_OrderStatus.PAID } },
-                                });
-
-                                // 3. Apply order paid effects (membership extension, role, etc.)
-                                try {
-                                    const fullOrderRes = await orderCtr.getOrder(systemContext, {
-                                        filter: { id: orderId },
-                                        populate: [
-                                            { path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] },
-                                        ],
-                                    });
-                                    if (fullOrderRes.success && fullOrderRes.result) {
-                                        await applyOrderPaidEffects(systemContext, fullOrderRes.result);
-                                        log.info(`[CRON] Applied paid effects for order ${orderId}`);
-                                    }
-                                }
-                                catch (effectsErr) {
-                                    log.error(`[CRON] Failed to apply paid effects for order ${orderId}:`, effectsErr);
-                                }
-                            }
-
-                            recoveredCount++;
-                        }
-                        else if (isConfirmedFailed) {
-                            log.info(`[CRON] ❌ PR ${pr.id} confirmed FAILED/CANCELLED on PayPal (${paypalStatus})`, { externalOrderId });
-
-                            await paymentRequestCtr.updatePaymentRequest(systemContext, {
-                                filter: { id: pr.id },
-                                update: {
-                                    $set: {
-                                        status: E_PaymentRequestStatus.CANCELLED,
-                                        gatewayResponse,
-                                    },
-                                },
-                            });
-
-                            if (orderId) {
-                                await orderCtr.updateOrder(systemContext, {
-                                    filter: { id: orderId },
-                                    update: { $set: { status: E_OrderStatus.CANCELLED } },
-                                });
-                            }
-
-                            failedCount++;
-                        }
-                        else {
-                            log.info(`[CRON] ⏳ PR ${pr.id} still pending on PayPal (${paypalStatus})`, { externalOrderId });
-                            stillPendingCount++;
-                        }
-                    }
-                    catch (prErr) {
-                        log.error(`[CRON] Error recovering PR ${pr.id}:`, prErr);
-                    }
+                else {
+                    log.info('[CRON] No expired promo codes found.');
                 }
-
-                log.info(`[CRON] Recovery summary: ${recoveredCount} recovered, ${failedCount} failed/cancelled, ${stillPendingCount} still pending`);
-                log.info('[CRON] ========== RECOVER PENDING PAYPAL ORDERS COMPLETED ==========');
             }
             catch (error) {
-                log.error('[CRON] ❌ Error recovering pending PayPal orders:', error);
-                log.error('[CRON] ========== RECOVER PENDING PAYPAL ORDERS FAILED ==========');
+                log.error('[CRON] Failed to deactivate expired promo codes:', error);
             }
         });
     },
