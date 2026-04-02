@@ -24,20 +24,29 @@ const env = getEnv();
 
 export async function paypalWebhookHandler(req: Request, res: Response) {
     try {
-        const webhookId = env.PAYPAL_WEBHOOK_ID;
+        log.info('[PayPal Webhook] Incoming Webhook', {
+            headers: req.headers,
+            body: req.body,
+        });
 
-        // 1. Signature Verification
-        const headers = req.headers;
-        const transmissionId = headers['paypal-transmission-id'] as string;
-        const transmissionTime = headers['paypal-transmission-time'] as string;
-        const transmissionSig = headers['paypal-transmission-sig'] as string;
-        const certUrl = headers['paypal-cert-url'] as string;
-        const authAlgo = headers['paypal-auth-algo'] as string;
+        if (!req.body || Object.keys(req.body).length === 0) {
+            log.warn('[PayPal Webhook] Received empty body');
+            res.status(400).send('Empty body received');
+            return;
+        }
 
         const body = req.body;
+        const webhookId = env.PAYPAL_WEBHOOK_ID;
 
         if (webhookId) {
             const context = { req };
+            const headers = req.headers;
+            const transmissionId = headers['paypal-transmission-id'] as string;
+            const transmissionTime = headers['paypal-transmission-time'] as string;
+            const transmissionSig = headers['paypal-transmission-sig'] as string;
+            const certUrl = headers['paypal-cert-url'] as string;
+            const authAlgo = headers['paypal-auth-algo'] as string;
+
             const verifyRes = await paypalCtr.verifyWebhookSignature(context, {
                 auth_algo: authAlgo,
                 cert_url: certUrl,
@@ -132,8 +141,10 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
         res.status(200).send('OK');
     }
     catch (error) {
-        log.error('[PayPal Webhook] Error processing webhook:', error);
-        res.status(500).send('Internal Server Error');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : '';
+        log.error('[PayPal Webhook] Error processing webhook:', { message: errorMessage, stack: errorStack });
+        res.status(500).send(`Internal Server Error: ${errorMessage}`);
     }
 }
 
