@@ -29,6 +29,7 @@ import { mongoBackup } from '#shared/mongo/index.js';
 import { createSystemContext } from '#shared/util/context.js';
 
 import { AdvertisementModel } from '../advertisement/advertisement.model.js';
+import { PromoCodeModel } from '../promo-code/promo-code/promo-code.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
@@ -104,6 +105,7 @@ export const cron = {
             cron.cleanupInactiveFreeUsers(),
             cron.cleanupUnpaidOrders(),
             cron.recoverPendingPayPalOrders(),
+            cron.deactivateExpiredPromoCodes(),
         ];
         for (const job of jobs) {
             job.start();
@@ -1184,6 +1186,34 @@ export const cron = {
             catch (error) {
                 log.error('[CRON] ❌ Error recovering pending PayPal orders:', error);
                 log.error('[CRON] ========== RECOVER PENDING PAYPAL ORDERS FAILED ==========');
+            }
+        });
+    },
+
+    // Auto-deactivate promo codes whose expiresAt date has passed
+    deactivateExpiredPromoCodes: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
+            try {
+                const now = new Date();
+                log.info('[CRON] Checking for expired promo codes...');
+
+                const result = await PromoCodeModel.updateMany(
+                    {
+                        isActive: true,
+                        expiresAt: { $type: 'date', $lte: now },
+                    },
+                    { $set: { isActive: false } },
+                );
+
+                if (result.modifiedCount > 0) {
+                    log.success(`[CRON] Deactivated ${result.modifiedCount} expired promo code(s).`);
+                }
+                else {
+                    log.info('[CRON] No expired promo codes found.');
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Failed to deactivate expired promo codes:', error);
             }
         });
     },
