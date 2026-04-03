@@ -50,37 +50,56 @@ export const paymentController = {
             throwError({ status: RESPONSE_STATUS.UNAUTHORIZED, message: 'Unauthorized' });
         }
 
-        // Cleanup stale in-progress orders older than 10 minutes (best-effort)
+        // Cancel any existing in-progress orders for this user (best-effort)
+        // This allows users to always retry payment without any lockout or waiting period
         try {
-            const staleThreshold = new Date(Date.now() - 10 * 60 * 1000);
-            await orderCtr.deleteOrders(context, {
+            const existingOrdersRes = await orderCtr.getOrders(context, {
                 filter: {
                     userId: currentUser.id,
                     status: { $in: [E_OrderStatus.CREATED, E_OrderStatus.PENDING] } as any,
-                    createdAt: { $lt: staleThreshold } as any,
                 },
+                options: { pagination: false },
             } as any);
+
+            if (existingOrdersRes.success && existingOrdersRes.result?.docs?.length > 0) {
+                const staleOrderIds = existingOrdersRes.result.docs.map((o: any) => o.id);
+                log.info(`[Payment] Cancelling ${staleOrderIds.length} stale in-progress order(s) for user ${currentUser.id}`);
+
+                // Cancel the stale orders
+                for (const orderId of staleOrderIds) {
+                    await orderCtr.updateOrder(context, {
+                        filter: { id: orderId },
+                        update: { $set: { status: E_OrderStatus.CANCELLED } },
+                    }).catch(() => { /* best-effort */ });
+                }
+
+                // Also cancel any associated payment requests that are still WAITING or PENDING
+                for (const orderId of staleOrderIds) {
+                    try {
+                        const prRes = await paymentRequestCtr.getPaymentRequests(context, {
+                            filter: {
+                                'meta.orderId': orderId,
+                                'status': { $in: [E_PaymentRequestStatus.WAITING, E_PaymentRequestStatus.PENDING] } as any,
+                            } as any,
+                            options: { pagination: false },
+                        } as any);
+                        if (prRes.success && prRes.result?.docs?.length > 0) {
+                            for (const pr of prRes.result.docs) {
+                                await paymentRequestCtr.updatePaymentRequest(context, {
+                                    filter: { id: pr.id },
+                                    update: { $set: { status: E_PaymentRequestStatus.CANCELLED } },
+                                }).catch(() => { /* best-effort */ });
+                            }
+                        }
+                    }
+                    catch {
+                        /* best-effort */
+                    }
+                }
+            }
         }
         catch {
-            // non-fatal cleanup
-        }
-
-        // Rate-limit: block creating a new payment if there's an in-progress order in the last 10 minutes
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-        const recentOrderRes = await orderCtr.getOrders(context, {
-            filter: {
-                userId: currentUser.id,
-                status: { $in: [E_OrderStatus.CREATED, E_OrderStatus.PENDING] } as any,
-                createdAt: { $gte: tenMinutesAgo } as any,
-            },
-            options: { pagination: false, sort: { createdAt: -1 } },
-        } as any);
-
-        if (recentOrderRes.success && recentOrderRes.result?.docs?.length > 0) {
-            throwError({
-                status: RESPONSE_STATUS.BAD_REQUEST,
-                message: 'You have a payment in progress. Please wait 10 minutes before starting a new payment.',
-            });
+            // non-fatal cleanup — do not block the user from proceeding
         }
 
         // Parse loc (latitude,longitude) from FE geolocation IP

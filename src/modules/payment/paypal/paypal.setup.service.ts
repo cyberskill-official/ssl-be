@@ -72,21 +72,23 @@ export const paypalSetupService = {
                 const cycle = p.billing_cycles?.[0];
                 return cycle?.pricing_scheme?.fixed_price?.value === targetPrice
                     && cycle?.pricing_scheme?.fixed_price?.currency_code === currency
+                    && cycle?.frequency?.interval_unit === E_PayPalIntervalUnit.MONTH
+                    && cycle?.frequency?.interval_count === 1
                     && p.status === 'ACTIVE';
             });
 
             if (existing) {
-                log.info(`[PayPal Setup] Found existing plan: ${existing.id}`);
+                log.info(`[PayPal Setup] Found existing monthly plan: ${existing.id}`);
                 return { id: existing.id };
             }
         }
 
         // 2. Create if not found
-        log.info(`[PayPal Setup] Plan "${planName}" not found, creating...`);
+        log.info(`[PayPal Setup] Monthly plan "${planName}" not found, creating...`);
         const createRes = await paypalCtr.createPlan(context, {
             product_id: productId,
             name: planName,
-            description: `Monthly membership at ${targetPrice} ${currency}`,
+            description: `Monthly membership at ${targetPrice} ${currency} every month`,
             billing_cycles: [
                 {
                     frequency: {
