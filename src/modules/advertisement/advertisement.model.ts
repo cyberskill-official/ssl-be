@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 
 import type { I_Advertisement } from './advertisement.type.js';
 
-import { E_AdvertisementSlot } from './advertisement.type.js';
+import { E_AdvertisementPlacementType, E_AdvertisementSlot } from './advertisement.type.js';
 
 export const AdvertisementModel = mongo.createModel<I_Advertisement>({
     mongoose,
@@ -18,6 +18,9 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
                     message: 'Please enter name for advertisement',
                 },
             ],
+        },
+        description: {
+            type: String,
         },
         image: {
             type: String,
@@ -53,6 +56,27 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
             type: String,
             enum: Object.values(E_AdvertisementSlot),
         },
+        placementType: {
+            type: String,
+            enum: Object.values(E_AdvertisementPlacementType),
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select placement type for advertisement',
+                },
+            ],
+        },
+        placementId: {
+            type: String,
+            required: true,
+            validate: [
+                {
+                    validator: mongo.validator.isRequired(),
+                    message: 'Please select a page for advertisement',
+                },
+            ],
+        },
         startDate: {
             type: Date,
         },
@@ -74,6 +98,24 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
             options: {
                 ref: 'User',
                 localField: 'createdById',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'placementDestination',
+            options: {
+                ref: 'Destination',
+                localField: 'placementId',
+                foreignField: 'id',
+                justOne: true,
+            },
+        },
+        {
+            name: 'placementBlog',
+            options: {
+                ref: 'Blog',
+                localField: 'placementId',
                 foreignField: 'id',
                 justOne: true,
             },

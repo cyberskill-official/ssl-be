@@ -518,6 +518,8 @@ export const moderationMediaCtr = {
                         },
                         update: {
                             status,
+                            ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                            ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                         },
                     });
                     break;

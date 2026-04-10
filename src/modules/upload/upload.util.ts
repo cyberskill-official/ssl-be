@@ -2,6 +2,7 @@ import { path } from '@cyberskill/shared/node/path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { catalogueCtr } from '#modules/catalogue/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
 import {
     E_ModerationMediaStatus,
@@ -153,6 +154,21 @@ export async function applyAiModerationDecision(
         }
         catch {
             /* ignore gallery sync errors */
+        }
+
+        try {
+            // Sync status to associated catalogue if it exists
+            await catalogueCtr.updateCatalogue(context, {
+                filter: { moderationMediaId: moderationId },
+                update: {
+                    status: targetStatus,
+                    ...(targetStatus === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
+                    ...(targetStatus === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
+                },
+            });
+        }
+        catch {
+            /* ignore catalogue sync errors */
         }
 
         // Flag user for AI warnings or rejections

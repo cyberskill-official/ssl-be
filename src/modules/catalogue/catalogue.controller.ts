@@ -30,6 +30,7 @@ import { CatalogueModel } from './catalogue.model.js';
 
 const mongooseCtr = new MongooseController<I_Catalogue>(CatalogueModel);
 const env = getEnv();
+const STORAGE_PATH_LEADING_SLASH_REGEX = /^\//;
 
 export const catalogueCtr = {
     getCatalogue: async (
@@ -105,13 +106,34 @@ export const catalogueCtr = {
             });
 
             if (existingCatalogue.success && existingCatalogue.result.url && existingCatalogue.result.url !== update.url) {
-                const oldUrl = existingCatalogue.result.url;
-                const isVideo = oldUrl.includes('/embed/');
-                if (isVideo) {
-                    await bunnyCtr.deleteVideoUrl(context, oldUrl);
-                }
-                else {
-                    await bunnyCtr.deleteFile(context, oldUrl.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
+                // Strip signed URL query parameters (token, expires, class) before comparing
+                // getCatalogue returns signed URLs, but update.url may be a raw URL
+                const stripSignedParams = (url: string): string => {
+                    try {
+                        const u = new URL(url);
+                        u.searchParams.delete('token');
+                        u.searchParams.delete('expires');
+                        u.searchParams.delete('class');
+                        return u.origin + u.pathname;
+                    }
+                    catch {
+                        return url;
+                    }
+                };
+
+                const oldBaseUrl = stripSignedParams(existingCatalogue.result.url);
+                const newBaseUrl = stripSignedParams(update.url);
+
+                // Only delete the old file if the actual path changed (not just query params)
+                if (oldBaseUrl !== newBaseUrl) {
+                    const oldUrl = existingCatalogue.result.url;
+                    const isVideo = oldUrl.includes('/embed/');
+                    if (isVideo) {
+                        await bunnyCtr.deleteVideoUrl(context, oldUrl);
+                    }
+                    else {
+                        await bunnyCtr.deleteFile(context, oldUrl.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
+                    }
                 }
             }
         }
@@ -127,13 +149,22 @@ export const catalogueCtr = {
         });
 
         if (catalogueFound.success && catalogueFound.result.url) {
-            const url = catalogueFound.result.url;
-            const isVideo = url.includes('/embed/');
+            const rawUrl = catalogueFound.result.url;
+            const isVideo = rawUrl.includes('/embed/');
             if (isVideo) {
-                await bunnyCtr.deleteVideoUrl(context, url);
+                await bunnyCtr.deleteVideoUrl(context, rawUrl);
             }
             else {
-                await bunnyCtr.deleteFile(context, url.replace(`${env.BUNNY_CDN_HOSTNAME}/`, ''));
+                // Strip signed query params to get the correct storage path
+                let storagePath = rawUrl;
+                try {
+                    const u = new URL(rawUrl);
+                    storagePath = u.pathname.replace(STORAGE_PATH_LEADING_SLASH_REGEX, '');
+                }
+                catch {
+                    storagePath = rawUrl.replace(`${env.BUNNY_CDN_HOSTNAME}/`, '');
+                }
+                await bunnyCtr.deleteFile(context, storagePath);
             }
         }
 

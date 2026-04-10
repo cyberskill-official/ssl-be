@@ -20,7 +20,7 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
 import { E_Role_User, roleCtr } from '#modules/authz/index.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
@@ -41,6 +41,7 @@ import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
+import { getSessionUser, isAdminUser } from '#shared/auth-context/auth-context.service.js';
 import { getEnv } from '#shared/env/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 import { applyNameFilters, dedupArraysIterative, hashPassword, validate } from '#shared/util/index.js';
@@ -950,6 +951,33 @@ export const userCtr = {
             );
             dedupArraysIterative(payloadToPersist);
 
+            // After deepMerge: if update explicitly sets array fields to [],
+            // override the merged result (deepMerge keeps existing values for empty arrays)
+            const PARTNER_ARRAY_FIELDS = [
+                'relationshipStatusIds',
+                'sexualOrientationIds',
+                'sexualPreferencesIds',
+                'smokingHabitsIds',
+                'preferredDrinksIds',
+            ] as const;
+            for (const partnerKey of ['partner1', 'partner2'] as const) {
+                const partnerUpdate = (update as Record<string, any>)[partnerKey];
+                const partnerPersist = (payloadToPersist as Record<string, any>)[partnerKey];
+                if (partnerUpdate && partnerPersist) {
+                    for (const field of PARTNER_ARRAY_FIELDS) {
+                        if (Object.hasOwn(partnerUpdate, field) && Array.isArray(partnerUpdate[field]) && partnerUpdate[field].length === 0) {
+                            partnerPersist[field] = [];
+                        }
+                    }
+                }
+            }
+            // Same for top-level array fields
+            for (const field of ['lookingForIds', 'willingnessToGoIds', 'rulesOfEngagementIds', 'profilePurposeIds', 'otherLanguagesIds'] as const) {
+                if (Object.hasOwn(update, field) && Array.isArray((update as Record<string, any>)[field]) && (update as Record<string, any>)[field].length === 0) {
+                    (payloadToPersist as Record<string, any>)[field] = [];
+                }
+            }
+
             // Normalize nested dates again after merge to ensure no junk objects arrived
             normalizeUserSettings((payloadToPersist['settings'] as I_Input_UpdateUser['settings']) ?? undefined);
         }
@@ -1130,10 +1158,17 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const isAdmin = await authnCtr.isAdmin(context);
+        // Use session-based admin check instead of authnCtr.isAdmin() to avoid
+        // the full checkAuth() pipeline which rejects users with isDel: true.
+        // This allows soft-deleted users to complete hard deletion of their own account.
+        const sessionUser = getSessionUser(context);
+        if (!sessionUser) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+        const isAdmin = await isAdminUser(context, sessionUser);
 
         // Hard delete: completely remove user and all related data from the system
-        // Silent deletion: no emails, no notifications, allows re-registration
+        // Sends a farewell email before cleanup, allows re-registration after deletion
         const userToDelete = await userCtr.getUser(context, { filter });
 
         if (!userToDelete.success) {
@@ -1145,6 +1180,20 @@ export const userCtr = {
             throwError({ message: 'User ID not found.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        // Non-admin users can only delete their own account
+        if (!isAdmin && sessionUser.id !== userId) {
+            throwError({ message: 'You can only delete your own account.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        // Send farewell "sorry to see you leave" email before deleting user data.
+        // Must happen before cleanup since the user's email will be gone after deletion.
+        const userEmail = userToDelete.result.email;
+        if (userEmail) {
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userEmail);
+            if (!emailResponse.success) {
+                log.error('[USER] Failed to queue account deleted email for hard delete', { error: emailResponse.message });
+            }
+        }
         try {
             // Get conversation IDs where user is a participant
             const privateConversationIds = await participantCtr.getConversationIdsByUserId(
@@ -1352,11 +1401,12 @@ export const userCtr = {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        // Suspend: soft delete (isDel: true), keeps data in DB, prevents new account creation
+        // Soft delete (isDel: true), keeps data in DB, prevents new account creation
+        // Send farewell "account deleted" email (not "suspended") since user chose to leave
         if (userFound.result.email && userFound.result.isDel !== true) {
-            const emailResponse = await emailCtr.sendEmail(ACCOUNT_SUSPENDED, userFound.result.email);
+            const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userFound.result.email);
             if (!emailResponse.success) {
-                log.error('[USER] Failed to queue account suspended email', { error: emailResponse.message });
+                log.error('[USER] Failed to queue account deleted email', { error: emailResponse.message });
             }
         }
 

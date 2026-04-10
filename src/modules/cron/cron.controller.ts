@@ -97,6 +97,7 @@ export const cron = {
             cron.cleanupVerification(),
             cron.cleanupExpiredTemporaryLocations(),
             cron.disableExpiredAds(),
+            cron.enableScheduledAds(),
             cron.enforceSessionInactivity(),
             cron.markInactiveUsersOffline(),
             cron.membershipMaintenance(),
@@ -408,6 +409,37 @@ export const cron = {
             }
             catch (error) {
                 log.error('[CRON] Failed to disable expired advertisements:', error);
+            }
+        });
+    },
+    enableScheduledAds: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.ENABLE_SCHEDULED_ADS, async () => {
+            try {
+                const now = new Date();
+                // Activate ads whose startDate has been reached and endDate hasn't passed yet
+                const result = await AdvertisementModel.updateMany(
+                    {
+                        isActive: false,
+                        isDel: { $ne: true },
+                        startDate: { $lte: now },
+                        $or: [
+                            { endDate: { $exists: false } },
+                            { endDate: null },
+                            { endDate: { $gt: now } },
+                        ],
+                    },
+                    { $set: { isActive: true } },
+                );
+
+                if (result.modifiedCount > 0) {
+                    log.success(`[CRON] Auto-activated ${result.modifiedCount} scheduled advertisement(s).`);
+                }
+                else {
+                    log.info(`[CRON] No scheduled advertisements to activate.`);
+                }
+            }
+            catch (error) {
+                log.error('[CRON] Failed to enable scheduled advertisements:', error);
             }
         });
     },

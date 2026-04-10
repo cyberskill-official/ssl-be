@@ -7,17 +7,30 @@ enum E_AdvertisementSlot {
     SLOT_6
 }
 
+enum E_AdvertisementPlacementType {
+    CLUB
+    RESORT
+    BLOG
+    PODCAST
+    DASHBOARD
+}
+
 type T_Advertisement {
     id: String
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
     name: String
+    description: String
     image: String
     targetURL: String
     createdById: String
     createdBy: T_User
     slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
+    placementDestination: T_Destination
+    placementBlog: T_Blog
     startDate: DateTime
     endDate: DateTime
     clickCount: Float
@@ -30,10 +43,13 @@ input Input_QueryAdvertisement {
     createdAt: DateTime
     updatedAt: DateTime
     name: String
+    description: String
     image: String
     targetURL: String
     createdById: String
     slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
     startDate: DateTime
     endDate: DateTime
     clickCount: Float
@@ -42,10 +58,13 @@ input Input_QueryAdvertisement {
 
 input Input_CreateAdvertisement {
     name: String!
+    description: String
     image: String!
     targetURL: String!
     createdById: String
     slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType!
+    placementId: String!
     startDate: DateTime
     endDate: DateTime
     isActive: Boolean
@@ -54,9 +73,12 @@ input Input_CreateAdvertisement {
 input Input_UpdateAdvertisement {
     isDel: Boolean
     name: String
+    description: String
     image: String
     targetURL: String
     slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
     startDate: DateTime
     endDate: DateTime
     isActive: Boolean
@@ -102,6 +124,11 @@ type Query {
         populate: JSON
     ): T_Response_Advertisement!
     getAdvertisements(filter: Input_QueryAdvertisement, options: JSON): T_Response_Advertisements!
+    getAdvertisementByPlacement(
+        placementType: E_AdvertisementPlacementType!
+        placementId: String!
+        slot: E_AdvertisementSlot
+    ): T_Response_Advertisement!
 }
 
 type Mutation {
