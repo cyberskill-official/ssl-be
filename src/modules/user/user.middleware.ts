@@ -117,13 +117,23 @@ export async function updateUserActivity(req: I_Request, _res: I_Response, next:
                 }
             }
 
-            // Always update session lastActivity timestamp (lightweight operation)
+            // Always update session lastActivity timestamp
+            // IMPORTANT: Must await save() to prevent race condition with session.save()
+            // in checkAuth's assignSessionUser. Fire-and-forget save can cause concurrent
+            // writes to MongoDB, corrupting session state and triggering "User not authenticated".
             if (req.session) {
                 try {
                     // store as number (ms since epoch)
                     (req.session as any).lastActivity = now;
                     if (typeof (req.session as any).save === 'function') {
-                        (req.session as any).save(() => { /* best-effort */ });
+                        await new Promise<void>((resolve) => {
+                            (req.session as any).save((err: any) => {
+                                if (err) {
+                                    log.warn('Failed to save session lastActivity:', err);
+                                }
+                                resolve(); // always resolve to not block request
+                            });
+                        });
                     }
                 }
                 catch (err) {

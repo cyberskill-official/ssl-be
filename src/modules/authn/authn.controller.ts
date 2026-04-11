@@ -543,6 +543,15 @@ export const authnCtr = {
         const authChecked = await authnCtr.checkAuth(context);
 
         if (!authChecked.success) {
+            log.warn('[AUTH] getUserFromSession failed:', {
+                message: authChecked.message,
+                code: authChecked.code,
+                hasReq: !!context?.req,
+                hasSession: !!context?.req?.session,
+                hasSessionUser: !!context?.req?.session?.user,
+                sessionId: context?.req?.sessionID,
+                lastActivity: (context?.req?.session as any)?.lastActivity,
+            });
             throwError({
                 message: 'User not authenticated.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
