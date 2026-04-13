@@ -951,8 +951,8 @@ export const userCtr = {
             );
             dedupArraysIterative(payloadToPersist);
 
-            // After deepMerge: if update explicitly sets array fields to [],
-            // override the merged result (deepMerge keeps existing values for empty arrays)
+             // After deepMerge: if update explicitly sets array fields,
+            // always use the FE-provided array to avoid stale merged values.
             const PARTNER_ARRAY_FIELDS = [
                 'relationshipStatusIds',
                 'sexualOrientationIds',
@@ -965,16 +965,16 @@ export const userCtr = {
                 const partnerPersist = (payloadToPersist as Record<string, any>)[partnerKey];
                 if (partnerUpdate && partnerPersist) {
                     for (const field of PARTNER_ARRAY_FIELDS) {
-                        if (Object.hasOwn(partnerUpdate, field) && Array.isArray(partnerUpdate[field]) && partnerUpdate[field].length === 0) {
-                            partnerPersist[field] = [];
+                        if (Object.hasOwn(partnerUpdate, field) && Array.isArray(partnerUpdate[field])) {
+                            partnerPersist[field] = partnerUpdate[field];
                         }
                     }
                 }
             }
             // Same for top-level array fields
             for (const field of ['lookingForIds', 'willingnessToGoIds', 'rulesOfEngagementIds', 'profilePurposeIds', 'otherLanguagesIds'] as const) {
-                if (Object.hasOwn(update, field) && Array.isArray((update as Record<string, any>)[field]) && (update as Record<string, any>)[field].length === 0) {
-                    (payloadToPersist as Record<string, any>)[field] = [];
+                if (Object.hasOwn(update, field) && Array.isArray((update as Record<string, any>)[field])) {
+                    (payloadToPersist as Record<string, any>)[field] = (update as Record<string, any>)[field];
                 }
             }
 
