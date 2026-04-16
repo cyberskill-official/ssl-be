@@ -367,32 +367,17 @@ export const userCtr = {
                         url: fullUrl,
                         entity: E_UploadEntity.USER,
                         entityId: currentUser.id,
-                        isPublished: true,
                     },
                 });
 
                 if (moderationCreated.success && moderationCreated.result) {
-                    const moderationId = moderationCreated.result.id;
+                    const moderationStatus = moderationCreated.result.status;
                     galleryCreatedId = moderationCreated.result.entityId ?? undefined;
 
-                    if (moderationCreated.result.status === E_ModerationMediaStatus.REJECTED) {
+                    if (moderationStatus === E_ModerationMediaStatus.REJECTED) {
                         rejectedByModeration = true;
 
-                        // Keep rejected avatar from being attached to user profile.
-                        await moderationMediaCtr.updateModerationMedia(context, {
-                            filter: { id: moderationId },
-                            update: {
-                                status: E_ModerationMediaStatus.REJECTED,
-                                isPublished: false,
-                            },
-                            options: { new: true },
-                        });
-
-                        if (galleryCreatedId) {
-                            await galleryCtr.deleteGallery(context, { filter: { id: galleryCreatedId } });
-                            galleryCreatedId = undefined;
-                        }
-
+                        // Cleanup rejected avatar file from storage
                         const rejectedRelativePath = fullUrl
                             ? (fullUrl.split('?')[0] ?? '')
                                     .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
@@ -403,28 +388,18 @@ export const userCtr = {
                             await bunnyCtr.deleteFile(context, rejectedRelativePath);
                         }
 
+                        // Also delete the gallery entry if it was created
+                        if (galleryCreatedId) {
+                            await galleryCtr.deleteGallery(context, { filter: { id: galleryCreatedId } });
+                            galleryCreatedId = undefined;
+                        }
+
                         galleryUrl = undefined;
                     }
                     else {
-                        await moderationMediaCtr.updateModerationMedia(context, {
-                            filter: { id: moderationId },
-                            update: {
-                                status: E_ModerationMediaStatus.APPROVED,
-                                isPublished: true,
-                            },
-                            options: { new: true },
-                        });
-
-                        if (galleryCreatedId) {
-                            await galleryCtr.updateGallery(context, {
-                                filter: { id: galleryCreatedId },
-                                update: {
-                                    status: E_ModerationMediaStatus.APPROVED,
-                                    isPublished: true,
-                                },
-                            });
-                            galleryUrl = fullUrl;
-                        }
+                        // For APPROVED or PENDING (suspicious), we use the avatar.
+                        // The isPublished flag was already handled by createModerationMedia.
+                        galleryUrl = fullUrl;
                     }
                 }
             }
