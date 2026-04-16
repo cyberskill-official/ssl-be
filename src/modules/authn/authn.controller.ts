@@ -1749,16 +1749,38 @@ export const authnCtr = {
         let compareFaceResult = null;
         let aiResult = null;
         let aiApproved = false;
+        let aiFailed = false;
+        let aiFailureReason: string | undefined;
 
         if (!isOtherMethod) {
-            compareFaceResult = await rekognitionController.compareFaces(args);
+            try {
+                compareFaceResult = await rekognitionController.compareFaces(args);
 
-            if (!compareFaceResult.success) {
-                return compareFaceResult;
+                if (!compareFaceResult.success) {
+                    // AI returned an unsuccessful result — fall back to manual review
+                    aiFailed = true;
+                    aiFailureReason = compareFaceResult.message || 'AI verification was unable to process this submission';
+                    log.warn('AI age verification returned unsuccessful, falling back to manual review:', {
+                        userId: currentUser.id,
+                        reason: aiFailureReason,
+                    });
+                }
+                else {
+                    aiResult = compareFaceResult.result;
+                    aiApproved = aiResult?.isOver18 === true;
+                }
             }
-
-            aiResult = compareFaceResult.result;
-            aiApproved = aiResult?.isOver18 === true;
+            catch (aiError) {
+                // AI threw an error (MRZ not detected, no face match, quality issues, etc.)
+                // Instead of blocking the user, fall back to manual review
+                aiFailed = true;
+                aiFailureReason = aiError instanceof Error ? aiError.message : 'AI verification encountered an unexpected error';
+                log.warn('AI age verification failed, falling back to manual review:', {
+                    userId: currentUser.id,
+                    reason: aiFailureReason,
+                    error: aiError instanceof Error ? aiError.stack : String(aiError),
+                });
+            }
         }
 
         const documentUpload = await uploadCtr.upload(context, {
@@ -1800,32 +1822,41 @@ export const authnCtr = {
         }
 
         // For OTHER method: always set to PENDING, no AI approval
-        // For PASSPORT method: use AI result
+        // For PASSPORT method: use AI result, or fall back to PENDING if AI failed
         const ageVerifyPayload: I_AgeVerify = {
-            status: isOtherMethod ? E_AgeVerifyStatus.PENDING : (aiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING),
+            status: isOtherMethod || aiFailed
+                ? E_AgeVerifyStatus.PENDING
+                : (aiApproved ? E_AgeVerifyStatus.APPROVED : E_AgeVerifyStatus.PENDING),
             method,
             preApproval: {
                 documentPic: documentUrl,
                 selfiePic: selfieUrl,
-                // Only include AI result for PASSPORT method
+                // Include AI result for PASSPORT method, or failure reason if AI failed
                 ...(isOtherMethod
                     ? {}
-                    : {
-                            aiResult: aiResult
-                                ? {
-                                        documentAge: aiResult.documentAge,
-                                        selfieAgeRange: aiResult.selfieAgeRange,
-                                        similarity: aiResult.similarity,
-                                        isOver18: aiResult.isOver18,
-                                        dateOfBirth: aiResult.dateOfBirth,
-                                    }
-                                : undefined,
-                        }),
+                    : aiFailed
+                        ? {
+                                aiResult: {
+                                    isOver18: undefined,
+                                    failureReason: aiFailureReason,
+                                } as any,
+                            }
+                        : {
+                                aiResult: aiResult
+                                    ? {
+                                            documentAge: aiResult.documentAge,
+                                            selfieAgeRange: aiResult.selfieAgeRange,
+                                            similarity: aiResult.similarity,
+                                            isOver18: aiResult.isOver18,
+                                            dateOfBirth: aiResult.dateOfBirth,
+                                        }
+                                    : undefined,
+                            }),
             },
         };
 
-        // Only set approved fields if PASSPORT method and AI approved
-        if (!isOtherMethod && aiApproved) {
+        // Only set approved fields if PASSPORT method and AI approved (not when AI failed)
+        if (!isOtherMethod && !aiFailed && aiApproved) {
             ageVerifyPayload.approvedAt = new Date();
             ageVerifyPayload.approvedById = undefined;
             ageVerifyPayload.reason = undefined;
@@ -1855,7 +1886,7 @@ export const authnCtr = {
             const finalStatus = userUpdated.result.ageVerify?.status;
 
             // If approved by AI, send approval notification
-            if (aiApproved && finalStatus === E_AgeVerifyStatus.APPROVED && !wasAgeVerified) {
+            if (aiApproved && !aiFailed && finalStatus === E_AgeVerifyStatus.APPROVED && !wasAgeVerified) {
                 try {
                     await notificationCtr.createNotificationWithSettings(context, {
                         doc: {
@@ -1880,7 +1911,33 @@ export const authnCtr = {
                     log.error('Failed to send age verification approval notification:', error);
                 }
             }
-            // If pending (needs manual review), send submitted notification
+            // If pending due to AI failure, send a specific manual review notification
+            else if (aiFailed && finalStatus === E_AgeVerifyStatus.PENDING) {
+                try {
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: currentUser.id,
+                            type: [E_NotificationType.AGE_VERIFICATION_SUBMITTED],
+                            entityType: E_NotificationEntityType.USER,
+                            entityId: currentUser.id,
+                            body: 'Your age verification could not be processed automatically and has been sent for manual review. Our team will review your submission — this typically takes 24-48 hours.',
+                            channels: [E_NotificationChannel.IN_APP],
+                            presentation: {
+                                headline: 'Age Verification Under Manual Review',
+                                redirect: {
+                                    kind: E_RedirectType.PROFILE,
+                                    id: currentUser.id,
+                                },
+                            },
+                        },
+                    });
+                }
+                catch (error) {
+                    // Non-fatal: log but don't block the verification result
+                    log.error('Failed to send age verification manual review notification:', error);
+                }
+            }
+            // If pending (needs manual review) for other reasons, send submitted notification
             else if (finalStatus === E_AgeVerifyStatus.PENDING) {
                 try {
                     await notificationCtr.createNotificationWithSettings(context, {

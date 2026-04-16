@@ -240,3 +240,32 @@ export function isHarmlessLabel(labelName: string): boolean {
     // All labels are harmless except rejected ones
     return !isRejectedLabel(labelName);
 }
+
+/**
+ * Additional general labels from AWS DetectLabels that indicate adult/body content
+ * These are NOT moderation labels, but general labels commonly found on nude/adult images
+ * Verified from official AWS Rekognition AmazonRekognitionAllLabels_v3.0.csv
+ */
+export const ADULT_GENERAL_LABELS = [
+    'person',
+    'adult',
+    'skin',
+    'bikini',
+    'bra',
+    'lingerie',
+    'underwear',
+] as const;
+
+/**
+ * Check if a label indicates nudity or adult content
+ * Uses existing SEXUAL_NUDITY_LABELS + verified general body labels
+ * Used to detect potential false positives when rejected labels co-occur with adult content
+ */
+export function isNudityOrAdultLabel(labelName: string): boolean {
+    const normalized = labelName.toLowerCase().trim();
+    return SEXUAL_NUDITY_LABELS.some(keyword =>
+        normalized === keyword || normalized.includes(keyword),
+    ) || ADULT_GENERAL_LABELS.some(keyword =>
+        normalized === (keyword as string), // exact match only for general labels to avoid false positives
+    );
+}

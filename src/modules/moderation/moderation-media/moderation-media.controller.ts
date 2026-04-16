@@ -268,10 +268,8 @@ export const moderationMediaCtr = {
 
             const bypassAiModeration = isStaff || isAdmin;
 
-            // Default: conversation media is pending, otherwise AI decides (APPROVED or REJECTED)
-            let initialStatus: E_ModerationMediaStatus = (entity === E_UploadEntity.CONVERSATION)
-                ? E_ModerationMediaStatus.PENDING
-                : E_ModerationMediaStatus.APPROVED; // will be updated below if AI moderation is applied
+            // Default status; Staff/Admin bypasses AI and are auto-approved.
+            let initialStatus: E_ModerationMediaStatus = bypassAiModeration ? E_ModerationMediaStatus.APPROVED : E_ModerationMediaStatus.PENDING;
 
             let reason: string | undefined;
 
@@ -291,16 +289,15 @@ export const moderationMediaCtr = {
                     }
                 }
                 catch (error) {
-                    // Do not block uploads on AI moderation failure; log and continue
+                    // Do not block uploads on AI moderation failure; log and proceed as PENDING
                     const errorMessage = (error as Error)?.message || String(error);
                     log.error('AI moderation failed during moderation media creation:', errorMessage);
                     reason = `AI System Error: ${errorMessage}`;
                 }
             }
 
-            // Bypass AI still skips AI call but no longer auto-approves; keep PENDING for manual review
-            if (typeof bypassAiModeration !== 'undefined' && bypassAiModeration) {
-                reason = 'Bypassed AI moderation: uploaded by staff/admin';
+            if (bypassAiModeration) {
+                reason = 'Auto-approved: uploaded by staff/admin';
             }
 
             const composeReason = (res: any): string | undefined => {
@@ -317,41 +314,29 @@ export const moderationMediaCtr = {
 
             if (aiModerationResult) {
                 const aiDecision = aiModerationResult.decision as E_ModerationMediaStatus | undefined;
-                const aiRiskLevel = aiModerationResult.riskLevel as E_RiskLevel | undefined;
                 const aiReason = composeReason(aiModerationResult);
-                const shouldAutoReject
-                    = aiDecision === E_ModerationMediaStatus.REJECTED
-                        || aiRiskLevel === E_RiskLevel.HIGH
-                        || aiRiskLevel === E_RiskLevel.CRITICAL;
 
                 if (entity === E_UploadEntity.CONVERSATION) {
-                    // Always set PENDING for media belonging to a conversation, regardless of AI detection
-                    initialStatus = E_ModerationMediaStatus.PENDING;
+                    // For conversations, we always follow AI decision but fallback to PENDING
+                    initialStatus = aiDecision || E_ModerationMediaStatus.PENDING;
                     reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
                 }
                 else {
-                    // For non-conversation media, status follows AI decision
-                    if (!aiDecision) {
-                        initialStatus = E_ModerationMediaStatus.REJECTED;
-                        reason = 'AI System Error: No decision returned';
-                    }
-                    else if (shouldAutoReject) {
-                        initialStatus = E_ModerationMediaStatus.REJECTED;
-                        reason = aiReason ? `AI blocked: ${aiReason}` : 'AI blocked: flagged as high risk content';
-                    }
-                    else {
-                        initialStatus = E_ModerationMediaStatus.APPROVED;
-                        reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content appears safe';
-                    }
+                    // Use AI decision if available, otherwise default to PENDING
+                    initialStatus = aiDecision || E_ModerationMediaStatus.PENDING;
+                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
                 }
             }
+
+            // Publish immediately if status is APPROVED or PENDING (suspicious but still published)
+            const isPublished = initialStatus === E_ModerationMediaStatus.APPROVED || initialStatus === E_ModerationMediaStatus.PENDING;
 
             const moderationCreated = await mongooseCtr.createOne({
                 ...doc,
                 uploadedById: currentUser.id,
                 status: initialStatus,
                 reason,
-                isPublished: false,
+                isPublished,
             });
 
             if (!moderationCreated.success) {
@@ -527,7 +512,7 @@ export const moderationMediaCtr = {
                 case E_UploadEntity.GALLERY: {
                     const galleryUpdate = {
                         status,
-                        isPublished: status === E_ModerationMediaStatus.APPROVED,
+                        isPublished: status === E_ModerationMediaStatus.APPROVED || status === E_ModerationMediaStatus.PENDING,
                         ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                         ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                     };
@@ -566,7 +551,7 @@ export const moderationMediaCtr = {
                         },
                         update: {
                             status,
-                            isPublished: status === E_ModerationMediaStatus.APPROVED,
+                            isPublished: status === E_ModerationMediaStatus.APPROVED || status === E_ModerationMediaStatus.PENDING,
                             ...(status === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                             ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                         },

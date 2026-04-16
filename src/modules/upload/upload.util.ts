@@ -84,7 +84,6 @@ export async function applyAiModerationDecision(
 
     const shouldAutoReject
         = aiDecision === E_ModerationMediaStatus.REJECTED
-            || aiRiskLevel === E_RiskLevel.HIGH
             || aiRiskLevel === E_RiskLevel.CRITICAL;
 
     const warnReason = !shouldAutoReject && aiReason ? `AI flagged for review: ${aiReason}` : undefined;
@@ -111,32 +110,29 @@ export async function applyAiModerationDecision(
         let targetReason: string | undefined;
 
         if (isConversation) {
-            // Conversation media status is always PENDING regardless of AI decision
-            targetStatus = E_ModerationMediaStatus.PENDING;
+            // Conversation media status defaults to PENDING for safety, but can be APPROVED if AI is clean
+            targetStatus = aiDecision === E_ModerationMediaStatus.APPROVED ? E_ModerationMediaStatus.APPROVED : E_ModerationMediaStatus.PENDING;
             targetReason = pendingReason;
         }
         else {
-            // Other entities (Gallery, etc.) follow AI decision
+            // Apply AI decision: REJECTED if critical, APPROVED if clean, otherwise PENDING
             if (shouldAutoReject) {
                 targetStatus = E_ModerationMediaStatus.REJECTED;
                 targetReason = blockedReason;
             }
-            else if (aiDecision === E_ModerationMediaStatus.APPROVED) {
-                targetStatus = E_ModerationMediaStatus.APPROVED;
-                targetReason = pendingReason;
-            }
             else {
-                // If AI decision is PENDING or unknown, stay PENDING
-                targetStatus = E_ModerationMediaStatus.PENDING;
+                targetStatus = aiDecision || E_ModerationMediaStatus.PENDING;
                 targetReason = pendingReason;
             }
         }
+
+        const isPublished = targetStatus === E_ModerationMediaStatus.APPROVED || targetStatus === E_ModerationMediaStatus.PENDING;
 
         const moderationUpdated = await moderationMediaCtr.updateModerationMedia(context, {
             filter: { id: moderationId },
             update: {
                 status: targetStatus,
-                isPublished: targetStatus === E_ModerationMediaStatus.APPROVED,
+                isPublished,
                 ...(targetReason ? { reason: targetReason } : {}),
             },
         });
@@ -147,7 +143,7 @@ export async function applyAiModerationDecision(
                 filter: { moderationMediaId: moderationId },
                 update: {
                     status: targetStatus,
-                    isPublished: targetStatus === E_ModerationMediaStatus.APPROVED,
+                    isPublished,
                     isDel: targetStatus === E_ModerationMediaStatus.REJECTED,
                 },
             });
@@ -162,8 +158,8 @@ export async function applyAiModerationDecision(
                 filter: { moderationMediaId: moderationId },
                 update: {
                     status: targetStatus,
-                    ...(targetStatus === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                     ...(targetStatus === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
+                    ...(targetStatus === E_ModerationMediaStatus.APPROVED ? { isDel: false } : {}),
                 },
             });
         }

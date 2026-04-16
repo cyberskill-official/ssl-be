@@ -19,7 +19,7 @@ import type { I_Input_ImageModeration, I_Input_VideoModeration, I_MediaModeratio
 
 import { AI_MODERATION_DEFAULT_CONFIG } from '../ai-moderation.constant.js';
 import { E_RiskLevel } from '../ai-moderation.type.js';
-import { isBloodGoreLabel, isChildrenLabel, isRejectedLabel, isWeaponLabel } from '../word-list.constant.js';
+import { isBloodGoreLabel, isChildrenLabel, isNudityOrAdultLabel, isRejectedLabel, isWeaponLabel } from '../word-list.constant.js';
 import { AWSMediaUtils } from './aws-utils.js';
 
 const env = getEnv();
@@ -283,10 +283,27 @@ export class AWSRekognitionProvider {
                 rejectionReason = 'Blood/gore/violence detected - upload blocked';
             }
 
-            // Rejected content detected - automatically reject upload (regardless of confidence)
-            decision = E_ModerationMediaStatus.REJECTED;
-            riskLevel = E_RiskLevel.CRITICAL;
-            reasons.push(rejectionReason);
+            // Check if image also contains nudity/adult labels
+            // If yes → likely false positive (e.g. "Physical Injury" detected on nude skin)
+            // Send to PENDING for manual review instead of auto-reject
+            const hasAdultContext = labelsResult?.Labels?.some((label: Label) => {
+                if (!label.Name)
+                    return false;
+                return isNudityOrAdultLabel(normaliseLabelName(label.Name));
+            }) ?? false;
+
+            if (hasAdultContext) {
+                // Ambiguous: both rejected + adult labels → manual review
+                decision = E_ModerationMediaStatus.PENDING;
+                riskLevel = E_RiskLevel.HIGH;
+                reasons.push(`Manual review: ${rejectionReason} (adult content also detected - possible false positive)`);
+            }
+            else {
+                // Clear violation: only rejected labels, no adult context → auto-reject
+                decision = E_ModerationMediaStatus.REJECTED;
+                riskLevel = E_RiskLevel.CRITICAL;
+                reasons.push(rejectionReason);
+            }
         }
         else {
             // No rejected labels → approve (regardless of other labels or confidence)
@@ -523,11 +540,25 @@ export class AWSRekognitionProvider {
 
         // Decision based on labels only (not confidence)
         if (rejectedLabels.length > 0) {
-            // Rejected labels detected → REJECT (regardless of confidence)
-            decision = E_ModerationMediaStatus.REJECTED;
-            riskLevel = E_RiskLevel.CRITICAL;
             const rejectedLabelNames = rejectedLabels.map(l => l.name).join(', ');
-            reasons.push(`⚠️ REJECTED: Rejected content detected (${rejectedLabelNames}) - upload blocked`);
+
+            // Check if video also contains nudity/adult labels → possible false positive
+            const hasAdultContext = allowedLabels.some(label =>
+                isNudityOrAdultLabel(normaliseLabelName(label.name)),
+            );
+
+            if (hasAdultContext) {
+                // Ambiguous: both rejected + adult labels → manual review
+                decision = E_ModerationMediaStatus.PENDING;
+                riskLevel = E_RiskLevel.HIGH;
+                reasons.push(`⚠️ FLAGGED: ${rejectedLabelNames} detected (adult content also present - manual review needed)`);
+            }
+            else {
+                // Clear violation: only rejected labels, no adult context → auto-reject
+                decision = E_ModerationMediaStatus.REJECTED;
+                riskLevel = E_RiskLevel.CRITICAL;
+                reasons.push(`⚠️ REJECTED: Rejected content detected (${rejectedLabelNames}) - upload blocked`);
+            }
         }
         else {
             // No rejected labels → APPROVE (all other labels are allowed)
