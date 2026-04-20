@@ -22,7 +22,7 @@ import type { I_Input_ImageModeration, I_Input_VideoModeration, I_MediaModeratio
 
 import { AI_MODERATION_DEFAULT_CONFIG } from '../ai-moderation.constant.js';
 import { E_RiskLevel } from '../ai-moderation.type.js';
-import { isBloodGoreLabel, isChildrenLabel, isNudityOrAdultLabel, isRejectedLabel, isWeaponLabel } from '../word-list.constant.js';
+import { isBloodGoreLabel, isChildrenLabel, isRejectedLabel, isWeaponLabel } from '../word-list.constant.js';
 import { AWSMediaUtils } from './aws-utils.js';
 
 const env = getEnv();
