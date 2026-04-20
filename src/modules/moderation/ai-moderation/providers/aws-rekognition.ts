@@ -9,6 +9,9 @@ import {
 } from '@aws-sdk/client-rekognition';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
+import ffmpegPath from 'ffmpeg-static';
+import { Buffer } from 'node:buffer';
+import { spawn } from 'node:child_process';
 
 import type { I_AIModerationConfig, I_ImageThresholdsConfig } from '#modules/setting/setting.type.js';
 
@@ -128,11 +131,26 @@ export class AWSRekognitionProvider {
             }
         }
         catch (error) {
-            throwError({
-                message: `Failed to process image: ${(error as Error)?.message || 'Invalid image format'}`,
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            log.error('Failed to process image bytes', { error: (error as Error).message });
+            return { decision: E_ModerationMediaStatus.APPROVED, riskLevel: E_RiskLevel.LOW, confidence: 0, reasons: [`System: Image processing failed - ${(error as Error).message}`] };
         }
+
+        // --- CONVERSION FOR AI SUPPORT ---
+        // AWS Rekognition primarily supports JPEG/PNG. If file is WebP/AVIF/HEIC, convert to JPEG for AI.
+        const isJpeg = imageBytes[0] === 0xFF && imageBytes[1] === 0xD8 && imageBytes[2] === 0xFF;
+        const isPng = imageBytes[0] === 0x89 && imageBytes[1] === 0x50 && imageBytes[2] === 0x4E && imageBytes[3] === 0x47;
+
+        if (!isJpeg && !isPng) {
+            log.info('[MODERATION] Non-standard image format detected, converting to JPEG for AWS analysis...');
+            try {
+                imageBytes = await this.convertToJpeg(imageBytes);
+                log.info(`[MODERATION] Successfully converted to JPEG. New size: ${imageBytes.length} bytes`);
+            }
+            catch (convError) {
+                log.warn('[MODERATION] Image conversion failed, sending original bytes to AWS anyway', { error: (convError as Error).message });
+            }
+        }
+        // ---------------------------------
 
         const fallbackThresholdRatio = setting?.autoRejectThreshold ?? AI_MODERATION_DEFAULT_CONFIG.autoRejectThreshold;
         const thresholds: I_ImageThresholdsConfig = {
@@ -146,6 +164,10 @@ export class AWSRekognitionProvider {
             : fallbackThresholdRatio;
         const minConfidencePercent = Math.max(50, Math.round(minConfidenceRatio * 100));
 
+        // CHILD SAFETY: Use a much lower MinConfidence for DetectLabelsCommand
+        // to ensure children/minor labels are captured even at lower confidence.
+        const detectMinConfidence = Math.min(minConfidencePercent, 30);
+
         const reasons: string[] = [];
 
         // Detect labels using DetectLabelsCommand (general labels, not just moderation)
@@ -155,14 +177,18 @@ export class AWSRekognitionProvider {
         try {
             const labelsCommand = new DetectLabelsCommand({
                 Image: { Bytes: imageBytes },
-                MinConfidence: minConfidencePercent,
+                MinConfidence: detectMinConfidence,
                 ...(this.customAdapterId && { ProjectVersionArn: this.customAdapterId }),
             });
 
             labelsResult = await this.getClient().send(labelsCommand);
 
+            log.info('[MODERATION] AWS Rekognition Raw Labels:', {
+                labels: labelsResult?.Labels?.map(l => ({ name: l.Name, confidence: l.Confidence })),
+                imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl.substring(0, 100) : '[Buffer]',
+            });
+
             // Process labels and determine content suitability
-            // Only process moderation-related labels, ignore harmless labels like "Person", "Clothing", etc.
             if (labelsResult?.Labels && labelsResult.Labels.length > 0) {
                 for (const label of labelsResult.Labels) {
                     if (!label.Name || label.Confidence === undefined)
@@ -170,50 +196,50 @@ export class AWSRekognitionProvider {
 
                     const labelName = normaliseLabelName(label.Name);
 
-                    // Skip rejected labels (weapons, children, blood/gore) - they will be handled separately
+                    // Skip rejected labels for evaluation purposes - they are handled separately
                     if (isRejectedLabel(labelName)) {
                         continue;
                     }
 
-                    // Only process labels that are in LABEL_THRESHOLD_KEYS (moderation-related)
-                    // Skip all other labels (People, Person, Crowd, Concert, Adult, etc.) - they are allowed
                     const thresholdKey = resolveThresholdKey(label);
                     if (!thresholdKey) {
-                        // This label is not moderation-related, skip it
                         continue;
                     }
 
                     const evaluation = evaluateLabel(label, thresholds, fallbackThresholdRatio);
-
                     if (!evaluation)
                         continue;
 
                     processedLabels.push(evaluation);
-
                     const thresholdDisplay = (evaluation.thresholdRatio * 100).toFixed(1);
                     reasons.push(`${label.Name}: ${label.Confidence.toFixed(1)}% (threshold ${thresholdDisplay}%)`);
                 }
             }
+
+            // CHILD SAFETY: Log ALL children-related labels found
+            const childLabelsFound = labelsResult?.Labels?.filter((label: Label) => {
+                if (!label.Name)
+                    return false;
+                return isChildrenLabel(normaliseLabelName(label.Name));
+            }) ?? [];
+
+            if (childLabelsFound.length > 0) {
+                log.warn('[CHILD SAFETY] Children labels detected in image', {
+                    labels: childLabelsFound.map((l: Label) => ({ name: l.Name, confidence: l.Confidence })),
+                    imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl.substring(0, 100) : '[Buffer]',
+                });
+            }
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            const errorDetails = error instanceof Error ? error.stack : undefined;
-
-            log.error('AWS Rekognition image analysis failed', {
-                error: errorMessage,
-                details: errorDetails,
-                imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl : '[Buffer]',
-            });
-
             throwError({
-                message: `Failed to analyze image with AWS Rekognition: ${errorMessage}`,
+                message: `AI Moderation failed: ${errorMessage}. Note: AWS Rekognition primarily supports JPEG/PNG formats.`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
 
         // Extract text from image
         let textResult = null;
-
         try {
             const textCommand = new DetectTextCommand({
                 Image: { Bytes: imageBytes },
@@ -221,106 +247,121 @@ export class AWSRekognitionProvider {
             textResult = await this.getClient().send(textCommand);
         }
         catch (error) {
-            // Text extraction failure is not critical - log and continue
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            log.warn('Failed to extract text from image with AWS Rekognition', {
-                error: errorMessage,
-                imageUrl: typeof input.imageUrl === 'string' ? input.imageUrl : '[Buffer]',
-            });
-            // Continue without text extraction - moderation can still proceed
+            log.warn('Failed to extract text from image with AWS Rekognition', { error: (error as Error).message });
         }
 
-        // Calculate confidence (only labels >= 80%)
-        let confidence = 0;
-        let topLabel: IEvaluatedLabel | undefined;
+        // Determine decision based on confidence
+        log.info('[MODERATION] AWS Rekognition Raw Labels:', {
+            labels: labelsResult?.Labels?.map(l => ({ name: l.Name, confidence: l.Confidence })),
+        });
 
-        if (processedLabels.length > 0) {
-            topLabel = processedLabels.reduce((currentTop, candidate) => {
-                if (!currentTop || candidate.confidence > currentTop.confidence)
-                    return candidate;
-                return currentTop;
-            }, undefined as IEvaluatedLabel | undefined);
+        // 2. Build decision based on detected labels
+        const allLabelsMap = new Map((labelsResult?.Labels || []).map(l => [normaliseLabelName(l.Name || ''), l.Confidence || 0]));
 
-            if (topLabel) {
-                confidence = topLabel.confidence / 100;
-            }
-        }
+        // Define Human Context: Person or People or Human with high confidence
+        const humanConfidence = Math.max(
+            allLabelsMap.get('person') || 0,
+            allLabelsMap.get('people') || 0,
+            allLabelsMap.get('human') || 0,
+        );
+        const hasHumanContext = humanConfidence >= 80;
 
-        // Determine decision and risk level based on confidence (aligned with media status)
-        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.PENDING;
-        let riskLevel = E_RiskLevel.LOW;
+        log.info(`[MODERATION] Human Context confidence: ${humanConfidence.toFixed(1)}% (HasContext: ${hasHumanContext})`);
 
-        // Check for rejected content: weapons, children, blood/gore
-        // Decision based ONLY on labels (not confidence) - if label exists → reject
-        const rejectedLabel = labelsResult?.Labels?.find((label: Label) => {
+        const rejectedLabelsInImage = labelsResult?.Labels?.filter((label: Label) => {
             if (!label.Name)
                 return false;
-            const labelName = normaliseLabelName(label.Name);
-            // If label matches rejected keywords → reject (regardless of confidence)
-            return isRejectedLabel(labelName);
-        });
-
-        const rejectedInProcessed = processedLabels.find((label) => {
-            const labelName = normaliseLabelName(label.name);
-            // If label matches rejected keywords → reject (regardless of confidence)
-            return isRejectedLabel(labelName);
-        });
-
-        const hasRejectedContent = !!rejectedLabel || !!rejectedInProcessed;
-
-        if (hasRejectedContent) {
-            const rejectedLabelName = rejectedLabel?.Name || rejectedInProcessed?.name || 'Unknown';
-            const labelName = normaliseLabelName(rejectedLabelName);
-            let rejectionReason = 'Rejected content detected - upload blocked';
-
-            if (isWeaponLabel(labelName)) {
-                rejectionReason = 'Weapons detected - upload blocked';
+            const normalized = normaliseLabelName(label.Name);
+            const isMatch = isRejectedLabel(normalized);
+            if (isMatch) {
+                log.info(`[MODERATION] Potential violation detected: ${normalized} (${label.Confidence?.toFixed(1)}%)`);
             }
-            else if (isChildrenLabel(labelName)) {
-                rejectionReason = 'Children/minors detected - upload blocked';
-            }
-            else if (isBloodGoreLabel(labelName)) {
-                rejectionReason = 'Blood/gore/violence detected - upload blocked';
-            }
+            return isMatch;
+        }) || [];
 
-            // Check if image also contains nudity/adult labels
-            // If yes → likely false positive (e.g. "Physical Injury" detected on nude skin)
-            // Send to PENDING for manual review instead of auto-reject
-            const hasAdultContext = labelsResult?.Labels?.some((label: Label) => {
-                if (!label.Name)
-                    return false;
-                return isNudityOrAdultLabel(normaliseLabelName(label.Name));
-            }) ?? false;
+        log.info(`[MODERATION] Filtered Rejected Labels Count: ${rejectedLabelsInImage.length}`);
 
-            if (hasAdultContext) {
-                // Ambiguous: both rejected + adult labels → manual review
-                decision = E_ModerationMediaStatus.PENDING;
-                riskLevel = E_RiskLevel.HIGH;
-                reasons.push(`Manual review: ${rejectionReason} (adult content also detected - possible false positive)`);
-            }
-            else {
-                // Clear violation: only rejected labels, no adult context → auto-reject
-                decision = E_ModerationMediaStatus.REJECTED;
-                riskLevel = E_RiskLevel.CRITICAL;
-                reasons.push(rejectionReason);
+        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.APPROVED;
+        let riskLevel = E_RiskLevel.LOW;
+        let confidence = 0;
+
+        if (rejectedLabelsInImage.length > 0) {
+            // Priority Sort: Put Weapons/Blood/Baby >= 80% at the top regardless of other labels
+            const topRejected = rejectedLabelsInImage.sort((a, b) => {
+                const confA = a.Confidence || 0;
+                const confB = b.Confidence || 0;
+                const normA = normaliseLabelName(a.Name || '');
+                const normB = normaliseLabelName(b.Name || '');
+
+                const isPriorityA = (isWeaponLabel(normA) || isBloodGoreLabel(normA) || normA === 'baby' || normA === 'infant') && confA >= 80;
+                const isPriorityB = (isWeaponLabel(normB) || isBloodGoreLabel(normB) || normB === 'baby' || normB === 'infant') && confB >= 80;
+
+                if (isPriorityA && !isPriorityB)
+                    return -1;
+                if (!isPriorityA && isPriorityB)
+                    return 1;
+                return confB - confA;
+            })[0];
+
+            if (topRejected && topRejected.Name) {
+                const topConfidence = topRejected.Confidence || 0;
+                confidence = topConfidence / 100;
+                const labelName = normaliseLabelName(topRejected.Name);
+
+                const isChild = isChildrenLabel(labelName);
+                const isWeapon = isWeaponLabel(labelName);
+                const isBlood = isBloodGoreLabel(labelName);
+
+                let typeReason = 'Rejected content';
+                if (isWeapon)
+                    typeReason = 'Weapons';
+                else if (isChild)
+                    typeReason = 'Children/minors';
+                else if (isBlood)
+                    typeReason = 'Blood/gore/violence';
+
+                // DECISION LOGIC WITH 80% THRESHOLD:
+                // 1. REJECT: >= 80% AND (Context met OR strictly dangerous)
+                // 2. PENDING: >= 80% AND (Context NOT met - for kids)
+                // 3. APPROVED: < 80% (Ignored as noise)
+
+                if (topConfidence < 80) {
+                    decision = E_ModerationMediaStatus.APPROVED;
+                    riskLevel = E_RiskLevel.LOW;
+                    reasons.push(`Auto-approved: ${typeReason} suspected (${topConfidence.toFixed(1)}%) but below 80% threshold`);
+                }
+                else {
+                    const shouldStrictReject = isChild ? (hasHumanContext || topConfidence >= 90) : true;
+
+                    if (shouldStrictReject) {
+                        decision = E_ModerationMediaStatus.REJECTED;
+                        riskLevel = E_RiskLevel.CRITICAL;
+                        reasons.push(`⚠️ REJECTED: ${typeReason} detected ${hasHumanContext ? 'with human presence ' : ''}(${topConfidence.toFixed(1)}%)`);
+                    }
+                    else {
+                        decision = E_ModerationMediaStatus.PENDING;
+                        riskLevel = E_RiskLevel.HIGH;
+                        reasons.push(`🔍 PENDING: Suspected ${typeReason} detected (${topConfidence.toFixed(1)}%) - requires manual review due to ambiguous context`);
+                    }
+                }
             }
         }
         else {
-            // No rejected labels → approve (regardless of other labels or confidence)
             decision = E_ModerationMediaStatus.APPROVED;
             riskLevel = E_RiskLevel.LOW;
             reasons.push('Auto-approved: No rejected content detected');
         }
 
-        // If text is detected, only set risk level to HIGH if there's already problematic content
-        // Don't automatically flag all images with text as high risk (reduces false positives)
+        log.info(`[MODERATION] Final Decision: ${decision}`, { reasons, riskLevel });
+
         const textDetections = textResult?.TextDetections?.filter((detection: any) =>
             detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
         );
         if (textDetections && textDetections.length > 0) {
-            // Just note text presence (doesn't affect decision - decision is based on labels only)
             reasons.push('Text detected in image');
         }
+
+        log.info('[MODERATION] Final Decision:', { decision, riskLevel, reasons, confidence });
 
         return {
             confidence,
@@ -328,251 +369,259 @@ export class AWSRekognitionProvider {
             decision,
             riskLevel,
             textDetection: [{
-                detectedText: textResult?.TextDetections?.filter((detection: any) =>
-                    detection.Type === 'LINE' && (detection.Confidence || 0) >= 80,
-                ).map((detection: any) => detection.DetectedText).join(' ') || '',
+                detectedText: textDetections?.map((detection: any) => detection.DetectedText).join(' ') || '',
             }],
         };
     }
 
-    async analyzeVideo(input: I_Input_VideoModeration, settings: I_AIModerationConfig): Promise<I_MediaModerationResult> {
-        const threshold = settings?.autoRejectThreshold ?? 0.85;
-
+    async analyzeVideo(input: I_Input_VideoModeration, _settings: I_AIModerationConfig): Promise<I_MediaModerationResult> {
         if (!input.videoUrl) {
-            throwError({
-                message: 'AWS Rekognition moderation is disabled or video input is empty',
-                status: RESPONSE_STATUS.BAD_REQUEST,
-            });
+            log.warn('AWS Rekognition: Empty video input, skipping moderation');
+            return { decision: E_ModerationMediaStatus.APPROVED, riskLevel: E_RiskLevel.LOW, confidence: 0, reasons: ['System: Video moderation skipped (empty input)'], contextLabels: [] };
         }
 
         let confidence = 0;
         let labelDetectionResult: any = null;
+        let videoFileName: string = '';
         const reasons: string[] = [];
         const contextLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
-        let videoFileName: string = '';
-        // Track rejected and allowed labels for logging
-        let rejectedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
-        let allowedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
+        const rejectedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
+        const allowedLabels: Array<{ name: string; confidence: number; timestampMs?: number }> = [];
 
         try {
-            // Step 1: Handle video input (URL, S3 key, or buffer)
-            let videoBuffer: Uint8Array | null = null;
-
             if (typeof input.videoUrl === 'string') {
                 if (input.videoUrl.startsWith('http')) {
-                    // Download video from URL
-                    videoBuffer = await AWSMediaUtils.downloadMedia(input.videoUrl, true);
+                    const videoBuffer = await AWSMediaUtils.downloadMedia(input.videoUrl, true);
                     videoFileName = await AWSMediaUtils.uploadVideoToS3(videoBuffer);
                 }
                 else if (input.videoUrl.startsWith('s3://')) {
-                    // Handle S3 URI format
-                    const s3Uri = input.videoUrl;
-
-                    if (s3Uri.startsWith(`s3://${env.AWS_BUCKET_NAME}/`)) {
-                        // Extract the key from S3 URI
-                        const s3Key = s3Uri.replace(`s3://${env.AWS_BUCKET_NAME}/`, '');
-                        videoFileName = s3Key;
-                    }
-                    else {
-                        const s3UriMatch = s3Uri.match(S3_URI_REGEX);
-                        if (s3UriMatch) {
-                            const [, bucket, key] = s3UriMatch;
-                            if (!bucket || !key) {
-                                throw new Error('Invalid S3 URI format');
-                            }
-                            if (bucket !== env.AWS_BUCKET_NAME) {
-                                throwError({
-                                    message: `S3 URI bucket not allowed: ${bucket}`,
-                                    status: RESPONSE_STATUS.BAD_REQUEST,
-                                });
-                            }
-                            videoFileName = key;
-                        }
-                        else {
-                            throw new Error('Invalid S3 URI format');
-                        }
-                    }
+                    const s3UriMatch = input.videoUrl.match(S3_URI_REGEX);
+                    if (s3UriMatch && s3UriMatch[2])
+                        videoFileName = s3UriMatch[2];
                 }
                 else {
-                    // Assume it's an S3 key
                     videoFileName = input.videoUrl;
                 }
             }
             else {
-                // Video buffer provided
-                videoBuffer = input.videoUrl;
                 videoFileName = await AWSMediaUtils.uploadVideoToS3(input.videoUrl);
             }
 
-            // Step 2: Start label detection job
             const startLabelDetectionCommand = new StartLabelDetectionCommand({
-                Video: {
-                    S3Object: {
-                        Bucket: env.AWS_BUCKET_NAME,
-                        Name: videoFileName,
-                    },
-                },
+                Video: { S3Object: { Bucket: env.AWS_BUCKET_NAME, Name: videoFileName } },
                 ClientRequestToken: `label-detection-${Date.now()}`,
                 JobTag: 'VideoModeration',
-                MinConfidence: Math.round(threshold * 100),
+                MinConfidence: 30,
             });
 
             const startResult = await this.getClient().send(startLabelDetectionCommand);
             const jobId = startResult.JobId;
 
-            if (!jobId) {
+            if (!jobId)
                 throw new Error('Failed to start label detection job');
-            }
 
-            // Step 3: Poll for job completion
+            // Poll for job completion
             let jobStatus = 'IN_PROGRESS';
             let attempts = 0;
-            const maxAttempts = 30; // 30 attempts with 10s delay = 5 minutes max wait
-
-            while (jobStatus === 'IN_PROGRESS' && attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+            while (jobStatus === 'IN_PROGRESS' && attempts < 30) {
+                await new Promise(resolve => setTimeout(resolve, 10000));
                 attempts++;
-
-                try {
-                    const getLabelDetectionCommand = new GetLabelDetectionCommand({ JobId: jobId });
-                    const jobResult = await this.getClient().send(getLabelDetectionCommand);
-                    jobStatus = jobResult.JobStatus || 'IN_PROGRESS';
-
-                    if (jobStatus === 'SUCCEEDED') {
-                        labelDetectionResult = jobResult;
-                        break;
-                    }
-                    else if (jobStatus === 'FAILED') {
-                        throw new Error(`Job failed: ${jobResult.StatusMessage || 'Unknown error'}`);
-                    }
-                }
-                catch {
-                    if (attempts >= maxAttempts) {
-                        throwError({
-                            message: 'Job timeout after maximum attempts',
-                            status: RESPONSE_STATUS.REQUEST_TIMEOUT,
-                        });
-                    }
+                const getLabelDetectionCommand = new GetLabelDetectionCommand({ JobId: jobId });
+                const jobResult = await this.getClient().send(getLabelDetectionCommand);
+                jobStatus = jobResult.JobStatus || 'IN_PROGRESS';
+                if (jobStatus === 'SUCCEEDED') {
+                    labelDetectionResult = jobResult;
+                    break;
                 }
             }
 
-            if (jobStatus === 'IN_PROGRESS') {
-                throw new Error('Job still in progress after maximum attempts');
-            }
-
-            // Step 4: Analyze results
-            if (labelDetectionResult && labelDetectionResult.Labels) {
-                const labels = labelDetectionResult.Labels;
-
-                // Get video-specific thresholds or fall back to defaults
-                const videoThresholds = (settings as any).videoThresholds || AI_MODERATION_DEFAULT_CONFIG.videoThresholds;
-                const significantConfidence = videoThresholds?.significantLabelConfidence || 70;
-
-                // Separate rejected labels (weapons, children, blood/gore) from allowed labels
-                rejectedLabels = [];
-                allowedLabels = [];
-
-                // Group labels by name and keep the highest confidence and an example timestamp
+            if (labelDetectionResult?.Labels) {
                 const labelGroups = new Map<string, { confidence: number; timestampMs?: number }>();
-                for (const label of labels) {
-                    const labelName = label.Label?.Name as string | undefined;
-                    const labelConfidence = (label.Label?.Confidence || 0) as number;
-                    const ts = label.Timestamp as number | undefined;
-                    if (!labelName || labelConfidence < significantConfidence)
+                for (const label of labelDetectionResult.Labels) {
+                    const name = label.Label?.Name;
+                    const conf = label.Label?.Confidence || 0;
+                    if (!name || conf < 30)
                         continue;
-                    const current = labelGroups.get(labelName);
-                    if (!current || labelConfidence > current.confidence) {
-                        labelGroups.set(labelName, { confidence: labelConfidence, timestampMs: ts });
+                    const current = labelGroups.get(name);
+                    if (!current || conf > current.confidence) {
+                        labelGroups.set(name, { confidence: conf, timestampMs: label.Timestamp });
                     }
                 }
 
-                // Categorize labels into rejected vs allowed
+                log.info(`[MODERATION-VIDEO] Processed ${labelGroups.size} unique labels`);
+
                 for (const [name, v] of labelGroups.entries()) {
-                    const normalizedName = normaliseLabelName(name);
-                    if (isRejectedLabel(normalizedName)) {
-                        // Only track rejected labels for confidence calculation
+                    const normalized = normaliseLabelName(name);
+                    if (isRejectedLabel(normalized)) {
                         rejectedLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
                     }
                     else {
-                        // All other labels are allowed, including:
-                        // - Sexual content / nudity (explicit nudity, sexual activity, nudity, partial nudity, etc.)
-                        // - Adult content
-                        // - Clothing, Underwear, Person, Adult, Female, Woman, Lingerie, Skin, Bra, etc.
                         allowedLabels.push({ name, confidence: v.confidence, timestampMs: v.timestampMs });
                     }
                 }
 
-                // Build context labels and human-readable reasons
-                // Include both rejected and allowed labels for logging
-                const allLabels = [...rejectedLabels, ...allowedLabels]
-                    .sort((a, b) => b.confidence - a.confidence)
-                    .slice(0, 10);
-
+                const allLabels = [...rejectedLabels, ...allowedLabels].sort((a, b) => b.confidence - a.confidence).slice(0, 10);
                 for (const label of allLabels) {
-                    contextLabels.push({ name: label.name, confidence: label.confidence, timestampMs: label.timestampMs });
-                    const at = typeof label.timestampMs === 'number' ? ` - ${Math.floor(label.timestampMs / 1000)}s` : '';
+                    contextLabels.push(label);
                     const isRejected = rejectedLabels.some(r => r.name === label.name);
-                    const prefix = isRejected ? '⚠️ REJECTED: ' : 'Context: ';
-                    reasons.push(`${prefix}${label.name} (${label.confidence.toFixed(1)}%)${at}`);
+                    reasons.push(`${isRejected ? '⚠️ REJECTED: ' : 'Context: '}${label.name} (${label.confidence.toFixed(1)}%)`);
                 }
             }
         }
         catch (error) {
+            log.error('AWS Rekognition video analysis failed', { error: (error as Error).message });
             throwError({
-                message: `Video analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                message: `Video analysis failed: ${(error as Error).message}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
             });
         }
 
-        // Determine decision based ONLY on labels (not confidence)
-        // If rejected labels (weapons, children, blood/gore) are detected → REJECT
-        // If no rejected labels → APPROVE (regardless of confidence)
         let riskLevel = E_RiskLevel.LOW;
-        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.APPROVED; // Default to approved if no rejected labels
+        let decision: E_ModerationMediaStatus = E_ModerationMediaStatus.APPROVED;
 
-        // Calculate confidence for logging purposes only (not used for decision)
+        // Determine human context for video based on the unique labels found
+        const humanConfidence = Math.max(
+            contextLabels.find(l => normaliseLabelName(l.name) === 'person')?.confidence || 0,
+            contextLabels.find(l => normaliseLabelName(l.name) === 'people')?.confidence || 0,
+            contextLabels.find(l => normaliseLabelName(l.name) === 'human')?.confidence || 0,
+        );
+        const hasHumanContext = humanConfidence >= 80;
+
         if (rejectedLabels.length > 0) {
-            confidence = Math.max(...rejectedLabels.map(l => l.confidence)) / 100;
+            log.info(`[MODERATION-VIDEO] Detected ${rejectedLabels.length} rejected labels. HumanContext: ${hasHumanContext}`);
+            // Priority Sort: Weapons/Blood/Baby >= 80% first
+            const topRejected = rejectedLabels.sort((a, b) => {
+                const normA = normaliseLabelName(a.name);
+                const normB = normaliseLabelName(b.name);
+                const isPriorityA = (isWeaponLabel(normA) || isBloodGoreLabel(normA) || normA === 'baby' || normA === 'infant') && a.confidence >= 80;
+                const isPriorityB = (isWeaponLabel(normB) || isBloodGoreLabel(normB) || normB === 'baby' || normB === 'infant') && b.confidence >= 80;
+
+                if (isPriorityA && !isPriorityB)
+                    return -1;
+                if (!isPriorityA && isPriorityB)
+                    return 1;
+                return b.confidence - a.confidence;
+            })[0];
+
+            if (topRejected) {
+                const topConfidence = topRejected.confidence;
+                confidence = topConfidence / 100;
+                const labelName = normaliseLabelName(topRejected.name);
+
+                const isChild = isChildrenLabel(labelName);
+                const isWeapon = isWeaponLabel(labelName);
+                const isBlood = isBloodGoreLabel(labelName);
+
+                let typeReason = 'Rejected content';
+                if (isWeapon)
+                    typeReason = 'Weapons';
+                else if (isChild)
+                    typeReason = 'Children/minors';
+                else if (isBlood)
+                    typeReason = 'Blood/gore/violence';
+
+                // 1. REJECT: >= 80% AND (Context met OR strictly dangerous)
+                // 2. PENDING: >= 80% AND (Context NOT met - for kids)
+                // 3. APPROVED: < 80% (Ignored as noise)
+
+                if (topConfidence < 80) {
+                    decision = E_ModerationMediaStatus.APPROVED;
+                    riskLevel = E_RiskLevel.LOW;
+                    reasons.push(`Auto-approved: ${typeReason} suspected (${topConfidence.toFixed(1)}%) but below 80% threshold`);
+                }
+                else {
+                    const shouldStrictReject = isChild ? (hasHumanContext || topConfidence >= 90) : true;
+
+                    if (shouldStrictReject) {
+                        decision = E_ModerationMediaStatus.REJECTED;
+                        riskLevel = E_RiskLevel.CRITICAL;
+                        reasons.push(`⚠️ REJECTED: ${typeReason} detected ${hasHumanContext ? 'with human presence ' : ''}(${topConfidence.toFixed(1)}%)`);
+                    }
+                    else {
+                        decision = E_ModerationMediaStatus.PENDING;
+                        riskLevel = E_RiskLevel.HIGH;
+                        reasons.push(`🔍 PENDING: Suspected ${typeReason} detected (${topConfidence.toFixed(1)}%) - requires manual review due to ambiguous context`);
+                    }
+                }
+            }
         }
         else {
-            confidence = 0;
-        }
-
-        // Decision based on labels only (not confidence)
-        if (rejectedLabels.length > 0) {
-            const rejectedLabelNames = rejectedLabels.map(l => l.name).join(', ');
-
-            // Check if video also contains nudity/adult labels → possible false positive
-            const hasAdultContext = allowedLabels.some(label =>
-                isNudityOrAdultLabel(normaliseLabelName(label.name)),
-            );
-
-            if (hasAdultContext) {
-                // Ambiguous: both rejected + adult labels → manual review
-                decision = E_ModerationMediaStatus.PENDING;
-                riskLevel = E_RiskLevel.HIGH;
-                reasons.push(`⚠️ FLAGGED: ${rejectedLabelNames} detected (adult content also present - manual review needed)`);
-            }
-            else {
-                // Clear violation: only rejected labels, no adult context → auto-reject
-                decision = E_ModerationMediaStatus.REJECTED;
-                riskLevel = E_RiskLevel.CRITICAL;
-                reasons.push(`⚠️ REJECTED: Rejected content detected (${rejectedLabelNames}) - upload blocked`);
-            }
-        }
-        else {
-            // No rejected labels → APPROVE (all other labels are allowed)
             decision = E_ModerationMediaStatus.APPROVED;
             riskLevel = E_RiskLevel.LOW;
-            reasons.push('Auto-approved: No rejected content detected (only allowed labels)');
+            reasons.push('Auto-approved: No rejected content detected in video');
         }
 
-        return {
-            confidence,
-            decision,
-            riskLevel,
-            reasons,
-            contextLabels,
-        };
+        return { confidence, decision, riskLevel, reasons, contextLabels };
+    }
+
+    /**
+     * Converts any image buffer to JPEG using FFmpeg for AI compatibility.
+     */
+    private async convertToJpeg(inputBytes: Uint8Array): Promise<Uint8Array> {
+        const inputBuffer = Buffer.from(inputBytes);
+        log.info(`[MODERATION] Preparation for conversion: Input Size = ${inputBuffer.length} bytes`);
+
+        if (inputBuffer.length === 0) {
+            throw new Error('Input image buffer is empty');
+        }
+
+        return new Promise((resolve, reject) => {
+            const path = ffmpegPath as unknown as string;
+            if (!path) {
+                return reject(new Error('FFmpeg path not found'));
+            }
+
+            // Using '-' instead of 'pipe:0' for better compatibility in some environments
+            const ffmpeg: any = spawn(path, [
+                '-i',
+                '-', // Read from stdin
+                '-f',
+                'mjpeg', // Force output format mjpeg
+                '-vframes',
+                '1', // Process only 1 frame
+                '-', // Write to stdout
+            ]);
+
+            const chunks: Buffer[] = [];
+            let stderrOutput = '';
+
+            ffmpeg.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
+            ffmpeg.stderr.on('data', (data: Buffer) => {
+                stderrOutput += data.toString();
+            });
+
+            ffmpeg.on('close', (code: number) => {
+                if (code === 0 && chunks.length > 0) {
+                    resolve(new Uint8Array(Buffer.concat(chunks)));
+                }
+                else {
+                    log.warn('[MODERATION] FFmpeg Detailed Error:', stderrOutput);
+                    reject(new Error(`FFmpeg exited with code ${code}${stderrOutput ? `: ${stderrOutput}` : ''}`));
+                }
+            });
+
+            ffmpeg.on('error', (err: any) => {
+                log.error('[MODERATION] FFmpeg process error:', err);
+                reject(err);
+            });
+
+            ffmpeg.stdin.on('error', (err: any) => {
+                // If the process exits before stdin finishes writing, this is usually non-fatal
+                // if we already have output, but we should log it.
+                log.warn('[MODERATION] FFmpeg stdin pipe error:', err.message);
+            });
+
+            try {
+                ffmpeg.stdin.write(inputBuffer, (err?: Error) => {
+                    if (err)
+                        log.warn('[MODERATION] FFmpeg stdin write error:', err.message);
+                    ffmpeg.stdin.end();
+                });
+            }
+            catch (stdinErr) {
+                log.error('[MODERATION] Failed to write to FFmpeg stdin:', stdinErr);
+                ffmpeg.stdin.end();
+            }
+        });
     }
 }

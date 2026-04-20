@@ -134,6 +134,8 @@ export const messageCtr = {
         }
 
         // AI Moderation - only for text content
+        // REVIEW decisions are flagged for admin review instead of blocking the message
+        let aiModerationFlag: { reasons?: string[]; decision?: string } | null = null;
         if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
             try {
                 const textModerated = await aiModerationCtr.moderateText(context, { text: content.value });
@@ -147,18 +149,18 @@ export const messageCtr = {
                     }
 
                     if (await aiModerationCtr.shouldRequireHumanReview(textModerated.result)) {
-                        throwError({
-                            message: 'Message requires human review',
-                            status: RESPONSE_STATUS.BAD_REQUEST,
-                        });
+                        // Flag for admin review instead of blocking
+                        // Message will still be sent, but a moderation log will be created
+                        aiModerationFlag = {
+                            reasons: textModerated.result.reasons,
+                            decision: textModerated.result.decision,
+                        };
                     }
                 }
             }
-            catch (moderationError) {
-                throwError({
-                    message: `AI moderation failed: ${moderationError instanceof Error ? moderationError.message : 'Unknown error'}`,
-                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                });
+            catch {
+                // Non-fatal: AI moderation failure shouldn't block message creation
+                // This ensures messaging remains functional even if AWS Comprehend is down
             }
         }
 
@@ -237,6 +239,27 @@ export const messageCtr = {
             catch {
                 // Non-fatal: log error but don't block message creation
                 // Moderation log creation failure shouldn't prevent message from being sent
+            }
+        }
+
+        // If AI moderation flagged for review, create moderation log for admin dashboard
+        if (aiModerationFlag && messageId && content?.type === E_MessageType.TEXT && content.value) {
+            try {
+                const fullMessageText = typeof content.value === 'string' ? content.value : '';
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.WARN,
+                        type: E_ModerationLogType.TEXT,
+                        userId: senderId,
+                        targetUserId: senderId,
+                        messageId,
+                        content: fullMessageText,
+                        reason: `AI flagged for review: ${aiModerationFlag.reasons?.join(', ') || 'Suspicious content detected'}`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: moderation log creation failure shouldn't prevent message from being sent
             }
         }
 

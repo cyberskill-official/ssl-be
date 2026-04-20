@@ -247,8 +247,6 @@ export function isHarmlessLabel(labelName: string): boolean {
  * Verified from official AWS Rekognition AmazonRekognitionAllLabels_v3.0.csv
  */
 export const ADULT_GENERAL_LABELS = [
-    'person',
-    'adult',
     'skin',
     'bikini',
     'bra',

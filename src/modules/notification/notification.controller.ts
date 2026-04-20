@@ -662,7 +662,9 @@ export const notificationCtr = {
         const allowSelfNotify = types.includes(E_NotificationType.AGE_VERIFICATION_APPROVED)
             || types.includes(E_NotificationType.AGE_VERIFICATION_SUBMITTED)
             || types.includes(E_NotificationType.AGE_VERIFICATION_SKIPPED)
-            || types.includes(E_NotificationType.AGE_VERIFICATION_REJECTED);
+            || types.includes(E_NotificationType.AGE_VERIFICATION_REJECTED)
+            || types.includes(E_NotificationType.MODERATION_MEDIA_PENDING)
+            || types.includes(E_NotificationType.MODERATION_MEDIA_REJECTED);
         if (currentUserId && String(currentUserId) === tid && !allowSelfNotify) {
             return { success: true, message: null };
         }

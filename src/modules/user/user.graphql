@@ -376,8 +376,8 @@ type Query {
 type Mutation {
     createUser(doc: Input_CreateUser!): T_Response_User!
     updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
-    deleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
-    softDeleteUser(filter: Input_QueryUser!, options: JSON): T_Response_User!
+    deleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
+    softDeleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
     adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
     adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!

@@ -148,6 +148,9 @@ export const BlogModel = mongo.createModel<I_Blog>({
             type: Boolean,
             default: false,
         },
+        iframe: {
+            type: String,
+        },
     },
     virtuals: [
         {

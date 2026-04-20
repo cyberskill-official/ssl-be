@@ -122,6 +122,39 @@ interface I_GuardianTokenPayload extends I_SessionPayload {
     guardian: true;
 }
 
+/**
+ * Extract JWT token from request headers.
+ * Checks Authorization (Bearer), x-access-token, and x-token headers.
+ */
+function extractAuthToken(req: I_Request): string | undefined {
+    const headers = req.headers || {};
+    const authHeader = typeof headers.authorization === 'string'
+        ? headers.authorization
+        : typeof (headers as any).Authorization === 'string'
+            ? (headers as any).Authorization
+            : undefined;
+    if (authHeader) {
+        const trimmed = authHeader.trim();
+        if (trimmed.toLowerCase().startsWith('bearer ')) {
+            return trimmed.slice('bearer '.length).trim() || undefined;
+        }
+        return trimmed || undefined;
+    }
+
+    const directToken = (headers as any)['x-access-token']
+        || (headers as any)['x-token'];
+    if (typeof directToken === 'string' && directToken.trim()) {
+        return directToken.trim();
+    }
+
+    const bodyToken = (req.body as any)?.variables?.token;
+    if (typeof bodyToken === 'string' && bodyToken.trim()) {
+        return bodyToken.trim();
+    }
+
+    return undefined;
+}
+
 async function assignSessionUser(session: I_Request['session'], user: I_User) {
     if (!session) {
         return;
@@ -437,8 +470,7 @@ export const authnCtr = {
             });
         }
 
-        // Update lastActivity immediately after successful user verification
-        await assignSessionUser(context.req.session, userFound.result);
+        // assignSessionUser will be called later after checking inactivity
 
         const guardianViewMeta = context.req.session.guardianView;
         const isGuardianSession = Boolean(
@@ -472,6 +504,9 @@ export const authnCtr = {
         catch (err) {
             log.warn('Failed to validate session inactivity:', err);
         }
+
+        // Update lastActivity immediately after successful user verification and inactivity checks
+        await assignSessionUser(context.req.session, userFound.result);
 
         if (!isGuardianSession && isAdmin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
             await userCtr.updateUser(context, {
@@ -543,14 +578,23 @@ export const authnCtr = {
         const authChecked = await authnCtr.checkAuth(context);
 
         if (!authChecked.success) {
+            // Fallback: try JWT token from request headers when session is empty
+            const headerToken = context.req ? extractAuthToken(context.req as any) : undefined;
+            if (headerToken) {
+                const tokenAuth = await authnCtr.checkToken(context, { token: headerToken });
+                if (tokenAuth.success && tokenAuth.result.user) {
+                    // Re-establish session from token
+                    if (context.req?.session) {
+                        await assignSessionUser(context.req.session, tokenAuth.result.user);
+                    }
+                    return omit(tokenAuth.result.user, 'password') as I_User;
+                }
+            }
+
             log.warn('[AUTH] getUserFromSession failed:', {
                 message: authChecked.message,
                 code: authChecked.code,
-                hasReq: !!context?.req,
-                hasSession: !!context?.req?.session,
-                hasSessionUser: !!context?.req?.session?.user,
                 sessionId: context?.req?.sessionID,
-                lastActivity: (context?.req?.session as any)?.lastActivity,
             });
             throwError({
                 message: 'User not authenticated.',
@@ -558,7 +602,7 @@ export const authnCtr = {
             });
         }
 
-        return omit(authChecked.result.user, 'password');
+        return omit(authChecked.result.user, 'password') as I_User;
     },
     isStaff: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
@@ -719,7 +763,10 @@ export const authnCtr = {
         const sanitizedNewUser = omit(finalUser, 'password') as I_User;
         await assignSessionUser(context.req.session, sanitizedNewUser);
 
-        return { success: true, result: { user: sanitizedNewUser } };
+        // Generate token for session resilience during registration flow
+        const token = authnCtr.generateToken(context, sanitizedNewUser.id);
+
+        return { success: true, result: { user: sanitizedNewUser, token } };
     },
 
     registerSendVerifyEmail: async (
@@ -860,10 +907,20 @@ export const authnCtr = {
 
         // Update IP when user continues registration
         await updateUserIpFromRequest(context, userId, ip, userFound.result.lastLoginIp);
+
+        // Re-establish session with updated user data
+        if (context.req?.session) {
+            await assignSessionUser(context.req.session, userUpdated.result);
+        }
+
+        // Generate token for session resilience during registration flow
+        const token = authnCtr.generateToken(context, userId);
+
         return {
             success: true,
             result: {
                 user: omit(userUpdated.result, 'password'),
+                token,
             },
         };
     },
@@ -923,10 +980,20 @@ export const authnCtr = {
 
         // Update IP when user continues registration
         await updateUserIpFromRequest(context, currentUser.id, ip, currentUser.lastLoginIp);
+
+        // Re-establish session with updated user data
+        if (context.req?.session) {
+            await assignSessionUser(context.req.session, userUpdated.result);
+        }
+
+        // Generate token for session resilience during registration flow
+        const token = authnCtr.generateToken(context, currentUser.id);
+
         return {
             success: true,
             result: {
                 user: omit(userUpdated.result, 'password'),
+                token,
             },
         };
     },
@@ -971,10 +1038,19 @@ export const authnCtr = {
         // Update IP when user continues registration
         await updateUserIpFromRequest(context, currentUser.id, ip, currentUser.lastLoginIp);
 
+        // Re-establish session with updated user data
+        if (context.req?.session) {
+            await assignSessionUser(context.req.session, userUpdated.result);
+        }
+
+        // Generate token for session resilience during registration flow
+        const token = authnCtr.generateToken(context, currentUser.id);
+
         return {
             success: true,
             result: {
                 user: omit(userUpdated.result, 'password'),
+                token,
             },
         };
     },

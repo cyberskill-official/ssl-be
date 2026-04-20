@@ -110,7 +110,7 @@ export async function applyAiModerationDecision(
         let targetReason: string | undefined;
 
         if (isConversation) {
-            // Conversation media status defaults to PENDING for safety, but can be APPROVED if AI is clean
+            // Conversation media: APPROVED if AI is clean, otherwise PENDING
             targetStatus = aiDecision === E_ModerationMediaStatus.APPROVED ? E_ModerationMediaStatus.APPROVED : E_ModerationMediaStatus.PENDING;
             targetReason = pendingReason;
         }

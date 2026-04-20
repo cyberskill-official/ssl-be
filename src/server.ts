@@ -64,12 +64,13 @@ const env = getEnv();
         server: httpServer,
         schema,
         isDev: !env.IS_PROD,
+        introspection: true,
         async drainServer() {
             if (serverCleanup) {
                 await serverCleanup.dispose();
             }
         },
-    });
+    } as any);
 
     await apolloServer.start();
 

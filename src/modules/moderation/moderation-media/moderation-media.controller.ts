@@ -24,6 +24,8 @@ import { bunnyCtr } from '#modules/bunny/index.js';
 import { catalogueCtr, CatalogueModel, E_CatalogueType } from '#modules/catalogue/index.js';
 import { E_MessageType, messageCtr, MessageModel } from '#modules/conversation/index.js';
 import { E_GalleryType, galleryCtr, GalleryModel } from '#modules/gallery/index.js';
+import { notificationCtr } from '#modules/notification/notification.controller.js';
+import { E_NotificationEntityType, E_NotificationType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { E_UploadEntity } from '#shared/typescript/index.js';
 
@@ -249,7 +251,7 @@ export const moderationMediaCtr = {
 
         let moderationCreatedId: string = undefined!;
         try {
-            // If uploader is staff/admin, bypass AI moderation but keep PENDING for manual review.
+            // If uploader is staff/admin, bypass AI moderation and auto-approve.
             let aiModerationResult = null;
             let isStaff = false;
             let isAdmin = false;
@@ -267,8 +269,11 @@ export const moderationMediaCtr = {
             }
 
             const bypassAiModeration = isStaff || isAdmin;
+            if (isStaff || isAdmin) {
+                log.info('[ModerationMedia] Uploader is Staff/Admin, bypassing AI moderation');
+            }
 
-            // Default status; Staff/Admin bypasses AI and are auto-approved.
+            // Staff/Admin are auto-approved; regular users default to PENDING until AI decides.
             let initialStatus: E_ModerationMediaStatus = bypassAiModeration ? E_ModerationMediaStatus.APPROVED : E_ModerationMediaStatus.PENDING;
 
             let reason: string | undefined;
@@ -316,16 +321,9 @@ export const moderationMediaCtr = {
                 const aiDecision = aiModerationResult.decision as E_ModerationMediaStatus | undefined;
                 const aiReason = composeReason(aiModerationResult);
 
-                if (entity === E_UploadEntity.CONVERSATION) {
-                    // For conversations, we always follow AI decision but fallback to PENDING
-                    initialStatus = aiDecision || E_ModerationMediaStatus.PENDING;
-                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
-                }
-                else {
-                    // Use AI decision if available, otherwise default to PENDING
-                    initialStatus = aiDecision || E_ModerationMediaStatus.PENDING;
-                    reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
-                }
+                // Use AI decision if available, otherwise default to PENDING
+                initialStatus = aiDecision || E_ModerationMediaStatus.PENDING;
+                reason = aiReason ? `AI reviewed: ${aiReason}` : 'AI reviewed: content checked';
             }
 
             // Publish immediately if status is APPROVED or PENDING (suspicious but still published)
@@ -431,6 +429,29 @@ export const moderationMediaCtr = {
                         message: `Unsupported module: ${entity}`,
                         status: RESPONSE_STATUS.BAD_REQUEST,
                     });
+            }
+
+            // Send notification to uploader when media is flagged as PENDING for review
+            if (initialStatus === E_ModerationMediaStatus.PENDING) {
+                try {
+                    const mediaType = doc.type === E_ModerationMediaType.VIDEO ? 'video' : 'image';
+                    await notificationCtr.createNotificationWithSettings(context, {
+                        doc: {
+                            targetId: currentUser.id,
+                            type: [E_NotificationType.MODERATION_MEDIA_PENDING],
+                            entityType: E_NotificationEntityType.MEDIA,
+                            entityId: moderationCreatedId,
+                            presentation: {
+                                headline: `Almost there! Your ${mediaType} is being reviewed and will be available shortly`,
+                                thumbnailUrl: doc.type === E_ModerationMediaType.IMAGE ? doc.url : undefined,
+                            } as any,
+                        },
+                    });
+                }
+                catch (notifError) {
+                    // Non-fatal: notification failure should not block upload
+                    log.warn('[ModerationMedia] Failed to send PENDING notification:', notifError);
+                }
             }
 
             return mongooseCtr.findOne({ id: moderationCreatedId });
@@ -887,7 +908,7 @@ export const moderationMediaCtr = {
                 }
             }
 
-            return mongooseCtr.updateOne(
+            const updateResult = await mongooseCtr.updateOne(
                 { id: moderation.id },
                 {
                     status,
@@ -898,6 +919,8 @@ export const moderationMediaCtr = {
                     ...(status === E_ModerationMediaStatus.REJECTED ? { isDel: true } : {}),
                 },
             );
+
+            return updateResult;
         }
         catch (error) {
             await mongooseCtr.updateOne(

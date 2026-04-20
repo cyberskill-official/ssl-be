@@ -45,6 +45,7 @@ type T_Blog {
     isActive: Boolean
     readCount: Int
     isLustEditorial: Boolean
+    iframe: String
 }
 
 input Input_QueryBlog {
@@ -71,6 +72,7 @@ input Input_QueryBlog {
     isActive: Boolean
     readCount: Int
     isLustEditorial: Boolean
+    iframe: String
 }
 
 input Input_CreateBlog {
@@ -95,6 +97,7 @@ input Input_CreateBlog {
     seo: Input_Seo
     isActive: Boolean
     isLustEditorial: Boolean
+    iframe: String
 }
 
 input Input_UpdateBlog {
@@ -120,6 +123,7 @@ input Input_UpdateBlog {
     seo: Input_Seo
     isActive: Boolean
     isLustEditorial: Boolean
+    iframe: String
 }
 
 type T_Response_Blog {
