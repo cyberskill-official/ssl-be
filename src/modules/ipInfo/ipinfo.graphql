@@ -1,0 +1,44 @@
+type T_Response_Ip {
+    success: Boolean!
+    message: String
+    result: JSON
+}
+
+type T_MyIp {
+    ip: String
+    asn: String
+    as_name: String
+    as_domain: String
+    country_code: String
+    country: String
+    continent_code: String
+}
+
+type T_Response_MyIp {
+    success: Boolean!
+    message: String
+    result: T_MyIp
+}
+
+type T_IpInfo {
+    network: String
+    country: String
+    country_code: String
+    continent: String
+    continent_code: String
+    asn: String
+    as_name: String
+    as_domain: String
+}
+
+type T_Response_IpInfo {
+    success: Boolean!
+    message: String
+    result: T_IpInfo
+}
+
+type Query {
+    getIp: T_Response_Ip!
+    getIpInfo(ip: String!): T_Response_IpInfo!
+    getMyIp: T_Response_MyIp!
+}

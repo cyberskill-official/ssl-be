@@ -1,0 +1,116 @@
+enum E_PushChatAudience {
+    ALL
+    MEMBERS
+    NON_MEMBERS
+    AGE_VERIFIED
+    NOT_AGE_VERIFIED
+}
+
+type T_PushChatMessage {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    content: String
+    targetAudience: E_PushChatAudience
+    sentById: String
+    sentBy: T_User
+    recipientCount: Int
+}
+
+input Input_QueryPushChatMessage {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    content: String
+    targetAudience: E_PushChatAudience
+    sentById: String
+    recipientCount: Int
+}
+
+input Input_CreatePushChatMessage {
+    content: String!
+    targetAudience: E_PushChatAudience!
+}
+
+input Input_UpdatePushChatMessage {
+    isDel: Boolean
+    content: String
+    targetAudience: E_PushChatAudience
+    recipientCount: Int
+}
+
+type T_SendPushChatResult {
+    messageId: String
+    recipientCount: Int
+    createdAt: DateTime
+}
+
+type T_Response_PushChatMessage {
+    success: Boolean
+    message: String
+    result: T_PushChatMessage
+}
+
+type T_Response_SendPushChat {
+    success: Boolean
+    message: String
+    result: T_SendPushChatResult
+}
+
+type T_PushChatMessages {
+    docs: [T_PushChatMessage]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PushChatMessages {
+    success: Boolean
+    message: String
+    result: T_PushChatMessages
+}
+
+type T_PushChatStats {
+    totalSent: Int
+    thisMonth: Int
+    avgLength: Int
+    audienceDistribution: T_PushChatAudienceDistribution
+}
+
+type T_PushChatAudienceDistribution {
+    all: Int
+    members: Int
+    nonMembers: Int
+}
+
+type T_Response_PushChatStats {
+    success: Boolean
+    message: String
+    result: T_PushChatStats
+}
+
+type Query {
+    getPushChatMessage(
+        filter: Input_QueryPushChatMessage!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PushChatMessage!
+    getPushChatMessages(filter: Input_QueryPushChatMessage, options: JSON): T_Response_PushChatMessages!
+    getPushChatStats: T_Response_PushChatStats!
+}
+
+type Mutation {
+    sendPushChat(doc: Input_CreatePushChatMessage!): T_Response_SendPushChat!
+    deletePushChatMessage(filter: Input_QueryPushChatMessage!, options: JSON): T_Response_PushChatMessage!
+}

@@ -1,0 +1,71 @@
+type T_Currency {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    code: String
+    symbol: String
+}
+
+input Input_QueryCurrency {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    code: String
+    symbol: String
+}
+
+input Input_CreateCurrency {
+    name: String
+    code: String
+    symbol: String
+}
+
+input Input_UpdateCurrency {
+    id: String
+    isDel: Boolean
+    name: String
+    code: String
+    symbol: String
+}
+
+type T_Response_Currency {
+    success: Boolean
+    message: String
+    result: T_Currency
+}
+
+type T_Currencies {
+    docs: [T_Currency]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Currencies {
+    success: Boolean
+    message: String
+    result: T_Currencies
+}
+
+type Query {
+    getCurrency(filter: Input_QueryCurrency!, projection: JSON, options: JSON, populate: JSON): T_Response_Currency!
+    getCurrencies(filter: Input_QueryCurrency, options: JSON): T_Response_Currencies!
+}
+
+type Mutation {
+    createCurrency(doc: Input_CreateCurrency!): T_Response_Currency!
+    updateCurrency(filter: Input_QueryCurrency!, update: Input_UpdateCurrency!, options: JSON): T_Response_Currency!
+    deleteCurrency(filter: Input_QueryCurrency!): T_Response_Currency!
+}

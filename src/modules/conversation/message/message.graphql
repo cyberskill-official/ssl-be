@@ -1,0 +1,115 @@
+enum E_MessageType {
+    TEXT
+    IMAGE
+    VIDEO
+}
+
+type T_MessageContent {
+    type: E_MessageType
+    value: String
+    contactAdmin: T_ContactAdmin
+}
+
+type T_ContactAdmin {
+    topic: E_ContactTopic!
+    username: String!
+    email: String!
+    requestType: E_ContactAdminType
+    device: E_Device
+    message: String!
+    image: String
+    paymentDate: DateTime
+    transactionId: String
+    profileLink: String
+    companyName: String
+}
+
+input Input_MessageContent {
+    type: E_MessageType!
+    value: String!
+}
+
+type T_Message {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    senderId: String
+    sender: T_User
+    content: T_MessageContent
+    conversationId: String
+    conversation: T_Conversation
+    parentId: String
+    parent: T_Message
+    messageStatuses: [T_MessageStatus]
+    statusMedia: E_ModerationMediaStatus
+    moderationMediaId: String
+    deletedAt: DateTime
+    redacted: Boolean
+}
+
+input Input_QueryMessage {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    senderId: String
+    conversationId: String
+    parentId: String
+}
+
+input Input_CreateMessage {
+    content: Input_MessageContent!
+    conversationId: String
+    recipientId: String
+    parentId: String
+    statusMedia: E_ModerationMediaStatus
+    moderationMediaId: String
+}
+
+input Input_UpdateMessage {
+    isDel: Boolean
+    senderId: String
+    content: Input_MessageContent
+    conversationId: String
+    parentId: String
+    moderationMediaId: String
+}
+
+type T_Response_Message {
+    success: Boolean
+    message: String
+    result: T_Message
+}
+
+type T_Messages {
+    docs: [T_Message]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Messages {
+    success: Boolean
+    message: String
+    result: T_Messages
+}
+
+type Query {
+    getMessages(filter: Input_QueryMessage, options: JSON): T_Response_Messages!
+}
+
+type Mutation {
+    createMessage(doc: Input_CreateMessage!): T_Response_Message!
+    updateMessage(filter: Input_QueryMessage!, update: Input_UpdateMessage, options: JSON): T_Response_Message!
+    deleteMessage(filter: Input_QueryMessage!, options: JSON): T_Response_Message!
+    unsendMessage(filter: Input_QueryMessage!, options: JSON): T_Response_Message!
+}

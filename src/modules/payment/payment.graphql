@@ -1,0 +1,49 @@
+enum E_PaymentPurpose {
+    MEMBERSHIP
+    EVENT_POST
+}
+
+enum E_PaymentStatus {
+    PENDING
+    SUCCESS
+    FAILED
+    CANCELED
+    REFUNDED
+}
+
+enum E_PaymentMethod {
+    CARD
+    WALLET
+    TOKEN
+}
+
+type T_Payment {
+    orderId: String
+    amount: Float
+    currencyCode: String
+    paymentStatus: E_PaymentStatus
+    pricingId: String
+    redirectUrl: String
+    clientToken: String
+    paypalOrderId: String
+    paypalClientId: String
+    isSubscription: Boolean!
+}
+
+input Input_QueryMakePayment {
+    pricingId: String
+    event: Input_CreateEvent
+    countryCode: String
+    loc: String
+    paymentProvider: E_PaymentProvider
+}
+
+type T_Response_MakePayment {
+    success: Boolean!
+    message: String
+    result: T_Payment
+}
+
+extend type Mutation {
+    makePayment(input: Input_QueryMakePayment!): T_Response_MakePayment!
+}

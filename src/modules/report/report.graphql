@@ -1,0 +1,100 @@
+enum E_ReportType {
+    KEYWORD
+    USER
+    MEDIA
+}
+
+enum E_ReportStatus {
+    PENDING
+    APPROVED
+    CLOSED
+}
+
+type T_Report {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ReportType
+    reportedByIds: [String]
+    reportedBy: [T_User]
+    targetId: String
+    target: T_User
+    content: String
+    status: E_ReportStatus
+    notes: [T_Note]
+    moderationMedia: T_ModerationMedia
+    moderationMediaId: String
+}
+
+input Input_QueryReport {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ReportType
+    reportedByIds: [String]
+    targetId: String
+    content: String
+    status: E_ReportStatus
+    notes: [Input_Note]
+    moderationMediaId: String
+}
+
+input Input_CreateReport {
+    type: E_ReportType!
+    reportedByIds: [String]!
+    targetId: String!
+    content: String!
+    status: E_ReportStatus!
+    notes: [Input_Note]
+    moderationMediaId: String
+}
+
+input Input_UpdateReport {
+    type: E_ReportType
+    reportedByIds: [String]
+    targetId: String
+    content: String
+    status: E_ReportStatus
+    notes: [Input_Note]
+    moderationMediaId: String
+}
+
+type T_Response_Report {
+    success: Boolean
+    message: String
+    result: T_Report
+}
+
+type T_Reports {
+    docs: [T_Report]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Reports {
+    success: Boolean
+    message: String
+    result: T_Reports
+}
+
+type Query {
+    getReport(filter: Input_QueryReport!, projection: JSON, options: JSON, populate: JSON): T_Response_Report!
+    getReports(filter: Input_QueryReport, options: JSON): T_Response_Reports!
+}
+
+type Mutation {
+    createReport(doc: Input_CreateReport!): T_Response_Report!
+    updateReport(filter: Input_QueryReport!, update: Input_UpdateReport, options: JSON): T_Response_Report!
+    deleteReport(filter: Input_QueryReport!, options: JSON): T_Response_Report!
+}

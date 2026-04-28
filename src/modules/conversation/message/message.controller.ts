@@ -1,0 +1,523 @@
+import type {
+    I_Input_CreateOne,
+    I_Input_DeleteMany,
+    I_Input_DeleteOne,
+    I_Input_FindOne,
+    I_Input_FindPaging,
+    I_Input_UpdateOne,
+    T_DeleteResult,
+    T_PaginateResult,
+    T_QueryFilter,
+    T_QueryOptions,
+} from '@cyberskill/shared/node/mongo';
+import type { I_Return } from '@cyberskill/shared/typescript';
+
+import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { throwError } from '@cyberskill/shared/node/log';
+import { MongooseController } from '@cyberskill/shared/node/mongo';
+import { escapeRegExp } from 'lodash-es';
+
+import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
+import type { I_Context } from '#shared/typescript/index.js';
+
+import { authnCtr } from '#modules/authn/index.js';
+import { keywordCtr } from '#modules/keyword/index.js';
+import { aiModerationCtr } from '#modules/moderation/index.js';
+import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
+import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/moderation-log/moderation-log.type.js';
+
+import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
+
+import { conversationCtr, E_ConversationType } from '../conversation/index.js';
+import { messageStatusCtr } from '../message-status/index.js';
+import { E_ParticipantRole } from '../participant/participant.type.js';
+import { MessageModel } from './message.model.js';
+import {
+    E_MessageType,
+
+} from './message.type.js';
+import {
+    extractLexicalText,
+    removeMessageMedia,
+    transformMessageMedia,
+    transformMessageResult,
+    transformMessagesPagingResult,
+} from './message.util.js';
+
+const SPECIAL_CHARS_REGEX = /[^\w\s]/;
+const mongooseCtr = new MongooseController<I_Message>(MessageModel);
+
+export const messageCtr = {
+    getMessage: async (
+        context: I_Context,
+        { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        const result = await mongooseCtr.findOne(filter, projection, options, populate);
+        return transformMessageResult(context, result);
+    },
+    getMessages: async (
+        context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_QueryMessage>,
+    ): Promise<I_Return<T_PaginateResult<I_Message>>> => {
+        const result = await mongooseCtr.findPaging(filter, options);
+        return transformMessagesPagingResult(context, result);
+    },
+    createMessage: async (
+        context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreateMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        const { recipientId, conversationId, content, parentId, statusMedia, moderationMediaId } = doc;
+
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const senderId = currentUser.id;
+
+        if (!recipientId && !conversationId) {
+            throwError({
+                message: 'Either recipientId or conversationId must be provided',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        if (recipientId && conversationId) {
+            throwError({
+                message: 'Only one of recipientId or conversationId should be provided',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        // CRITICAL: Check age verification for sending media (images/videos)
+        // Non-age-verified members can only send text messages, not media
+        if (content?.type === E_MessageType.IMAGE || content?.type === E_MessageType.VIDEO) {
+            const isAgeVerified = currentUser?.ageVerify?.status === 'APPROVED';
+
+            // Check if user is staff/admin (they are exempt)
+            const isStaff = await authnCtr.isStaff(context);
+            const isAdmin = await authnCtr.isAdmin(context);
+
+            if (!isAgeVerified && !isStaff && !isAdmin) {
+                throwError({
+                    message: 'You must be age-verified to send photos or videos. Please complete age verification in your profile settings.',
+                    status: RESPONSE_STATUS.FORBIDDEN,
+                });
+            }
+        }
+
+        // Keyword check - flag for moderation instead of blocking
+        // This allows admins to review full context before taking action
+        let matchedKeyword: { word?: string; category?: string } | null = null;
+        if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
+            try {
+                const activeKeywords = await keywordCtr.getActiveKeywords(context);
+                if (activeKeywords.success && Array.isArray(activeKeywords.result)) {
+                    const textValue = extractLexicalText(content.value.trim());
+                    matchedKeyword = activeKeywords.result.find((keyword) => {
+                        const word = keyword.word?.trim();
+                        if (!word)
+                            return false;
+
+                        // Use a more relaxed pattern if the keyword contains special characters
+                        // Word boundaries (\b) only work for word characters (\w)
+                        const hasSpecialChars = SPECIAL_CHARS_REGEX.test(word);
+                        const pattern = hasSpecialChars
+                            ? new RegExp(escapeRegExp(word), 'i')
+                            : new RegExp(`\\b${escapeRegExp(word)}`, 'i');
+
+                        return pattern.test(textValue);
+                    }) || null;
+                }
+            }
+            catch {
+                // Non-fatal: log but don't block message creation
+                // If keyword check fails, we still allow the message to be sent
+                // This ensures the system remains functional even if keyword service is down
+            }
+        }
+
+        // AI Moderation - only for text content
+        // REVIEW decisions are flagged for admin review instead of blocking the message
+        let aiModerationFlag: { reasons?: string[]; decision?: string } | null = null;
+        if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
+            try {
+                const textModerated = await aiModerationCtr.moderateText(context, { text: content.value });
+
+                if (textModerated.success && textModerated.result) {
+                    if (await aiModerationCtr.shouldAutoReject(textModerated.result)) {
+                        throwError({
+                            message: `Message blocked by AI moderation`,
+                            status: RESPONSE_STATUS.BAD_REQUEST,
+                        });
+                    }
+
+                    if (await aiModerationCtr.shouldRequireHumanReview(textModerated.result)) {
+                        // Flag for admin review instead of blocking
+                        // Message will still be sent, but a moderation log will be created
+                        aiModerationFlag = {
+                            reasons: textModerated.result.reasons,
+                            decision: textModerated.result.decision,
+                        };
+                    }
+                }
+            }
+            catch {
+                // Non-fatal: AI moderation failure shouldn't block message creation
+                // This ensures messaging remains functional even if AWS Comprehend is down
+            }
+        }
+
+        let createdMessage: I_Message | null = null;
+
+        if (recipientId && !conversationId) {
+            const result = await conversationCtr.createPrivateConversationWithFirstMessage(
+                context,
+                senderId,
+                recipientId,
+                content,
+                statusMedia as E_ModerationMediaStatus | undefined,
+                moderationMediaId,
+            );
+
+            if (!result.success) {
+                return result;
+            }
+
+            const lastMessage = await transformMessageMedia(context, result.result.lastMessage) ?? result.result.lastMessage;
+            if (!lastMessage) {
+                throwError({
+                    message: 'Failed to load created message',
+                    status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                });
+            }
+
+            createdMessage = lastMessage;
+        }
+        else if (conversationId) {
+            const sendResult = await conversationCtr.sendMessage(
+                context,
+                conversationId,
+                senderId,
+                content,
+                parentId,
+                statusMedia as E_ModerationMediaStatus | undefined,
+                moderationMediaId,
+            );
+
+            if (!sendResult.success) {
+                return sendResult;
+            }
+
+            const transformedResult = await transformMessageResult(context, sendResult);
+            if (transformedResult.success && transformedResult.result) {
+                createdMessage = transformedResult.result;
+            }
+        }
+        else {
+            const created = await mongooseCtr.createOne({ ...doc, senderId, statusMedia, moderationMediaId });
+            const transformedResult = await transformMessageResult(context, created);
+            if (transformedResult.success && transformedResult.result) {
+                createdMessage = transformedResult.result;
+            }
+        }
+
+        // If message contains keyword, flag it for manual review instead of blocking
+        // This allows admins to see full context before taking action
+        const messageId = createdMessage?.id || (createdMessage as any)?._id?.toString();
+        if (matchedKeyword && messageId && content?.type === E_MessageType.TEXT && content.value) {
+            try {
+                const fullMessageText = typeof content.value === 'string' ? content.value : '';
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.WARN,
+                        type: E_ModerationLogType.TEXT, // Set type to TEXT for text moderation
+                        userId: senderId,
+                        targetUserId: senderId,
+                        messageId,
+                        content: fullMessageText, // Store full message content directly
+                        reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: log error but don't block message creation
+                // Moderation log creation failure shouldn't prevent message from being sent
+            }
+        }
+
+        // If AI moderation flagged for review, create moderation log for admin dashboard
+        if (aiModerationFlag && messageId && content?.type === E_MessageType.TEXT && content.value) {
+            try {
+                const fullMessageText = typeof content.value === 'string' ? content.value : '';
+                await moderationLogCtr.createModerationLog(context, {
+                    doc: {
+                        action: E_ModerationLogAction.WARN,
+                        type: E_ModerationLogType.TEXT,
+                        userId: senderId,
+                        targetUserId: senderId,
+                        messageId,
+                        content: fullMessageText,
+                        reason: `AI flagged for review: ${aiModerationFlag.reasons?.join(', ') || 'Suspicious content detected'}`,
+                    },
+                });
+            }
+            catch {
+                // Non-fatal: moderation log creation failure shouldn't prevent message from being sent
+            }
+        }
+
+        if (createdMessage) {
+            return {
+                success: true,
+                message: 'Message created successfully',
+                result: createdMessage,
+            };
+        }
+
+        throwError({
+            message: 'Failed to create message',
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+        });
+    },
+    updateMessage: async (
+        context: I_Context,
+        { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const messageFound = await mongooseCtr.findOne(filter);
+
+        if (!messageFound.success) {
+            throwError({
+                message: 'Message not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const { senderId } = messageFound.result;
+
+        if (senderId !== currentUser.id) {
+            throwError({
+                message: 'You can only update messages you created',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        const updated = await mongooseCtr.updateOne(filter, update, options);
+        return transformMessageResult(context, updated);
+    },
+    deleteMessage: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        if (typeof filter?.id !== 'string' || !filter.id.trim()) {
+            throwError({
+                message: 'Message id is required',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const messageId = filter.id.trim();
+
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const messageFound = await mongooseCtr.findOne({ id: messageId });
+
+        if (!messageFound.success) {
+            throwError({
+                message: 'Message not found',
+                status: RESPONSE_STATUS.NOT_FOUND,
+            });
+        }
+
+        const { senderId } = messageFound.result;
+
+        if (senderId !== currentUser.id) {
+            throwError({
+                message: 'You can only delete messages you created',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        await removeMessageMedia(context, messageFound.result);
+
+        // Soft delete: set deletedAt, redact content, set expiresAt
+        const now = new Date();
+        const deleted = await mongooseCtr.updateOne({ id: messageId }, {
+            'deletedAt': now,
+            'redacted': true,
+            'content.value': '',
+            'expiresAt': now,
+        }, options);
+        return transformMessageResult(context, deleted);
+    },
+    unsendMessage: async (
+        context: I_Context,
+        input: I_Input_DeleteOne<I_Input_QueryMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        return messageCtr.deleteMessage(context, input);
+    },
+
+    createMessageOnly: async (
+        _context: I_Context,
+        { doc }: I_Input_CreateOne<I_Input_CreateMessage>,
+    ): Promise<I_Return<I_Message>> => {
+        return mongooseCtr.createOne(doc);
+    },
+
+    // Helper: Redact messages (soft delete)
+    redactMessages: async (filter: T_QueryFilter<I_Message>): Promise<I_Return<number>> => {
+        const now = new Date();
+        // Get conversation to check type
+        let conversationType: E_ConversationType | undefined;
+        if (filter.conversationId) {
+            const convResult = await conversationCtr.getConversation({}, { filter: { id: filter.conversationId } });
+            if (convResult.success) {
+                conversationType = convResult.result.type;
+            }
+        }
+        const updateData: any = {
+            'deletedAt': now,
+            'redacted': true,
+            'content.value': '',
+        };
+        if (conversationType === E_ConversationType.GROUP) {
+            updateData.expiresAt = now;
+        }
+        const result = await mongooseCtr.updateMany(filter, updateData);
+        if (!result.success) {
+            return result;
+        }
+
+        return {
+            success: true,
+            message: `${result.result.modifiedCount} messages redacted`,
+            result: result.result.modifiedCount,
+        };
+    },
+
+    // Helper: Purge message statuses
+    _purgeMessageStatuses: async (messageIds: string[]): Promise<I_Return<number>> => {
+        if (!messageIds?.length)
+            return { success: true, message: '0 statuses purged', result: 0 };
+
+        const ids = [...new Set(messageIds)];
+        const CHUNK = 5_000;
+        let deleted = 0;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+            const slice = ids.slice(i, i + CHUNK);
+            const res = await messageStatusCtr.deleteMessageStatuses({}, {
+                filter: { messageId: { $in: slice } },
+            });
+            if (res.success) {
+                deleted += res.result.deletedCount;
+            }
+            else {
+                deleted += 0;
+            }
+        }
+        return { success: true, message: `${deleted} statuses purged`, result: deleted };
+    },
+
+    // Helper: Remove message files (placeholder - implement based on your storage)
+    _removeMessageFiles: async (context: I_Context, messageIds: string[]): Promise<I_Return<number>> => {
+        const uniqueIds = [...new Set(messageIds.filter(Boolean))];
+        if (!uniqueIds.length) {
+            return { success: true, message: 'Files removed', result: 0 };
+        }
+
+        const messages = await MessageModel.find({ id: { $in: uniqueIds } }).select('id content').lean();
+
+        let removed = 0;
+        for (const message of messages) {
+            try {
+                await removeMessageMedia(context, message as I_Message);
+                removed += 1;
+            }
+            catch {
+                // Best-effort cleanup: message can still be removed even if file deletion fails.
+            }
+        }
+
+        return { success: true, message: 'Files removed', result: removed };
+    },
+
+    // Helper: Recalc last message for conversation
+    recalcLastMessage: async (conversationId: string): Promise<I_Return<I_Message | null>> => {
+        const lastMessage = await MessageModel.findOne({
+            conversationId,
+            deletedAt: { $exists: false },
+        }).sort({ createdAt: -1 });
+
+        if (lastMessage) {
+            await conversationCtr._updateLastMessageId(conversationId, lastMessage.id);
+            return { success: true, message: 'Last message updated', result: lastMessage as I_Message };
+        }
+        else {
+            // No messages left, clear lastMessageId
+            await conversationCtr._updateLastMessageId(conversationId, null);
+            return { success: true, message: 'No messages left', result: null };
+        }
+    },
+
+    deleteMessageInGroup: async (
+        context: I_Context,
+        messageId: string,
+    ): Promise<I_Return<boolean>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+        const message = await mongooseCtr.findOne({ filter: { id: messageId } });
+        if (!message.success) {
+            throwError({ message: 'Message not found', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        const msg = message.result;
+        const conversation = await conversationCtr.getConversation(context, {
+            filter: { id: msg.conversationId },
+            populate: ['participants'],
+        });
+        if (!conversation.success || conversation.result.type !== E_ConversationType.GROUP) {
+            throwError({ message: 'Not a group message', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const isAdmin = conversation.result.participants?.some(p => p.userId === currentUser.id && p.role === E_ParticipantRole.ADMIN);
+        if (msg.senderId !== currentUser.id && !isAdmin) {
+            throwError({ message: 'Only sender or admin can delete', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        // Soft delete
+        await messageCtr.redactMessages({ id: messageId });
+        await messageCtr._purgeMessageStatuses([messageId]);
+        await messageCtr._removeMessageFiles(context, [messageId]);
+
+        // Recalc last message if needed
+        if (conversation.result.lastMessageId === messageId && msg.conversationId) {
+            await messageCtr.recalcLastMessage(msg.conversationId);
+        }
+
+        // // Publish event
+        // if (msg.conversationId) {
+        //     pubsub.publish(E_CONVERSATION_EVENTS.MESSAGE_DELETED, {
+        //         messageDeleted: { conversationId: msg.conversationId, messageId },
+        //     });
+        // }
+
+        return { success: true, message: 'Message deleted', result: true };
+    },
+    deleteMessages: async (
+        _context: I_Context,
+        { filter, options }: I_Input_DeleteMany<I_Input_QueryMessage>,
+    ): Promise<I_Return<T_DeleteResult>> => {
+        const messageIds = await messageCtr._messageDistinct('id', filter) as I_Return<string[]>;
+
+        if (messageIds.success && messageIds.result.length > 0) {
+            await messageCtr._removeMessageFiles(_context, messageIds.result.map(id => String(id)));
+        }
+
+        const deleteResult = await mongooseCtr.deleteMany(filter, options);
+
+        if (messageIds.success && messageIds.result.length > 0) {
+            await messageCtr._purgeMessageStatuses(messageIds.result.map(id => String(id)));
+        }
+
+        return deleteResult;
+    },
+    _messageDistinct: async (key: string, filter?: T_QueryFilter<I_Message>, options?: T_QueryOptions<I_Message>) => {
+        return mongooseCtr.distinct(key, filter, options);
+    },
+};

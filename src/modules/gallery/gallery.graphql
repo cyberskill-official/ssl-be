@@ -1,0 +1,101 @@
+enum E_GalleryType {
+    IMAGE
+    VIDEO
+}
+
+type T_Gallery {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
+    type: E_GalleryType
+    url: String
+    thumbnailUrl: String
+    uploadedById: String
+    uploadedBy: T_User
+    status: E_ModerationMediaStatus
+    isPublished: Boolean
+    likes: [T_Like]
+    likeCount: Int
+    isLike: Boolean
+    views: [T_View]
+    viewCount: Int
+}
+
+input Input_QueryGallery {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    moderationMediaId: String
+    type: E_GalleryType
+    url: String
+    uploadedById: String
+    uploadedByIds: [String]
+    viewCount: Int
+    status: E_ModerationMediaStatus
+    isPublished: Boolean
+}
+
+input Input_QueryGalleryByUserIds {
+    userIds: [String!]
+    type: E_GalleryType
+    status: E_ModerationMediaStatus
+    isDel: Boolean
+}
+
+input Input_CreateGallery {
+    type: E_GalleryType!
+    url: String!
+    uploadedById: String!
+    isPublished: Boolean
+    thumbnailUrl: String
+}
+
+input Input_UpdateGallery {
+    type: E_GalleryType
+    url: String
+    uploadedById: String
+    isPublished: Boolean
+    thumbnailUrl: String
+}
+
+type T_Response_Gallery {
+    success: Boolean
+    message: String
+    result: T_Gallery
+}
+
+type T_Galleries {
+    docs: [T_Gallery]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Galleries {
+    success: Boolean
+    message: String
+    result: T_Galleries
+}
+
+type Query {
+    getGallery(filter: Input_QueryGallery!, projection: JSON, options: JSON, populate: JSON): T_Response_Gallery!
+    getGalleries(filter: Input_QueryGallery, options: JSON): T_Response_Galleries!
+    getGalleriesByUserIds(filter: Input_QueryGalleryByUserIds, options: JSON): T_Response_Galleries!
+}
+
+type Mutation {
+    deleteGallery(id: String!): T_Response_Gallery!
+    deleteOwnGallery(id: String!): T_Response_Gallery!
+}

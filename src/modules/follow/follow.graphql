@@ -1,0 +1,69 @@
+type T_Follow {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    followId: String
+    follow: T_User
+}
+
+input Input_Follow {
+    followId: String!
+}
+
+input Input_GetFollowers {
+    followId: String!
+}
+
+input Input_GetFollowings {
+    userId: String!
+}
+
+input Input_UnFollow {
+    followId: String!
+}
+
+input Input_UpdateFollow {
+    isDel: Boolean
+    userId: String
+    followId: String
+}
+
+type T_Response_Follow {
+    success: Boolean
+    message: String
+    result: T_Follow
+}
+
+type T_Follows {
+    docs: [T_Follow]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Follows {
+    success: Boolean
+    message: String
+    result: T_Follows
+}
+
+type Query {
+    getFollowers(filter: Input_GetFollowers, options: JSON): T_Response_Follows!
+    getFollowings(filter: Input_GetFollowings, options: JSON): T_Response_Follows!
+}
+
+type Mutation {
+    follow(doc: Input_Follow!): T_Response_Follow!
+    unFollow(filter: Input_UnFollow!, options: JSON): T_Response_Follow!
+}

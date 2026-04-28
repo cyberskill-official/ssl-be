@@ -1,0 +1,41 @@
+import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
+
+import type { I_Currency } from '#modules/location/currency/index.js';
+import type { I_Country, I_State } from '#modules/location/index.js';
+
+export enum E_PricingType {
+    MEMBERSHIP = 'MEMBERSHIP',
+    ANNOUNCEMENT = 'ANNOUNCEMENT',
+}
+
+export interface I_Pricing extends I_GenericDocument {
+    amount: number;
+    type?: E_PricingType;
+    price?: number;
+    taxRate?: number;
+    isActive?: boolean;
+    countryId?: string;
+    country?: I_Country;
+    stateId?: string;
+    state?: I_State;
+    currencyId?: string;
+    currency?: I_Currency;
+    paypalPlanId?: string;
+}
+
+export interface I_Input_QueryPricing extends I_Pricing {
+}
+
+export interface I_Input_CreatePricing extends Omit<I_Pricing, T_Omit_Create> {
+    type: E_PricingType;
+}
+
+export interface I_Input_UpdatePricing extends Omit<I_Pricing, T_Omit_Update> {
+}
+
+export interface I_Response_SubscriptionPrice {
+    price: number;
+    currency: string;
+    taxRate?: number;
+    paypalPlanId?: string;
+}

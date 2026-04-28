@@ -1,0 +1,122 @@
+enum E_ModerationLogAction {
+    DELETE
+    SUSPEND
+    UN_SUSPEND
+    APPROVE
+    WARN
+    DEACTIVATE
+    CLOSE
+}
+
+enum E_ModerationLogType {
+    TEXT
+    ACCOUNT
+    AGE_VERIFICATION
+    IMAGE
+    VIDEO
+}
+
+type T_ModerationLog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    action: E_ModerationLogAction
+    type: E_ModerationLogType
+    userId: String
+    user: T_User
+    targetUserId: String
+    targetUser: T_User
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
+    messageId: String
+    message: T_Message
+    content: String
+    reason: String
+    aiResult: T_MediaModerationResult
+}
+
+input Input_QueryModerationLog {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    action: E_ModerationLogAction
+    type: E_ModerationLogType
+    userId: String
+    targetUserId: String
+    moderationMediaId: String
+    messageId: String
+    content: String
+    reason: String
+}
+
+input Input_CreateModerationLog {
+    action: E_ModerationLogAction!
+    type: E_ModerationLogType
+    userId: String
+    targetUserId: String
+    moderationMediaId: String
+    messageId: String
+    content: String
+    reason: String
+}
+
+input Input_UpdateModerationLog {
+    isDel: Boolean
+    action: E_ModerationLogAction
+    type: E_ModerationLogType
+    userId: String
+    targetUserId: String
+    moderationMediaId: String
+    messageId: String
+    content: String
+    reason: String
+}
+
+type T_Response_ModerationLog {
+    success: Boolean
+    message: String
+    result: T_ModerationLog
+}
+
+type T_ModerationLogs {
+    docs: [T_ModerationLog]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_ModerationLogs {
+    success: Boolean
+    message: String
+    result: T_ModerationLogs
+}
+
+type Query {
+    getModerationLog(
+        filter: Input_QueryModerationLog!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_ModerationLog!
+    getModerationLogs(filter: Input_QueryModerationLog, options: JSON): T_Response_ModerationLogs!
+}
+
+type Mutation {
+    createModerationLog(doc: Input_CreateModerationLog!): T_Response_ModerationLog!
+    updateModerationLog(
+        filter: Input_QueryModerationLog!
+        update: Input_UpdateModerationLog!
+        options: JSON
+    ): T_Response_ModerationLog!
+    deleteModerationLog(filter: Input_QueryModerationLog!, options: JSON): T_Response_ModerationLog!
+}

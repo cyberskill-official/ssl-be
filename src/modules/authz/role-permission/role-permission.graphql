@@ -1,0 +1,71 @@
+type T_RolePermission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    roleId: String
+    role: T_Role
+    permissionId: String
+    permission: T_Permission
+}
+
+input Input_QueryRolePermission {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    roleId: String
+    permissionId: String
+}
+
+input Input_CreateRolePermission {
+    roleId: String!
+    permissionId: String!
+}
+
+input Input_UpdateRolePermission {
+    isDel: Boolean
+    roleId: String
+    permissionId: String
+}
+
+type T_Response_RolePermission {
+    success: Boolean
+    message: String
+    result: T_RolePermission
+}
+
+type T_RolePermissions {
+    docs: [T_RolePermission]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_RolePermissions {
+    success: Boolean
+    message: String
+    result: T_RolePermissions
+}
+
+type Query {
+    getRolePermissions(
+        filter: Input_QueryRolePermission
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_RolePermissions!
+}
+
+type Mutation {
+    createRolePermission(doc: Input_CreateRolePermission!): T_Response_RolePermission!
+    deleteRolePermission(filter: Input_QueryRolePermission!, options: JSON): T_Response_RolePermission!
+}

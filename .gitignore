@@ -1,0 +1,9 @@
+.vscode
+.DS_Store
+backup
+build
+node_modules
+uploads
+.env
+.migrate-mongo.config.js
+.simple-git-hooks.json

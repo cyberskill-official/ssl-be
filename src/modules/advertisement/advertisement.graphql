@@ -1,0 +1,144 @@
+enum E_AdvertisementSlot {
+    SLOT_1
+    SLOT_2
+    SLOT_3
+    SLOT_4
+    SLOT_5
+    SLOT_6
+}
+
+enum E_AdvertisementPlacementType {
+    CLUB
+    RESORT
+    BLOG
+    PODCAST
+    DASHBOARD
+}
+
+type T_Advertisement {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    description: String
+    image: String
+    targetURL: String
+    createdById: String
+    createdBy: T_User
+    slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
+    placementDestination: T_Destination
+    placementBlog: T_Blog
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}
+
+input Input_QueryAdvertisement {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    description: String
+    image: String
+    targetURL: String
+    createdById: String
+    slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
+    startDate: DateTime
+    endDate: DateTime
+    clickCount: Float
+    isActive: Boolean
+}
+
+input Input_CreateAdvertisement {
+    name: String!
+    description: String
+    image: String!
+    targetURL: String!
+    createdById: String
+    slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType!
+    placementId: String!
+    startDate: DateTime
+    endDate: DateTime
+    isActive: Boolean
+}
+
+input Input_UpdateAdvertisement {
+    isDel: Boolean
+    name: String
+    description: String
+    image: String
+    targetURL: String
+    slot: E_AdvertisementSlot
+    placementType: E_AdvertisementPlacementType
+    placementId: String
+    startDate: DateTime
+    endDate: DateTime
+    isActive: Boolean
+}
+
+input Input_UpdateClickCount {
+    id: String!
+    clickCount: Float!
+}
+
+type T_Response_Advertisement {
+    success: Boolean
+    message: String
+    result: T_Advertisement
+}
+
+type T_Advertisements {
+    docs: [T_Advertisement]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Advertisements {
+    success: Boolean
+    message: String
+    result: T_Advertisements
+}
+
+type Query {
+    getAdvertisement(
+        filter: Input_QueryAdvertisement!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Advertisement!
+    getAdvertisements(filter: Input_QueryAdvertisement, options: JSON): T_Response_Advertisements!
+    getAdvertisementByPlacement(
+        placementType: E_AdvertisementPlacementType!
+        placementId: String!
+        slot: E_AdvertisementSlot
+    ): T_Response_Advertisement!
+}
+
+type Mutation {
+    createAdvertisement(doc: Input_CreateAdvertisement!): T_Response_Advertisement!
+    updateAdvertisement(
+        filter: Input_QueryAdvertisement!
+        update: Input_UpdateAdvertisement!
+        options: JSON
+    ): T_Response_Advertisement!
+    deleteAdvertisement(filter: Input_QueryAdvertisement!, options: JSON): T_Response_Advertisement!
+    clickAdvertisement(filter: Input_QueryAdvertisement!): T_Response_Advertisement!
+    updateClickCount(filter: Input_QueryAdvertisement!, update: Input_UpdateClickCount!): T_Response_Advertisement!
+}

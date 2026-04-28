@@ -1,0 +1,81 @@
+enum E_CatalogueType {
+    BOOTYCALL
+    PARTY
+    TRAVEL
+}
+
+type T_Catalogue {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_CatalogueType
+    tagId: String
+    tag: T_Tag
+    url: String
+    moderationMediaId: String
+    moderationMedia: T_ModerationMedia
+    status: E_ModerationMediaStatus
+}
+
+input Input_QueryCatalogue {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_CatalogueType
+    tagId: String
+    url: String
+}
+
+input Input_CreateCatalogue {
+    type: E_CatalogueType!
+    tagId: String!
+    url: String!
+    isDel: Boolean
+}
+
+input Input_UpdateCatalogue {
+    isDel: Boolean
+    type: E_CatalogueType
+    tagId: String
+    url: String
+}
+
+type T_Response_Catalogue {
+    success: Boolean
+    message: String
+    result: T_Catalogue
+}
+
+type T_Catalogues {
+    docs: [T_Catalogue]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Catalogues {
+    success: Boolean
+    message: String
+    result: T_Catalogues
+}
+
+type Query {
+    getCatalogue(filter: Input_QueryCatalogue!, projection: JSON, options: JSON, populate: JSON): T_Response_Catalogue!
+    getCatalogues(filter: Input_QueryCatalogue, options: JSON): T_Response_Catalogues!
+}
+
+type Mutation {
+    createCatalogue(doc: Input_CreateCatalogue!): T_Response_Catalogue!
+    updateCatalogue(filter: Input_QueryCatalogue!, update: Input_UpdateCatalogue!, options: JSON): T_Response_Catalogue!
+    deleteCatalogue(filter: Input_QueryCatalogue!, options: JSON): T_Response_Catalogue!
+}

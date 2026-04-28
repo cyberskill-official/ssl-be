@@ -1,0 +1,87 @@
+enum E_ParticipantRole {
+    ADMIN
+    MEMBER
+}
+
+type T_Participant {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    conversationId: String
+    conversation: T_Participant
+    userId: String
+    user: T_User
+    lastReadMessageId: String
+    lastReadMessage: T_Message
+    role: E_ParticipantRole
+}
+
+input Input_QueryParticipant {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    conversationId: String
+    userId: String
+    lastReadMessageId: String
+    role: E_ParticipantRole
+}
+
+input Input_CreateParticipant {
+    conversationId: String!
+    userId: String!
+    lastReadMessageId: String
+    role: E_ParticipantRole
+}
+
+type T_DirectMessageBetweenResult {
+    exists: Boolean!
+    conversationId: String
+}
+
+type T_Response_Participant {
+    success: Boolean
+    message: String
+    result: T_Participant
+}
+
+type T_Response_ParticipantAction {
+    success: Boolean
+    message: String
+    result: Boolean
+}
+
+type T_Participants {
+    docs: [T_Participant]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Participants {
+    success: Boolean
+    message: String
+    result: T_Participants
+}
+
+type Query {
+    getParticipants(filter: Input_QueryParticipant, options: JSON): T_Response_Participants!
+    directMessageBetween(userId: String!): T_DirectMessageBetweenResult!
+}
+
+type Mutation {
+    createParticipant(doc: Input_CreateParticipant!): T_Response_Participant!
+    transferAdminRights(conversationId: String!, targetUserId: String!): T_Response_ParticipantAction!
+    grantAdminRights(conversationId: String!, targetUserId: String!): T_Response_ParticipantAction!
+    leaveGroup(conversationId: String!): T_Response_ParticipantAction!
+    removeMember(conversationId: String!, userId: String!): T_Response_ParticipantAction!
+}

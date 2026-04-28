@@ -1,0 +1,101 @@
+enum E_PricingType {
+    MEMBERSHIP
+    ANNOUNCEMENT
+}
+
+type T_Pricing {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_PricingType
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+    countryId: String
+    country: T_Country
+    stateId: String
+    state: T_State
+    currencyId: String
+    currency: T_Currency
+}
+
+input Input_QueryPricing {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_PricingType
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+    countryId: String
+    stateId: String
+    currencyId: String
+}
+
+input Input_CreatePricing {
+    type: E_PricingType
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+    countryId: String
+    stateId: String
+    currencyId: String
+}
+
+input Input_UpdatePricing {
+    isDel: Boolean
+    type: E_PricingType
+    price: Float
+    taxRate: Float
+    isActive: Boolean
+    countryId: String
+    stateId: String
+    currencyId: String
+}
+
+type T_Response_Pricing {
+    success: Boolean
+    message: String
+    result: T_Pricing
+}
+
+type T_Pricings {
+    docs: [T_Pricing]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Pricings {
+    success: Boolean
+    message: String
+    result: T_Pricings
+}
+
+type T_Response_SubscriptionPrice {
+    price: Float
+    currency: String
+    taxRate: Float
+}
+
+type Query {
+    getPricing(filter: Input_QueryPricing!, projection: JSON, options: JSON, populate: JSON): T_Response_Pricing!
+    getPricings(filter: Input_QueryPricing, options: JSON): T_Response_Pricings!
+    getSubscriptionPrice: T_Response_SubscriptionPrice!
+}
+
+type Mutation {
+    createPricing(doc: Input_CreatePricing!): T_Response_Pricing!
+    updatePricing(filter: Input_QueryPricing!, update: Input_UpdatePricing, options: JSON): T_Response_Pricing!
+    deletePricing(filter: Input_QueryPricing!, options: JSON): T_Response_Pricing!
+}
