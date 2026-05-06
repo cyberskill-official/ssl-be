@@ -22,6 +22,7 @@ const env = getEnv();
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
         isDev: !env.IS_PROD,
+        jsonLimit: env.BODY_PARSER_LIMIT,
     });
 
     const sessionParser = createSession({

@@ -2,6 +2,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
+import { log } from '@cyberskill/shared/node/log';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -391,7 +392,11 @@ export const bunnyCtr = {
         const videoId = m[2];
 
         if (env.BUNNY_STREAM_LIBRARY_ID && String(libId) !== String(env.BUNNY_STREAM_LIBRARY_ID)) {
-            throw new Error(`Library ID mismatch: url=${libId} env=${env.BUNNY_STREAM_LIBRARY_ID}`);
+            log.warn('[Bunny] Library ID mismatch while signing embed URL; continuing with URL library ID', {
+                urlLibraryId: libId,
+                envLibraryId: env.BUNNY_STREAM_LIBRARY_ID,
+                path: u.pathname,
+            });
         }
 
         const expires = Math.floor(Date.now() / 1000) + expiresInSec;
