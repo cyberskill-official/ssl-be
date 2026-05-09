@@ -19,6 +19,7 @@ import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
+import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
@@ -87,6 +88,7 @@ export const blogCtr = {
         const authorId = currentUser.id;
 
         doc.authorId = authorId;
+        doc.iframe = normalizePodcastEmbedUrl(doc.iframe);
         if (doc.languageId) {
             const language = await languageCtr.getLanguage(context, { filter: { id: doc.languageId } });
             if (!language.success) {
@@ -102,6 +104,10 @@ export const blogCtr = {
             if (blogsFound.result.docs.length !== doc.relatedBlogsIds.length) {
                 throwError({ message: 'One or more relatedBlogsIds do not exist', status: RESPONSE_STATUS.BAD_REQUEST });
             }
+        }
+
+        if (doc.type === 'PODCAST' && !doc.file && !doc.iframe) {
+            throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         const blogResult = await mongooseCtr.createOne(doc);
@@ -194,6 +200,10 @@ export const blogCtr = {
             }
         }
 
+        if (Object.hasOwn(update, 'iframe')) {
+            update.iframe = normalizePodcastEmbedUrl(update.iframe);
+        }
+
         const normalizeCdnUrl = (value?: string | null): string | undefined => {
             if (!value)
                 return undefined;
@@ -258,6 +268,13 @@ export const blogCtr = {
                     }
                 }
             }
+        }
+
+        const nextType = update.type ?? blogFound.result.type;
+        const nextFile = update.file === undefined ? blogFound.result.file : update.file;
+        const nextIframe = update.iframe === undefined ? blogFound.result.iframe : update.iframe;
+        if (nextType === 'PODCAST' && !nextFile && !nextIframe) {
+            throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
         return mongooseCtr.updateOne(filter, update, options);
