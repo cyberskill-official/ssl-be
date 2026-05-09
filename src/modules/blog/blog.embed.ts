@@ -13,7 +13,6 @@ function throwInvalidEmbedUrl(): never {
         message: 'Unsupported podcast embed URL.',
         status: RESPONSE_STATUS.BAD_REQUEST,
     });
-    throw new Error('Unreachable');
 }
 
 function parseUrlOrThrow(value: string): URL {
