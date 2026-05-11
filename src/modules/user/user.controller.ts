@@ -53,6 +53,9 @@ import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUs
 import { userAdminService } from './user-admin.service.js';
 import { UserModel } from './user.model.js';
 import { broadcastNewMemberInArea, createLocationForUser, ensurePopulateIncludes, hasValidMap, isTemporaryLocationActive, normalizeDateField, normalizeDateValue, normalizeRolesFilter, normalizeUserSettings, refreshSessionUser, resolveOnlineStatus, sanitizeRolesIds, upsertLocationForUser } from './user.util.js';
+import {
+    E_OnboardingType,
+} from './user.type.js';
 import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
@@ -242,9 +245,9 @@ export const userCtr = {
         );
         const effectivePopulate = isAdmin
             ? ensurePopulateIncludes(
-                    hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
-                    ['notes.createdBy'],
-                )
+                hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
+                ['notes.createdBy'],
+            )
             : (hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate]);
 
         const userFound = await mongooseCtr.findOne(
@@ -408,7 +411,7 @@ export const userCtr = {
 
             const partnerKey: 'partner1' | 'partner2'
                 = (targetQueue.length ? targetQueue.shift() : undefined)
-                    ?? (i === 0 ? 'partner1' : 'partner2');
+                ?? (i === 0 ? 'partner1' : 'partner2');
             interface PartnerShim { gallery?: { id?: string; url?: string }; galleryId?: string }
             const cu = currentUser as unknown as { partner1?: PartnerShim; partner2?: PartnerShim } | undefined;
             const previousGallery = cu?.[partnerKey]?.gallery;
@@ -480,8 +483,8 @@ export const userCtr = {
                         // Cleanup rejected avatar file from storage
                         const rejectedRelativePath = fullUrl
                             ? (fullUrl.split('?')[0] ?? '')
-                                    .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
-                                    .replace(LEADING_SLASHES_REGEX, '')
+                                .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                                .replace(LEADING_SLASHES_REGEX, '')
                             : '';
 
                         if (rejectedRelativePath) {
@@ -1488,16 +1491,19 @@ export const userCtr = {
 
         return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: true, membershipCancelled: true }, options);
     },
-    completeOnboarding: async (context: I_Context): Promise<I_Return<I_User>> => {
+    completeOnboarding: async (context: I_Context, { type }: { type: E_OnboardingType }): Promise<I_Return<I_User>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+
+        const updateField = type === E_OnboardingType.DASHBOARD ? 'hasSeenDashboardTour' : 'hasSeenProfileTour';
 
         const updated = await mongooseCtr.updateOne(
             { id: currentUser.id } as any,
-            { isOnboardingCompleted: true },
+            { [updateField]: true },
+            { new: true },
         );
 
         if (updated.success && context.req?.session?.user?.id === currentUser.id) {
-            context.req.session.user.isOnboardingCompleted = true;
+            context.req.session.user[updateField] = true;
         }
 
         return updated;

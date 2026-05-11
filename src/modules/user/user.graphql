@@ -3,6 +3,18 @@ enum E_AccountType {
     COUPLE
 }
 
+enum E_EventType {
+    BOOTY_CALL
+    PRIVATE
+    TRAVEL
+    CLUB_VISIT
+}
+
+enum E_OnboardingType {
+    DASHBOARD
+    PROFILE
+}
+
 enum E_Gender {
     MALE
     FEMALE
@@ -221,7 +233,8 @@ type T_User {
     isAdminBlocked: Boolean
     isDeactivated: Boolean
     isGuardianView: Boolean
-    isOnboardingCompleted: Boolean
+    hasSeenDashboardTour: Boolean
+    hasSeenProfileTour: Boolean
     guardianOwnerId: String
     notes: [T_Note]
     tempOtp: String
@@ -264,7 +277,8 @@ input Input_QueryUser {
     followingCount: Int
     isAdminBlocked: Boolean
     isDeactivated: Boolean
-    isOnboardingCompleted: Boolean
+    hasSeenDashboardTour: Boolean
+    hasSeenProfileTour: Boolean
     notes: [Input_Note]
 }
 
@@ -326,7 +340,8 @@ input Input_UpdateUser {
     followerCount: Int
     isAdminBlocked: Boolean
     isDeactivated: Boolean
-    isOnboardingCompleted: Boolean
+    hasSeenDashboardTour: Boolean
+    hasSeenProfileTour: Boolean
     notes: [Input_Note]
 }
 
@@ -386,7 +401,7 @@ type Mutation {
     deleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
     softDeleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
     deactivateUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
-    completeOnboarding: T_Response_User!
+    completeOnboarding(type: E_OnboardingType!): T_Response_User!
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
     adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
     adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!
