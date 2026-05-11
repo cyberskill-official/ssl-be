@@ -1,0 +1,65 @@
+enum E_ViewEntityType {
+    GALLERY
+    BLOG
+}
+
+union U_ViewEntity = T_Gallery | T_Blog
+
+type T_View {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    entityType: E_ViewEntityType
+    entityId: String
+    entity: U_ViewEntity
+    viewCount: Int
+    lastViewedAt: DateTime
+}
+
+input Input_QueryView {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    entityType: E_ViewEntityType
+    entityId: String
+}
+
+type T_Response_View {
+    success: Boolean
+    message: String
+    result: T_View
+}
+
+type T_Views {
+    docs: [T_View]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Views {
+    success: Boolean
+    message: String
+    result: T_Views
+}
+
+type Query {
+    getViews(filter: Input_QueryView, options: JSON): T_Response_Views!
+}
+
+type Mutation {
+    increaseViewCount(entityType: E_ViewEntityType!, entityId: String!): T_Response_View!
+}

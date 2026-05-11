@@ -1,0 +1,386 @@
+enum E_AccountType {
+    SINGLE
+    COUPLE
+}
+
+enum E_Gender {
+    MALE
+    FEMALE
+}
+
+enum E_AgeVerifyStatus {
+    PENDING
+    APPROVED
+    REJECTED
+}
+
+enum E_AgeVerifyMethod {
+    PASSPORT
+    ID_CARD
+    DRIVERS_LICENSE
+}
+
+type T_AgeRange {
+    low: Int
+    high: Int
+}
+
+input Input_AgeRange {
+    low: Int
+    high: Int
+}
+
+type T_AIVerifyResult {
+    documentAge: Int
+    selfieAgeRange: T_AgeRange
+    similarity: Float
+    isOver18: Boolean
+    dateOfBirth: DateTime
+}
+
+input Input_AIVerifyResult {
+    documentAge: Int
+    selfieAgeRange: Input_AgeRange
+    similarity: Float
+    isOver18: Boolean
+    dateOfBirth: DateTime
+}
+
+type T_PreApproval {
+    documentPic: String
+    selfiePic: String
+    aiResult: T_AIVerifyResult
+}
+
+input Input_PreApproval {
+    documentPic: String
+    selfiePic: String
+    aiResult: Input_AIVerifyResult
+}
+
+type T_AgeVerify {
+    status: E_AgeVerifyStatus
+    method: E_AgeVerifyMethod
+    preApproval: T_PreApproval
+    approvedById: String
+    approvedBy: T_User
+    approvedAt: DateTime
+    reason: String
+    dateOfBirth: DateTime
+    agreement: String
+}
+
+input Input_AgeVerify {
+    status: E_AgeVerifyStatus
+    method: E_AgeVerifyMethod
+    preApproval: Input_PreApproval
+    approvedById: String
+    approvedAt: DateTime
+    reason: String
+    dateOfBirth: DateTime
+    agreement: String
+}
+
+type T_UserPartner {
+    gender: E_Gender
+    dateOfBirth: DateTime
+    relationshipStatusIds: [String]
+    relationshipStatus: [T_Tag]
+    sexualOrientationIds: [String]
+    sexualOrientation: [T_Tag]
+    sexualPreferencesIds: [String]
+    sexualPreferences: [T_Tag]
+    smokingHabitsIds: [String]
+    smokingHabits: [T_Tag]
+    preferredDrinksIds: [String]
+    preferredDrinks: [T_Tag]
+    bodyTypeId: String
+    bodyType: T_Tag
+    heightId: String
+    height: T_Tag
+    hairColorId: String
+    hairColor: T_Tag
+    eyeColorId: String
+    eyeColor: T_Tag
+    ethnicityId: String
+    ethnicity: T_Tag
+    galleryId: String
+    gallery: T_Gallery
+    locationId: String
+    location: T_Location
+    bio: String
+}
+
+input Input_UserPartner {
+    gender: E_Gender
+    dateOfBirth: DateTime
+    relationshipStatusIds: [String]
+    sexualOrientationIds: [String]
+    sexualPreferencesIds: [String]
+    smokingHabitsIds: [String]
+    preferredDrinksIds: [String]
+    bodyTypeId: String
+    heightId: String
+    hairColorId: String
+    eyeColorId: String
+    ethnicityId: String
+    galleryId: String
+    locationId: String
+    location: Input_Location
+    bio: String
+}
+
+type T_UserSettings_TemporaryLocation {
+    locationId: String
+    location: T_Location
+    endAt: DateTime
+}
+
+input Input_UserSettings_TemporaryLocation {
+    locationId: String
+    location: Input_Location
+    endAt: DateTime
+}
+
+type T_UserSettings_Notification {
+    followingPostAnnouncement: Boolean
+    gainFollower: Boolean
+    receiveMessage: Boolean
+    newMemberJoined: Boolean
+    sound: Boolean
+}
+
+input Input_UserSettings_Notification {
+    followingPostAnnouncement: Boolean!
+    gainFollower: Boolean!
+    receiveMessage: Boolean!
+    newMemberJoined: Boolean!
+    sound: Boolean!
+}
+
+enum E_UserSettings_TimeFormat {
+    H24
+    H12
+}
+
+type T_UserSettings {
+    timeFormat: E_UserSettings_TimeFormat
+    temporaryLocation: T_UserSettings_TemporaryLocation
+    notification: T_UserSettings_Notification
+    zoomLevel: Int
+}
+
+input Input_UserSettings {
+    timeFormat: E_UserSettings_TimeFormat
+    temporaryLocation: Input_UserSettings_TemporaryLocation
+    notification: Input_UserSettings_Notification
+    zoomLevel: Int
+}
+
+type T_User {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    username: String
+    email: String
+    rolesIds: [String]
+    registerStep: E_RegisterStep
+    isEmailVerified: Boolean
+    ageVerify: T_AgeVerify
+    accountType: E_AccountType
+    partner1: T_UserPartner
+    partner2: T_UserPartner
+    nativeLanguageId: String
+    nativeLanguage: T_Language
+    otherLanguagesIds: [String]
+    otherLanguages: [T_Language]
+    lookingForIds: [String]
+    lookingFor: [T_Tag]
+    profilePurposeIds: [String]
+    profilePurpose: [T_Tag]
+    willingnessToGoIds: [String]
+    willingnessToGo: [T_Tag]
+    rulesOfEngagementIds: [String]
+    rulesOfEngagement: [T_Tag]
+    roles: [T_Role]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    lastLoginIp: String
+    settings: T_UserSettings
+    flagCount: Int
+    hasUpcomingEvent: Boolean
+    membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
+    freeEventCount: Int
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
+    followerCount: Int
+    followingCount: Int
+    isAdminBlocked: Boolean
+    isGuardianView: Boolean
+    guardianOwnerId: String
+    notes: [T_Note]
+    tempOtp: String
+    tempOtpCreatedAt: DateTime
+}
+
+input Input_QueryUser {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    username: String
+    email: String
+    rolesIds: [String]
+    rolesNames: [String]
+    registerStep: E_RegisterStep
+    isEmailVerified: Boolean
+    ageVerify: Input_AgeVerify
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
+    flagCount: Int
+    hasUpcomingEvent: Boolean
+    membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
+    freeEventCount: Int
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
+    followerCount: Int
+    followingCount: Int
+    isAdminBlocked: Boolean
+    notes: [Input_Note]
+}
+
+input Input_CreateUser {
+    username: String!
+    email: String!
+    password: String!
+    rolesIds: [String]!
+    registerStep: E_RegisterStep!
+    isEmailVerified: Boolean
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
+    flagCount: Int
+    membershipExpiresAt: DateTime
+    inactivityDeletionWarning30SentAt: DateTime
+    inactivityDeletionWarning10SentAt: DateTime
+    hasUpcomingEvent: Boolean
+    followerCount: Int
+    notes: [Input_Note]
+}
+
+input Input_UpdateUser {
+    isDel: Boolean
+    username: String
+    email: String
+    password: String
+    rolesIds: [String]
+    registerStep: E_RegisterStep
+    isEmailVerified: Boolean
+    accountType: E_AccountType
+    partner1: Input_UserPartner
+    partner2: Input_UserPartner
+    nativeLanguageId: String
+    otherLanguagesIds: [String]
+    lookingForIds: [String]
+    profilePurposeIds: [String]
+    willingnessToGoIds: [String]
+    rulesOfEngagementIds: [String]
+    isActive: Boolean
+    isOnline: Boolean
+    lastOnline: DateTime
+    settings: Input_UserSettings
+    flagCount: Int
+    tempOtp: String
+    membershipExpiresAt: DateTime
+    membershipCancelled: Boolean
+    hasUpcomingEvent: Boolean
+    followerCount: Int
+    notes: [Input_Note]
+}
+
+input Input_AdminBlockUser {
+    userId: String!
+}
+input Input_AdminUnblockUser {
+    userId: String!
+}
+
+type T_Response_User {
+    success: Boolean
+    message: String
+    result: T_User
+}
+
+type T_Users {
+    docs: [T_User]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Users {
+    success: Boolean
+    message: String
+    result: T_Users
+}
+
+type T_UserAvatar {
+    url: String
+    galleryId: String
+}
+
+type T_Response_UserAvatar {
+    success: Boolean
+    message: String
+    result: T_UserAvatar
+}
+
+type Query {
+    getUser(filter: Input_QueryUser!, projection: JSON, options: JSON, populate: JSON): T_Response_User!
+    getUsers(filter: Input_QueryUser, options: JSON): T_Response_Users!
+}
+
+type Mutation {
+    createUser(doc: Input_CreateUser!): T_Response_User!
+    updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
+    deleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
+    softDeleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
+    recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
+    adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
+    adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!
+    # Accept one or more files. If two files are provided, first -> partner1, second -> partner2
+    uploadUserAvatar(file: [Upload!]!): T_Response_UserAvatar!
+}

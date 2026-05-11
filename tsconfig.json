@@ -1,0 +1,23 @@
+{
+    "extends": "./node_modules/@cyberskill/shared/public/tsconfig.base.json",
+    "compilerOptions": {
+        "ignoreDeprecations": "6.0",
+        "baseUrl": ".",
+        "rootDir": "./src",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "paths": {
+            "#modules/*": [
+                "src/modules/*"
+            ],
+            "#shared/*": [
+                "src/shared/*"
+            ]
+        },
+        "outDir": "./build"
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx"
+    ]
+}

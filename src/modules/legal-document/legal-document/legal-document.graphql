@@ -1,0 +1,118 @@
+enum E_LegalDocumentType {
+    TERM_AND_CONDITION
+    PRIVACY_POLICY
+    COOKIE_POLICY
+    CODE_OF_ETHICS
+    TERM_OF_SALE
+}
+
+enum E_LegalDocumentStatus {
+    DRAFT
+    PUBLISHED
+}
+
+type T_LegalDocumentHistory {
+    type: E_LegalDocumentType
+    content: String
+    version: Int
+    updatedAt: DateTime
+    updatedById: String
+    updatedBy: T_User
+}
+
+input Input_QueryLegalDocumentHistory {
+    type: E_LegalDocumentType
+    content: String
+    version: Int
+    updatedAt: DateTime
+    updatedById: String
+}
+
+input Input_MutateLegalDocumentHistory {
+    type: E_LegalDocumentType!
+    content: String!
+    version: Int!
+    updatedAt: DateTime!
+    updatedById: String!
+}
+
+type T_LegalDocument {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_LegalDocumentType
+    content: String
+    status: E_LegalDocumentStatus
+    version: Int
+    history: [T_LegalDocumentHistory]
+}
+
+input Input_QueryLegalDocument {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_LegalDocumentType
+    content: String
+    status: E_LegalDocumentStatus
+    version: Int
+    history: [Input_QueryLegalDocumentHistory]
+}
+
+input Input_SaveDraftLegalDocument {
+    type: E_LegalDocumentType!
+    content: String!
+}
+
+input Input_PublishLegalDocument {
+    type: E_LegalDocumentType!
+}
+
+input Input_RestoreLegalDocument {
+    id: String!
+    version: Int!
+}
+
+type T_Response_LegalDocument {
+    success: Boolean
+    message: String
+    result: T_LegalDocument
+}
+
+type T_LegalDocuments {
+    docs: [T_LegalDocument]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_LegalDocuments {
+    success: Boolean
+    message: String
+    result: T_LegalDocuments
+}
+
+type Query {
+    getLegalDocument(
+        filter: Input_QueryLegalDocument!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_LegalDocument!
+    getLegalDocuments(filter: Input_QueryLegalDocument, options: JSON): T_Response_LegalDocuments!
+}
+
+type Mutation {
+    saveDraftLegalDocument(doc: Input_SaveDraftLegalDocument!): T_Response_LegalDocument!
+    publishLegalDocument(doc: Input_PublishLegalDocument!): T_Response_LegalDocument!
+    restoreLegalDocument(doc: Input_RestoreLegalDocument!): T_Response_LegalDocument!
+}

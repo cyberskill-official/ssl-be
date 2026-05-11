@@ -1,0 +1,332 @@
+enum E_ConversationType {
+    PRIVATE
+    PUSH_CHAT
+    GROUP
+    PROFILE_COMMENT
+    BLOG_COMMENT
+    DESTINATION_COMMENT
+    GALLERY_COMMENT
+    ADMIN_BROADCAST
+}
+
+enum E_ConversationStatus {
+    NEW
+    IN_PROGRESS
+    RESOLVED
+    ARCHIVED
+}
+
+enum E_ConversationCategory {
+    UNCATEGORIZED
+    TECHNICAL
+    BILLING
+    CONTENT
+    CLUB
+    LEGAL
+    GENERAL
+}
+
+enum E_ContactTopic {
+    TECHNICAL_ACCOUNT
+    BILLING_MEMBERSHIP
+    CONTENT_MODERATION
+    CLUB_EVENT
+    LEGAL_COMPLIANCE
+    GENERAL_FEEDBACK
+}
+
+enum E_ContactAdminType {
+    #Technical account
+    LOGIN_OR_ACCESS_PROBLEM
+    PROFILE_VERIFICATION_ID_CHECK_UPLOADING
+    PHOTO_OR_VIDEO_UPLOAD_ISSUES
+    TECHNICAL_BUG_OR_ERROR_ON_THE_SITE
+    #Billing membership
+    MEMBERSHIP_UPGRADE_DOWGRADE
+    SUBSCRIPTION_OR_PAYMENT_ISSUE
+    BILLING_OR_REFUND_INQUIRY
+    PAYMENT_METHOD_OR_CARD_DECLINE
+    PROMO_CODE_OR_DISCOUNT_PROBLEM
+    #Content moderation
+    REPORT_INAPPROPRIATE_CONTENT
+    REPORT_FAKE_OR_SUSPICIOUS_PROFILE
+    REQUEST_CONTENT_REMOVAL
+    QUESTIONS_ABOUT_AI_MODERATION_RULES
+    #Club event
+    REPORT_EXPIRED_OR_INCORRECT_CLUB_INFORMATION
+    SUGGEST_A_NEW_CLUB_OR_RESORT
+    PROBLEMS_WITH_ANNOUNCEMENTS
+    #Legal compliance
+    TERMS_OF_USE_PRIVACY_POLICY_QUESTIONS
+    DATA_ACCESS_OR_DELETION_REQUEST_GDPR
+    REPORT_HUMAN_TRAFFICKING_OR_NON_CONSENSUAL_ACTIVITY
+    #General feedback
+    FEEDBACK_ON_DESIGN_OR_USABILITY
+    FEATURE_SUGGESTION
+    COLLABORATION_PARTNERSHIP_INQUIRY
+    PRESS_OR_MEDIA_REQUEST
+
+    OTHER
+}
+
+enum E_Device {
+    DESKTOP
+    MOBILE
+    TABLET
+}
+
+union U_ConversationEntity = T_User | T_Blog | T_Destination | T_Gallery
+
+type T_Conversation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ConversationType
+    name: String
+    createdById: String
+    createdBy: T_User
+    lastMessageId: String
+    lastMessage: T_Message
+    entityId: String
+    entity: U_ConversationEntity
+    participants: [T_Participant]
+    meta: JSON
+    # Admin management fields
+    status: E_ConversationStatus
+    category: E_ConversationCategory
+    resolvedAt: DateTime
+    resolvedById: String
+    resolvedBy: T_User
+    lastReadByAdminAt: DateTime
+    notes: String
+}
+
+type T_BroadcastResult {
+    messageId: String
+    recipientCount: Int
+}
+
+type T_Response_BroadcastResult {
+    success: Boolean
+    message: String
+    result: T_BroadcastResult
+}
+
+type T_ContactAdminResult {
+    conversationId: String
+}
+
+type T_Response_ContactAdmin {
+    success: Boolean
+    message: String
+    result: T_ContactAdminResult
+}
+
+type T_Response_Generic {
+    success: Boolean
+    message: String
+    result: Boolean
+}
+
+input Input_QueryConversation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_ConversationType
+    name: String
+    entityId: String
+    createdById: String
+    lastMessageId: String
+}
+
+input Input_CreateConversation {
+    type: E_ConversationType!
+    name: String
+    createdById: String
+    lastMessageId: String
+    entityId: String
+    entityType: E_ConversationType
+}
+
+input Input_CreateGroupConversation {
+    name: String!
+}
+
+input Input_ContactAdmin {
+    topic: E_ContactTopic!
+    username: String!
+    email: String!
+    requestType: E_ContactAdminType
+    device: E_Device
+    message: String!
+    image: String
+    paymentDate: DateTime
+    transactionId: String
+    profileLink: String
+    companyName: String
+}
+
+input Input_AdminReplyGuest {
+    conversationId: String
+    email: String!
+    topic: E_ContactTopic!
+    requestType: E_ContactAdminType
+    message: String!
+}
+
+input Input_UpdateConversation {
+    isDel: Boolean
+    type: E_ConversationType
+    name: String
+    createdById: String
+    entityId: String
+    entityType: E_ConversationType
+    lastMessageId: String
+}
+
+input Input_CreateBroadcast {
+    content: Input_MessageContent!
+    target: E_Role_User
+}
+
+input Input_MarkAllMessagesAsRead {
+    conversationId: String!
+}
+
+# Subscription input types
+input Input_SubscribeToConversation {
+    conversationId: String
+}
+
+# Subscription payload types
+type T_MessageSentResult {
+    conversation: T_Conversation
+}
+
+type T_MessageReadResult {
+    messageId: String
+    userId: String
+    conversationId: String
+    readAt: DateTime
+}
+type T_MessageDeletedResult {
+    messageId: String
+    conversationId: String
+}
+
+enum E_ConversationAction {
+    CREATED
+    UPDATED
+    DELETED
+}
+
+type T_ConversationEventResult {
+    conversationId: String
+    type: E_ConversationType
+    action: E_ConversationAction
+}
+
+type T_MarkAllMessagesAsReadResult {
+    conversation: T_Conversation
+    totalMarked: Int
+}
+
+type T_Response_MarkAllMessagesAsReadResult {
+    success: Boolean
+    message: String
+    result: T_MarkAllMessagesAsReadResult
+}
+
+type T_Response_DeleteConversationResult {
+    success: Boolean
+    message: String
+    result: Boolean
+}
+
+type T_Response_Conversation {
+    success: Boolean
+    message: String
+    result: T_Conversation
+}
+
+type T_Conversations {
+    docs: [T_Conversation]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Conversations {
+    success: Boolean
+    message: String
+    result: T_Conversations
+}
+
+type T_Response_JoinRequests {
+    success: Boolean
+    message: String
+    result: [T_Notification!]
+}
+
+type T_Response_Boolean {
+    success: Boolean
+    message: String
+    result: Boolean
+}
+
+type Query {
+    getConversation(
+        filter: Input_QueryConversation!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_Conversation!
+    getConversations(filter: Input_QueryConversation, options: JSON): T_Response_Conversations!
+    getSupportConversations(options: JSON): T_Response_Conversations!
+    getMyPrivateConversations(options: JSON, search: String): T_Response_Conversations!
+    getMyGroupConversations(options: JSON, search: String): T_Response_Conversations!
+    getEventJoinRequests: T_Response_JoinRequests!
+    hasPendingJoinRequests: T_Response_Boolean!
+}
+
+type Mutation {
+    createConversation(doc: Input_CreateConversation!): T_Response_Conversation!
+    createGroupConversation(doc: Input_CreateGroupConversation!): T_Response_Conversation!
+    createBroadcast(doc: Input_CreateBroadcast!): T_Response_BroadcastResult!
+    deleteConversation(filter: Input_QueryConversation!, options: JSON): T_Response_Conversation!
+    deletePrivateConversation(conversationId: String!): T_Response_DeleteConversationResult!
+    deleteGroupConversation(conversationId: String!): T_Response_DeleteConversationResult!
+    markAllMessagesAsRead(conversationId: String!): T_Response_MarkAllMessagesAsReadResult!
+    ensureDestinationCommentConversation(destinationId: String!): T_Response_Conversation!
+    contactAdmin(input: Input_ContactAdmin!): T_Response_ContactAdmin!
+    adminReplyGuest(input: Input_AdminReplyGuest!): T_Response_Generic!
+    requestJoinConversation(eventId: String!): T_Response_Generic!
+    approveJoinConversation(requesterId: String!): T_Response_Generic!
+    # New admin management mutations
+    updateConversationStatus(
+        conversationId: String!
+        status: E_ConversationStatus
+        category: E_ConversationCategory
+        notes: String
+    ): T_Response_Conversation!
+    markConversationAsRead(conversationId: String!): T_Response_Conversation!
+    resolveConversation(conversationId: String!, notes: String): T_Response_Conversation!
+    archiveConversation(conversationId: String!): T_Response_Conversation!
+}
+
+type Subscription {
+    messageSent(input: Input_SubscribeToConversation): T_MessageSentResult
+    messageRead(input: Input_SubscribeToConversation): T_MessageReadResult
+    messageDeleted(input: Input_SubscribeToConversation): T_MessageDeletedResult
+    conversationEvent: T_ConversationEventResult
+}

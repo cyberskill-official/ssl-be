@@ -1,0 +1,202 @@
+enum E_SettingType {
+    FOOTER
+    ADMIN_NOTIFICATION
+    AI_MODERATION
+    PRICING_DEFAULT
+    FAQ
+}
+
+type T_SocialLink {
+    type: E_SocialPlatform
+    url: String
+}
+
+input Input_SocialLink {
+    type: E_SocialPlatform!
+    url: String!
+}
+
+type T_Footer {
+    socialLinks: [T_SocialLink]
+}
+
+input Input_Footer {
+    socialLinks: [Input_SocialLink]
+}
+
+type T_AdminNotification {
+    successfulPayments: Boolean
+    failedPayments: Boolean
+    newMembers: Boolean
+}
+
+input Input_AdminNotification {
+    successfulPayments: Boolean
+    failedPayments: Boolean
+    newMembers: Boolean
+}
+
+type T_AIModerationConfig {
+    # Global thresholds
+    autoRejectThreshold: Float
+    humanReviewThreshold: Float
+    # Content type specific thresholds
+    imageThresholds: T_AIModerationThresholds
+    # Banned words configuration
+    bannedWords: T_BannedWordsConfig
+    # Additional settings
+    moderationCategories: E_ModerationCategory
+}
+
+type T_BannedWordsConfig {
+    explicit: [String]
+    hate: [String]
+    violence: [String]
+    drugs: [String]
+    custom: [String]
+}
+
+type T_AIModerationThresholds {
+    explicitNudity: Float
+    violence: Float
+    hateSymbols: Float
+    drugs: Float
+    nonExplicitNudity: Float
+    swimwearOrUnderwear: Float
+}
+
+input Input_AIModerationThresholds {
+    explicitNudity: Float
+    violence: Float
+    hateSymbols: Float
+    drugs: Float
+    nonExplicitNudity: Float
+    swimwearOrUnderwear: Float
+}
+
+input Input_AIModerationConfig {
+    # AWS Service controls
+    awsComprehendEnabled: Boolean
+    awsRekognitionEnabled: Boolean
+    awsTextractEnabled: Boolean
+    # Global thresholds
+    autoRejectThreshold: Float
+    humanReviewThreshold: Float
+    # Content type specific thresholds
+    imageThresholds: Input_AIModerationThresholds
+    # Content type controls
+    enableImageModeration: Boolean
+    enableTextModeration: Boolean
+    enableVideoModeration: Boolean
+    # Additional settings
+    moderationCategories: [String]
+}
+
+input Input_PricingDefault {
+    currency: String!
+    amount: Float!
+    taxRate: Float
+}
+
+type T_PricingDefault {
+    currency: String
+    amount: Float
+    taxRate: Float
+}
+
+type T_FAQEntry {
+    question: String
+    answer: String
+    isPublished: Boolean
+}
+
+input Input_FAQEntry {
+    question: String!
+    answer: String!
+    isPublished: Boolean
+}
+
+type T_FAQ {
+    entries: [T_FAQEntry!]!
+}
+
+input Input_FAQ {
+    entries: [Input_FAQEntry!]!
+}
+
+union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig | T_PricingDefault | T_FAQ
+
+input Input_Setting {
+    footer: Input_Footer
+    adminNotification: Input_AdminNotification
+    aiModeration: Input_AIModerationConfig
+    pricingDefault: Input_PricingDefault
+    faq: Input_FAQ
+}
+
+type T_Setting {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_SettingType
+    value: U_SettingValue
+}
+
+input Input_QuerySetting {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_SettingType
+    value: Input_Setting
+}
+
+input Input_CreateSetting {
+    type: E_SettingType!
+    value: Input_Setting!
+}
+
+input Input_UpdateSetting {
+    isDel: Boolean
+    type: E_SettingType
+    value: Input_Setting
+}
+
+type T_Response_Setting {
+    success: Boolean
+    message: String
+    result: T_Setting
+}
+
+type T_Settings {
+    docs: [T_Setting]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Settings {
+    success: Boolean
+    message: String
+    result: T_Settings
+}
+
+type Query {
+    getSetting(filter: Input_QuerySetting!, projection: JSON, options: JSON, populate: JSON): T_Response_Setting!
+    getSettings(filter: Input_QuerySetting, options: JSON): T_Response_Settings!
+}
+
+type Mutation {
+    createSetting(doc: Input_CreateSetting!): T_Response_Setting!
+    updateSetting(filter: Input_QuerySetting!, update: Input_UpdateSetting, options: JSON): T_Response_Setting!
+    deleteSetting(filter: Input_QuerySetting!, options: JSON): T_Response_Setting!
+}

@@ -1,0 +1,111 @@
+enum E_InvitationType {
+    EVENT
+    CONVERSATION
+}
+
+enum E_InvitationStatus {
+    PENDING
+    ACCEPTED
+    REJECTED
+    BLACKLISTED
+    DELETED
+}
+enum E_InvitationEvent {
+    INVITATION_SENT
+    INVITATION_RESPONDED
+}
+
+union U_InvitationEntity = T_Conversation | T_Event
+
+type T_Invitation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_InvitationType
+    userId: String
+    user: T_User
+    inviterId: String
+    inviter: T_User
+    status: E_InvitationStatus
+    entityId: String
+    entity: U_InvitationEntity
+}
+
+input Input_QueryInvitation {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    type: E_InvitationType
+    userId: String
+    inviterId: String
+    status: E_InvitationStatus
+    entityId: String
+}
+
+input Input_SendInvitation {
+    type: E_InvitationType!
+    entityId: String!
+    userId: String!
+}
+
+input Input_RespondToInvitation {
+    invitationId: String!
+    status: E_InvitationStatus!
+}
+
+type T_InvitationEventPayload {
+    invitation: T_Invitation!
+    eventType: E_InvitationEvent!
+}
+
+input Input_UpdateInvitation {
+    isDel: Boolean
+    type: E_InvitationType
+    userId: String
+    inviterId: String
+    status: E_InvitationStatus
+    entityId: String
+}
+
+type T_Response_Invitation {
+    success: Boolean
+    message: String
+    result: T_Invitation
+}
+
+type T_Invitations {
+    docs: [T_Invitation]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Invitations {
+    success: Boolean
+    message: String
+    result: T_Invitations
+}
+
+type Query {
+    getMyInvitations(filter: Input_QueryInvitation, options: JSON): T_Response_Invitations!
+}
+
+type Mutation {
+    sendInvitation(doc: Input_SendInvitation!): T_Response_Invitation!
+    respondToInvitation(doc: Input_RespondToInvitation!): T_Response_Invitation!
+    clearInvitation(id: String!): T_Response_Invitation!
+}
+
+type Subscription {
+    onInvitationEvent(type: E_InvitationType!, entityId: String): T_InvitationEventPayload!
+}

@@ -1,0 +1,20 @@
+enum E_NoteType {
+    USER_REPORT
+    CONTENT_REVIEW
+    AUTOMATED_DETECTION
+    MEMBER_NOTE
+}
+
+type T_Note {
+    type: E_NoteType
+    content: String
+    createdById: String
+    createdBy: T_User
+    createdAt: DateTime
+}
+
+input Input_Note {
+    type: E_NoteType!
+    content: String!
+    createdById: String
+}

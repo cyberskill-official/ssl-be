@@ -1,0 +1,116 @@
+enum E_RegisterStep {
+    VERIFY_EMAIL
+    PERSONAL_INFO
+    PREFERENCES
+    MEMBERSHIP
+    COMPLETE
+}
+
+# Step 1
+input Input_Register {
+    username: String!
+    email: String!
+    password: String!
+    accountType: E_AccountType
+    ip: String
+}
+
+# Step 3
+input Input_Register_PersonalInfo_Partner {
+    gender: E_Gender!
+    dateOfBirth: DateTime!
+    location: Input_Location!
+}
+
+input Input_Register_Settings {
+    timeFormat: E_UserSettings_TimeFormat
+    zoomLevel: Int
+}
+
+input Input_Register_PersonalInfo {
+    partner1: Input_Register_PersonalInfo_Partner!
+    partner2: Input_Register_PersonalInfo_Partner
+    nativeLanguageId: String!
+    otherLanguagesIds: [String]
+    settings: Input_Register_Settings!
+}
+
+# Step 4
+input Input_Register_Preferences_Partner {
+    relationshipStatusIds: [String!]!
+    sexualOrientationIds: [String!]!
+    sexualPreferencesIds: [String!]!
+    smokingHabitsIds: [String!]!
+    preferredDrinksIds: [String!]!
+    bodyTypeId: String!
+    heightId: String!
+    hairColorId: String!
+    eyeColorId: String!
+    ethnicityId: String!
+    galleryId: String
+    bio: String
+}
+
+input Input_Register_Preferences {
+    lookingForIds: [String!]!
+    profilePurposeIds: [String!]!
+    willingnessToGoIds: [String!]!
+    rulesOfEngagementIds: [String!]!
+    partner1: Input_Register_Preferences_Partner!
+    partner2: Input_Register_Preferences_Partner
+}
+
+# Step 5
+enum E_MembershipType {
+    FREE
+    PAID
+    PROMO
+}
+
+enum E_AgeVerifyMethod {
+    PASSPORT
+    OTHER
+}
+
+type T_Auth {
+    user: T_User
+    token: String
+    rememberMe: Boolean
+}
+
+type T_Response_Auth {
+    success: Boolean!
+    message: String
+    result: T_Auth
+}
+
+type T_Response_VerifyAge {
+    success: Boolean!
+    message: String
+    result: T_User
+}
+
+type Query {
+    checkAuth(token: String): T_Response_Auth!
+}
+
+type Mutation {
+    sendOTPEmailForAdmin(email: String!): T_Response_Auth!
+    register(doc: Input_Register!, token: String): T_Response_Auth!
+    registerSendVerifyEmail(email: String!, ip: String, token: String): T_Response_Auth!
+    registerVerifyEmail(email: String!, otp: String!, ip: String, token: String): T_Response_Auth!
+    registerPersonalInfo(update: Input_Register_PersonalInfo!, ip: String, token: String): T_Response_Auth!
+    registerPreferences(update: Input_Register_Preferences!, ip: String, token: String): T_Response_Auth!
+    registerMembership(type: E_MembershipType!, promoCode: String, ip: String, token: String): T_Response_Auth!
+    cancelMembership: T_Response_Auth!
+    login(identity: String!, password: String!, rememberMe: Boolean, tempOtp: String, ip: String): T_Response_Auth!
+    logout: T_Response_Auth!
+    forgotPasswordRequest(email: String!): T_Response_Auth!
+    resetPassword(email: String!, otp: String!, newPassword: String!): T_Response_Auth!
+    verifyAge(files: [Upload]!, method: E_AgeVerifyMethod, token: String): T_Response_VerifyAge!
+    approveAgeVerify(userId: String!): T_Response_VerifyAge!
+    rejectAgeVerify(userId: String!, reason: String!): T_Response_VerifyAge!
+    skipAgeVerification: T_Response_Auth!
+    createGuardianVisitToken: T_Response_Auth!
+    guardianLogin(token: String!): T_Response_Auth!
+}

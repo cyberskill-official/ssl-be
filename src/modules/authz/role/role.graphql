@@ -1,0 +1,90 @@
+enum E_Role {
+    STAFF
+    USER
+}
+
+enum E_Role_Staff {
+    ADMIN
+    MODERATOR
+    VIEWER
+}
+
+enum E_Role_User {
+    FREE_MEMBER
+    PAID_MEMBER
+    PROMO_MEMBER
+}
+
+type T_Role {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    description: String
+    parentId: String
+    parent: T_Role
+    ancestorsIds: [String]
+    ancestors: [T_Role]
+}
+
+input Input_QueryRole {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    description: String
+    parentId: String
+}
+
+input Input_CreateRole {
+    name: String!
+    description: String
+    parentId: String
+}
+
+input Input_UpdateRole {
+    isDel: Boolean
+    name: String
+    description: String
+    parentId: String
+}
+
+type T_Response_Role {
+    success: Boolean
+    message: String
+    result: T_Role
+}
+
+type T_Roles {
+    docs: [T_Role]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Roles {
+    success: Boolean
+    message: String
+    result: T_Roles
+}
+
+type Query {
+    getRole(filter: Input_QueryRole!, projection: JSON, options: JSON, populate: JSON): T_Response_Role!
+    getRoles(filter: Input_QueryRole, options: JSON): T_Response_Roles!
+}
+
+type Mutation {
+    createRole(doc: Input_CreateRole!): T_Response_Role!
+    updateRole(filter: Input_QueryRole!, update: Input_UpdateRole, options: JSON): T_Response_Role!
+    deleteRole(filter: Input_QueryRole!, options: JSON): T_Response_Role!
+}

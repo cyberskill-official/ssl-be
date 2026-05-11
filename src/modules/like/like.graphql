@@ -1,0 +1,71 @@
+enum E_LikeEntityType {
+    GALLERY
+    BLOG
+    MESSAGE
+}
+
+union U_LikeEntity = T_Gallery | T_Blog | T_Message
+
+type T_Like {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    user: T_User
+    entityType: E_LikeEntityType
+    entityId: String
+    entity: U_LikeEntity
+}
+
+input Input_QueryLike {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    entityType: E_LikeEntityType
+    entityId: String
+}
+
+input Input_CreateLike {
+    entityType: E_LikeEntityType!
+    entityId: String!
+}
+
+type T_Response_Like {
+    success: Boolean
+    message: String
+    result: T_Like
+}
+
+type T_Likes {
+    docs: [T_Like]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_Likes {
+    success: Boolean
+    message: String
+    result: T_Likes
+}
+
+type Query {
+    getLikes(filter: Input_QueryLike, options: JSON): T_Response_Likes!
+}
+
+type Mutation {
+    createLike(doc: Input_CreateLike!): T_Response_Like!
+    deleteLike(filter: Input_QueryLike!, options: JSON): T_Response_Like!
+    deleteLikes(filter: Input_QueryLike!, options: JSON): T_Response_Likes!
+}

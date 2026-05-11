@@ -1,0 +1,65 @@
+type T_SubRegion {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    regionId: String
+    region: T_Region
+    wikiDataId: String
+}
+
+input Input_QuerySubRegion {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    name: String
+    regionId: String
+    wikiDataId: String
+}
+
+input Input_CreateSubRegion {
+    name: String
+    regionId: String
+    wikiDataId: String
+}
+
+input Input_UpdateSubRegion {
+    isDel: Boolean
+    name: String
+    regionId: String
+    wikiDataId: String
+}
+
+type T_Response_SubRegion {
+    success: Boolean
+    message: String
+    result: T_SubRegion
+}
+
+type T_SubRegions {
+    docs: [T_SubRegion]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_SubRegions {
+    success: Boolean
+    message: String
+    result: T_SubRegions
+}
+
+type Query {
+    getSubRegion(filter: Input_QuerySubRegion!, projection: JSON, options: JSON, populate: JSON): T_Response_SubRegion!
+    getSubRegions(filter: Input_QuerySubRegion, options: JSON): T_Response_SubRegions!
+}
