@@ -138,6 +138,7 @@ export interface I_User extends I_GenericDocument {
     isAdminBlocked?: boolean;
     isDeactivated?: boolean;
     isGuardianView?: boolean;
+    isOnboardingCompleted?: boolean;
     guardianOwnerId?: string | null;
     notes?: I_Note[];
 }

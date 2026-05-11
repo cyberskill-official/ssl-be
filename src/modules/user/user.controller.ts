@@ -1488,6 +1488,21 @@ export const userCtr = {
 
         return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: true, membershipCancelled: true }, options);
     },
+    completeOnboarding: async (context: I_Context): Promise<I_Return<I_User>> => {
+        const currentUser = await authnCtr.getUserFromSession(context);
+
+        const updated = await mongooseCtr.updateOne(
+            { id: currentUser.id } as any,
+            { isOnboardingCompleted: true },
+        );
+
+        if (updated.success && context.req?.session?.user?.id === currentUser.id) {
+            context.req.session.user.isOnboardingCompleted = true;
+        }
+
+        return updated;
+    },
+
     softDeleteUser: async (
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
