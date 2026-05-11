@@ -219,6 +219,7 @@ type T_User {
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
+    isDeactivated: Boolean
     isGuardianView: Boolean
     guardianOwnerId: String
     notes: [T_Note]
@@ -261,6 +262,7 @@ input Input_QueryUser {
     followerCount: Int
     followingCount: Int
     isAdminBlocked: Boolean
+    isDeactivated: Boolean
     notes: [Input_Note]
 }
 
@@ -320,6 +322,8 @@ input Input_UpdateUser {
     membershipCancelled: Boolean
     hasUpcomingEvent: Boolean
     followerCount: Int
+    isAdminBlocked: Boolean
+    isDeactivated: Boolean
     notes: [Input_Note]
 }
 
@@ -378,6 +382,7 @@ type Mutation {
     updateUser(filter: Input_QueryUser!, update: Input_UpdateUser!, options: JSON): T_Response_User!
     deleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
     softDeleteUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
+    deactivateUser(filter: Input_QueryUser!, options: JSON, token: String): T_Response_User!
     recoverUser(filter: Input_QueryUser, options: JSON): T_Response_User!
     adminBlockUser(doc: Input_AdminBlockUser!): T_Response_User!
     adminUnBlockUser(filter: Input_AdminUnblockUser!): T_Response_User!

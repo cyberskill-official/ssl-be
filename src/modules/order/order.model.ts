@@ -15,6 +15,8 @@ export const OrderModel = mongo.createModel<I_Order>({
         status: { type: String, enum: Object.values(E_OrderStatus) },
         orderType: { type: String, enum: Object.values(E_OrderType) },
         paymentTransactionId: { type: String },
+        paymentRequestId: { type: String },
+        externalOrderId: { type: String },
 
         customerDetails: { type: mongoose.Schema.Types.Mixed },
         meta: { type: mongoose.Schema.Types.Mixed, default: {} },

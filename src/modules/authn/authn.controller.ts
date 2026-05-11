@@ -1344,21 +1344,60 @@ export const authnCtr = {
 
             if (provider === E_PaymentProvider.PAYPAL) {
                 gatewayName = 'PayPal';
-                let subscriptionId = transactionId;
+                let subscriptionId: string | undefined;
 
-                // For PayPal, we need the subscription ID (starts with I-)
-                // If transactionId is missing or doesn't look like a subscription ID (e.g. might be a capture ID if mistakenly stored),
-                // check PaymentRequest which should store the detailed external order ID
-                if ((!subscriptionId || !subscriptionId.startsWith('I-')) && (lastOrder as any)?.paymentRequestId) {
+                // Robust lookup for PayPal Subscription ID (must start with "I-")
+                // 1. Try transactionId from the PaymentTransaction
+                if (transactionId?.startsWith('I-')) {
+                    subscriptionId = transactionId;
+                }
+
+                // 2. Try the new externalOrderId field on the Order
+                if (!subscriptionId && (lastOrder as any)?.externalOrderId?.startsWith('I-')) {
+                    subscriptionId = (lastOrder as any).externalOrderId;
+                }
+
+                // 3. Try the linked PaymentRequest
+                if (!subscriptionId && (lastOrder as any)?.paymentRequestId) {
                     const prRes = await paymentRequestCtr.getPaymentRequest(context, {
                         filter: { id: (lastOrder as any).paymentRequestId },
                     });
-                    if (prRes.success && prRes.result?.externalOrderId) {
+                    if (prRes.success && prRes.result?.externalOrderId?.startsWith('I-')) {
                         subscriptionId = prRes.result.externalOrderId;
                     }
                 }
 
+                // 4. Try searching PaymentRequests by Order ID
+                if (!subscriptionId && lastOrder?.id) {
+                    const prSearchRes = await paymentRequestCtr.getPaymentRequests(context, {
+                        filter: { 'meta.orderId': lastOrder.id, 'externalOrderId': /^I-/ } as any,
+                        options: { sort: { createdAt: -1 }, limit: 1 },
+                    } as any);
+                    if (prSearchRes.success && prSearchRes.result?.docs?.[0]?.externalOrderId) {
+                        subscriptionId = prSearchRes.result.docs[0].externalOrderId;
+                    }
+                }
+
+                // 5. Last Resort: Search all PayPal subscription requests for this user
+                if (!subscriptionId) {
+                    const prUserSearchRes = await paymentRequestCtr.getPaymentRequests(context, {
+                        filter: {
+                            gateway: E_PaymentProvider.PAYPAL,
+                            externalOrderId: /^I-/,
+                            $or: [
+                                { 'meta.userId': currentUser.id },
+                                { 'meta.customId': currentUser.id },
+                            ],
+                        } as any,
+                        options: { sort: { createdAt: -1 }, limit: 1 },
+                    } as any);
+                    if (prUserSearchRes.success && prUserSearchRes.result?.docs?.[0]?.externalOrderId) {
+                        subscriptionId = prUserSearchRes.result.docs[0].externalOrderId;
+                    }
+                }
+
                 if (subscriptionId && subscriptionId.startsWith('I-')) {
+                    log.info(`[Membership] Attempting PayPal cancellation for user ${currentUser.id} with subscriptionId ${subscriptionId}`);
                     const cancelRes = await paypalCtr.cancelSubscription(context, {
                         subscriptionId,
                         reason: 'User requested cancellation via website',
@@ -1366,10 +1405,10 @@ export const authnCtr = {
 
                     if (cancelRes.success) {
                         gatewayCancelSuccess = true;
-                        log.info(`[Membership] PayPal subscription cancelled for user ${currentUser.id}, subscriptionId=${subscriptionId}`);
+                        log.info(`[Membership] PayPal subscription cancelled successfully for user ${currentUser.id}, subscriptionId=${subscriptionId}`);
                     }
                     else {
-                        log.warn(`[Membership] PayPal cancel failed for user ${currentUser.id}: ${cancelRes.message}`);
+                        log.warn(`[Membership] PayPal cancel failed for user ${currentUser.id} (${subscriptionId}): ${cancelRes.message}`);
                     }
                 }
                 else {
@@ -1657,7 +1696,19 @@ export const authnCtr = {
         }
 
         if (userFound.result.isDel) {
-            throwError({ message: 'Account has been deleted.', status: RESPONSE_STATUS.BAD_REQUEST });
+            if (userFound.result.isDeactivated) {
+                // Auto-reactivate on login
+                await userCtr.updateUser(context, {
+                    filter: { id: userFound.result.id },
+                    update: { isDel: false, isDeactivated: false },
+                }).catch((err) => {
+                    log.error('[Auth] Failed to auto-reactivate user:', err);
+                });
+                log.info(`[Auth] User ${userFound.result.id} auto-reactivated account via login.`);
+            }
+            else {
+                throwError({ message: 'Account has been deleted.', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
 
         if (!skipOtp && !isAdminLogin && userFound.result.tempOtp !== null) {

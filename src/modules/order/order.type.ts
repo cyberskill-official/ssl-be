@@ -23,6 +23,7 @@ export interface I_Order extends I_GenericDocument {
     paymentTransactionId?: string;
     paymentTransaction?: I_PaymentTransaction;
     paymentRequestId?: string; // Link to PaymentRequest for tracking payment attempts
+    externalOrderId?: string; // Gateway-specific order/subscription ID (e.g. PayPal I-xxxx)
 
     customerDetails?: Record<string, unknown>;
     meta?: Record<string, unknown>;

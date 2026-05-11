@@ -40,6 +40,8 @@ import { ModerationLogModel } from '#modules/moderation/moderation-log/moderatio
 import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
+import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getSessionUser, isAdminUser } from '#shared/auth-context/auth-context.service.js';
 import { getEnv } from '#shared/env/index.js';
@@ -57,6 +59,104 @@ const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/;
 const NON_WORD_CHARS_REGEX = /[^\w-]/g;
+const PAYPAL_SUBSCRIPTION_ID_REGEX = /^I-/;
+
+/**
+ * Cancel any active PayPal subscription for a user.
+ * Best-effort: failures are logged but do not block the caller.
+ * This MUST be called before deleting or deactivating a user to prevent
+ * PayPal from continuing to charge the user after account removal.
+ */
+async function cancelPayPalSubscriptionForUser(context: I_Context, userId: string): Promise<void> {
+    try {
+        // Find the most recent PayPal payment request with a subscription ID (starts with I-)
+        const paymentReqRes = await paymentRequestCtr.getPaymentRequests(context, {
+            filter: {
+                'meta.orderId': { $exists: true },
+                'gateway': E_PaymentProvider.PAYPAL,
+                'externalOrderId': { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
+            } as any,
+            options: { sort: { createdAt: -1 }, pagination: false },
+        } as any);
+
+        if (!paymentReqRes.success || !paymentReqRes.result?.docs?.length) {
+            // Fallback: search by userId stored in meta
+            const fallbackRes = await paymentRequestCtr.getPaymentRequests(context, {
+                filter: {
+                    'gateway': E_PaymentProvider.PAYPAL,
+                    'externalOrderId': { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
+                    '$or': [
+                        { 'meta.userId': userId },
+                        { 'meta.customId': userId },
+                    ],
+                } as any,
+                options: { sort: { createdAt: -1 }, pagination: false },
+            } as any);
+
+            if (!fallbackRes.success || !fallbackRes.result?.docs?.length) {
+                log.info(`[USER] No PayPal subscription found for user ${userId}, skipping cancel`);
+                return;
+            }
+
+            // Process fallback results
+            for (const pr of fallbackRes.result.docs) {
+                const subscriptionId = pr.externalOrderId;
+                if (subscriptionId && PAYPAL_SUBSCRIPTION_ID_REGEX.test(subscriptionId)) {
+                    await cancelSinglePayPalSubscription(context, userId, subscriptionId);
+                }
+            }
+            return;
+        }
+
+        // Filter payment requests that belong to this user by checking associated orders
+        for (const pr of paymentReqRes.result.docs) {
+            const orderId = (pr.meta as any)?.orderId;
+            if (!orderId) continue;
+
+            const orderRes = await orderCtr.getOrder(context, { filter: { id: orderId } });
+            if (!orderRes.success || !orderRes.result) continue;
+            if (orderRes.result.userId !== userId) continue;
+
+            const subscriptionId = pr.externalOrderId;
+            if (subscriptionId && PAYPAL_SUBSCRIPTION_ID_REGEX.test(subscriptionId)) {
+                await cancelSinglePayPalSubscription(context, userId, subscriptionId);
+            }
+        }
+    } catch (error) {
+        log.error(`[USER] Error cancelling PayPal subscription for user ${userId}:`, error);
+        // Best-effort: do not block deletion
+    }
+}
+
+async function cancelSinglePayPalSubscription(context: I_Context, userId: string, subscriptionId: string): Promise<void> {
+    try {
+        // Check if subscription is still active before attempting cancel
+        const subRes = await paypalCtr.getSubscription(context, { subscriptionId });
+        if (!subRes.success) {
+            log.warn(`[USER] Could not fetch PayPal subscription ${subscriptionId} for user ${userId}: ${subRes.message}`);
+            return;
+        }
+
+        const subStatus = (subRes.result as any)?.status;
+        if (subStatus === 'CANCELLED' || subStatus === 'EXPIRED') {
+            log.info(`[USER] PayPal subscription ${subscriptionId} already ${subStatus} for user ${userId}`);
+            return;
+        }
+
+        const cancelRes = await paypalCtr.cancelSubscription(context, {
+            subscriptionId,
+            reason: 'User account deleted',
+        });
+
+        if (cancelRes.success) {
+            log.info(`[USER] Successfully cancelled PayPal subscription ${subscriptionId} for user ${userId}`);
+        } else {
+            log.warn(`[USER] Failed to cancel PayPal subscription ${subscriptionId} for user ${userId}: ${cancelRes.message}`);
+        }
+    } catch (error) {
+        log.error(`[USER] Error cancelling PayPal subscription ${subscriptionId} for user ${userId}:`, error);
+    }
+}
 
 function normalizeDocumentId<T extends { id?: unknown; _id?: unknown }>(document: T | null | undefined): T | null | undefined {
     if (!document) {
@@ -1160,6 +1260,10 @@ export const userCtr = {
             throwError({ message: 'You can only delete your own account.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
+        // Cancel any active PayPal subscription BEFORE deleting user data.
+        // This prevents PayPal from continuing to charge the user after account deletion.
+        await cancelPayPalSubscriptionForUser(context, userId);
+
         // Send farewell "sorry to see you leave" email before deleting user data.
         // Must happen before cleanup since the user's email will be gone after deletion.
         const userEmail = userToDelete.result.email;
@@ -1363,8 +1467,26 @@ export const userCtr = {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        // Recover: clear isDel flag
-        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: false }, options);
+        // Recover: clear isDel flag and isDeactivated flag
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: false, isDeactivated: false }, options);
+    },
+    deactivateUser: async (
+        context: I_Context,
+        { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
+    ): Promise<I_Return<I_User>> => {
+        const userFound = await userCtr.getUser(context, { filter });
+
+        if (!userFound.success) {
+            throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        // Deactivate: hide profile, allow login to reactivate
+        const deactivateUserId = userFound.result.id;
+        if (deactivateUserId) {
+            await cancelPayPalSubscriptionForUser(context, deactivateUserId);
+        }
+
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: true, membershipCancelled: true }, options);
     },
     softDeleteUser: async (
         context: I_Context,
@@ -1377,6 +1499,14 @@ export const userCtr = {
         }
 
         // Soft delete (isDel: true), keeps data in DB, prevents new account creation
+
+        // Cancel any active PayPal subscription BEFORE soft-deleting.
+        // This prevents PayPal from continuing to charge a deactivated user.
+        const softDeleteUserId = userFound.result.id;
+        if (softDeleteUserId) {
+            await cancelPayPalSubscriptionForUser(context, softDeleteUserId);
+        }
+
         // Send farewell "account deleted" email (not "suspended") since user chose to leave
         if (userFound.result.email && userFound.result.isDel !== true) {
             const emailResponse = await emailCtr.sendEmail(ACCOUNT_DELETED, userFound.result.email);
@@ -1385,7 +1515,9 @@ export const userCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true }, options);
+        // Also mark membership as cancelled so cron jobs won't attempt rebill
+        // For "Delete my Profile", we set isDeactivated: false so it won't auto-reactivate on login
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: false, membershipCancelled: true }, options);
     },
 
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {

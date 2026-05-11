@@ -29,7 +29,7 @@
         "@aws-sdk/client-s3": "3.1018.0",
         "@aws-sdk/client-textract": "3.1018.0",
         "@bunny.net/storage-sdk": "0.3.1",
-        "@cyberskill/shared": "3.13.0",
+        "@cyberskill/shared": "3.20.1",
         "@graphql-tools/load-files": "7.0.1",
         "@graphql-tools/merge": "9.1.7",
         "@graphql-tools/schema": "10.0.31",

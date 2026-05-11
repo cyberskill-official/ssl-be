@@ -83,8 +83,7 @@ const AgeVerifySchema = mongo.createSchema<I_AgeVerify>({
     schema: {
         status: {
             type: String,
-            enum: E_AgeVerifyStatus ? Object.values(E_AgeVerifyStatus) : ['PENDING', 'APPROVED', 'REJECTED'],
-            default: E_AgeVerifyStatus?.PENDING || 'PENDING',
+            enum: Object.values(E_AgeVerifyStatus),
             required: true,
             validate: [
                 {
@@ -95,8 +94,7 @@ const AgeVerifySchema = mongo.createSchema<I_AgeVerify>({
         },
         method: {
             type: String,
-            enum: E_AgeVerifyMethod ? Object.values(E_AgeVerifyMethod) : ['PASSPORT', 'ID_CARD', 'DRIVERS_LICENSE'],
-            default: E_AgeVerifyMethod?.PASSPORT || 'PASSPORT',
+            enum: Object.values(E_AgeVerifyMethod),
             required: true,
             validate: [
                 {
@@ -150,8 +148,7 @@ export const UserPartnerSchema = mongo.createSchema<I_UserPartner>({
     schema: {
         gender: {
             type: String,
-            enum: E_Gender ? Object.values(E_Gender) : ['MALE', 'FEMALE', 'OTHER'],
-            default: E_Gender?.FEMALE || 'FEMALE',
+            enum: Object.values(E_Gender),
             required: true,
             validate: [
                 {
@@ -630,6 +627,7 @@ export const UserModel = mongo.createModel<I_User>({
             type: [NoteSchema],
         },
         isAdminBlocked: { type: Boolean, default: false },
+        isDeactivated: { type: Boolean, default: false },
         isGuardianView: { type: Boolean, default: false },
         guardianOwnerId: { type: String, default: null },
     },

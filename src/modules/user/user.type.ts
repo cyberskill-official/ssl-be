@@ -136,6 +136,7 @@ export interface I_User extends I_GenericDocument {
     followerCount?: number;
     followingCount?: number;
     isAdminBlocked?: boolean;
+    isDeactivated?: boolean;
     isGuardianView?: boolean;
     guardianOwnerId?: string | null;
     notes?: I_Note[];

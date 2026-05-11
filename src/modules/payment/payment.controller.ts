@@ -627,6 +627,7 @@ export const paymentController = {
                     $set: {
                         status: E_OrderStatus.PENDING,
                         externalOrderId,
+                        paymentRequestId: paymentRequest.id,
                     },
                 },
             });
