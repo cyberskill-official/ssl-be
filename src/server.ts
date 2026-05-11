@@ -17,6 +17,7 @@ import { getEnv } from '#shared/env/index.js';
 import { schema } from '#shared/graphql/schema.js';
 
 const env = getEnv();
+const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
 
 (async () => {
     const app = createExpress({
@@ -102,12 +103,23 @@ const env = getEnv();
 
     log.info(`🔌 RestAPI ready at http://localhost:${env.PORT}${env.ENDPOINT_RESTAPI}`);
 
+    const restCors = createCors({
+        isDev: !env.IS_PROD,
+        whiteList: env.CORS_WHITELIST,
+    });
+
+    const restCorsWithWebhookBypass = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        if (req.path === PAYPAL_WEBHOOK_PATH) {
+            next();
+            return;
+        }
+
+        restCors(req, res, next);
+    };
+
     app.use(
         env.ENDPOINT_RESTAPI,
-        createCors({
-            isDev: !env.IS_PROD,
-            whiteList: env.CORS_WHITELIST,
-        }),
+        restCorsWithWebhookBypass,
         updateUserActivity,
         // (req: any, _res: any, next: any) => {
         //     authzMiddleware.checkAuthorizedRest({ req } as I_Context, next).catch(next);
