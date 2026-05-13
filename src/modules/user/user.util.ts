@@ -273,7 +273,7 @@ export async function refreshSessionUser(
     try {
         const result = await mongooseCtr.findOne(
             { id: sessionUserId },
-            { id: 1, roles: 1, rolesIds: 1, ageVerify: 1, registerStep: 1, membershipExpiresAt: 1, membershipEndDate: 1, partner1: 1, partner2: 1, freeEventCount: 1, membershipCancelled: 1 } as any,
+            { id: 1, roles: 1, rolesIds: 1, ageVerify: 1, registerStep: 1, membershipExpiresAt: 1, membershipEndDate: 1, partner1: 1, partner2: 1, freeEventCount: 1, membershipCancelled: 1, hasSeenDashboardTour: 1, hasSeenProfileTour: 1 } as any,
             undefined,
             [
                 { path: 'roles' },

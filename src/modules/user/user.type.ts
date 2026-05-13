@@ -1,5 +1,10 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
+export enum E_OnboardingType {
+    DASHBOARD = 'DASHBOARD',
+    PROFILE = 'PROFILE',
+}
+
 import type { E_RegisterStep, I_AgeVerify } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
@@ -138,7 +143,8 @@ export interface I_User extends I_GenericDocument {
     isAdminBlocked?: boolean;
     isDeactivated?: boolean;
     isGuardianView?: boolean;
-    isOnboardingCompleted?: boolean;
+    hasSeenDashboardTour?: boolean;
+    hasSeenProfileTour?: boolean;
     guardianOwnerId?: string | null;
     notes?: I_Note[];
 }

@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar } from './user.type.js';
+import type { E_OnboardingType, I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUser, I_Input_QueryUser, I_Input_UpdateUser, I_Input_UploadUserAvatar } from './user.type.js';
 
 import { userCtr } from './user.controller.js';
 
@@ -17,7 +17,7 @@ const userResolver = {
         deleteUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.deleteUser(context, args),
         softDeleteUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.softDeleteUser(context, args),
         deactivateUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.deactivateUser(context, args),
-        completeOnboarding: (_parent: unknown, _args: unknown, context: I_Context) => userCtr.completeOnboarding(context),
+        completeOnboarding: (_parent: unknown, args: { type: E_OnboardingType }, context: I_Context) => userCtr.completeOnboarding(context, args),
         recoverUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_QueryUser>, context: I_Context) => userCtr.recoverUser(context, args),
         adminBlockUser: (_parent: unknown, args: I_Input_CreateOne<I_Input_AdminBlockUser>, context: I_Context) => userCtr.adminBlockUser(context, args),
         adminUnBlockUser: (_parent: unknown, args: I_Input_DeleteOne<I_Input_AdminUnBlockUser>, context: I_Context) => userCtr.adminUnBlockUser(context, args),
