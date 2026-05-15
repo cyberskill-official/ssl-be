@@ -1592,6 +1592,7 @@ export const authnCtr = {
         const userFound = await userCtr.getUser(context, {
             filter: {
                 $or: [{ email: identity }, { username: identity }],
+                isDel: { $in: [true, false] } as any, // Allow finding deactivated/soft-deleted users for login check
             },
             populate: [
                 { path: 'roles' },
