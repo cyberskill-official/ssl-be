@@ -40,8 +40,6 @@ import { ModerationLogModel } from '#modules/moderation/moderation-log/moderatio
 import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
-import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
-import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getSessionUser, isAdminUser } from '#shared/auth-context/auth-context.service.js';
 import { getEnv } from '#shared/env/index.js';
