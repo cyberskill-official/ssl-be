@@ -36,7 +36,7 @@ export const paypalSetupService = {
         log.info(`[PayPal Setup] Product "${productName}" not found, creating...`);
         const createRes = await paypalCtr.createProduct(context, {
             name: productName,
-            description: 'Secret Swinger Lust Membership Subscription',
+            description: 'Secret® Swinger Lust Membership Subscription',
             type: E_PayPalProductType.SERVICE,
             category: E_PayPalProductCategory.SOFTWARE,
         });

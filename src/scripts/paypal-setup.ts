@@ -33,7 +33,7 @@ async function run() {
         log.info('Step 1: Creating PayPal Product...');
         const productRes = await paypalCtr.createProduct({} as any, {
             name: 'SSL Membership',
-            description: 'Secret Swinger Lust Membership Subscription',
+            description: 'Secret® Swinger Lust Membership Subscription',
             type: E_PayPalProductType.SERVICE,
             category: E_PayPalProductCategory.SOFTWARE,
         });

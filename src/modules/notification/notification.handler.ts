@@ -140,7 +140,7 @@ export function sendMediaLikedEmail(input: {
     thumbnailUrl?: string;
 }) {
     // Remove username from subject to comply with Postmark (no usernames in emails)
-    const subject = `[Secret Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
+    const subject = `[Secret® Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
     const html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,

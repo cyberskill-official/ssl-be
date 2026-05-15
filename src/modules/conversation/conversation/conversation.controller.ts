@@ -1525,7 +1525,7 @@ export const conversationCtr = {
 
                             // Also send an email copy to the provided guest email and require it to succeed.
                             try {
-                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const subject = '[Secret® Swinger Lust] Reply from admin';
                                 const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                                 let subjectText = subject;
                                 let html: string;
@@ -1565,7 +1565,7 @@ export const conversationCtr = {
 
                     // No valid conversationId provided and the email resolves to the admin account -> send external email
                     // so the admin's reply goes to the email address rather than creating a self-message.
-                    const subject = '[Secret Swinger Lust] Reply from admin';
+                    const subject = '[Secret® Swinger Lust] Reply from admin';
                     try {
                         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                         let subjectText = subject;
@@ -1784,7 +1784,7 @@ export const conversationCtr = {
 
                             // Send an email copy to the guest and require it to succeed; if it fails, bubble error.
                             try {
-                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const subject = '[Secret® Swinger Lust] Reply from admin';
                                 const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                                 let subjectText = subject;
                                 let html: string;
