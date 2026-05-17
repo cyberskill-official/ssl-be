@@ -1,5 +1,6 @@
 enum E_PaymentProvider {
     PAYPAL
+    NETVALVE
 }
 
 enum E_PaymentGatewayOperation {
@@ -16,6 +17,8 @@ enum E_PaymentGatewayOperation {
     GET_ORDER
     GET_ORDERS
     QUERY_TRANSACTION_STATUS
+    HPP_ORDER
+    REBILL
 }
 
 enum E_PaymentTransactionSource {
