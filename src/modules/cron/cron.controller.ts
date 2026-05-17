@@ -98,7 +98,6 @@ export const cron = {
             cron.cleanupExpiredTemporaryLocations(),
             cron.disableExpiredAds(),
             cron.enableScheduledAds(),
-            cron.enforceSessionInactivity(),
             cron.markInactiveUsersOffline(),
             cron.membershipMaintenance(),
             cron.cleanupInactiveFreeUsers(),
@@ -440,53 +439,6 @@ export const cron = {
             }
             catch (error) {
                 log.error('[CRON] Failed to enable scheduled advertisements:', error);
-            }
-        });
-    },
-    // Enforce session inactivity by removing sessions that haven't had activity
-    // within SESSION_INACTIVITY_MINUTES. Runs every minute.
-    enforceSessionInactivity: () => {
-        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
-            try {
-                const inactivityMs = Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000;
-                const cutoff = Date.now() - inactivityMs;
-
-                const db = mongoose.connection.db;
-                if (!db) {
-                    log.warn('[CRON] mongoose not connected; skipping enforceSessionInactivity');
-                    return;
-                }
-
-                const sessionsColl = db.collection('sessions');
-
-                // Find sessions where session.lastActivity (stored as number) is older than cutoff
-                const expired = await sessionsColl.find({ 'session.lastActivity': { $lt: cutoff } }).toArray();
-                if (!expired || expired.length === 0) {
-                    log.info('[CRON] No inactive sessions found');
-                    return;
-                }
-
-                const userIds = expired.map(s => ((s as any)['session'] as any)?.user?.id).filter(Boolean as any);
-                const sessionIds = expired.map(s => (s as any)._id).filter(Boolean as any);
-
-                // Delete sessions
-                const deleteRes = await sessionsColl.deleteMany({ _id: { $in: sessionIds } });
-
-                // Mark users offline (best-effort)
-                if ((userIds as string[]).length) {
-                    await userCtr.updateUsers({}, {
-                        filter: { id: { $in: userIds as string[] } },
-                        update: {
-                            isOnline: false,
-                            lastOnline: new Date(),
-                        },
-                    });
-                }
-
-                log.success(`[CRON] Removed ${deleteRes.deletedCount ?? 0} inactive session(s); users marked offline: ${(userIds as string[]).length}`);
-            }
-            catch (err) {
-                log.error('[CRON] enforceSessionInactivity failed:', err);
             }
         });
     },

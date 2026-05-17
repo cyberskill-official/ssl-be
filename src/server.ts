@@ -33,7 +33,7 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         saveUninitialized: false,
         store: mongoStore.create({
             mongoUrl: env.MONGO_URI,
-            autoRemove: 'disabled',
+            autoRemove: 'native',
         }),
         cookie: {
             // maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
