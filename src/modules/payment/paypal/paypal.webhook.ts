@@ -9,18 +9,173 @@ import { emailCtr } from '#modules/email/index.js';
 import orderCtr from '#modules/order/order.controller.js';
 import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
+import {
+    E_MembershipEntitlementChangeReason,
+    E_MembershipEntitlementChangeSource,
+} from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
+import { paymentGatewayEventCtr } from '#modules/payment/payment-gateway-event/index.js';
+import { E_PaymentGatewayEventProcessingStatus, E_PaymentGatewayEventVerificationStatus } from '#modules/payment/payment-gateway-event/payment-gateway-event.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
+import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    E_PaymentSubscriptionReplacementReason,
+    E_PaymentSubscriptionSource,
+    E_PaymentSubscriptionStatus,
+} from '#modules/payment/payment-subscription/payment-subscription.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
-import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentTransactionSource, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/env.util.js';
 
 import type { I_PayPalCaptureOrderResponse } from './paypal.type.js';
 
 import { paypalCtr } from './paypal.controller.js';
+import { buildPayPalSubscriptionPaymentEffectKey, getPayPalSubscriptionLastPayment } from './paypal.effect-key.js';
 
 const env = getEnv();
+
+function getHeaderString(value: unknown): string | undefined {
+    if (Array.isArray(value)) {
+        return value.find(item => typeof item === 'string');
+    }
+    return typeof value === 'string' ? value : undefined;
+}
+
+function getPayPalEventId(body: Record<string, any> | undefined, eventType: string, resource: Record<string, any> | undefined, transmissionId?: string): string {
+    const id = body?.['id'];
+    if (typeof id === 'string' && id.trim()) {
+        return id.trim();
+    }
+    return [
+        eventType || 'UNKNOWN',
+        typeof resource?.['id'] === 'string' ? resource['id'] : undefined,
+        transmissionId,
+        new Date().toISOString(),
+    ].filter(Boolean).join(':');
+}
+
+function resolvePayPalSubscriptionId(eventType: string, resource: Record<string, any> | undefined): string | null {
+    const billingAgreementId = resource?.['billing_agreement_id'];
+    if (typeof billingAgreementId === 'string' && billingAgreementId.trim()) {
+        return billingAgreementId.trim();
+    }
+
+    const resourceId = resource?.['id'];
+    if (eventType.startsWith('BILLING.SUBSCRIPTION.') && typeof resourceId === 'string' && resourceId.trim()) {
+        return resourceId.trim();
+    }
+
+    return null;
+}
+
+function resolvePayPalTransactionId(eventType: string, resource: Record<string, any> | undefined): string | null {
+    const resourceId = resource?.['id'];
+    if (typeof resourceId !== 'string' || !resourceId.trim()) {
+        return null;
+    }
+
+    if (eventType.startsWith('PAYMENT.') || eventType.startsWith('PAYMENTS.') || eventType.startsWith('CHECKOUT.ORDER.')) {
+        return resourceId.trim();
+    }
+
+    return null;
+}
+
+function resolvePayPalUserId(resource: Record<string, any> | undefined): string | null {
+    const customId = resource?.['custom_id'] ?? resource?.['custom'];
+    return typeof customId === 'string' && customId.trim() ? customId.trim() : null;
+}
+
+function buildWebhookLogMeta(
+    body: Record<string, any> | undefined,
+    resource: Record<string, any> | undefined,
+    headers?: {
+        transmissionId?: string;
+        transmissionTime?: string;
+        certUrl?: string;
+        authAlgo?: string;
+        verificationStatus?: string;
+        verifyMessage?: string;
+    },
+) {
+    return {
+        eventId: body?.['id'] ?? null,
+        eventType: body?.['event_type'] ?? null,
+        summary: body?.['summary'] ?? null,
+        resourceId: resource?.['id'] ?? null,
+        customId: resource?.['custom_id'] ?? resource?.['custom'] ?? null,
+        billingAgreementId: resource?.['billing_agreement_id'] ?? null,
+        webhookIdConfigured: Boolean(env.PAYPAL_WEBHOOK_ID),
+        transmissionId: headers?.transmissionId ?? null,
+        transmissionTime: headers?.transmissionTime ?? null,
+        certUrl: headers?.certUrl ?? null,
+        authAlgo: headers?.authAlgo ?? null,
+        verificationStatus: headers?.verificationStatus ?? null,
+        verifyMessage: headers?.verifyMessage ?? null,
+    };
+}
+
+async function updateGatewayEvent(eventId: string | null | undefined, update: Record<string, unknown>): Promise<void> {
+    if (!eventId) {
+        return;
+    }
+
+    try {
+        await paymentGatewayEventCtr.updatePaymentGatewayEvent({} as any, { id: eventId }, { $set: update });
+    }
+    catch (error) {
+        log.warn('[PayPal Webhook] Failed to update payment gateway event audit record', { eventId, error });
+    }
+}
+
+function getSubscriptionNextBillingTime(subscription: Record<string, any> | null | undefined): string | null {
+    const value = subscription?.['billing_info']?.['next_billing_time'];
+    return typeof value === 'string' ? value : null;
+}
+
+async function fetchSubscriptionSnapshot(subscriptionId: string, fallback: Record<string, any>): Promise<Record<string, any>> {
+    try {
+        const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });
+        if (subRes.success && subRes.result) {
+            return subRes.result as Record<string, any>;
+        }
+    }
+    catch (error) {
+        log.warn('[PayPal Webhook] Failed to fetch subscription snapshot; using webhook resource', {
+            subscriptionId,
+            error,
+        });
+    }
+    return fallback;
+}
+
+async function cancelReplacedSubscriptionAfterSuccess(
+    meta: Record<string, unknown> | null | undefined,
+    replacementSubscriptionId: string,
+) {
+    const replacesSubscriptionId = typeof meta?.['replacesSubscriptionId'] === 'string'
+        ? meta['replacesSubscriptionId']
+        : null;
+    if (!replacesSubscriptionId) {
+        return;
+    }
+
+    const cancelRes = await paypalCtr.cancelSubscription({} as any, {
+        subscriptionId: replacesSubscriptionId,
+        reason: `Replaced by ${replacementSubscriptionId}`,
+    });
+
+    if (cancelRes.success) {
+        await paymentSubscriptionCtr.linkReplacement(replacesSubscriptionId, replacementSubscriptionId);
+        return;
+    }
+
+    await paymentSubscriptionCtr.markActionRequired(
+        replacesSubscriptionId,
+        cancelRes.message ?? `Failed to cancel replaced subscription ${replacesSubscriptionId}`,
+    );
+}
 
 export async function paypalWebhookHandler(req: Request, res: Response) {
     try {
@@ -28,111 +183,165 @@ export async function paypalWebhookHandler(req: Request, res: Response) {
 
         // 1. Signature Verification
         const headers = req.headers;
-        const transmissionId = headers['paypal-transmission-id'] as string;
-        const transmissionTime = headers['paypal-transmission-time'] as string;
-        const transmissionSig = headers['paypal-transmission-sig'] as string;
-        const certUrl = headers['paypal-cert-url'] as string;
-        const authAlgo = headers['paypal-auth-algo'] as string;
+        const transmissionId = getHeaderString(headers['paypal-transmission-id']);
+        const transmissionTime = getHeaderString(headers['paypal-transmission-time']);
+        const transmissionSig = getHeaderString(headers['paypal-transmission-sig']);
+        const certUrl = getHeaderString(headers['paypal-cert-url']);
+        const authAlgo = getHeaderString(headers['paypal-auth-algo']);
 
         const body = req.body;
+        const resource = body?.['resource'] as Record<string, any> | undefined;
+        const eventType = typeof body?.['event_type'] === 'string' ? body.event_type : 'UNKNOWN';
+        const gatewayEventRecord = await paymentGatewayEventCtr.recordReceivedEvent({} as any, {
+            provider: E_PaymentProvider.PAYPAL,
+            eventId: getPayPalEventId(body, eventType, resource, transmissionId),
+            eventType,
+            resourceId: typeof resource?.['id'] === 'string' ? resource['id'] : null,
+            subscriptionId: resolvePayPalSubscriptionId(eventType, resource),
+            transactionId: resolvePayPalTransactionId(eventType, resource),
+            userId: resolvePayPalUserId(resource),
+            verificationStatus: E_PaymentGatewayEventVerificationStatus.PENDING,
+            processingStatus: E_PaymentGatewayEventProcessingStatus.RECEIVED,
+            headers: {
+                transmissionId,
+                transmissionTime,
+                certUrl,
+                authAlgo,
+                webhookIdConfigured: Boolean(webhookId),
+            },
+            payload: body,
+        });
+        const gatewayEventId = gatewayEventRecord.event?.id ?? null;
+
+        if (gatewayEventRecord.alreadyProcessed) {
+            log.info('[PayPal Webhook] Duplicate already-processed event ignored', {
+                eventId: gatewayEventRecord.event?.eventId,
+                eventType,
+            });
+            res.status(200).send('OK');
+            return;
+        }
 
         if (webhookId) {
             const context = { req };
             const verifyRes = await paypalCtr.verifyWebhookSignature(context, {
-                auth_algo: authAlgo,
-                cert_url: certUrl,
-                transmission_id: transmissionId,
-                transmission_sig: transmissionSig,
-                transmission_time: transmissionTime,
+                auth_algo: authAlgo ?? '',
+                cert_url: certUrl ?? '',
+                transmission_id: transmissionId ?? '',
+                transmission_sig: transmissionSig ?? '',
+                transmission_time: transmissionTime ?? '',
                 webhook_id: webhookId,
                 webhook_event: body,
             });
+            const verificationStatus = verifyRes.success ? verifyRes.result?.verification_status : undefined;
 
-            if (!verifyRes.success || verifyRes.result?.verification_status !== 'SUCCESS') {
-                log.warn('[PayPal Webhook] Signature verification failed');
+            if (!verifyRes.success || verificationStatus !== 'SUCCESS') {
+                await updateGatewayEvent(gatewayEventId, {
+                    verificationStatus: E_PaymentGatewayEventVerificationStatus.FAILED,
+                    processingStatus: E_PaymentGatewayEventProcessingStatus.FAILED,
+                    errorMessage: verifyRes.message ?? 'Signature verification failed',
+                    processedAt: new Date(),
+                });
+                log.warn('[PayPal Webhook] Signature verification failed', buildWebhookLogMeta(body, resource, {
+                    transmissionId,
+                    transmissionTime,
+                    certUrl,
+                    authAlgo,
+                    verificationStatus,
+                    verifyMessage: verifyRes.message,
+                }));
                 res.status(400).send('Signature verification failed');
                 return;
             }
+
+            await updateGatewayEvent(gatewayEventId, {
+                verificationStatus: E_PaymentGatewayEventVerificationStatus.SUCCESS,
+            });
         }
         else {
+            await updateGatewayEvent(gatewayEventId, {
+                verificationStatus: E_PaymentGatewayEventVerificationStatus.SKIPPED,
+            });
             log.warn('[PayPal Webhook] PAYPAL_WEBHOOK_ID not configured, skipping signature verification (INSECURE)');
         }
-
-        const eventType = body.event_type;
-        const resource = body.resource;
 
         log.info('[PayPal Webhook] EventType & Resource:', { eventType, resource });
         log.info(`[PayPal Webhook] Received event: ${eventType}`, { id: body.id });
 
+        await updateGatewayEvent(gatewayEventId, {
+            processingStatus: E_PaymentGatewayEventProcessingStatus.PROCESSING,
+        });
+
         switch (eventType) {
             case 'BILLING.SUBSCRIPTION.CREATED':
-                log.info(`[PayPal Webhook] Subscription Created: ${resource.id}`, { customId: resource.custom_id });
+                log.info(
+                    '[PayPal Webhook] Subscription created event received; no state changes are applied until activation/payment confirmation',
+                    buildWebhookLogMeta(body, resource, {
+                        transmissionId,
+                        transmissionTime,
+                    }),
+                );
                 break;
             case 'BILLING.SUBSCRIPTION.ACTIVATED':
-                try {
-                    await handleSubscriptionActivated(resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handleSubscriptionActivated crashed:', err);
-                }
+                await handleSubscriptionActivated(resource);
                 break;
             case 'PAYMENT.SALE.COMPLETED':
-                try {
-                    await handlePaymentSaleCompleted(resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handlePaymentSaleCompleted crashed:', err);
-                }
+                await handlePaymentSaleCompleted(resource);
                 break;
             case 'CHECKOUT.ORDER.APPROVED':
-                try {
-                    await handleCheckoutOrderApproved(req, resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handleCheckoutOrderApproved crashed:', err);
-                }
+                await handleCheckoutOrderApproved(req, resource);
                 break;
             case 'CHECKOUT.ORDER.COMPLETED':
-                try {
-                    await handleCheckoutOrderCompleted(req, resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handleCheckoutOrderCompleted crashed:', err);
-                }
+                await handleCheckoutOrderCompleted(req, resource);
                 break;
             case 'PAYMENTS.CAPTURE.COMPLETED':
-                try {
-                    await handlePaymentCaptureCompleted(req, resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handlePaymentCaptureCompleted crashed:', err);
-                }
+                await handlePaymentCaptureCompleted(req, resource);
                 break;
             case 'BILLING.SUBSCRIPTION.CANCELLED':
-                try {
-                    await handleSubscriptionCancelled(resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handleSubscriptionCancelled crashed:', err);
-                }
+                await handleSubscriptionCancelled(resource);
                 break;
             case 'BILLING.SUBSCRIPTION.SUSPENDED':
             case 'PAYMENT.SALE.DENIED':
-                try {
-                    await handleSubscriptionSuspended(resource);
-                }
-                catch (err) {
-                    log.error('[PayPal Webhook] handleSubscriptionSuspended crashed:', err);
-                }
+                await handleSubscriptionSuspended(resource);
                 break;
             default:
-                log.info(`[PayPal Webhook] Unhandled event type: ${eventType}`);
+                log.warn('[PayPal Webhook] Unhandled event type received', buildWebhookLogMeta(body, resource, {
+                    transmissionId,
+                    transmissionTime,
+                }));
         }
+
+        await updateGatewayEvent(gatewayEventId, {
+            processingStatus: E_PaymentGatewayEventProcessingStatus.PROCESSED,
+            processedAt: new Date(),
+        });
 
         res.status(200).send('OK');
     }
     catch (error) {
-        log.error('[PayPal Webhook] Error processing webhook:', error);
+        const body = req.body as Record<string, any> | undefined;
+        const resource = body?.['resource'] as Record<string, any> | undefined;
+        const eventId = typeof body?.['id'] === 'string' ? body['id'] : null;
+
+        if (eventId) {
+            try {
+                await paymentGatewayEventCtr.updatePaymentGatewayEvent({} as any, { provider: E_PaymentProvider.PAYPAL, eventId }, {
+                    $set: {
+                        processingStatus: E_PaymentGatewayEventProcessingStatus.FAILED,
+                        errorMessage: error instanceof Error ? error.message : String(error),
+                        processedAt: new Date(),
+                    },
+                });
+            }
+            catch {
+                // Ignore audit update errors while returning the webhook failure.
+            }
+        }
+
+        log.error('[PayPal Webhook] Error processing webhook:', {
+            error,
+            ...buildWebhookLogMeta(body, resource),
+        });
         res.status(500).send('Internal Server Error');
     }
 }
@@ -141,6 +350,7 @@ async function handleSubscriptionActivated(resource: any) {
     const subscriptionId = resource.id;
     const customId = resource.custom_id;
     log.info(`[PayPal Webhook] Subscription Activated: ${subscriptionId}`, { customId });
+    const subscriptionSnapshot = await fetchSubscriptionSnapshot(subscriptionId, resource);
 
     // Update the payment request and order status to ensure polling reflects the activation
     try {
@@ -151,12 +361,31 @@ async function handleSubscriptionActivated(resource: any) {
 
         if (prRes.success && prRes.result) {
             const pr = prRes.result;
+            const meta = pr.meta as Record<string, unknown> | null | undefined;
+            const orderId = typeof meta?.['orderId'] === 'string' ? meta['orderId'] : undefined;
+            const userId = customId || (typeof meta?.['userId'] === 'string' ? meta['userId'] : undefined);
 
             // Mark PaymentRequest as PAID
             log.info('[PayPal Webhook] handleSubscriptionActivated - Updating PaymentRequest to PAID', { paymentRequestId: pr.id });
             await paymentRequestCtr.updatePaymentRequest({} as any, {
                 filter: { id: pr.id },
-                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: resource } },
+                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: subscriptionSnapshot } },
+            });
+
+            await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+                provider: E_PaymentProvider.PAYPAL,
+                providerSubscriptionId: subscriptionId,
+                userId,
+                paymentRequestId: pr.id,
+                orderId,
+                pricingId: typeof meta?.['pricingId'] === 'string' ? meta['pricingId'] : undefined,
+                amount: typeof meta?.['amount'] === 'number' ? meta['amount'] : undefined,
+                replacesSubscriptionId: typeof meta?.['replacesSubscriptionId'] === 'string' ? meta['replacesSubscriptionId'] : undefined,
+                replacementReason: meta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+                    ? E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+                    : undefined,
+                source: E_PaymentSubscriptionSource.WEBHOOK,
+                providerSnapshot: subscriptionSnapshot,
             });
 
             // Note: We deliberately skip marking the Order as PAID here.
@@ -174,6 +403,7 @@ async function handlePaymentSaleCompleted(resource: any) {
     const subscriptionId = resource.billing_agreement_id;
     const amount = resource.amount?.total;
     const customId = resource.custom;
+    const saleTransactionId = typeof resource?.id === 'string' ? resource.id.trim() : '';
 
     log.info(`[PayPal Webhook] Payment Sale Completed for Subscription: ${subscriptionId}`, { amount, customId });
 
@@ -183,6 +413,9 @@ async function handlePaymentSaleCompleted(resource: any) {
     // 1. Find and update PaymentRequest & Order to PAID/SUCCESS
     let userId = customId;
     let orderId: string | undefined;
+    let paymentRequestId: string | undefined;
+    let paymentRequestMeta: Record<string, unknown> | null | undefined;
+    let subscriptionSnapshot: Record<string, any> = resource;
 
     try {
         const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
@@ -192,14 +425,17 @@ async function handlePaymentSaleCompleted(resource: any) {
 
         if (prRes.success && prRes.result) {
             const pr = prRes.result;
+            paymentRequestId = pr.id;
+            paymentRequestMeta = pr.meta as Record<string, unknown> | null | undefined;
             userId = userId || (pr.meta as any)?.userId;
             orderId = (pr.meta as any)?.orderId;
+            subscriptionSnapshot = await fetchSubscriptionSnapshot(subscriptionId, resource);
 
             // Mark PaymentRequest as PAID
             log.info('[PayPal Webhook] handlePaymentSaleCompleted - Updating PaymentRequest to PAID', { paymentRequestId: pr.id });
             await paymentRequestCtr.updatePaymentRequest({} as any, {
                 filter: { id: pr.id },
-                update: { $set: { status: E_PaymentRequestStatus.PAID } },
+                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: subscriptionSnapshot } },
             });
 
             // If an Order is associated, mark it as PAID
@@ -237,15 +473,125 @@ async function handlePaymentSaleCompleted(resource: any) {
         return;
     }
 
+    await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+        provider: E_PaymentProvider.PAYPAL,
+        providerSubscriptionId: subscriptionId,
+        userId,
+        paymentRequestId,
+        orderId,
+        pricingId: typeof paymentRequestMeta?.['pricingId'] === 'string' ? paymentRequestMeta['pricingId'] : undefined,
+        amount: Number.isFinite(Number.parseFloat(String(amount ?? '')))
+            ? Number.parseFloat(String(amount))
+            : undefined,
+        currency: typeof resource?.amount?.currency === 'string' ? resource.amount.currency : undefined,
+        replacesSubscriptionId: typeof paymentRequestMeta?.['replacesSubscriptionId'] === 'string'
+            ? paymentRequestMeta['replacesSubscriptionId']
+            : undefined,
+        replacementReason: paymentRequestMeta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+            ? E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+            : undefined,
+        source: E_PaymentSubscriptionSource.WEBHOOK,
+        providerSnapshot: subscriptionSnapshot,
+    });
+
+    let isDuplicateSaleEvent = false;
+    if (saleTransactionId) {
+        try {
+            const existingSaleRes = await paymentCtr.getPaymentTransaction({} as any, {
+                filter: {
+                    provider: E_PaymentProvider.PAYPAL,
+                    operation: E_PaymentGatewayOperation.SALE,
+                    transactionId: saleTransactionId,
+                },
+            });
+
+            if (existingSaleRes.success && existingSaleRes.result) {
+                isDuplicateSaleEvent = true;
+                log.info('[PayPal Webhook] Duplicate subscription sale event detected; skipping re-apply', {
+                    subscriptionId,
+                    saleTransactionId,
+                    orderId,
+                    userId,
+                });
+            }
+            else {
+                const paymentTransactionRes = await paymentCtr.recordGatewayTransaction({} as any, {
+                    provider: E_PaymentProvider.PAYPAL,
+                    operation: E_PaymentGatewayOperation.SALE,
+                    transactionId: saleTransactionId,
+                    userId,
+                    orderId,
+                    subscriptionId,
+                    amount: Number.isFinite(Number.parseFloat(String(amount ?? '')))
+                        ? Number.parseFloat(String(amount))
+                        : undefined,
+                    currency: typeof resource?.amount?.currency === 'string'
+                        ? resource.amount.currency
+                        : undefined,
+                    status: E_PaymentTransactionStatus.SUCCESS,
+                    success: true,
+                    source: E_PaymentTransactionSource.WEBHOOK,
+                    responsePayload: resource ?? null,
+                    occurredAt: resource?.create_time ? new Date(resource.create_time) : new Date(),
+                    performedAt: new Date(),
+                });
+
+                if (!paymentTransactionRes.success) {
+                    log.warn('[PayPal Webhook] Failed to record subscription sale transaction; proceeding without durable dedupe', {
+                        subscriptionId,
+                        saleTransactionId,
+                        message: paymentTransactionRes.message,
+                    });
+                }
+            }
+        }
+        catch (err) {
+            log.warn('[PayPal Webhook] Failed during subscription sale dedupe check; proceeding cautiously', {
+                subscriptionId,
+                saleTransactionId,
+                error: err,
+            });
+        }
+    }
+    else {
+        log.warn('[PayPal Webhook] Subscription sale missing resource.id; proceeding without durable dedupe', {
+            subscriptionId,
+            userId,
+            orderId,
+        });
+    }
+
     // 3. Extend Membership and Apply Roles/Effects
     if (orderId) {
         try {
+            const effectKey = buildPayPalSubscriptionPaymentEffectKey({
+                subscriptionId,
+                occurredAt: getPayPalSubscriptionLastPayment(subscriptionSnapshot).time ?? (typeof resource?.create_time === 'string' ? resource.create_time : null),
+                amount: getPayPalSubscriptionLastPayment(subscriptionSnapshot).amount ?? amount,
+                currency: getPayPalSubscriptionLastPayment(subscriptionSnapshot).currency ?? (typeof resource?.amount?.currency === 'string' ? resource.amount.currency : null),
+                transactionId: saleTransactionId || null,
+            });
             // Re-fetch order to ensure we have the latest state and populate pricing if needed
             // however applyOrderPaidEffects will fetch pricing from pricingCtr if only pricingId is present.
             const orderRes = await orderCtr.getOrder({} as any, { filter: { id: orderId } });
             if (orderRes.success && orderRes.result) {
-                await applyOrderPaidEffects({} as any, orderRes.result);
-                log.info(`[PayPal Webhook] Applied order paid effects for subscription ${subscriptionId}`, { userId, orderId });
+                if (!isDuplicateSaleEvent) {
+                    await applyOrderPaidEffects({} as any, orderRes.result, {
+                        effectKey,
+                        membershipPeriodStartAt: getPayPalSubscriptionLastPayment(subscriptionSnapshot).time ?? resource?.create_time,
+                        membershipPeriodEndAt: getSubscriptionNextBillingTime(subscriptionSnapshot),
+                        source: E_MembershipEntitlementChangeSource.WEBHOOK,
+                        reason: paymentRequestMeta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+                            ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT
+                            : E_MembershipEntitlementChangeReason.RENEWAL_PAYMENT,
+                        paymentRequestId,
+                        provider: E_PaymentProvider.PAYPAL,
+                        providerSubscriptionId: subscriptionId,
+                        transactionId: saleTransactionId || effectKey,
+                    });
+                    await cancelReplacedSubscriptionAfterSuccess(paymentRequestMeta, subscriptionId);
+                    log.info(`[PayPal Webhook] Applied order paid effects for subscription ${subscriptionId}`, { userId, orderId, effectKey });
+                }
             }
             else {
                 log.error('[PayPal Webhook] Associated order not found for effects application', { orderId, subscriptionId });
@@ -256,33 +602,18 @@ async function handlePaymentSaleCompleted(resource: any) {
         }
     }
     else {
-        log.warn('[PayPal Webhook] No orderId found for subscription sale, skipping applyOrderPaidEffects', { subscriptionId, userId });
-        // Fallback: If no orderId, still try to identify user and at least extend duration (old logic)
-        // This is a safety net for legacy subscriptions without associated Order records.
-        if (userId) {
-            try {
-                const userRes = await userCtr.getUser({} as any, { filter: { id: userId } });
-                if (userRes.success && userRes.result) {
-                    const user = userRes.result;
-                    const currentExpiry = user.membershipExpiresAt && new Date(user.membershipExpiresAt) > new Date()
-                        ? new Date(user.membershipExpiresAt)
-                        : new Date();
-                    const newExpiry = new Date(currentExpiry.getTime() + 30 * 24 * 60 * 60 * 1000);
-                    await userCtr.updateUser({} as any, {
-                        filter: { id: userId },
-                        update: { $set: { membershipExpiresAt: newExpiry } },
-                    });
-                    log.info(`[PayPal Webhook] Legacy fallback: Extended membership for user ${userId} to ${newExpiry}`);
-                }
-            }
-            catch (err) {
-                log.error('[PayPal Webhook] Error in legacy fallback membership extension:', err);
-            }
-        }
+        log.warn('[PayPal Webhook] No orderId found for subscription sale; skipping legacy direct membership extension to avoid replay over-credit', {
+            subscriptionId,
+            userId,
+        });
     }
 
     // 4. Send Email
     // Fetch fresh user data to reflect the updated expiry and ensure we have an email
+    if (isDuplicateSaleEvent) {
+        return;
+    }
+
     const finalUserRes = await userCtr.getUser({} as any, { filter: { id: userId } });
     if (finalUserRes.success && finalUserRes.result && finalUserRes.result.email) {
         const user = finalUserRes.result;
@@ -304,20 +635,6 @@ async function handlePaymentSaleCompleted(resource: any) {
     }
 }
 
-function normalizePayPalStatus(status?: string): 'SUCCESS' | 'FAILED' | 'PENDING' | 'CANCEL' {
-    const normalized = typeof status === 'string' ? status.toUpperCase() : '';
-    if (normalized === 'COMPLETED') {
-        return 'SUCCESS';
-    }
-    if (normalized === 'PENDING') {
-        return 'PENDING';
-    }
-    if (normalized === 'VOIDED' || normalized === 'CANCELLED') {
-        return 'CANCEL';
-    }
-    return 'FAILED';
-}
-
 function resolvePayPalOrderIdFromWebhook(resource: any): string | null {
     const fromRelated = resource?.supplementary_data?.related_ids?.order_id;
     if (typeof fromRelated === 'string' && fromRelated.trim()) {
@@ -332,6 +649,27 @@ function resolvePayPalOrderIdFromWebhook(resource: any): string | null {
         return fromId.trim();
     }
     return null;
+}
+
+function normalizePayPalStatus(status: unknown): 'SUCCESS' | 'PENDING' | 'CANCEL' | 'FAILED' {
+    const normalized = typeof status === 'string' ? status.toUpperCase() : '';
+    if (normalized === 'COMPLETED') {
+        return 'SUCCESS';
+    }
+    if (normalized === 'PENDING') {
+        return 'PENDING';
+    }
+    if (normalized === 'VOIDED' || normalized === 'CANCELLED') {
+        return 'CANCEL';
+    }
+    return 'FAILED';
+}
+
+function shouldPreservePaymentRequestAfterSubscriptionCancel(status?: E_PaymentRequestStatus): boolean {
+    if (status === E_PaymentRequestStatus.PAID || status === E_PaymentRequestStatus.REFUNDED) {
+        return true;
+    }
+    return false;
 }
 
 function buildCaptureResultFromWebhook(paypalOrderId: string, resource: any): I_PayPalCaptureOrderResponse {
@@ -459,6 +797,11 @@ async function processPayPalOrderCapture(
             provider: E_PaymentProvider.PAYPAL,
             operation: E_PaymentGatewayOperation.CAPTURE,
             transactionId,
+            userId: order.userId,
+            orderId: order.id,
+            paymentRequestId: paymentRequest.id,
+            amount: typeof order.amount === 'number' ? order.amount : undefined,
+            currency: capture?.amount?.currency_code,
             status: paymentStatus === 'SUCCESS'
                 ? E_PaymentTransactionStatus.SUCCESS
                 : paymentStatus === 'PENDING'
@@ -467,9 +810,11 @@ async function processPayPalOrderCapture(
                         ? E_PaymentTransactionStatus.CANCELED
                         : E_PaymentTransactionStatus.FAILED,
             success: paymentStatus === 'SUCCESS',
+            source: E_PaymentTransactionSource.WEBHOOK,
             errorCode: paymentStatus === 'FAILED' ? 'PAYMENT_FAILED' : undefined,
             errorMessage: paymentStatus === 'FAILED' ? 'Payment failed' : undefined,
             responsePayload: (resolvedCaptureResult as Record<string, unknown>) ?? null,
+            occurredAt: new Date(),
             performedAt: new Date(),
         });
 
@@ -512,6 +857,7 @@ async function processPayPalOrderCapture(
     });
 
     if (paymentStatus === 'SUCCESS') {
+        const effectKey = transactionId ? `paypal:capture:${transactionId}` : null;
         const updatedOrderRes = await orderCtr.getOrder(context, {
             filter: { id: order.id },
             populate: [
@@ -522,7 +868,7 @@ async function processPayPalOrderCapture(
 
         if (updatedOrderRes.success && updatedOrderRes.result) {
             try {
-                await applyOrderPaidEffects(context, updatedOrderRes.result);
+                await applyOrderPaidEffects(context, updatedOrderRes.result, { effectKey });
             }
             catch (error) {
                 log.error('[PayPal Webhook] Error applying order paid effects:', {
@@ -667,8 +1013,45 @@ async function handlePaymentCaptureCompleted(req: Request, resource: any) {
 
 async function handleSubscriptionCancelled(resource: any) {
     const subscriptionId = resource.id;
-    const customId = resource.custom_id;
-    log.info(`[PayPal Webhook] Subscription Cancelled: ${subscriptionId}`, { userId: customId });
+    let customId = resource.custom_id;
+    let paymentRequestId: string | null = null;
+    let orderId: string | null = null;
+
+    if (subscriptionId) {
+        const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
+            filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
+        });
+
+        if (prRes.success && prRes.result) {
+            const meta = prRes.result.meta as Record<string, unknown> | null | undefined;
+            paymentRequestId = prRes.result.id ?? null;
+            customId = customId || (typeof meta?.['userId'] === 'string' ? meta['userId'] : undefined);
+            orderId = typeof meta?.['orderId'] === 'string' ? meta['orderId'] : null;
+
+            if (!shouldPreservePaymentRequestAfterSubscriptionCancel(prRes.result.status)) {
+                await paymentRequestCtr.updatePaymentRequest({} as any, {
+                    filter: { id: prRes.result.id },
+                    update: { $set: { status: E_PaymentRequestStatus.CANCELLED, gatewayResponse: resource } },
+                });
+            }
+        }
+    }
+
+    log.info(`[PayPal Webhook] Subscription Cancelled: ${subscriptionId}`, { userId: customId, paymentRequestId, orderId });
+
+    if (subscriptionId) {
+        await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+            provider: E_PaymentProvider.PAYPAL,
+            providerSubscriptionId: subscriptionId,
+            userId: customId,
+            status: E_PaymentSubscriptionStatus.CANCELLED,
+            providerStatus: 'CANCELLED',
+            paymentRequestId: paymentRequestId ?? undefined,
+            orderId: orderId ?? undefined,
+            source: E_PaymentSubscriptionSource.WEBHOOK,
+            providerSnapshot: resource,
+        });
+    }
 
     if (!customId) {
         log.warn('[PayPal Webhook] handleSubscriptionCancelled - Missing custom_id (userId)', { subscriptionId });
@@ -698,4 +1081,28 @@ async function handleSubscriptionCancelled(resource: any) {
 async function handleSubscriptionSuspended(resource: any) {
     const subscriptionId = resource.id;
     log.warn(`[PayPal Webhook] Subscription Suspended/Denied: ${subscriptionId}`);
+    if (!subscriptionId) {
+        return;
+    }
+
+    const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
+        filter: { externalOrderId: subscriptionId, gateway: E_PaymentProvider.PAYPAL },
+    });
+    const meta = prRes.success ? prRes.result?.meta as Record<string, unknown> | null | undefined : undefined;
+
+    await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+        provider: E_PaymentProvider.PAYPAL,
+        providerSubscriptionId: subscriptionId,
+        userId: typeof resource?.custom_id === 'string'
+            ? resource.custom_id
+            : typeof meta?.['userId'] === 'string'
+                ? meta['userId']
+                : undefined,
+        status: E_PaymentSubscriptionStatus.SUSPENDED,
+        providerStatus: 'SUSPENDED',
+        paymentRequestId: prRes.success ? prRes.result?.id : undefined,
+        orderId: typeof meta?.['orderId'] === 'string' ? meta['orderId'] : undefined,
+        source: E_PaymentSubscriptionSource.WEBHOOK,
+        providerSnapshot: resource,
+    });
 }

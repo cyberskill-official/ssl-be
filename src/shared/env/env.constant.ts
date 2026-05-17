@@ -1,6 +1,10 @@
 export const PORT = 8000;
 export const STATIC_FOLDER = 'static';
 export const BODY_PARSER_LIMIT = '500mb';
+export const MEMBERSHIP_EXTENSION_DAYS_OVERRIDE = 0;
+export const MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE = 0;
+export const SUBSCRIPTION_RENEWAL_GRACE_MINUTES = 30;
+export const SUBSCRIPTION_RECONCILE_BATCH_SIZE = 50;
 export const MONGO_HOST = 'localhost';
 export const MONGO_PORT = 27017;
 export const MONGO_BACKUP_FOLDER = 'backup';

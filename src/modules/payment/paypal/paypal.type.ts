@@ -201,6 +201,7 @@ export interface I_PayPalPlanPayload {
 
 export interface I_PayPalPlanResponse {
     id: string;
+    name?: string;
     status?: string;
     billing_cycles?: I_PayPalBillingCycle[];
     payment_preferences?: I_PayPalPaymentPreferences;

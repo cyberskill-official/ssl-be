@@ -1,0 +1,122 @@
+enum E_PaymentSubscriptionStatus {
+    PENDING_APPROVAL
+    APPROVAL_PENDING
+    SCHEDULED
+    ACTIVE
+    PAST_DUE
+    SUSPENDED
+    CANCELLED
+    EXPIRED
+    ACTION_REQUIRED
+}
+
+enum E_PaymentSubscriptionReplacementReason {
+    TOP_UP_REPLACEMENT
+    INITIAL_FUTURE_START
+    ADMIN_RECONCILIATION
+}
+
+enum E_PaymentSubscriptionSource {
+    CHECKOUT
+    WEBHOOK
+    STATUS_POLL
+    RECONCILIATION
+    ADMIN_SYNC
+}
+
+type T_PaymentSubscription {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    provider: E_PaymentProvider
+    providerSubscriptionId: String
+    userId: String
+    status: E_PaymentSubscriptionStatus
+    providerStatus: String
+    currentPeriodStartAt: DateTime
+    currentPeriodEndAt: DateTime
+    nextBillingAt: DateTime
+    lastPaidAt: DateTime
+    paymentRequestId: String
+    orderId: String
+    pricingId: String
+    amount: Float
+    currency: String
+    replacesSubscriptionId: String
+    replacedBySubscriptionId: String
+    replacementReason: E_PaymentSubscriptionReplacementReason
+    nextReconcileAt: DateTime
+    graceUntil: DateTime
+    lastCheckedAt: DateTime
+    lastError: String
+    source: E_PaymentSubscriptionSource
+    providerSnapshot: JSON
+    meta: JSON
+}
+
+input Input_QueryPaymentSubscription {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    provider: E_PaymentProvider
+    providerSubscriptionId: String
+    userId: String
+    status: E_PaymentSubscriptionStatus
+    providerStatus: String
+    currentPeriodStartAt: DateTime
+    currentPeriodEndAt: DateTime
+    nextBillingAt: DateTime
+    lastPaidAt: DateTime
+    paymentRequestId: String
+    orderId: String
+    pricingId: String
+    amount: Float
+    currency: String
+    replacesSubscriptionId: String
+    replacedBySubscriptionId: String
+    replacementReason: E_PaymentSubscriptionReplacementReason
+    nextReconcileAt: DateTime
+    graceUntil: DateTime
+    lastCheckedAt: DateTime
+    lastError: String
+    source: E_PaymentSubscriptionSource
+}
+
+type T_Response_PaymentSubscription {
+    success: Boolean
+    message: String
+    result: T_PaymentSubscription
+}
+
+type T_PaymentSubscriptions {
+    docs: [T_PaymentSubscription]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PaymentSubscriptions {
+    success: Boolean
+    message: String
+    result: T_PaymentSubscriptions
+}
+
+extend type Query {
+    getPaymentSubscription(
+        filter: Input_QueryPaymentSubscription!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PaymentSubscription!
+    getPaymentSubscriptions(filter: Input_QueryPaymentSubscription, options: JSON): T_Response_PaymentSubscriptions!
+}

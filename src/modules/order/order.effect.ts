@@ -1,6 +1,6 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log, throwError } from '@cyberskill/shared/node/log';
-import { addMonths } from 'date-fns';
+import { addDays, addMinutes, addMonths } from 'date-fns';
 
 import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
@@ -10,17 +10,64 @@ import { roleCtr } from '#modules/authz/index.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { eventCtr } from '#modules/event/event.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
+import { OrderModel } from '#modules/order/order.model.js';
+import { membershipEntitlementChangeCtr } from '#modules/payment/membership-entitlement-change/membership-entitlement-change.controller.js';
+import {
+    E_MembershipEntitlementChangeReason,
+    E_MembershipEntitlementChangeSource,
+} from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
+import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { getEnv } from '#shared/env/index.js';
 
 import type { I_Order } from './order.type.js';
 
 import { E_OrderStatus, E_OrderType } from './order.type.js';
 
+const env = getEnv();
+
 interface I_OrderPaidEffectsResult {
     event?: I_Event | null;
     membershipExpiresAt?: Date | null;
+}
+
+interface I_OrderPaidEffectsOptions {
+    effectKey?: string | null;
+    membershipPeriodStartAt?: Date | string | null;
+    membershipPeriodEndAt?: Date | string | null;
+    source?: E_MembershipEntitlementChangeSource;
+    reason?: E_MembershipEntitlementChangeReason;
+    paymentRequestId?: string | null;
+    provider?: E_PaymentProvider | null;
+    providerSubscriptionId?: string | null;
+    transactionId?: string | null;
+}
+
+export function calculateMembershipExpiry(baseDate: Date): Date {
+    const overrideDays = env.MEMBERSHIP_EXTENSION_DAYS_OVERRIDE;
+    if (overrideDays > 0) {
+        return addDays(baseDate, overrideDays);
+    }
+
+    const overrideMinutes = env.MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE;
+    if (overrideMinutes > 0) {
+        return addMinutes(baseDate, overrideMinutes);
+    }
+    return addMonths(baseDate, 1);
+}
+
+function normalizeDate(value?: Date | string | null): Date | null {
+    if (!value) {
+        return null;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function hasMembershipDurationOverride(): boolean {
+    return env.MEMBERSHIP_EXTENSION_DAYS_OVERRIDE > 0 || env.MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE > 0;
 }
 
 async function ensurePaidRole(context: I_Context, user: { rolesIds?: string[] }): Promise<string | null> {
@@ -52,7 +99,11 @@ async function getPromoRoleId(context: I_Context): Promise<string | null> {
     return promoRole.result.id;
 }
 
-async function extendMembershipByOneMonth(context: I_Context, order: I_Order): Promise<Date | null> {
+async function extendMembershipByOneMonth(
+    context: I_Context,
+    order: I_Order,
+    options: I_OrderPaidEffectsOptions = {},
+): Promise<Date | null> {
     if (!order.userId) {
         throwError({ message: 'Missing userId on order when extending membership.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
     }
@@ -71,6 +122,8 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
     const currentExpiry = user.membershipExpiresAt
         ? new Date(user.membershipExpiresAt)
         : null;
+    const beforeRolesIds = [...(user.rolesIds ?? [])];
+    const beforeMembershipCancelled = Boolean(user.membershipCancelled);
 
     // If membership is still active, extend from expiry date
     // If membership expired less than 12 months ago, extend from expiry date
@@ -89,7 +142,12 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         }
         // Otherwise (expired more than 12 months ago), extend from now
     }
-    const newExpiry = addMonths(baseDate, 1);
+    const explicitPeriodStart = normalizeDate(options.membershipPeriodStartAt);
+    const explicitPeriodEnd = normalizeDate(options.membershipPeriodEndAt);
+    const overrideExpiry = hasMembershipDurationOverride()
+        ? calculateMembershipExpiry(explicitPeriodStart ?? now)
+        : null;
+    const newExpiry = overrideExpiry ?? explicitPeriodEnd ?? calculateMembershipExpiry(baseDate);
 
     const paidRoleId = await ensurePaidRole(context, user);
     const [freeMemberRoleId, promoRoleId] = await Promise.all([
@@ -190,6 +248,41 @@ async function extendMembershipByOneMonth(context: I_Context, order: I_Order): P
         });
     }
 
+    await membershipEntitlementChangeCtr.recordMembershipEntitlementChange(context, {
+        doc: {
+            userId: order.userId,
+            orderId: order.id,
+            paymentRequestId: options.paymentRequestId ?? order.paymentRequestId,
+            provider: options.provider ?? undefined,
+            providerSubscriptionId: options.providerSubscriptionId ?? undefined,
+            transactionId: options.transactionId ?? undefined,
+            effectKey: options.effectKey ?? undefined,
+            source: options.source ?? E_MembershipEntitlementChangeSource.PAYMENT_EFFECT,
+            reason: options.reason ?? (
+                explicitPeriodEnd
+                    ? E_MembershipEntitlementChangeReason.RENEWAL_PAYMENT
+                    : E_MembershipEntitlementChangeReason.LEGACY_PAYMENT
+            ),
+            beforeMembershipExpiresAt: currentExpiry ?? undefined,
+            afterMembershipExpiresAt: newExpiry,
+            beforeRolesIds,
+            afterRolesIds: updatedUserRes.result.rolesIds ?? [],
+            beforeMembershipCancelled,
+            afterMembershipCancelled: Boolean(updatedUserRes.result.membershipCancelled),
+            changedAt: new Date(),
+            metadata: {
+                membershipPeriodStartAt: normalizeDate(options.membershipPeriodStartAt)?.toISOString(),
+                membershipPeriodEndAt: explicitPeriodEnd?.toISOString(),
+            },
+        },
+    }).catch((error: unknown) => {
+        log.warn('[OrderEffects] Failed to record membership entitlement change audit', {
+            orderId: order.id,
+            userId: order.userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    });
+
     return newExpiry;
 }
 
@@ -250,6 +343,72 @@ async function addFreeEventCountForAnnouncement(context: I_Context, order: I_Ord
     }
 }
 
+function getAppliedPaidEffectKeys(order: I_Order): string[] {
+    const meta = order.meta as Record<string, unknown> | null | undefined;
+    const value = meta?.['appliedPaidEffectKeys'];
+    return Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+}
+
+async function claimPaidEffectKey(orderId: string | undefined, effectKey: string | null): Promise<boolean> {
+    if (!orderId || !effectKey) {
+        return true;
+    }
+
+    const claimed = await OrderModel.findOneAndUpdate(
+        {
+            id: orderId,
+            'meta.appliedPaidEffectKeys': { $ne: effectKey },
+            'meta.pendingPaidEffectKeys': { $ne: effectKey },
+        },
+        { $addToSet: { 'meta.pendingPaidEffectKeys': effectKey } },
+        { new: true, projection: { id: 1 } },
+    ).lean().exec();
+
+    return Boolean(claimed);
+}
+
+async function releasePendingPaidEffectKey(orderId: string | undefined, effectKey: string | null): Promise<void> {
+    if (!orderId || !effectKey) {
+        return;
+    }
+
+    await OrderModel.updateOne(
+        { id: orderId },
+        { $pull: { 'meta.pendingPaidEffectKeys': effectKey } },
+    ).exec();
+}
+
+async function syncMembershipSessionFromUser(context: I_Context, userId?: string): Promise<void> {
+    if (!userId || context.req?.session?.user?.id !== userId) {
+        return;
+    }
+
+    const updatedUserRes = await userCtr.getUser(context, { filter: { id: userId } });
+    if (!updatedUserRes.success || !updatedUserRes.result) {
+        return;
+    }
+
+    const user = updatedUserRes.result;
+    context.req.session.user.membershipExpiresAt = user.membershipExpiresAt;
+    context.req.session.user.rolesIds = user.rolesIds;
+    context.req.session.user.registerStep = user.registerStep;
+    context.req.session.user.membershipCancelled = user.membershipCancelled;
+    if (typeof user.freeEventCount === 'number') {
+        context.req.session.user.freeEventCount = user.freeEventCount;
+    }
+
+    await new Promise<void>((resolve) => {
+        if (context.req?.session?.save) {
+            context.req.session.save(() => resolve());
+        }
+        else {
+            resolve();
+        }
+    });
+}
+
 function getEventFromOrderMeta(order: I_Order): I_Input_CreateEvent | null {
     const meta = order.meta as Record<string, unknown> | null | undefined;
     if (!meta || typeof meta !== 'object') {
@@ -299,7 +458,11 @@ async function createEventFromOrder(context: I_Context, order: I_Order): Promise
     return created.result;
 }
 
-export async function applyOrderPaidEffects(context: I_Context, order?: I_Order | null): Promise<I_OrderPaidEffectsResult> {
+export async function applyOrderPaidEffects(
+    context: I_Context,
+    order?: I_Order | null,
+    options: I_OrderPaidEffectsOptions = {},
+): Promise<I_OrderPaidEffectsResult> {
     const result: I_OrderPaidEffectsResult = {};
     if (!order || order.status !== E_OrderStatus.PAID) {
         log.info('[OrderEffects] Skipped: order missing or not PAID', { orderId: order?.id, status: order?.status });
@@ -312,6 +475,7 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         orderType: order.orderType,
         pricingId: order.pricingId,
         effectsAppliedAt: order.effectsAppliedAt,
+        effectKey: options.effectKey,
     });
 
     // Get pricingType from pricingId
@@ -361,47 +525,67 @@ export async function applyOrderPaidEffects(context: I_Context, order?: I_Order 
         }
     }
     else if (effectivePricingType === E_PricingType.MEMBERSHIP) {
-        // MEMBERSHIP: +1 tháng membership (không cộng freeEventCount)
-        // Idempotency check: Only apply membership extension if not applied recently for this order
+        const effectKey = typeof options.effectKey === 'string' && options.effectKey.trim()
+            ? options.effectKey.trim()
+            : null;
+        const effectKeyAlreadyApplied = effectKey && getAppliedPaidEffectKeys(order).includes(effectKey);
+        const effectKeyClaimed = effectKeyAlreadyApplied ? false : await claimPaidEffectKey(order.id, effectKey);
+        if (effectKey && (!effectKeyClaimed || effectKeyAlreadyApplied)) {
+            log.info('[OrderEffects] Idempotency guard: skipping already-claimed membership effect key', {
+                orderId: order.id,
+                userId: order.userId,
+                effectKey,
+                effectKeyAlreadyApplied,
+            });
+            await syncMembershipSessionFromUser(context, order.userId);
+            return result;
+        }
+
+        // MEMBERSHIP: recurring subscriptions currently reuse the same local Order across cycles.
+        // A short time-window guard still helps against near-simultaneous duplicate processing,
+        // but durable dedupe must happen at the gateway transaction/event level.
         const lastApplied = order.effectsAppliedAt ? new Date(order.effectsAppliedAt).getTime() : 0;
         const ONE_HOUR = 60 * 60 * 1000;
         const timeSinceLastApplied = Date.now() - lastApplied;
-        if (timeSinceLastApplied > ONE_HOUR) {
-            log.info('[OrderEffects] Extending membership by 1 month', { orderId: order.id, userId: order.userId, timeSinceLastApplied });
-            result.membershipExpiresAt = await extendMembershipByOneMonth(context, order);
-            log.info('[OrderEffects] Membership extended successfully', { orderId: order.id, newExpiry: result.membershipExpiresAt });
-            await orderCtr.updateOrder(context, {
-                filter: { id: order.id },
-                update: { $set: { effectsAppliedAt: new Date() } },
+        if (effectKey || timeSinceLastApplied > ONE_HOUR) {
+            log.info('[OrderEffects] Extending membership entitlement', {
+                orderId: order.id,
+                userId: order.userId,
+                timeSinceLastApplied,
+                effectKey,
+                durationDaysOverride: env.MEMBERSHIP_EXTENSION_DAYS_OVERRIDE,
+                durationMinutesOverride: env.MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE,
             });
+            try {
+                result.membershipExpiresAt = await extendMembershipByOneMonth(context, order, options);
+                log.info('[OrderEffects] Membership extended successfully', { orderId: order.id, newExpiry: result.membershipExpiresAt });
+
+                const updatePayload: Record<string, unknown> = {
+                    $set: { effectsAppliedAt: new Date() },
+                };
+                if (effectKey) {
+                    updatePayload['$addToSet'] = { 'meta.appliedPaidEffectKeys': effectKey };
+                    updatePayload['$pull'] = { 'meta.pendingPaidEffectKeys': effectKey };
+                }
+                await orderCtr.updateOrder(context, {
+                    filter: { id: order.id },
+                    update: updatePayload,
+                });
+            }
+            catch (error) {
+                await releasePendingPaidEffectKey(order.id, effectKey);
+                throw error;
+            }
         }
         else {
-            // Already extended recently (e.g. by another process like Webhook or Polling)
+            // Already extended recently (e.g. duplicate webhook delivery or overlapping status sync)
             // Still sync the session for the current request to ensure user sees updated state
-            log.info('[OrderEffects] Idempotency guard: skipping extension (applied within last hour)', { orderId: order.id, lastApplied: new Date(lastApplied), timeSinceLastApplied });
-            const userId = order.userId;
-            if (userId && context.req?.session?.user?.id === userId) {
-                const updatedUserRes = await userCtr.getUser(context, { filter: { id: userId } });
-                if (updatedUserRes.success && updatedUserRes.result) {
-                    const u = updatedUserRes.result;
-                    context.req.session.user.membershipExpiresAt = u.membershipExpiresAt;
-                    context.req.session.user.rolesIds = u.rolesIds;
-                    context.req.session.user.registerStep = u.registerStep;
-                    context.req.session.user.membershipCancelled = u.membershipCancelled;
-                    if (typeof u.freeEventCount === 'number') {
-                        context.req.session.user.freeEventCount = u.freeEventCount;
-                    }
-
-                    await new Promise<void>((resolve) => {
-                        if (context.req?.session?.save) {
-                            context.req.session.save(() => resolve());
-                        }
-                        else {
-                            resolve();
-                        }
-                    });
-                }
-            }
+            log.info('[OrderEffects] Idempotency guard: skipping extension (applied within last hour)', {
+                orderId: order.id,
+                lastApplied: new Date(lastApplied),
+                timeSinceLastApplied,
+            });
+            await syncMembershipSessionFromUser(context, order.userId);
         }
     }
 

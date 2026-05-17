@@ -31,7 +31,7 @@ export interface I_Order extends I_GenericDocument {
     effectsAppliedAt?: Date;
 }
 
-export type T_Order_Populate = 'user' | 'pricing' | 'paymentTransaction';
+export type T_Order_Populate = 'user' | 'pricing' | 'paymentTransaction' | 'paymentRequests';
 
 export interface I_Input_QueryOrder extends Omit<I_Order, T_Order_Populate> { }
 export interface I_Input_CreateOrder extends Omit<I_Order, T_Omit_Create | T_Order_Populate> {}

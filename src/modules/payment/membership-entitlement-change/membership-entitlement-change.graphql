@@ -1,0 +1,96 @@
+enum E_MembershipEntitlementChangeSource {
+    PAYMENT_EFFECT
+    WEBHOOK
+    STATUS_POLL
+    RECONCILIATION
+    CRON
+    ADMIN_SYNC
+}
+
+enum E_MembershipEntitlementChangeReason {
+    INITIAL_PAYMENT
+    RENEWAL_PAYMENT
+    TOP_UP_REPLACEMENT
+    LEGACY_PAYMENT
+    DOWNGRADE_EXPIRED
+    CANCELLED_EXPIRED
+    MANUAL_REPAIR
+}
+
+type T_MembershipEntitlementChange {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    orderId: String
+    paymentRequestId: String
+    provider: E_PaymentProvider
+    providerSubscriptionId: String
+    transactionId: String
+    effectKey: String
+    source: E_MembershipEntitlementChangeSource
+    reason: E_MembershipEntitlementChangeReason
+    beforeMembershipExpiresAt: DateTime
+    afterMembershipExpiresAt: DateTime
+    beforeRolesIds: [String]
+    afterRolesIds: [String]
+    beforeMembershipCancelled: Boolean
+    afterMembershipCancelled: Boolean
+    changedAt: DateTime
+    metadata: JSON
+}
+
+input Input_QueryMembershipEntitlementChange {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    userId: String
+    orderId: String
+    paymentRequestId: String
+    provider: E_PaymentProvider
+    providerSubscriptionId: String
+    transactionId: String
+    effectKey: String
+    source: E_MembershipEntitlementChangeSource
+    reason: E_MembershipEntitlementChangeReason
+    changedAt: DateTime
+}
+
+type T_Response_MembershipEntitlementChange {
+    success: Boolean
+    message: String
+    result: T_MembershipEntitlementChange
+}
+
+type T_MembershipEntitlementChanges {
+    docs: [T_MembershipEntitlementChange]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_MembershipEntitlementChanges {
+    success: Boolean
+    message: String
+    result: T_MembershipEntitlementChanges
+}
+
+extend type Query {
+    getMembershipEntitlementChange(
+        filter: Input_QueryMembershipEntitlementChange!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_MembershipEntitlementChange!
+    getMembershipEntitlementChanges(filter: Input_QueryMembershipEntitlementChange, options: JSON): T_Response_MembershipEntitlementChanges!
+}

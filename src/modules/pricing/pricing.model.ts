@@ -44,6 +44,9 @@ export const PricingModel = mongo.createModel<I_Pricing>({
         paypalPlanId: {
             type: String,
         },
+        paypalTopUpPlanId: {
+            type: String,
+        },
     },
     virtuals: [
         {

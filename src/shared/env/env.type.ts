@@ -12,6 +12,11 @@ export interface I_Environment {
     PORT: number;
     STATIC_FOLDER: string;
     BODY_PARSER_LIMIT: string;
+    MEMBERSHIP_EXTENSION_DAYS_OVERRIDE: number;
+    MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE: number;
+    SUBSCRIPTION_RENEWAL_GRACE_MINUTES: number;
+    SUBSCRIPTION_RECONCILE_BATCH_SIZE: number;
+    SUBSCRIPTION_STRICT_DOWNGRADE: string;
     SESSION_NAME: string;
     SESSION_SECRET: string;
     MONGO_HOST: string;

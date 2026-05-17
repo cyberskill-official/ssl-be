@@ -1,0 +1,95 @@
+enum E_PaymentGatewayEventProcessingStatus {
+    RECEIVED
+    PROCESSING
+    PROCESSED
+    FAILED
+    IGNORED
+}
+
+enum E_PaymentGatewayEventVerificationStatus {
+    PENDING
+    SUCCESS
+    FAILED
+    SKIPPED
+}
+
+type T_PaymentGatewayEvent {
+    id: String
+    isDel: Boolean
+    createdAt: DateTime
+    updatedAt: DateTime
+    provider: E_PaymentProvider
+    eventId: String
+    eventType: String
+    resourceId: String
+    subscriptionId: String
+    transactionId: String
+    orderId: String
+    paymentRequestId: String
+    userId: String
+    verificationStatus: E_PaymentGatewayEventVerificationStatus
+    processingStatus: E_PaymentGatewayEventProcessingStatus
+    receivedAt: DateTime
+    processedAt: DateTime
+    attemptCount: Int
+    errorMessage: String
+    headers: JSON
+    payload: JSON
+}
+
+input Input_QueryPaymentGatewayEvent {
+    id: String
+    isDel: Boolean
+    provider: E_PaymentProvider
+    eventId: String
+    eventType: String
+    resourceId: String
+    subscriptionId: String
+    transactionId: String
+    orderId: String
+    paymentRequestId: String
+    userId: String
+    verificationStatus: E_PaymentGatewayEventVerificationStatus
+    processingStatus: E_PaymentGatewayEventProcessingStatus
+    receivedAt: DateTime
+    processedAt: DateTime
+    createdAt: DateTime
+    updatedAt: DateTime
+}
+
+type T_Response_PaymentGatewayEvent {
+    success: Boolean
+    message: String
+    result: T_PaymentGatewayEvent
+}
+
+type T_PaymentGatewayEvents {
+    docs: [T_PaymentGatewayEvent]
+    totalDocs: Int
+    limit: Int
+    hasPrevPage: Boolean
+    hasNextPage: Boolean
+    page: Int
+    totalPages: Int
+    offset: Int
+    prevPage: Int
+    nextPage: Int
+    pagingCounter: Int
+    meta: JSON
+}
+
+type T_Response_PaymentGatewayEvents {
+    success: Boolean
+    message: String
+    result: T_PaymentGatewayEvents
+}
+
+extend type Query {
+    getPaymentGatewayEvent(
+        filter: Input_QueryPaymentGatewayEvent!
+        projection: JSON
+        options: JSON
+        populate: JSON
+    ): T_Response_PaymentGatewayEvent!
+    getPaymentGatewayEvents(filter: Input_QueryPaymentGatewayEvent, options: JSON): T_Response_PaymentGatewayEvents!
+}

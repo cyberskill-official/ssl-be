@@ -14,9 +14,16 @@ import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
+import { calculateMembershipExpiry } from '#modules/order/order.effect.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
+import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    E_PaymentSubscriptionReplacementReason,
+    E_PaymentSubscriptionSource,
+    E_PaymentSubscriptionStatus,
+} from '#modules/payment/payment-subscription/payment-subscription.type.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
 import { ensurePayPalCredentials } from '#modules/payment/paypal/paypal.handler.js';
@@ -31,12 +38,99 @@ import type { I_Input_MakePayment, I_MakePaymentResult } from './payment.type.js
 import { getPaymentRedirectBase } from './payment.handler.js';
 import { E_PaymentMethod, E_PaymentStatus } from './payment.type.js';
 
+const INVALID_PAYPAL_PLAN_RESPONSE_REGEX = /invalid planid|resource.*not.*exist/i;
+
 const pricingMongooseCtr = new MongooseController<I_Pricing>(PricingModel);
 
 function appendQueryParams(url: string, params: Record<string, string>) {
     const query = new URLSearchParams(params).toString();
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}${query}`;
+}
+
+async function createAndStorePayPalPlan(
+    context: I_Context,
+    pricing: I_Pricing,
+    amount: number,
+    currencyCode: string,
+): Promise<string> {
+    const productSetup = await paypalSetupService.getOrCreateProduct(context);
+    if (!productSetup.id) {
+        throwError({
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            message: `Failed to initialize PayPal product for subscription${productSetup.error ? `: ${productSetup.error}` : ''}`,
+        });
+    }
+
+    const planSetup = await paypalSetupService.getOrCreatePlan(
+        context,
+        productSetup.id,
+        amount,
+        currencyCode,
+    );
+    if (!planSetup.id) {
+        throwError({
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            message: `Failed to initialize PayPal plan for subscription${planSetup.error ? `: ${planSetup.error}` : ''}`,
+        });
+    }
+
+    await PricingModel.updateOne(
+        { id: pricing.id },
+        { $set: { paypalPlanId: planSetup.id } },
+    );
+    log.success(`[Payment] Dynamically created and linked PayPal Plan ${planSetup.id} to pricing ${pricing.id}`);
+
+    return planSetup.id;
+}
+
+async function createAndStorePayPalTopUpPlan(
+    context: I_Context,
+    pricing: I_Pricing,
+    amount: number,
+    currencyCode: string,
+): Promise<string> {
+    const productSetup = await paypalSetupService.getOrCreateProduct(context);
+    if (!productSetup.id) {
+        throwError({
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            message: `Failed to initialize PayPal product for top-up subscription${productSetup.error ? `: ${productSetup.error}` : ''}`,
+        });
+    }
+
+    const planSetup = await paypalSetupService.getOrCreateTopUpPlan(
+        context,
+        productSetup.id,
+        amount,
+        currencyCode,
+    );
+    if (!planSetup.id) {
+        throwError({
+            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            message: `Failed to initialize PayPal top-up plan${planSetup.error ? `: ${planSetup.error}` : ''}`,
+        });
+    }
+
+    await PricingModel.updateOne(
+        { id: pricing.id },
+        { $set: { paypalTopUpPlanId: planSetup.id } },
+    );
+    log.success(`[Payment] Dynamically created and linked PayPal Top-up Plan ${planSetup.id} to pricing ${pricing.id}`);
+
+    return planSetup.id;
+}
+
+function isInvalidPayPalPlanResponse(response: I_Return<unknown>): boolean {
+    const message = response.message ?? '';
+    return response.code === 404 && INVALID_PAYPAL_PLAN_RESPONSE_REGEX.test(message);
+}
+
+function getActiveMembershipExpiry(currentUser: { membershipExpiresAt?: Date | string | null }): Date | null {
+    if (!currentUser.membershipExpiresAt) {
+        return null;
+    }
+    const expiry = new Date(currentUser.membershipExpiresAt);
+    return expiry > new Date() ? expiry : null;
 }
 
 export const paymentController = {
@@ -469,6 +563,7 @@ export const paymentController = {
             status: E_PaymentRequestStatus.WAITING,
             attempts: 0,
             meta: {
+                userId: currentUser.id,
                 orderId: createdOrder.id,
                 amount: resolvedAmount,
                 currencyId: pricing.currencyId,
@@ -498,47 +593,43 @@ export const paymentController = {
             let externalOrderId: string | undefined;
             let approvalUrl: string | undefined;
             let gatewayResponse: any;
+            let subscriptionStartTime: Date | null = null;
+            let projectedEntitlementEndAt: Date | null = null;
+            let replacesSubscriptionId: string | undefined;
+            let replacementReason: E_PaymentSubscriptionReplacementReason | undefined;
+            let isTopUpReplacement = false;
 
             if (pricingType === E_PricingType.MEMBERSHIP) {
-                let paypalPlanId = pricing.paypalPlanId;
+                const activeMembershipExpiry = getActiveMembershipExpiry(currentUser);
+                const billableSubscription = activeMembershipExpiry
+                    ? await paymentSubscriptionCtr.findCurrentBillablePayPalSubscription(currentUser.id)
+                    : null;
+
+                isTopUpReplacement = Boolean(activeMembershipExpiry && billableSubscription?.providerSubscriptionId);
+                if (activeMembershipExpiry && billableSubscription?.providerSubscriptionId) {
+                    replacesSubscriptionId = billableSubscription.providerSubscriptionId;
+                    replacementReason = E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT;
+                    projectedEntitlementEndAt = calculateMembershipExpiry(activeMembershipExpiry);
+                    subscriptionStartTime = projectedEntitlementEndAt;
+                }
+                else if (activeMembershipExpiry) {
+                    replacementReason = E_PaymentSubscriptionReplacementReason.INITIAL_FUTURE_START;
+                    subscriptionStartTime = activeMembershipExpiry;
+                }
+
+                let paypalPlanId = isTopUpReplacement ? pricing.paypalTopUpPlanId : pricing.paypalPlanId;
 
                 // Dynamic/Lazy Setup: If Plan ID is missing, create it on-the-fly
                 if (!paypalPlanId) {
-                    log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal Plan ID. Initializing dynamic setup...`);
-
-                    const productSetup = await paypalSetupService.getOrCreateProduct(context);
-                    if (!productSetup.id) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: `Failed to initialize PayPal product for subscription${productSetup.error ? `: ${productSetup.error}` : ''}`,
-                        });
-                    }
-
-                    const planSetup = await paypalSetupService.getOrCreatePlan(
-                        context,
-                        productSetup.id,
-                        resolvedAmount,
-                        currencyCode,
-                    );
-                    if (!planSetup.id) {
-                        throwError({
-                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
-                            message: `Failed to initialize PayPal plan for subscription${planSetup.error ? `: ${planSetup.error}` : ''}`,
-                        });
-                    }
-
-                    paypalPlanId = planSetup.id;
-
-                    // Update the pricing record in DB so we don't have to create it again
-                    await PricingModel.updateOne(
-                        { _id: pricing._id ?? pricing.id },
-                        { $set: { paypalPlanId } },
-                    );
-                    log.success(`[Payment] Dynamically created and linked PayPal Plan ${paypalPlanId} to pricing ${pricing.id}`);
+                    log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal ${isTopUpReplacement ? 'top-up ' : ''}Plan ID. Initializing dynamic setup...`);
                 }
+                paypalPlanId ||= isTopUpReplacement
+                    ? await createAndStorePayPalTopUpPlan(context, pricing, resolvedAmount, currencyCode)
+                    : await createAndStorePayPalPlan(context, pricing, resolvedAmount, currencyCode);
 
-                const subscriptionPayload = {
-                    plan_id: paypalPlanId,
+                const buildSubscriptionPayload = (planId: string) => ({
+                    plan_id: planId,
+                    ...(subscriptionStartTime && { start_time: subscriptionStartTime.toISOString() }),
                     custom_id: currentUser.id,
                     application_context: {
                         return_url: returnUrl,
@@ -547,14 +638,24 @@ export const paymentController = {
                         user_action: E_PayPalUserAction.SUBSCRIBE_NOW,
                         shipping_preference: E_PayPalShippingPreference.NO_SHIPPING,
                     },
-                };
+                });
 
-                const subResponse = await paypalCtr.createSubscription(context, subscriptionPayload);
+                let subResponse = await paypalCtr.createSubscription(context, buildSubscriptionPayload(paypalPlanId));
+                if (!subResponse.success && isInvalidPayPalPlanResponse(subResponse)) {
+                    log.warn(`[Payment] Stored PayPal Plan ${paypalPlanId} is invalid for pricing ${pricing.id}. Recreating plan...`);
+                    paypalPlanId = isTopUpReplacement
+                        ? await createAndStorePayPalTopUpPlan(context, pricing, resolvedAmount, currencyCode)
+                        : await createAndStorePayPalPlan(context, pricing, resolvedAmount, currencyCode);
+                    subResponse = await paypalCtr.createSubscription(context, buildSubscriptionPayload(paypalPlanId));
+                }
                 paypalResponse = subResponse as any;
                 if (subResponse.success && subResponse.result) {
                     externalOrderId = subResponse.result.id;
                     approvalUrl = subResponse.result.links?.find(l => l.rel === 'approve')?.href;
-                    gatewayResponse = subResponse.result;
+                    gatewayResponse = {
+                        ...subResponse.result,
+                        ...(subscriptionStartTime && { start_time: subscriptionStartTime.toISOString() }),
+                    };
                 }
             }
             else {
@@ -595,6 +696,33 @@ export const paymentController = {
                 });
             }
 
+            if (pricingType === E_PricingType.MEMBERSHIP) {
+                await paymentSubscriptionCtr.upsertFromProviderSnapshot(context, {
+                    provider: E_PaymentProvider.PAYPAL,
+                    providerSubscriptionId: externalOrderId,
+                    userId: currentUser.id,
+                    status: E_PaymentSubscriptionStatus.PENDING_APPROVAL,
+                    paymentRequestId: paymentRequest.id,
+                    orderId: createdOrder.id,
+                    pricingId: pricing.id,
+                    amount: resolvedAmount,
+                    currency: currencyCode,
+                    replacesSubscriptionId,
+                    replacementReason,
+                    source: E_PaymentSubscriptionSource.CHECKOUT,
+                    providerSnapshot: gatewayResponse,
+                    meta: {
+                        subscriptionStartTime: subscriptionStartTime?.toISOString(),
+                        projectedEntitlementEndAt: projectedEntitlementEndAt?.toISOString(),
+                        isTopUpReplacement,
+                    },
+                });
+
+                if (replacesSubscriptionId) {
+                    await paymentSubscriptionCtr.linkReplacement(replacesSubscriptionId, externalOrderId);
+                }
+            }
+
             // Extract token from approvalUrl for easier lookup later
             let token: string | undefined;
             if (approvalUrl) {
@@ -617,6 +745,15 @@ export const paymentController = {
                         gatewayResponse,
                         'attempts': (paymentRequest.attempts ?? 0) + 1,
                         'meta.token': token,
+                        'meta.userId': currentUser.id,
+                        ...(pricingType === E_PricingType.MEMBERSHIP && {
+                            'meta.subscriptionId': externalOrderId,
+                            'meta.subscriptionStartTime': subscriptionStartTime?.toISOString() ?? null,
+                            'meta.projectedEntitlementEndAt': projectedEntitlementEndAt?.toISOString() ?? null,
+                            'meta.replacesSubscriptionId': replacesSubscriptionId ?? null,
+                            'meta.replacementReason': replacementReason ?? null,
+                            'meta.isTopUpReplacement': isTopUpReplacement,
+                        }),
                     },
                 },
             });

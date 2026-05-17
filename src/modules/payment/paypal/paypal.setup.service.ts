@@ -124,4 +124,81 @@ export const paypalSetupService = {
             error: createRes.message ?? listRes.message ?? 'Unknown PayPal plan setup error',
         };
     },
+
+    /**
+     * Top-up replacement plan: charge one period immediately via setup_fee,
+     * then start recurring billing at the subscription start_time.
+     */
+    async getOrCreateTopUpPlan(
+        context: I_Context,
+        productId: string,
+        price: number,
+        currency: string,
+    ): Promise<I_PayPalSetupResult> {
+        const targetPrice = price.toFixed(2);
+        const planName = `Monthly Membership Top-up ${targetPrice} ${currency}`;
+
+        const listRes = await paypalCtr.listPlans(context, { productId });
+        if (listRes.success && listRes.result?.plans) {
+            const existing = listRes.result.plans.find((p) => {
+                const cycle = p.billing_cycles?.[0];
+                return p.name === planName
+                    && cycle?.pricing_scheme?.fixed_price?.value === targetPrice
+                    && cycle?.pricing_scheme?.fixed_price?.currency_code === currency
+                    && cycle?.frequency?.interval_unit === E_PayPalIntervalUnit.MONTH
+                    && cycle?.frequency?.interval_count === 1
+                    && p.payment_preferences?.setup_fee?.value === targetPrice
+                    && p.payment_preferences?.setup_fee?.currency_code === currency
+                    && p.status === 'ACTIVE';
+            });
+
+            if (existing) {
+                log.info(`[PayPal Setup] Found existing monthly top-up plan: ${existing.id}`);
+                return { id: existing.id };
+            }
+        }
+
+        log.info(`[PayPal Setup] Monthly top-up plan "${planName}" not found, creating...`);
+        const createRes = await paypalCtr.createPlan(context, {
+            product_id: productId,
+            name: planName,
+            description: `Monthly membership top-up at ${targetPrice} ${currency}; setup fee charges the added period immediately`,
+            billing_cycles: [
+                {
+                    frequency: {
+                        interval_unit: E_PayPalIntervalUnit.MONTH,
+                        interval_count: 1,
+                    },
+                    tenure_type: E_PayPalTenureType.REGULAR,
+                    sequence: 1,
+                    total_cycles: 0,
+                    pricing_scheme: {
+                        fixed_price: {
+                            value: targetPrice,
+                            currency_code: currency,
+                        },
+                    },
+                },
+            ],
+            payment_preferences: {
+                auto_bill_outstanding: true,
+                setup_fee: {
+                    value: targetPrice,
+                    currency_code: currency,
+                },
+                payment_failure_threshold: 3,
+            },
+        });
+
+        if (createRes.success && createRes.result) {
+            log.success(`[PayPal Setup] Top-up plan created: ${createRes.result.id}`);
+            return { id: createRes.result.id };
+        }
+
+        log.error(`[PayPal Setup] Failed to get or create top-up plan: ${createRes.message}`);
+        return {
+            id: null,
+            error: createRes.message ?? listRes.message ?? 'Unknown PayPal top-up plan setup error',
+        };
+    },
 };
