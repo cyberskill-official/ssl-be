@@ -86,10 +86,21 @@ function resolveLocalStatus(args: {
     }
 }
 
-function getGraceMinutes(): number {
+export function getPaymentSubscriptionGraceMinutes(): number {
     return Number.isFinite(env.SUBSCRIPTION_RENEWAL_GRACE_MINUTES)
         ? Math.max(0, env.SUBSCRIPTION_RENEWAL_GRACE_MINUTES)
-        : 30;
+        : 120;
+}
+
+export function resolvePaymentSubscriptionAccessUntil(periodEnd?: Date | string | null): Date | undefined {
+    if (!periodEnd) {
+        return undefined;
+    }
+    const periodEndDate = periodEnd instanceof Date ? periodEnd : new Date(periodEnd);
+    if (Number.isNaN(periodEndDate.getTime())) {
+        return undefined;
+    }
+    return addMinutes(periodEndDate, getPaymentSubscriptionGraceMinutes());
 }
 
 function resolveLocalOverridePeriodEnd(lastPaidAt?: Date): Date | undefined {
@@ -116,7 +127,7 @@ function resolveNextReconcileAt(args: {
     preferCurrentPeriodEnd?: boolean;
 }): Date {
     const now = new Date();
-    const graceMinutes = getGraceMinutes();
+    const graceMinutes = getPaymentSubscriptionGraceMinutes();
     if (args.currentPeriodEndAt && args.preferCurrentPeriodEnd) {
         return addMinutes(args.currentPeriodEndAt, graceMinutes);
     }
@@ -164,9 +175,7 @@ export const paymentSubscriptionCtr = {
             startTime,
             lastPaidAt,
         });
-        const graceUntil = currentPeriodEndAt
-            ? addMinutes(currentPeriodEndAt, getGraceMinutes())
-            : undefined;
+        const graceUntil = resolvePaymentSubscriptionAccessUntil(currentPeriodEndAt);
         const nextReconcileAt = resolveNextReconcileAt({
             status,
             nextBillingAt,
@@ -239,6 +248,16 @@ export const paymentSubscriptionCtr = {
         return doc as I_PaymentSubscription | null;
     },
 
+    async findLatestPayPalSubscriptionForUser(userId: string): Promise<I_PaymentSubscription | null> {
+        const doc = await PaymentSubscriptionModel.findOne({
+            provider: E_PaymentProvider.PAYPAL,
+            userId,
+            isDel: { $ne: true },
+        }).sort({ updatedAt: -1, createdAt: -1 }).lean().exec();
+
+        return doc as I_PaymentSubscription | null;
+    },
+
     async getDueForReconciliation(limit: number): Promise<I_PaymentSubscription[]> {
         const docs = await PaymentSubscriptionModel.find({
             provider: E_PaymentProvider.PAYPAL,
@@ -258,6 +277,18 @@ export const paymentSubscriptionCtr = {
                     lastError,
                     lastCheckedAt: new Date(),
                     nextReconcileAt: addMinutes(new Date(), 5),
+                },
+            },
+        ).exec();
+    },
+
+    async scheduleReconciliationNow(providerSubscriptionId: string): Promise<void> {
+        await PaymentSubscriptionModel.updateOne(
+            { provider: E_PaymentProvider.PAYPAL, providerSubscriptionId },
+            {
+                $set: {
+                    nextReconcileAt: new Date(),
+                    lastCheckedAt: new Date(),
                 },
             },
         ).exec();

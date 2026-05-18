@@ -26,8 +26,14 @@ import {
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { findLatestPayPalSubscriptionForUser } from '#modules/payment/payment-subscription-link.service.js';
-import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
-import { E_PaymentSubscriptionReplacementReason, E_PaymentSubscriptionSource } from '#modules/payment/payment-subscription/payment-subscription.type.js';
+import {
+    paymentSubscriptionCtr,
+    resolvePaymentSubscriptionAccessUntil,
+} from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    E_PaymentSubscriptionReplacementReason,
+    E_PaymentSubscriptionSource,
+} from '#modules/payment/payment-subscription/payment-subscription.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus, E_PaymentTransactionSource } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
@@ -100,10 +106,6 @@ function computeEventEndDateTime(event: I_Event): Date | null {
 function getSubscriptionNextBillingTime(subscription: Record<string, any> | null | undefined): string | null {
     const value = subscription?.['billing_info']?.['next_billing_time'];
     return typeof value === 'string' ? value : null;
-}
-
-function hasMembershipDurationOverride(): boolean {
-    return env.MEMBERSHIP_EXTENSION_DAYS_OVERRIDE > 0 || env.MEMBERSHIP_EXTENSION_MINUTES_OVERRIDE > 0;
 }
 
 async function downgradeUserToFree(args: {
@@ -683,7 +685,7 @@ export const cron = {
                         && (!previousLastPaidAt || lastPaidAt > previousLastPaidAt),
                     );
 
-                    await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+                    const subscriptionUpsertRes = await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
                         provider: E_PaymentProvider.PAYPAL,
                         providerSubscriptionId: subscriptionId,
                         userId: localSubscription.userId,
@@ -697,6 +699,9 @@ export const cron = {
                         source: E_PaymentSubscriptionSource.RECONCILIATION,
                         providerSnapshot: paypalSubscription,
                     });
+                    const refreshedSubscription = subscriptionUpsertRes.success && subscriptionUpsertRes.result
+                        ? subscriptionUpsertRes.result
+                        : localSubscription;
 
                     if (hasNewPayment && localSubscription.orderId) {
                         const [orderRes, paymentRequestRes] = await Promise.all([
@@ -745,6 +750,7 @@ export const cron = {
                                     effectKey,
                                     membershipPeriodStartAt: lastPayment.time,
                                     membershipPeriodEndAt: getSubscriptionNextBillingTime(paypalSubscription),
+                                    membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(paypalSubscription)),
                                     source: E_MembershipEntitlementChangeSource.RECONCILIATION,
                                     reason: localSubscription.replacementReason === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                                         ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT
@@ -771,22 +777,31 @@ export const cron = {
                         }
                     }
 
-                    const periodEnd = localSubscription.currentPeriodEndAt
-                        ? new Date(localSubscription.currentPeriodEndAt)
+                    const periodEnd = refreshedSubscription.currentPeriodEndAt
+                        ? new Date(refreshedSubscription.currentPeriodEndAt)
                         : null;
-                    const graceUntil = localSubscription.graceUntil
-                        ? new Date(localSubscription.graceUntil)
+                    const graceUntil = refreshedSubscription.graceUntil
+                        ? new Date(refreshedSubscription.graceUntil)
                         : periodEnd;
                     const graceExpired = graceUntil ? graceUntil <= new Date() : false;
                     const terminalStatus = ['CANCELLED', 'EXPIRED'].includes(providerStatus);
-                    const shouldStrictDowngrade = env.SUBSCRIPTION_STRICT_DOWNGRADE === 'true'
-                        && providerStatus === 'SUSPENDED'
-                        && graceExpired;
-                    const shouldDowngradeDevOverridePeriod = hasMembershipDurationOverride()
-                        && graceExpired
-                        && !hasNewPayment;
+                    const shouldDowngradeSuspended = providerStatus === 'SUSPENDED' && graceExpired;
+                    const activeWithoutPaymentAfterGrace = providerStatus === 'ACTIVE' && graceExpired && !hasNewPayment;
 
-                    if (localSubscription.userId && graceExpired && (terminalStatus || shouldStrictDowngrade || shouldDowngradeDevOverridePeriod)) {
+                    if (activeWithoutPaymentAfterGrace) {
+                        await paymentSubscriptionCtr.markActionRequired(
+                            subscriptionId,
+                            'PayPal subscription is ACTIVE but no renewal payment was detected after the grace window.',
+                        );
+                        log.warn('[CRON] PayPal subscription active without a new payment after grace window; marked action required', {
+                            subscriptionId,
+                            userId: localSubscription.userId,
+                            graceUntil: graceUntil?.toISOString(),
+                        });
+                        continue;
+                    }
+
+                    if (localSubscription.userId && graceExpired && (terminalStatus || shouldDowngradeSuspended)) {
                         const downgraded = await downgradeUserToFree({
                             userId: localSubscription.userId,
                             providerSubscriptionId: subscriptionId,
@@ -799,7 +814,7 @@ export const cron = {
                                 providerStatus,
                                 graceUntil: graceUntil?.toISOString(),
                                 source: 'payment-subscription-reconciliation',
-                                membershipDurationOverride: shouldDowngradeDevOverridePeriod,
+                                billingPeriodEndAt: periodEnd?.toISOString(),
                             },
                         });
                         if (downgraded) {
@@ -922,6 +937,29 @@ export const cron = {
                     // IMPORTANT: If the PayPal API is unreachable, we SKIP the user rather than
                     // downgrade — this prevents mass downgrades during PayPal outages.
                     const hasPaidMemberRole = user.rolesIds?.includes(paidRoleId);
+                    if (hasPaidMemberRole) {
+                        const localSubscription = await paymentSubscriptionCtr.findLatestPayPalSubscriptionForUser(user.id);
+                        if (localSubscription?.providerSubscriptionId) {
+                            const graceUntil = localSubscription.graceUntil
+                                ? new Date(localSubscription.graceUntil)
+                                : null;
+                            if (graceUntil && graceUntil > now) {
+                                log.info(`[CRON] Skipping membershipMaintenance downgrade for PayPal-linked user ${user.id}; access valid until grace window`, {
+                                    subscriptionId: localSubscription.providerSubscriptionId,
+                                    graceUntil,
+                                });
+                                continue;
+                            }
+
+                            await paymentSubscriptionCtr.scheduleReconciliationNow(localSubscription.providerSubscriptionId);
+                            log.info(`[CRON] Skipping membershipMaintenance downgrade for PayPal-linked user ${user.id}; queued subscription reconciliation`, {
+                                subscriptionId: localSubscription.providerSubscriptionId,
+                                graceUntil,
+                            });
+                            continue;
+                        }
+                    }
+
                     if (hasPaidMemberRole && !user.membershipCancelled) {
                         try {
                             const subscriptionLink = await findLatestPayPalSubscriptionForUser(user.id);

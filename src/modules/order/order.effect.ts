@@ -16,6 +16,7 @@ import {
     E_MembershipEntitlementChangeReason,
     E_MembershipEntitlementChangeSource,
 } from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
+import { getPaymentSubscriptionGraceMinutes } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
@@ -37,6 +38,7 @@ interface I_OrderPaidEffectsOptions {
     effectKey?: string | null;
     membershipPeriodStartAt?: Date | string | null;
     membershipPeriodEndAt?: Date | string | null;
+    membershipAccessUntilAt?: Date | string | null;
     source?: E_MembershipEntitlementChangeSource;
     reason?: E_MembershipEntitlementChangeReason;
     paymentRequestId?: string | null;
@@ -144,10 +146,11 @@ async function extendMembershipByOneMonth(
     }
     const explicitPeriodStart = normalizeDate(options.membershipPeriodStartAt);
     const explicitPeriodEnd = normalizeDate(options.membershipPeriodEndAt);
-    const overrideExpiry = !explicitPeriodEnd && hasMembershipDurationOverride()
+    const explicitAccessUntil = normalizeDate(options.membershipAccessUntilAt);
+    const overrideExpiry = !explicitPeriodEnd && !explicitAccessUntil && hasMembershipDurationOverride()
         ? calculateMembershipExpiry(explicitPeriodStart ?? now)
         : null;
-    const newExpiry = overrideExpiry ?? explicitPeriodEnd ?? calculateMembershipExpiry(baseDate);
+    const newExpiry = explicitAccessUntil ?? overrideExpiry ?? explicitPeriodEnd ?? calculateMembershipExpiry(baseDate);
 
     const paidRoleId = await ensurePaidRole(context, user);
     const [freeMemberRoleId, promoRoleId] = await Promise.all([
@@ -273,6 +276,11 @@ async function extendMembershipByOneMonth(
             metadata: {
                 membershipPeriodStartAt: normalizeDate(options.membershipPeriodStartAt)?.toISOString(),
                 membershipPeriodEndAt: explicitPeriodEnd?.toISOString(),
+                billingPeriodEndAt: explicitPeriodEnd?.toISOString(),
+                accessUntilAt: explicitAccessUntil?.toISOString(),
+                graceMinutes: explicitAccessUntil && explicitPeriodEnd
+                    ? getPaymentSubscriptionGraceMinutes()
+                    : undefined,
             },
         },
     }).catch((error: unknown) => {

@@ -19,7 +19,10 @@ import {
 } from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
-import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    paymentSubscriptionCtr,
+    resolvePaymentSubscriptionAccessUntil,
+} from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import {
     E_PaymentSubscriptionReplacementReason,
     E_PaymentSubscriptionSource,
@@ -312,6 +315,7 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                             effectKey: recoveredEffectKey,
                             membershipPeriodStartAt: getPayPalSubscriptionLastPayment(recoveredGatewayResponse).time,
                             membershipPeriodEndAt: getSubscriptionNextBillingTime(recoveredGatewayResponse),
+                            membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(recoveredGatewayResponse)),
                             source: E_MembershipEntitlementChangeSource.STATUS_POLL,
                             reason: E_MembershipEntitlementChangeReason.RENEWAL_PAYMENT,
                             paymentRequestId: recoveredPaymentRequest.success ? recoveredPaymentRequest.result?.id : undefined,
@@ -501,6 +505,9 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                                     : undefined,
                                 membershipPeriodEndAt: externalOrderId.startsWith('I-')
                                     ? getSubscriptionNextBillingTime(gatewayResponse)
+                                    : undefined,
+                                membershipAccessUntilAt: externalOrderId.startsWith('I-')
+                                    ? resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(gatewayResponse))
                                     : undefined,
                                 source: E_MembershipEntitlementChangeSource.STATUS_POLL,
                                 reason: meta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT

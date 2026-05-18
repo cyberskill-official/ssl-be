@@ -17,7 +17,10 @@ import { paymentGatewayEventCtr } from '#modules/payment/payment-gateway-event/i
 import { E_PaymentGatewayEventProcessingStatus, E_PaymentGatewayEventVerificationStatus } from '#modules/payment/payment-gateway-event/payment-gateway-event.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
-import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    paymentSubscriptionCtr,
+    resolvePaymentSubscriptionAccessUntil,
+} from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import {
     E_PaymentSubscriptionReplacementReason,
     E_PaymentSubscriptionSource,
@@ -580,6 +583,7 @@ async function handlePaymentSaleCompleted(resource: any) {
                         effectKey,
                         membershipPeriodStartAt: getPayPalSubscriptionLastPayment(subscriptionSnapshot).time ?? resource?.create_time,
                         membershipPeriodEndAt: getSubscriptionNextBillingTime(subscriptionSnapshot),
+                        membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(subscriptionSnapshot)),
                         source: E_MembershipEntitlementChangeSource.WEBHOOK,
                         reason: paymentRequestMeta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                             ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT
