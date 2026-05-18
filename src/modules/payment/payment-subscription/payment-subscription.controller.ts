@@ -3,7 +3,7 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
-import { addDays, addMinutes } from 'date-fns';
+import { addDays, addMinutes, addMonths, addWeeks, addYears } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -33,6 +33,9 @@ const BILLABLE_STATUSES = [
 ];
 
 function toDate(value: unknown): Date | undefined {
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? undefined : value;
+    }
     if (!value || typeof value !== 'string') {
         return undefined;
     }
@@ -103,6 +106,86 @@ export function resolvePaymentSubscriptionAccessUntil(periodEnd?: Date | string 
     return addMinutes(periodEndDate, getPaymentSubscriptionGraceMinutes());
 }
 
+function getMetaBoolean(meta: Record<string, unknown> | null | undefined, key: string): boolean {
+    const value = meta?.[key];
+    return value === true || value === 'true';
+}
+
+function getMetaDate(meta: Record<string, unknown> | null | undefined, key: string): Date | undefined {
+    return toDate(meta?.[key]);
+}
+
+function addConfiguredBillingCycle(baseDate: Date): Date {
+    const intervalUnit = env.PAYPAL_SUBSCRIPTION_INTERVAL_UNIT;
+    const intervalCount = Math.max(1, Math.floor(env.PAYPAL_SUBSCRIPTION_INTERVAL_COUNT));
+
+    switch (intervalUnit) {
+        case 'DAY':
+            return addDays(baseDate, intervalCount);
+        case 'WEEK':
+            return addWeeks(baseDate, intervalCount);
+        case 'YEAR':
+            return addYears(baseDate, intervalCount);
+        case 'MONTH':
+        default:
+            return addMonths(baseDate, intervalCount);
+    }
+}
+
+function maxDate(...values: Array<Date | undefined>): Date | undefined {
+    return values.filter(Boolean).reduce<Date | undefined>((latest, value) => {
+        if (!value) {
+            return latest;
+        }
+        if (!latest || value > latest) {
+            return value;
+        }
+        return latest;
+    }, undefined);
+}
+
+export function resolvePaymentSubscriptionPeriodWindow(
+    providerSnapshot?: Record<string, unknown> | null,
+    meta?: Record<string, unknown> | null,
+): {
+    rawNextBillingAt?: Date;
+    billingPeriodEndAt?: Date;
+    accessUntilAt?: Date;
+    startTime?: Date;
+    billingAnchorAt?: Date;
+    expectedPeriodEndAt?: Date;
+    usesSetupFeePlan: boolean;
+    paypalNextBillingAdjusted: boolean;
+} {
+    const snapshot = providerSnapshot ?? undefined;
+    const rawNextBillingAt = getNestedDate(snapshot, ['billing_info', 'next_billing_time']);
+    const startTime = getNestedDate(snapshot, ['start_time']) ?? getMetaDate(meta, 'subscriptionStartTime');
+    const billingAnchorAt = getMetaDate(meta, 'billingAnchorAt');
+    const expectedPeriodEndAt = getMetaDate(meta, 'projectedEntitlementEndAt')
+        ?? startTime
+        ?? (billingAnchorAt ? addConfiguredBillingCycle(billingAnchorAt) : undefined);
+    const usesSetupFeePlan = getMetaBoolean(meta, 'usesSetupFeePlan');
+    const protectedPeriodEndAt = usesSetupFeePlan ? expectedPeriodEndAt : undefined;
+    const billingPeriodEndAt = maxDate(rawNextBillingAt, protectedPeriodEndAt);
+    const paypalNextBillingAdjusted = Boolean(
+        usesSetupFeePlan
+        && rawNextBillingAt
+        && protectedPeriodEndAt
+        && rawNextBillingAt < protectedPeriodEndAt,
+    );
+
+    return {
+        rawNextBillingAt,
+        billingPeriodEndAt,
+        accessUntilAt: resolvePaymentSubscriptionAccessUntil(billingPeriodEndAt),
+        startTime,
+        billingAnchorAt,
+        expectedPeriodEndAt: protectedPeriodEndAt,
+        usesSetupFeePlan,
+        paypalNextBillingAdjusted,
+    };
+}
+
 function resolveLocalOverridePeriodEnd(lastPaidAt?: Date): Date | undefined {
     if (!lastPaidAt) {
         return undefined;
@@ -165,7 +248,8 @@ export const paymentSubscriptionCtr = {
         const providerStatus = getProviderStatus(providerSnapshot, input.providerStatus);
         const startTime = getNestedDate(providerSnapshot, ['start_time']);
         const lastPaidAt = getNestedDate(providerSnapshot, ['billing_info', 'last_payment', 'time']);
-        const nextBillingAt = getNestedDate(providerSnapshot, ['billing_info', 'next_billing_time']);
+        const periodWindow = resolvePaymentSubscriptionPeriodWindow(providerSnapshot, input.meta);
+        const nextBillingAt = periodWindow.billingPeriodEndAt;
         const currentPeriodStartAt = lastPaidAt ?? startTime;
         const localOverridePeriodEndAt = nextBillingAt ? undefined : resolveLocalOverridePeriodEnd(lastPaidAt);
         const currentPeriodEndAt = nextBillingAt ?? localOverridePeriodEndAt;
@@ -175,7 +259,18 @@ export const paymentSubscriptionCtr = {
             startTime,
             lastPaidAt,
         });
-        const graceUntil = resolvePaymentSubscriptionAccessUntil(currentPeriodEndAt);
+        const graceUntil = periodWindow.accessUntilAt ?? resolvePaymentSubscriptionAccessUntil(currentPeriodEndAt);
+        const normalizedMeta = input.meta
+            ? {
+                ...input.meta,
+                ...(periodWindow.usesSetupFeePlan && {
+                    rawPayPalNextBillingAt: periodWindow.rawNextBillingAt?.toISOString(),
+                    expectedBillingPeriodEndAt: periodWindow.expectedPeriodEndAt?.toISOString(),
+                    normalizedBillingPeriodEndAt: currentPeriodEndAt?.toISOString(),
+                    paypalNextBillingAdjusted: periodWindow.paypalNextBillingAdjusted,
+                }),
+            }
+            : undefined;
         const nextReconcileAt = resolveNextReconcileAt({
             status,
             nextBillingAt,
@@ -208,7 +303,7 @@ export const paymentSubscriptionCtr = {
                 lastCheckedAt: new Date(),
                 source: input.source ?? E_PaymentSubscriptionSource.CHECKOUT,
                 ...(providerSnapshot && { providerSnapshot }),
-                ...(input.meta && { meta: input.meta }),
+                ...(normalizedMeta && { meta: normalizedMeta }),
             },
             $unset: {
                 lastError: '',

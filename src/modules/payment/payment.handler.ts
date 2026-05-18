@@ -21,7 +21,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import {
     paymentSubscriptionCtr,
-    resolvePaymentSubscriptionAccessUntil,
+    resolvePaymentSubscriptionPeriodWindow,
 } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import {
     E_PaymentSubscriptionReplacementReason,
@@ -61,11 +61,6 @@ function syncPaymentSessionUser(req: Request, orderUserId: string | undefined, l
     if (typeof latestUser['freeEventCount'] === 'number') {
         sessionUser['freeEventCount'] = latestUser['freeEventCount'];
     }
-}
-
-function getSubscriptionNextBillingTime(subscription: Record<string, any> | null | undefined): string | null {
-    const value = subscription?.['billing_info']?.['next_billing_time'];
-    return typeof value === 'string' ? value : null;
 }
 
 async function cancelReplacedSubscriptionAfterSuccess(
@@ -311,11 +306,14 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                         populate: [{ path: 'pricing', populate: [{ path: 'currency' }, { path: 'country' }] }],
                     });
                     if (fullOrder.success && fullOrder.result) {
+                        const periodWindow = recoveredOrderType === E_OrderType.SUBSCRIPTION
+                            ? resolvePaymentSubscriptionPeriodWindow(recoveredGatewayResponse)
+                            : null;
                         await applyOrderPaidEffects(context, fullOrder.result, {
                             effectKey: recoveredEffectKey,
                             membershipPeriodStartAt: getPayPalSubscriptionLastPayment(recoveredGatewayResponse).time,
-                            membershipPeriodEndAt: getSubscriptionNextBillingTime(recoveredGatewayResponse),
-                            membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(recoveredGatewayResponse)),
+                            membershipPeriodEndAt: periodWindow?.billingPeriodEndAt,
+                            membershipAccessUntilAt: periodWindow?.accessUntilAt,
                             source: E_MembershipEntitlementChangeSource.STATUS_POLL,
                             reason: E_MembershipEntitlementChangeReason.RENEWAL_PAYMENT,
                             paymentRequestId: recoveredPaymentRequest.success ? recoveredPaymentRequest.result?.id : undefined,
@@ -410,6 +408,7 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                                 : undefined,
                             source: E_PaymentSubscriptionSource.STATUS_POLL,
                             providerSnapshot: gatewayResponse,
+                            meta: meta ?? undefined,
                         });
                         const normalized = String(rawStatus || '').toUpperCase();
                         if (normalized === 'ACTIVE') {
@@ -498,17 +497,16 @@ mainRouter.get('/payment/paypal/status', async (req, res, next) => {
                             ],
                         });
                         if (fullOrderRes.success && fullOrderRes.result) {
+                            const periodWindow = externalOrderId.startsWith('I-')
+                                ? resolvePaymentSubscriptionPeriodWindow(gatewayResponse, meta)
+                                : null;
                             await applyOrderPaidEffects(context, fullOrderRes.result, {
                                 effectKey,
                                 membershipPeriodStartAt: externalOrderId.startsWith('I-')
                                     ? getPayPalSubscriptionLastPayment(gatewayResponse).time
                                     : undefined,
-                                membershipPeriodEndAt: externalOrderId.startsWith('I-')
-                                    ? getSubscriptionNextBillingTime(gatewayResponse)
-                                    : undefined,
-                                membershipAccessUntilAt: externalOrderId.startsWith('I-')
-                                    ? resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(gatewayResponse))
-                                    : undefined,
+                                membershipPeriodEndAt: periodWindow?.billingPeriodEndAt,
+                                membershipAccessUntilAt: periodWindow?.accessUntilAt,
                                 source: E_MembershipEntitlementChangeSource.STATUS_POLL,
                                 reason: meta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                                     ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT

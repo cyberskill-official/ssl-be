@@ -28,7 +28,7 @@ import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment
 import { findLatestPayPalSubscriptionForUser } from '#modules/payment/payment-subscription-link.service.js';
 import {
     paymentSubscriptionCtr,
-    resolvePaymentSubscriptionAccessUntil,
+    resolvePaymentSubscriptionPeriodWindow,
 } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import {
     E_PaymentSubscriptionReplacementReason,
@@ -101,11 +101,6 @@ function computeEventEndDateTime(event: I_Event): Date | null {
         seconds: 0,
         milliseconds: 0,
     });
-}
-
-function getSubscriptionNextBillingTime(subscription: Record<string, any> | null | undefined): string | null {
-    const value = subscription?.['billing_info']?.['next_billing_time'];
-    return typeof value === 'string' ? value : null;
 }
 
 async function downgradeUserToFree(args: {
@@ -665,6 +660,10 @@ export const cron = {
                     }
 
                     const paypalSubscription = subRes.result as Record<string, any>;
+                    const periodWindow = resolvePaymentSubscriptionPeriodWindow(
+                        paypalSubscription,
+                        localSubscription.meta as Record<string, unknown> | null | undefined,
+                    );
                     const providerStatus = typeof paypalSubscription['status'] === 'string'
                         ? paypalSubscription['status'].toUpperCase()
                         : '';
@@ -697,6 +696,7 @@ export const cron = {
                         replacesSubscriptionId: localSubscription.replacesSubscriptionId,
                         replacementReason: localSubscription.replacementReason,
                         source: E_PaymentSubscriptionSource.RECONCILIATION,
+                        meta: localSubscription.meta as Record<string, unknown> | undefined,
                         providerSnapshot: paypalSubscription,
                     });
                     const refreshedSubscription = subscriptionUpsertRes.success && subscriptionUpsertRes.result
@@ -749,8 +749,8 @@ export const cron = {
                                 await applyOrderPaidEffects({}, refreshedOrderRes.result, {
                                     effectKey,
                                     membershipPeriodStartAt: lastPayment.time,
-                                    membershipPeriodEndAt: getSubscriptionNextBillingTime(paypalSubscription),
-                                    membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(paypalSubscription)),
+                                    membershipPeriodEndAt: periodWindow.billingPeriodEndAt,
+                                    membershipAccessUntilAt: periodWindow.accessUntilAt,
                                     source: E_MembershipEntitlementChangeSource.RECONCILIATION,
                                     reason: localSubscription.replacementReason === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                                         ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT

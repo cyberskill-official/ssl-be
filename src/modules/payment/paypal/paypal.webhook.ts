@@ -19,7 +19,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import {
     paymentSubscriptionCtr,
-    resolvePaymentSubscriptionAccessUntil,
+    resolvePaymentSubscriptionPeriodWindow,
 } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
 import {
     E_PaymentSubscriptionReplacementReason,
@@ -130,11 +130,6 @@ async function updateGatewayEvent(eventId: string | null | undefined, update: Re
     catch (error) {
         log.warn('[PayPal Webhook] Failed to update payment gateway event audit record', { eventId, error });
     }
-}
-
-function getSubscriptionNextBillingTime(subscription: Record<string, any> | null | undefined): string | null {
-    const value = subscription?.['billing_info']?.['next_billing_time'];
-    return typeof value === 'string' ? value : null;
 }
 
 async function fetchSubscriptionSnapshot(subscriptionId: string, fallback: Record<string, any>): Promise<Record<string, any>> {
@@ -388,6 +383,7 @@ async function handleSubscriptionActivated(resource: any) {
                     ? E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                     : undefined,
                 source: E_PaymentSubscriptionSource.WEBHOOK,
+                meta: meta ?? undefined,
                 providerSnapshot: subscriptionSnapshot,
             });
 
@@ -494,6 +490,7 @@ async function handlePaymentSaleCompleted(resource: any) {
             ? E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
             : undefined,
         source: E_PaymentSubscriptionSource.WEBHOOK,
+        meta: paymentRequestMeta ?? undefined,
         providerSnapshot: subscriptionSnapshot,
     });
 
@@ -579,11 +576,12 @@ async function handlePaymentSaleCompleted(resource: any) {
             const orderRes = await orderCtr.getOrder({} as any, { filter: { id: orderId } });
             if (orderRes.success && orderRes.result) {
                 if (!isDuplicateSaleEvent) {
+                    const periodWindow = resolvePaymentSubscriptionPeriodWindow(subscriptionSnapshot, paymentRequestMeta);
                     await applyOrderPaidEffects({} as any, orderRes.result, {
                         effectKey,
                         membershipPeriodStartAt: getPayPalSubscriptionLastPayment(subscriptionSnapshot).time ?? resource?.create_time,
-                        membershipPeriodEndAt: getSubscriptionNextBillingTime(subscriptionSnapshot),
-                        membershipAccessUntilAt: resolvePaymentSubscriptionAccessUntil(getSubscriptionNextBillingTime(subscriptionSnapshot)),
+                        membershipPeriodEndAt: periodWindow.billingPeriodEndAt,
+                        membershipAccessUntilAt: periodWindow.accessUntilAt,
                         source: E_MembershipEntitlementChangeSource.WEBHOOK,
                         reason: paymentRequestMeta?.['replacementReason'] === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
                             ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT
@@ -1020,6 +1018,7 @@ async function handleSubscriptionCancelled(resource: any) {
     let customId = resource.custom_id;
     let paymentRequestId: string | null = null;
     let orderId: string | null = null;
+    let meta: Record<string, unknown> | null | undefined;
 
     if (subscriptionId) {
         const prRes = await paymentRequestCtr.getPaymentRequest({} as any, {
@@ -1027,7 +1026,7 @@ async function handleSubscriptionCancelled(resource: any) {
         });
 
         if (prRes.success && prRes.result) {
-            const meta = prRes.result.meta as Record<string, unknown> | null | undefined;
+            meta = prRes.result.meta as Record<string, unknown> | null | undefined;
             paymentRequestId = prRes.result.id ?? null;
             customId = customId || (typeof meta?.['userId'] === 'string' ? meta['userId'] : undefined);
             orderId = typeof meta?.['orderId'] === 'string' ? meta['orderId'] : null;
@@ -1053,6 +1052,7 @@ async function handleSubscriptionCancelled(resource: any) {
             paymentRequestId: paymentRequestId ?? undefined,
             orderId: orderId ?? undefined,
             source: E_PaymentSubscriptionSource.WEBHOOK,
+            meta: meta ?? undefined,
             providerSnapshot: resource,
         });
     }
@@ -1107,6 +1107,7 @@ async function handleSubscriptionSuspended(resource: any) {
         paymentRequestId: prRes.success ? prRes.result?.id : undefined,
         orderId: typeof meta?.['orderId'] === 'string' ? meta['orderId'] : undefined,
         source: E_PaymentSubscriptionSource.WEBHOOK,
+        meta: meta ?? undefined,
         providerSnapshot: resource,
     });
 }
