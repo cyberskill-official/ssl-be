@@ -21,7 +21,7 @@ const USER_APP_BASE_URL = (() => {
 })();
 
 const LOGO_URL = env.EMAIL_LOGO_URL?.trim()
-    || 'https://ssl-development.b-cdn.net/LOGO/Logo_secretswingerlust_white.png';
+    || 'https://ssl-development.b-cdn.net/LOGO/SecretswingerlustlogoRwhite.webp';
 
 /**
  * Generate email template with Secret® trademark guidelines

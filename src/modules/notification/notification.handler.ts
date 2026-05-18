@@ -21,7 +21,7 @@ const EMAIL_LOGO_URL = (() => {
     if (raw) {
         return raw;
     }
-    return `https://ssl-development.b-cdn.net/LOGO/Logo_secretswingerlust_white.png`;
+    return `https://ssl-development.b-cdn.net/LOGO/SecretswingerlustlogoRwhite.webp`;
 })();
 
 export function sanitizeSlug(value?: string | null): string | undefined {

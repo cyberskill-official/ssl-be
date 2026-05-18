@@ -29,7 +29,7 @@ const USER_APP_BASE_URL = (() => {
 })();
 
 const NEW_LOGO_URL = env.EMAIL_LOGO_URL?.trim()
-    || 'https://ssl-development.b-cdn.net/LOGO/Logo_secretswingerlust_white.png';
+    || 'https://ssl-development.b-cdn.net/LOGO/SecretswingerlustlogoRwhite.webp';
 
 /**
  * Generate email template with consistent design (same as original migration)
