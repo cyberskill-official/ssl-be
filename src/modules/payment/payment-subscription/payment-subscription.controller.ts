@@ -156,8 +156,8 @@ export const paymentSubscriptionCtr = {
         const lastPaidAt = getNestedDate(providerSnapshot, ['billing_info', 'last_payment', 'time']);
         const nextBillingAt = getNestedDate(providerSnapshot, ['billing_info', 'next_billing_time']);
         const currentPeriodStartAt = lastPaidAt ?? startTime;
-        const localOverridePeriodEndAt = resolveLocalOverridePeriodEnd(lastPaidAt);
-        const currentPeriodEndAt = localOverridePeriodEndAt ?? nextBillingAt;
+        const localOverridePeriodEndAt = nextBillingAt ? undefined : resolveLocalOverridePeriodEnd(lastPaidAt);
+        const currentPeriodEndAt = nextBillingAt ?? localOverridePeriodEndAt;
         const status = resolveLocalStatus({
             explicitStatus: input.status,
             providerStatus,

@@ -14,7 +14,6 @@ import { countryCtr } from '#modules/location/country/country.controller.js';
 import { currencyCtr } from '#modules/location/currency/index.js';
 import { stateCtr } from '#modules/location/state/state.controller.js';
 import orderCtr from '#modules/order/order.controller.js';
-import { calculateMembershipExpiry } from '#modules/order/order.effect.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
@@ -75,9 +74,16 @@ async function createAndStorePayPalPlan(
         });
     }
 
+    const billingCycle = paypalSetupService.getConfiguredBillingCycle();
     await PricingModel.updateOne(
         { id: pricing.id },
-        { $set: { paypalPlanId: planSetup.id } },
+        {
+            $set: {
+                paypalPlanId: planSetup.id,
+                paypalPlanIntervalUnit: billingCycle.intervalUnit,
+                paypalPlanIntervalCount: billingCycle.intervalCount,
+            },
+        },
     );
     log.success(`[Payment] Dynamically created and linked PayPal Plan ${planSetup.id} to pricing ${pricing.id}`);
 
@@ -111,9 +117,16 @@ async function createAndStorePayPalTopUpPlan(
         });
     }
 
+    const billingCycle = paypalSetupService.getConfiguredBillingCycle();
     await PricingModel.updateOne(
         { id: pricing.id },
-        { $set: { paypalTopUpPlanId: planSetup.id } },
+        {
+            $set: {
+                paypalTopUpPlanId: planSetup.id,
+                paypalTopUpPlanIntervalUnit: billingCycle.intervalUnit,
+                paypalTopUpPlanIntervalCount: billingCycle.intervalCount,
+            },
+        },
     );
     log.success(`[Payment] Dynamically created and linked PayPal Top-up Plan ${planSetup.id} to pricing ${pricing.id}`);
 
@@ -123,6 +136,30 @@ async function createAndStorePayPalTopUpPlan(
 function isInvalidPayPalPlanResponse(response: I_Return<unknown>): boolean {
     const message = response.message ?? '';
     return response.code === 404 && INVALID_PAYPAL_PLAN_RESPONSE_REGEX.test(message);
+}
+
+function getCachedPayPalPlanId(pricing: I_Pricing, isTopUpReplacement: boolean): string | undefined {
+    const planId = isTopUpReplacement ? pricing.paypalTopUpPlanId : pricing.paypalPlanId;
+    if (!planId) {
+        return undefined;
+    }
+
+    const billingCycle = paypalSetupService.getConfiguredBillingCycle();
+    const cachedIntervalUnit = isTopUpReplacement
+        ? pricing.paypalTopUpPlanIntervalUnit
+        : pricing.paypalPlanIntervalUnit;
+    const cachedIntervalCount = isTopUpReplacement
+        ? pricing.paypalTopUpPlanIntervalCount
+        : pricing.paypalPlanIntervalCount;
+
+    if (!cachedIntervalUnit && !cachedIntervalCount) {
+        return paypalSetupService.isDefaultBillingCycle() ? planId : undefined;
+    }
+
+    return cachedIntervalUnit === billingCycle.intervalUnit
+        && cachedIntervalCount === billingCycle.intervalCount
+        ? planId
+        : undefined;
 }
 
 function getActiveMembershipExpiry(currentUser: { membershipExpiresAt?: Date | string | null }): Date | null {
@@ -609,7 +646,7 @@ export const paymentController = {
                 if (activeMembershipExpiry && billableSubscription?.providerSubscriptionId) {
                     replacesSubscriptionId = billableSubscription.providerSubscriptionId;
                     replacementReason = E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT;
-                    projectedEntitlementEndAt = calculateMembershipExpiry(activeMembershipExpiry);
+                    projectedEntitlementEndAt = paypalSetupService.addConfiguredBillingCycle(activeMembershipExpiry);
                     subscriptionStartTime = projectedEntitlementEndAt;
                 }
                 else if (activeMembershipExpiry) {
@@ -617,7 +654,7 @@ export const paymentController = {
                     subscriptionStartTime = activeMembershipExpiry;
                 }
 
-                let paypalPlanId = isTopUpReplacement ? pricing.paypalTopUpPlanId : pricing.paypalPlanId;
+                let paypalPlanId = getCachedPayPalPlanId(pricing, isTopUpReplacement);
 
                 // Dynamic/Lazy Setup: If Plan ID is missing, create it on-the-fly
                 if (!paypalPlanId) {

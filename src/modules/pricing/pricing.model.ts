@@ -44,8 +44,20 @@ export const PricingModel = mongo.createModel<I_Pricing>({
         paypalPlanId: {
             type: String,
         },
+        paypalPlanIntervalUnit: {
+            type: String,
+        },
+        paypalPlanIntervalCount: {
+            type: Number,
+        },
         paypalTopUpPlanId: {
             type: String,
+        },
+        paypalTopUpPlanIntervalUnit: {
+            type: String,
+        },
+        paypalTopUpPlanIntervalCount: {
+            type: Number,
         },
     },
     virtuals: [

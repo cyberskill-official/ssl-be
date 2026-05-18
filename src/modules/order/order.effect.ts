@@ -144,7 +144,7 @@ async function extendMembershipByOneMonth(
     }
     const explicitPeriodStart = normalizeDate(options.membershipPeriodStartAt);
     const explicitPeriodEnd = normalizeDate(options.membershipPeriodEndAt);
-    const overrideExpiry = hasMembershipDurationOverride()
+    const overrideExpiry = !explicitPeriodEnd && hasMembershipDurationOverride()
         ? calculateMembershipExpiry(explicitPeriodStart ?? now)
         : null;
     const newExpiry = overrideExpiry ?? explicitPeriodEnd ?? calculateMembershipExpiry(baseDate);

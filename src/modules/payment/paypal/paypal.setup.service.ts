@@ -1,6 +1,9 @@
 import { log } from '@cyberskill/shared/node/log';
+import { addDays, addMonths, addWeeks, addYears } from 'date-fns';
 
 import type { I_Context } from '#shared/typescript/index.js';
+
+import { getEnv } from '#shared/env/index.js';
 
 import { paypalCtr } from './paypal.controller.js';
 import {
@@ -15,7 +18,64 @@ interface I_PayPalSetupResult {
     error?: string;
 }
 
+export interface I_PayPalSubscriptionBillingCycle {
+    intervalUnit: E_PayPalIntervalUnit;
+    intervalCount: number;
+}
+
+const env = getEnv();
+
+function getConfiguredBillingCycle(): I_PayPalSubscriptionBillingCycle {
+    const intervalUnit = env.PAYPAL_SUBSCRIPTION_INTERVAL_UNIT as E_PayPalIntervalUnit;
+    const intervalCount = Math.max(1, Math.floor(env.PAYPAL_SUBSCRIPTION_INTERVAL_COUNT));
+
+    return {
+        intervalUnit,
+        intervalCount,
+    };
+}
+
+function getBillingCycleLabel({ intervalUnit, intervalCount }: I_PayPalSubscriptionBillingCycle): string {
+    if (intervalCount === 1) {
+        switch (intervalUnit) {
+            case E_PayPalIntervalUnit.DAY:
+                return 'Daily';
+            case E_PayPalIntervalUnit.WEEK:
+                return 'Weekly';
+            case E_PayPalIntervalUnit.MONTH:
+                return 'Monthly';
+            case E_PayPalIntervalUnit.YEAR:
+                return 'Yearly';
+        }
+    }
+
+    return `Every ${intervalCount} ${intervalUnit.toLowerCase()}s`;
+}
+
+function addConfiguredBillingCycle(baseDate: Date): Date {
+    const { intervalUnit, intervalCount } = getConfiguredBillingCycle();
+
+    switch (intervalUnit) {
+        case E_PayPalIntervalUnit.DAY:
+            return addDays(baseDate, intervalCount);
+        case E_PayPalIntervalUnit.WEEK:
+            return addWeeks(baseDate, intervalCount);
+        case E_PayPalIntervalUnit.MONTH:
+            return addMonths(baseDate, intervalCount);
+        case E_PayPalIntervalUnit.YEAR:
+            return addYears(baseDate, intervalCount);
+    }
+}
+
 export const paypalSetupService = {
+    getConfiguredBillingCycle,
+    addConfiguredBillingCycle,
+
+    isDefaultBillingCycle(): boolean {
+        const cycle = getConfiguredBillingCycle();
+        return cycle.intervalUnit === E_PayPalIntervalUnit.MONTH && cycle.intervalCount === 1;
+    },
+
     /**
      * Finds or creates a standard Membership product on PayPal
      */
@@ -63,7 +123,9 @@ export const paypalSetupService = {
         currency: string,
     ): Promise<I_PayPalSetupResult> {
         const targetPrice = price.toFixed(2);
-        const planName = `Monthly Membership ${targetPrice} ${currency}`;
+        const billingCycle = getConfiguredBillingCycle();
+        const billingCycleLabel = getBillingCycleLabel(billingCycle);
+        const planName = `${billingCycleLabel} Membership ${targetPrice} ${currency}`;
 
         // 1. Try to find existing plan under this product
         const listRes = await paypalCtr.listPlans(context, { productId });
@@ -72,8 +134,8 @@ export const paypalSetupService = {
                 const cycle = p.billing_cycles?.[0];
                 return cycle?.pricing_scheme?.fixed_price?.value === targetPrice
                     && cycle?.pricing_scheme?.fixed_price?.currency_code === currency
-                    && cycle?.frequency?.interval_unit === E_PayPalIntervalUnit.MONTH
-                    && cycle?.frequency?.interval_count === 1
+                    && cycle?.frequency?.interval_unit === billingCycle.intervalUnit
+                    && cycle?.frequency?.interval_count === billingCycle.intervalCount
                     && p.status === 'ACTIVE';
             });
 
@@ -84,16 +146,16 @@ export const paypalSetupService = {
         }
 
         // 2. Create if not found
-        log.info(`[PayPal Setup] Monthly plan "${planName}" not found, creating...`);
+        log.info(`[PayPal Setup] ${billingCycleLabel} plan "${planName}" not found, creating...`);
         const createRes = await paypalCtr.createPlan(context, {
             product_id: productId,
             name: planName,
-            description: `Monthly membership at ${targetPrice} ${currency} every month`,
+            description: `${billingCycleLabel} membership at ${targetPrice} ${currency}`,
             billing_cycles: [
                 {
                     frequency: {
-                        interval_unit: E_PayPalIntervalUnit.MONTH,
-                        interval_count: 1,
+                        interval_unit: billingCycle.intervalUnit,
+                        interval_count: billingCycle.intervalCount,
                     },
                     tenure_type: E_PayPalTenureType.REGULAR,
                     sequence: 1,
@@ -136,7 +198,9 @@ export const paypalSetupService = {
         currency: string,
     ): Promise<I_PayPalSetupResult> {
         const targetPrice = price.toFixed(2);
-        const planName = `Monthly Membership Top-up ${targetPrice} ${currency}`;
+        const billingCycle = getConfiguredBillingCycle();
+        const billingCycleLabel = getBillingCycleLabel(billingCycle);
+        const planName = `${billingCycleLabel} Membership Top-up ${targetPrice} ${currency}`;
 
         const listRes = await paypalCtr.listPlans(context, { productId });
         if (listRes.success && listRes.result?.plans) {
@@ -145,8 +209,8 @@ export const paypalSetupService = {
                 return p.name === planName
                     && cycle?.pricing_scheme?.fixed_price?.value === targetPrice
                     && cycle?.pricing_scheme?.fixed_price?.currency_code === currency
-                    && cycle?.frequency?.interval_unit === E_PayPalIntervalUnit.MONTH
-                    && cycle?.frequency?.interval_count === 1
+                    && cycle?.frequency?.interval_unit === billingCycle.intervalUnit
+                    && cycle?.frequency?.interval_count === billingCycle.intervalCount
                     && p.payment_preferences?.setup_fee?.value === targetPrice
                     && p.payment_preferences?.setup_fee?.currency_code === currency
                     && p.status === 'ACTIVE';
@@ -158,16 +222,16 @@ export const paypalSetupService = {
             }
         }
 
-        log.info(`[PayPal Setup] Monthly top-up plan "${planName}" not found, creating...`);
+        log.info(`[PayPal Setup] ${billingCycleLabel} top-up plan "${planName}" not found, creating...`);
         const createRes = await paypalCtr.createPlan(context, {
             product_id: productId,
             name: planName,
-            description: `Monthly membership top-up at ${targetPrice} ${currency}; setup fee charges the added period immediately`,
+            description: `${billingCycleLabel} membership top-up at ${targetPrice} ${currency}; setup fee charges the added period immediately`,
             billing_cycles: [
                 {
                     frequency: {
-                        interval_unit: E_PayPalIntervalUnit.MONTH,
-                        interval_count: 1,
+                        interval_unit: billingCycle.intervalUnit,
+                        interval_count: billingCycle.intervalCount,
                     },
                     tenure_type: E_PayPalTenureType.REGULAR,
                     sequence: 1,
