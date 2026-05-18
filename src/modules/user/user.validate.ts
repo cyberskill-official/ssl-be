@@ -50,13 +50,14 @@ function signProfileImage(
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }
 
-    // Case 2: All logged-in users (free or paid) can see profile pictures clearly
-    // This allows free users to browse the platform and see who's available
-    // Gallery photos remain blurred for free members (handled in gallery.controller.ts)
-    // Business requirement: Free users must see profile pictures to encourage platform exploration
+    // Case 2: ALL visitors (paid, free, and unauthenticated) can see profile pictures clearly
+    // when the owner is age-verified. This is a platform-wide rule: profile pictures are
+    // always visible for age-verified users to encourage exploration.
+    // Gallery photos remain blurred for free/unauthenticated viewers (handled in gallery.controller.ts).
+    // Note: 'class=free' triggers CDN blur — use 'normal' for all non-owner viewers of profile images.
     const membershipClass = isOwner
         ? 'normal'
-        : (viewerIsPaidMember ? 'premium' : 'free');
+        : (viewerIsPaidMember ? 'premium' : 'normal');
 
     return bunnyCtr.generateSignedUrl({
         fullUrl: url,
