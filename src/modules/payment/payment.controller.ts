@@ -138,17 +138,17 @@ function isInvalidPayPalPlanResponse(response: I_Return<unknown>): boolean {
     return response.code === 404 && INVALID_PAYPAL_PLAN_RESPONSE_REGEX.test(message);
 }
 
-function getCachedPayPalPlanId(pricing: I_Pricing, isTopUpReplacement: boolean): string | undefined {
-    const planId = isTopUpReplacement ? pricing.paypalTopUpPlanId : pricing.paypalPlanId;
+function getCachedPayPalPlanId(pricing: I_Pricing, usesSetupFeePlan: boolean): string | undefined {
+    const planId = usesSetupFeePlan ? pricing.paypalTopUpPlanId : pricing.paypalPlanId;
     if (!planId) {
         return undefined;
     }
 
     const billingCycle = paypalSetupService.getConfiguredBillingCycle();
-    const cachedIntervalUnit = isTopUpReplacement
+    const cachedIntervalUnit = usesSetupFeePlan
         ? pricing.paypalTopUpPlanIntervalUnit
         : pricing.paypalPlanIntervalUnit;
-    const cachedIntervalCount = isTopUpReplacement
+    const cachedIntervalCount = usesSetupFeePlan
         ? pricing.paypalTopUpPlanIntervalCount
         : pricing.paypalPlanIntervalCount;
 
@@ -168,6 +168,14 @@ function getActiveMembershipExpiry(currentUser: { membershipExpiresAt?: Date | s
     }
     const expiry = new Date(currentUser.membershipExpiresAt);
     return expiry > new Date() ? expiry : null;
+}
+
+function normalizeValidDate(value?: Date | string | null): Date | null {
+    if (!value) {
+        return null;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export const paymentController = {
@@ -635,8 +643,11 @@ export const paymentController = {
             let replacesSubscriptionId: string | undefined;
             let replacementReason: E_PaymentSubscriptionReplacementReason | undefined;
             let isTopUpReplacement = false;
+            let usesSetupFeePlan = false;
+            let billingAnchorAt: Date | null = null;
 
             if (pricingType === E_PricingType.MEMBERSHIP) {
+                const purchaseAnchorAt = new Date();
                 const activeMembershipExpiry = getActiveMembershipExpiry(currentUser);
                 const billableSubscription = activeMembershipExpiry
                     ? await paymentSubscriptionCtr.findCurrentBillablePayPalSubscription(currentUser.id)
@@ -644,23 +655,35 @@ export const paymentController = {
 
                 isTopUpReplacement = Boolean(activeMembershipExpiry && billableSubscription?.providerSubscriptionId);
                 if (activeMembershipExpiry && billableSubscription?.providerSubscriptionId) {
+                    const currentBillingEnd = normalizeValidDate(billableSubscription.currentPeriodEndAt)
+                        ?? normalizeValidDate(billableSubscription.nextBillingAt)
+                        ?? activeMembershipExpiry;
                     replacesSubscriptionId = billableSubscription.providerSubscriptionId;
                     replacementReason = E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT;
-                    projectedEntitlementEndAt = paypalSetupService.addConfiguredBillingCycle(activeMembershipExpiry);
+                    projectedEntitlementEndAt = paypalSetupService.addConfiguredBillingCycle(currentBillingEnd);
                     subscriptionStartTime = projectedEntitlementEndAt;
+                    usesSetupFeePlan = true;
+                    billingAnchorAt = currentBillingEnd;
                 }
                 else if (activeMembershipExpiry) {
                     replacementReason = E_PaymentSubscriptionReplacementReason.INITIAL_FUTURE_START;
                     subscriptionStartTime = activeMembershipExpiry;
+                    billingAnchorAt = activeMembershipExpiry;
+                }
+                else {
+                    billingAnchorAt = purchaseAnchorAt;
+                    projectedEntitlementEndAt = paypalSetupService.addConfiguredBillingCycle(billingAnchorAt);
+                    subscriptionStartTime = projectedEntitlementEndAt;
+                    usesSetupFeePlan = true;
                 }
 
-                let paypalPlanId = getCachedPayPalPlanId(pricing, isTopUpReplacement);
+                let paypalPlanId = getCachedPayPalPlanId(pricing, usesSetupFeePlan);
 
                 // Dynamic/Lazy Setup: If Plan ID is missing, create it on-the-fly
                 if (!paypalPlanId) {
-                    log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal ${isTopUpReplacement ? 'top-up ' : ''}Plan ID. Initializing dynamic setup...`);
+                    log.info(`[Payment] Membership pricing ${pricing.id} is missing PayPal ${usesSetupFeePlan ? 'setup-fee ' : ''}Plan ID. Initializing dynamic setup...`);
                 }
-                paypalPlanId ||= isTopUpReplacement
+                paypalPlanId ||= usesSetupFeePlan
                     ? await createAndStorePayPalTopUpPlan(context, pricing, resolvedAmount, currencyCode)
                     : await createAndStorePayPalPlan(context, pricing, resolvedAmount, currencyCode);
 
@@ -680,7 +703,7 @@ export const paymentController = {
                 let subResponse = await paypalCtr.createSubscription(context, buildSubscriptionPayload(paypalPlanId));
                 if (!subResponse.success && isInvalidPayPalPlanResponse(subResponse)) {
                     log.warn(`[Payment] Stored PayPal Plan ${paypalPlanId} is invalid for pricing ${pricing.id}. Recreating plan...`);
-                    paypalPlanId = isTopUpReplacement
+                    paypalPlanId = usesSetupFeePlan
                         ? await createAndStorePayPalTopUpPlan(context, pricing, resolvedAmount, currencyCode)
                         : await createAndStorePayPalPlan(context, pricing, resolvedAmount, currencyCode);
                     subResponse = await paypalCtr.createSubscription(context, buildSubscriptionPayload(paypalPlanId));
@@ -751,6 +774,8 @@ export const paymentController = {
                     meta: {
                         subscriptionStartTime: subscriptionStartTime?.toISOString(),
                         projectedEntitlementEndAt: projectedEntitlementEndAt?.toISOString(),
+                        billingAnchorAt: billingAnchorAt?.toISOString(),
+                        usesSetupFeePlan,
                         isTopUpReplacement,
                     },
                 });
@@ -787,6 +812,8 @@ export const paymentController = {
                             'meta.subscriptionId': externalOrderId,
                             'meta.subscriptionStartTime': subscriptionStartTime?.toISOString() ?? null,
                             'meta.projectedEntitlementEndAt': projectedEntitlementEndAt?.toISOString() ?? null,
+                            'meta.billingAnchorAt': billingAnchorAt?.toISOString() ?? null,
+                            'meta.usesSetupFeePlan': usesSetupFeePlan,
                             'meta.replacesSubscriptionId': replacesSubscriptionId ?? null,
                             'meta.replacementReason': replacementReason ?? null,
                             'meta.isTopUpReplacement': isTopUpReplacement,
