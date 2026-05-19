@@ -21,7 +21,7 @@ const USER_APP_BASE_URL = (() => {
 })();
 
 const LOGO_URL = env.EMAIL_LOGO_URL?.trim()
-    || 'https://ssl-development.b-cdn.net/LOGO/SecretswingerlustlogoRwhite.webp';
+    || 'https://ssl-development.b-cdn.net/LOGO/logo.png';
 
 /**
  * Generate email template with Secret® trademark guidelines
@@ -55,14 +55,14 @@ function generateEmailTemplate(options: {
         <div style="margin-top:30px;font-weight:normal;">
             <h2 style="font-size:1px;font-weight:bold;color:#000000;margin:0 0 12px;font-family:Myanmar Text;">Want fewer emails?</h2>
             <p style="font-size:14px;color:#000000;margin:0 0 16px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
-                You're receiving this email because notifications are enabled on your Secret® Swinger Lust profile.
+                You're receiving this email because notifications are enabled on your Secret Swinger Lust profile.
             </p>
             <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
                 It's easy to adjust your preferences:
             </p>
             <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1.8;font-family:Myanmar Text;font-weight:normal;">
                 <li style="margin-bottom:8px;font-weight:normal;">
-                    Sign in to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secret® Swinger Lust</a>
+                    Sign in to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secret Swinger Lust</a>
                 </li>
                 <li style="margin-bottom:8px;font-weight:normal;">Click My Profile (top-right)</li>
                 <li style="margin-bottom:8px;font-weight:normal;">Select Notifications</li>
@@ -96,7 +96,7 @@ function generateEmailTemplate(options: {
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret® Swinger Lust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="Secret Swinger Lust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -109,7 +109,7 @@ function generateEmailTemplate(options: {
                             </div>
                             <p style="font-size:20px;color:#000000;margin:24px 0;text-align:center;font-family:Myanmar Text;">
                                 Yours playfully,<br/>
-                                Secret® Swinger Lust Team
+                                Secret Swinger Lust Team
                             </p>
                             ${buttonHtml}
                             ${notificationPreferencesHtml}
@@ -123,7 +123,7 @@ function generateEmailTemplate(options: {
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret® Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -178,7 +178,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret® Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -234,7 +234,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret® Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -305,7 +305,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
         subject: ' Welcome to Secret® – Where Real Swinger Adventures Begin ❤️‍🔥',
         content: generateEmailTemplate({
             title: 'Welcome to Secret® Swinger Lust – Where Real Swinger Adventures Begin ❤️‍🔥',
-            message: `Welcome to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">Secret® Swinger Lust</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not Secret® Swinger Lust<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At Secret® Swinger Lust, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
+            message: `Welcome to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">Secret Swinger Lust</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not Secret Swinger Lust<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At Secret Swinger Lust, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
