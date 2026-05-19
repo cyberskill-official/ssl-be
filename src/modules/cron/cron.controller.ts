@@ -143,6 +143,7 @@ async function downgradeUserToFree(args: {
             membershipExpiresAt: null,
             membershipEndDate: null,
             membershipCancelled: true,
+            freeEventCount: 0,
         },
     });
 
@@ -167,7 +168,10 @@ async function downgradeUserToFree(args: {
             beforeMembershipCancelled: Boolean(user.membershipCancelled),
             afterMembershipCancelled: true,
             changedAt: new Date(),
-            metadata: args.metadata,
+            metadata: {
+                ...args.metadata,
+                revokedFreeEventCount: user.freeEventCount ?? 0,
+            },
         },
     }).catch((error: unknown) => {
         log.warn('[CRON] Failed to record downgrade entitlement audit', {
@@ -1031,6 +1035,7 @@ export const cron = {
                             rolesIds: nextRoles,
                             membershipExpiresAt: null,
                             membershipEndDate: null, // clear legacy field as well
+                            freeEventCount: 0,
                         },
                     });
 
