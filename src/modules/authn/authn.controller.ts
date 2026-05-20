@@ -591,11 +591,6 @@ export const authnCtr = {
                 }
             }
 
-            log.warn('[AUTH] getUserFromSession failed:', {
-                message: authChecked.message,
-                code: authChecked.code,
-                sessionId: context?.req?.sessionID,
-            });
             throwError({
                 message: 'User not authenticated.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
