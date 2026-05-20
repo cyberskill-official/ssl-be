@@ -157,7 +157,7 @@ function generateEmailTemplate(options: {
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -213,7 +213,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -269,7 +269,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -433,7 +433,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -537,7 +537,7 @@ const PAYMENT_RECEIPT_CONTENT = `
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold;text-align:center;">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
