@@ -25,9 +25,15 @@ export interface I_Input_CheckAuth {
     token?: string;
 }
 
+export enum E_LoginType {
+    ADMIN = 'ADMIN',
+    USER = 'USER',
+}
+
 export interface I_Input_Login {
     identity: string;
     password: string;
+    loginType: E_LoginType;
     tempOtp?: string;
     rememberMe?: boolean;
     ip?: string;

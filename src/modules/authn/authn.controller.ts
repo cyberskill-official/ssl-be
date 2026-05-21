@@ -74,7 +74,7 @@ import {
     TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
 } from './authn.constant.js';
-import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
+import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_LoginType, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
 const OTP_FORMAT_REGEX = /^[A-Z0-9]{6}$/;
@@ -110,8 +110,12 @@ function clearSessionCookie(req?: I_Request): void {
         ...(env.IS_DEV ? {} : { sameSite: 'none', secure: true }),
     };
 
+    if (!req?.sessionCookieName) {
+        return;
+    }
+
     try {
-        res.clearCookie(env.SESSION_NAME, cookieOptions);
+        res.clearCookie(req.sessionCookieName, cookieOptions);
     }
     catch {
         // best-effort; ignore
@@ -248,8 +252,21 @@ export const authnCtr = {
 
         const userFound = await userCtr.getUser(context, {
             filter: { email: emailLowerCase },
+            populate: [{ path: 'roles' }],
         });
         if (!userFound.success) {
+            return {
+                success: false,
+                message: 'User not found.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const isStaffAccount = await userHasRole(context, userFound.result, E_Role.STAFF, {
+            notFoundMessage: 'Staff role not found.',
+        });
+
+        if (!isStaffAccount) {
             return {
                 success: false,
                 message: 'User not found.',
@@ -1574,15 +1591,42 @@ export const authnCtr = {
             });
         }
 
+        const { identity, password, rememberMe, loginType } = args;
+        const isAdminPortalLogin = loginType === E_LoginType.ADMIN;
+        const isUserPortalLogin = loginType === E_LoginType.USER;
+
+        if (!isAdminPortalLogin && !isUserPortalLogin) {
+            throwError({
+                message: 'Login type is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         const authChecked = await authnCtr.checkAuth(context);
 
         if (authChecked.success) {
-            return authChecked;
+            const sessionUser = authChecked.result?.user;
+
+            if (sessionUser) {
+                const [isSessionStaff, isSessionUser] = await Promise.all([
+                    userHasRole(context, sessionUser, E_Role.STAFF, {
+                        notFoundMessage: 'Staff role not found.',
+                    }),
+                    userHasRole(context, sessionUser, E_Role.USER, {
+                        notFoundMessage: 'User role not found.',
+                    }),
+                ]);
+
+                if (
+                    (isAdminPortalLogin && isSessionStaff)
+                    || (isUserPortalLogin && isSessionUser && !isSessionStaff)
+                ) {
+                    return authChecked;
+                }
+            }
         }
 
         delete context.req.session.guardianView;
-
-        const { identity, password, rememberMe } = args;
 
         const userFound = await userCtr.getUser(context, {
             filter: {
@@ -1618,7 +1662,29 @@ export const authnCtr = {
             });
         }
 
-        const isAdminLogin = await isAdminUser(context, userFound.result);
+        const [isStaffAccount, isUserAccount] = await Promise.all([
+            userHasRole(context, userFound.result, E_Role.STAFF, {
+                notFoundMessage: 'Staff role not found.',
+            }),
+            userHasRole(context, userFound.result, E_Role.USER, {
+                notFoundMessage: 'User role not found.',
+            }),
+        ]);
+
+        if (isAdminPortalLogin && !isStaffAccount) {
+            throwError({
+                message: 'Invalid login information.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        if (isUserPortalLogin && (!isUserAccount || isStaffAccount)) {
+            throwError({
+                message: 'Invalid login information.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
         const otpValue = userFound.result.tempOtp;
         const otpCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt) : null;
         const otpAgeMs = otpCreatedAt ? Date.now() - otpCreatedAt.getTime() : null;
@@ -1632,7 +1698,7 @@ export const authnCtr = {
         }
 
         const skipOtp = disableOtpEnforcement;
-        const requiresOtp = !skipOtp && isAdminLogin && Boolean(otpValue) && !otpExpired;
+        const requiresOtp = !skipOtp && isAdminPortalLogin && Boolean(otpValue) && !otpExpired;
 
         if (skipOtp && otpValue) {
             await userCtr.updateUser(context, {
@@ -1674,14 +1740,14 @@ export const authnCtr = {
             await verificationCtr.deleteVerifications(context, { filter: { identifier } }).catch(() => { /* best-effort */ });
             await userCtr.updateUser(context, { filter: { id: userFound.result.id }, update: { tempOtp: null, tempOtpCreatedAt: null } }).catch(() => { /* best-effort */ });
         }
-        else if (!skipOtp && isAdminLogin && otpExpired) {
+        else if (!skipOtp && isAdminPortalLogin && otpExpired) {
             throwError({
                 message: 'OTP expired. Please request a new code.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        if (!isAdminLogin && userFound.result.isAdminBlocked) {
+        if (isUserPortalLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
@@ -1707,7 +1773,7 @@ export const authnCtr = {
             }
         }
 
-        if (!skipOtp && !isAdminLogin && userFound.result.tempOtp !== null) {
+        if (!skipOtp && isUserPortalLogin && userFound.result.tempOtp !== null) {
             const expectedOtp = String(userFound.result.tempOtp || '').toUpperCase();
             const providedOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim().toUpperCase() : '';
             if (expectedOtp !== providedOtp) {
@@ -1715,7 +1781,7 @@ export const authnCtr = {
             }
         }
 
-        if (!isAdminLogin && !userFound.result.isActive) {
+        if (isUserPortalLogin && !userFound.result.isActive) {
             throwError({
                 message: 'Account is not active.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
@@ -1746,7 +1812,7 @@ export const authnCtr = {
             ? authnCtr.generateToken(context, userFound.result.id)
             : '';
 
-        if (isAdminLogin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
+        if (isAdminPortalLogin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
             await userCtr.updateUser(context, {
                 filter: { id: userFound.result.id },
                 update: { isGuardianView: false, guardianOwnerId: null },
@@ -1762,7 +1828,7 @@ export const authnCtr = {
 
         const sanitizedLoginUser = omit(userObj, 'password') as I_User;
 
-        if (isAdminLogin) {
+        if (isAdminPortalLogin) {
             applyAdminOverrides(sanitizedLoginUser);
         }
 

@@ -12,7 +12,8 @@ export interface I_Environment {
     PORT: number;
     STATIC_FOLDER: string;
     BODY_PARSER_LIMIT: string;
-    SESSION_NAME: string;
+    SESSION_NAME_ADMIN: string;
+    SESSION_NAME_USER: string;
     SESSION_SECRET: string;
     MONGO_HOST: string;
     MONGO_PORT: number;

@@ -15,6 +15,8 @@ import { mainRouter } from '#modules/rest-api/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { schema } from '#shared/graphql/schema.js';
+import { E_SessionPortal, getPortalSessionCookieNames, getSessionPortalFromRequest } from '#shared/session/index.js';
+import type { I_Request } from '#shared/typescript/index.js';
 
 const env = getEnv();
 const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
@@ -26,20 +28,34 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         jsonLimit: env.BODY_PARSER_LIMIT,
     });
 
-    const sessionParser = createSession({
-        name: env.SESSION_NAME,
+    const sessionStore = mongoStore.create({
+        mongoUrl: env.MONGO_URI,
+        autoRemove: 'native',
+    });
+    const sessionCookieNames = getPortalSessionCookieNames(env);
+    const createPortalSessionParser = (name: string) => createSession({
+        name,
         secret: env.SESSION_SECRET,
         resave: false,
         saveUninitialized: false,
-        store: mongoStore.create({
-            mongoUrl: env.MONGO_URI,
-            autoRemove: 'disabled',
-        }),
+        store: sessionStore,
         cookie: {
             // maxAge: Number(env.SESSION_INACTIVITY_MINUTES) * 60 * 1000,
             ...(!env.IS_DEV && { secure: true, sameSite: 'none' }),
         },
     });
+    const portalSessionParsers: Record<E_SessionPortal, express.RequestHandler> = {
+        [E_SessionPortal.ADMIN]: createPortalSessionParser(sessionCookieNames[E_SessionPortal.ADMIN]),
+        [E_SessionPortal.USER]: createPortalSessionParser(sessionCookieNames[E_SessionPortal.USER]),
+    };
+    const sessionParser: express.RequestHandler = (req, res, next) => {
+        const portal = getSessionPortalFromRequest(req, env);
+
+        (req as I_Request).sessionPortal = portal;
+        (req as I_Request).sessionCookieName = sessionCookieNames[portal];
+
+        return portalSessionParsers[portal](req, res, next);
+    };
     app.use(sessionParser);
 
     const httpServer = createServer(app);

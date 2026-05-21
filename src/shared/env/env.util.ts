@@ -24,6 +24,8 @@ import {
     REDIS_HOST,
     REDIS_PORT,
     SESSION_INACTIVITY_MINUTES,
+    SESSION_NAME_ADMIN,
+    SESSION_NAME_USER,
     STATIC_FOLDER,
     UPLOAD_FOLDER,
 } from './env.constant.js';
@@ -43,7 +45,8 @@ export function getEnv(): I_Environment {
         PORT: port({ default: PORT }),
         BODY_PARSER_LIMIT: str({ default: BODY_PARSER_LIMIT }),
         STATIC_FOLDER: str({ default: STATIC_FOLDER }),
-        SESSION_NAME: str(),
+        SESSION_NAME_ADMIN: str({ default: SESSION_NAME_ADMIN }),
+        SESSION_NAME_USER: str({ default: SESSION_NAME_USER }),
         SESSION_SECRET: str(),
         MONGO_HOST: str({ default: MONGO_HOST }),
         MONGO_PORT: port({ default: MONGO_PORT }),
