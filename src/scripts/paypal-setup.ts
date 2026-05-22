@@ -23,6 +23,11 @@ import { getEnv } from '../shared/env/index.js';
 
 async function run() {
     const env = getEnv();
+    const intervalUnit = env.PAYPAL_SUBSCRIPTION_INTERVAL_UNIT as E_PayPalIntervalUnit;
+    const intervalCount = Math.max(1, Math.floor(env.PAYPAL_SUBSCRIPTION_INTERVAL_COUNT));
+    const planName = intervalUnit === E_PayPalIntervalUnit.MONTH && intervalCount === 1
+        ? 'Monthly Membership'
+        : `${intervalUnit}_${intervalCount} Membership`;
 
     log.info('Connecting to MongoDB...');
     await mongoose.connect(env.MONGO_URI);
@@ -47,16 +52,15 @@ async function run() {
 
         // 2. Create Plan
         log.info('Step 2: Creating PayPal Subscription Plan...');
-        // Default to 5.50 EUR monthly as seen in your screenshot
         const planRes = await paypalCtr.createPlan({} as any, {
             product_id: productId,
-            name: 'Monthly Membership',
-            description: 'Monthly unlimited access to SSL',
+            name: planName,
+            description: `${intervalUnit}/${intervalCount} unlimited access to SSL`,
             billing_cycles: [
                 {
                     frequency: {
-                        interval_unit: E_PayPalIntervalUnit.MONTH,
-                        interval_count: 1,
+                        interval_unit: intervalUnit,
+                        interval_count: intervalCount,
                     },
                     tenure_type: E_PayPalTenureType.REGULAR,
                     sequence: 1,
@@ -90,7 +94,11 @@ async function run() {
                 isActive: true,
             },
             {
-                $set: { paypalPlanId: planId },
+                $set: {
+                    paypalPlanId: planId,
+                    paypalPlanIntervalUnit: intervalUnit,
+                    paypalPlanIntervalCount: intervalCount,
+                },
             },
         );
 

@@ -57,11 +57,20 @@ export const paymentCtr = {
 
         const setPayload = pruneUndefined<Record<string, unknown>>({
             transactionId,
+            providerEventId: payload.providerEventId,
+            userId: payload.userId,
+            orderId: payload.orderId,
+            paymentRequestId: payload.paymentRequestId,
+            subscriptionId: payload.subscriptionId,
+            amount: payload.amount,
+            currency: payload.currency,
             status: payload.status,
             success: payload.success,
+            source: payload.source,
             errorCode: payload.errorCode,
             errorMessage: payload.errorMessage,
             responsePayload: payload.responsePayload ?? null,
+            occurredAt: payload.occurredAt ?? payload.performedAt ?? new Date(),
             performedAt: payload.performedAt ?? new Date(),
         });
 

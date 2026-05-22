@@ -1,7 +1,7 @@
 import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
-import { addDays, isAfter, isValid, parse, set, subMonths } from 'date-fns';
+import { addDays, addMinutes, isAfter, isValid, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
 
 import type { I_Event } from '#modules/event/index.js';
@@ -16,10 +16,29 @@ import { E_LocationEntityType, LocationModel } from '#modules/location/index.js'
 import { notificationCtr } from '#modules/notification/notification.controller.js';
 import { E_NotificationChannel, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { orderCtr } from '#modules/order/index.js';
+import { applyOrderPaidEffects } from '#modules/order/order.effect.js';
 import { E_OrderStatus } from '#modules/order/order.type.js';
+import { membershipEntitlementChangeCtr } from '#modules/payment/membership-entitlement-change/membership-entitlement-change.controller.js';
+import {
+    E_MembershipEntitlementChangeReason,
+    E_MembershipEntitlementChangeSource,
+} from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
-import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
+import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
+import { findLatestPayPalSubscriptionForUser } from '#modules/payment/payment-subscription-link.service.js';
+import {
+    getPaymentSubscriptionGraceMinutes,
+    paymentSubscriptionCtr,
+    resolvePaymentSubscriptionPeriodWindow,
+} from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import {
+    E_PaymentSubscriptionReplacementReason,
+    E_PaymentSubscriptionSource,
+} from '#modules/payment/payment-subscription/payment-subscription.type.js';
+import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
+import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentStatus as E_PaymentTransactionStatus, E_PaymentTransactionSource } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { buildPayPalSubscriptionPaymentEffectKey, getPayPalSubscriptionLastPayment } from '#modules/payment/paypal/paypal.effect-key.js';
 import { userCtr } from '#modules/user/index.js';
 import { verificationCtr } from '#modules/verification/index.js';
 import { getEnv } from '#shared/env/index.js';
@@ -31,9 +50,9 @@ import { PromoCodeModel } from '../promo-code/promo-code/promo-code.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
+const ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES = 15;
 
 const AM_PM_REGEX = /\bAM\b|\bPM\b/i;
-const PAYPAL_SUBSCRIPTION_ID_REGEX = /^I-/;
 
 function parseTimeToClock(value?: string | null): { hours: number; minutes: number } | null {
     if (!value || typeof value !== 'string')
@@ -86,6 +105,176 @@ function computeEventEndDateTime(event: I_Event): Date | null {
     });
 }
 
+async function downgradeUserToFree(args: {
+    userId: string;
+    reason: E_MembershipEntitlementChangeReason;
+    providerSubscriptionId?: string;
+    orderId?: string;
+    paymentRequestId?: string;
+    effectKey?: string | null;
+    metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+    const userRes = await userCtr.getUser({}, { filter: { id: args.userId } });
+    if (!userRes.success || !userRes.result) {
+        return false;
+    }
+
+    const user = userRes.result;
+    const [paidRole, promoRole, freeRole] = await Promise.all([
+        roleCtr.getRole({}, { filter: { name: E_Role_User.PAID_MEMBER } }),
+        roleCtr.getRole({}, { filter: { name: E_Role_User.PROMO_MEMBER } }),
+        roleCtr.getRole({}, { filter: { name: E_Role_User.FREE_MEMBER } }),
+    ]);
+
+    const paidRoleId = paidRole.success ? paidRole.result.id : null;
+    const promoRoleId = promoRole.success ? promoRole.result.id : null;
+    const freeRoleId = freeRole.success ? freeRole.result.id : null;
+    const beforeRolesIds = [...(user.rolesIds ?? [])];
+    const nextRoles = beforeRolesIds.filter(roleId =>
+        roleId !== paidRoleId && (!promoRoleId || roleId !== promoRoleId),
+    );
+
+    if (freeRoleId && !nextRoles.includes(freeRoleId)) {
+        nextRoles.push(freeRoleId);
+    }
+
+    const updateRes = await userCtr.updateUser({}, {
+        filter: { id: args.userId },
+        update: {
+            rolesIds: nextRoles,
+            membershipExpiresAt: null,
+            membershipEndDate: null,
+            membershipCancelled: true,
+            freeEventCount: 0,
+        },
+    });
+
+    if (!updateRes.success) {
+        return false;
+    }
+
+    await membershipEntitlementChangeCtr.recordMembershipEntitlementChange({}, {
+        doc: {
+            userId: args.userId,
+            orderId: args.orderId,
+            paymentRequestId: args.paymentRequestId,
+            provider: E_PaymentProvider.PAYPAL,
+            providerSubscriptionId: args.providerSubscriptionId,
+            effectKey: args.effectKey ?? undefined,
+            source: E_MembershipEntitlementChangeSource.CRON,
+            reason: args.reason,
+            beforeMembershipExpiresAt: user.membershipExpiresAt ?? undefined,
+            afterMembershipExpiresAt: undefined,
+            beforeRolesIds,
+            afterRolesIds: nextRoles,
+            beforeMembershipCancelled: Boolean(user.membershipCancelled),
+            afterMembershipCancelled: true,
+            changedAt: new Date(),
+            metadata: {
+                ...args.metadata,
+                revokedFreeEventCount: user.freeEventCount ?? 0,
+            },
+        },
+    }).catch((error: unknown) => {
+        log.warn('[CRON] Failed to record downgrade entitlement audit', {
+            userId: args.userId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    });
+
+    return true;
+}
+
+async function extendActivePayPalRenewalDelayHold(args: {
+    userId: string;
+    providerSubscriptionId: string;
+    orderId?: string;
+    paymentRequestId?: string;
+    billingPeriodEndAt?: Date | null;
+    graceUntil?: Date | null;
+    lastPaidAt?: Date | null;
+    lastPaymentEffectKey?: string | null;
+}): Promise<Date | null> {
+    const userRes = await userCtr.getUser({}, { filter: { id: args.userId } });
+    if (!userRes.success || !userRes.result) {
+        return null;
+    }
+
+    const user = userRes.result;
+    const now = new Date();
+    const graceMinutes = getPaymentSubscriptionGraceMinutes();
+    const holdMinutes = Math.max(graceMinutes, ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES);
+    const refreshThreshold = addMinutes(now, ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES);
+    const currentExpiry = user.membershipExpiresAt ? new Date(user.membershipExpiresAt) : null;
+
+    if (currentExpiry && currentExpiry > refreshThreshold) {
+        return currentExpiry;
+    }
+
+    const holdUntil = addMinutes(now, holdMinutes);
+    const updateRes = await userCtr.updateUser({}, {
+        filter: { id: args.userId },
+        update: {
+            membershipExpiresAt: holdUntil,
+            membershipEndDate: holdUntil,
+            membershipCancelled: false,
+        },
+    });
+
+    if (!updateRes.success) {
+        log.warn('[CRON] Failed to extend PayPal renewal delay hold', {
+            userId: args.userId,
+            subscriptionId: args.providerSubscriptionId,
+            message: updateRes.message,
+        });
+        return null;
+    }
+
+    await membershipEntitlementChangeCtr.recordMembershipEntitlementChange({}, {
+        doc: {
+            userId: args.userId,
+            orderId: args.orderId,
+            paymentRequestId: args.paymentRequestId,
+            provider: E_PaymentProvider.PAYPAL,
+            providerSubscriptionId: args.providerSubscriptionId,
+            effectKey: [
+                'paypal',
+                'subscription',
+                args.providerSubscriptionId,
+                'renewal-delay-hold',
+                holdUntil.toISOString(),
+            ].join(':'),
+            source: E_MembershipEntitlementChangeSource.CRON,
+            reason: E_MembershipEntitlementChangeReason.RENEWAL_DELAY_HOLD,
+            beforeMembershipExpiresAt: user.membershipExpiresAt ?? undefined,
+            afterMembershipExpiresAt: holdUntil,
+            beforeRolesIds: [...(user.rolesIds ?? [])],
+            afterRolesIds: [...(user.rolesIds ?? [])],
+            beforeMembershipCancelled: Boolean(user.membershipCancelled),
+            afterMembershipCancelled: false,
+            changedAt: now,
+            metadata: {
+                providerStatus: 'ACTIVE',
+                billingPeriodEndAt: args.billingPeriodEndAt?.toISOString(),
+                graceUntil: args.graceUntil?.toISOString(),
+                holdUntil: holdUntil.toISOString(),
+                holdMinutes,
+                lastPaidAt: args.lastPaidAt?.toISOString(),
+                lastPaymentEffectKey: args.lastPaymentEffectKey,
+                source: 'payment-subscription-reconciliation',
+            },
+        },
+    }).catch((error: unknown) => {
+        log.warn('[CRON] Failed to record PayPal renewal delay hold audit', {
+            userId: args.userId,
+            subscriptionId: args.providerSubscriptionId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    });
+
+    return holdUntil;
+}
+
 const runningJobs: CronJob[] = [];
 
 export const cron = {
@@ -100,6 +289,7 @@ export const cron = {
             cron.enableScheduledAds(),
             cron.enforceSessionInactivity(),
             cron.markInactiveUsersOffline(),
+            cron.paymentSubscriptionReconciliation(),
             cron.membershipMaintenance(),
             cron.cleanupInactiveFreeUsers(),
             cron.cleanupUnpaidOrders(),
@@ -534,6 +724,232 @@ export const cron = {
         });
     },
 
+    paymentSubscriptionReconciliation: () => {
+        return new CronJob(CRON_JOB_SCHEDULE.EVERY_5_MINUTES, async () => {
+            await cron.executePaymentSubscriptionReconciliation();
+        });
+    },
+
+    executePaymentSubscriptionReconciliation: async () => {
+        const batchSize = Number.isFinite(env.SUBSCRIPTION_RECONCILE_BATCH_SIZE)
+            ? Math.max(1, env.SUBSCRIPTION_RECONCILE_BATCH_SIZE)
+            : 50;
+
+        try {
+            const dueSubscriptions = await paymentSubscriptionCtr.getDueForReconciliation(batchSize);
+            if (!dueSubscriptions.length) {
+                log.info('[CRON] No PayPal subscriptions due for reconciliation');
+                return;
+            }
+
+            log.info(`[CRON] Reconciling ${dueSubscriptions.length} PayPal subscription(s)`);
+            for (const localSubscription of dueSubscriptions) {
+                const subscriptionId = localSubscription.providerSubscriptionId;
+                try {
+                    const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });
+                    if (!subRes.success || !subRes.result) {
+                        await paymentSubscriptionCtr.markActionRequired(
+                            subscriptionId,
+                            subRes.message ?? 'Failed to fetch PayPal subscription during reconciliation',
+                        );
+                        continue;
+                    }
+
+                    const paypalSubscription = subRes.result as Record<string, any>;
+                    const periodWindow = resolvePaymentSubscriptionPeriodWindow(
+                        paypalSubscription,
+                        localSubscription.meta as Record<string, unknown> | null | undefined,
+                    );
+                    const providerStatus = typeof paypalSubscription['status'] === 'string'
+                        ? paypalSubscription['status'].toUpperCase()
+                        : '';
+                    const lastPayment = getPayPalSubscriptionLastPayment(paypalSubscription);
+                    const effectKey = buildPayPalSubscriptionPaymentEffectKey({
+                        subscriptionId,
+                        occurredAt: lastPayment.time,
+                        amount: lastPayment.amount,
+                        currency: lastPayment.currency,
+                    });
+                    const previousLastPaidAt = localSubscription.lastPaidAt
+                        ? new Date(localSubscription.lastPaidAt)
+                        : null;
+                    const lastPaidAt = lastPayment.time ? new Date(lastPayment.time) : null;
+                    const hasNewPayment = Boolean(
+                        effectKey
+                        && lastPaidAt
+                        && (!previousLastPaidAt || lastPaidAt > previousLastPaidAt),
+                    );
+
+                    const subscriptionUpsertRes = await paymentSubscriptionCtr.upsertFromProviderSnapshot({} as any, {
+                        provider: E_PaymentProvider.PAYPAL,
+                        providerSubscriptionId: subscriptionId,
+                        userId: localSubscription.userId,
+                        paymentRequestId: localSubscription.paymentRequestId,
+                        orderId: localSubscription.orderId,
+                        pricingId: localSubscription.pricingId,
+                        amount: localSubscription.amount,
+                        currency: localSubscription.currency,
+                        replacesSubscriptionId: localSubscription.replacesSubscriptionId,
+                        replacementReason: localSubscription.replacementReason,
+                        source: E_PaymentSubscriptionSource.RECONCILIATION,
+                        meta: localSubscription.meta as Record<string, unknown> | undefined,
+                        providerSnapshot: paypalSubscription,
+                    });
+                    const refreshedSubscription = subscriptionUpsertRes.success && subscriptionUpsertRes.result
+                        ? subscriptionUpsertRes.result
+                        : localSubscription;
+
+                    if (hasNewPayment && localSubscription.orderId) {
+                        const [orderRes, paymentRequestRes] = await Promise.all([
+                            orderCtr.getOrder({}, { filter: { id: localSubscription.orderId } }),
+                            localSubscription.paymentRequestId
+                                ? paymentRequestCtr.getPaymentRequest({}, { filter: { id: localSubscription.paymentRequestId } })
+                                : Promise.resolve(null as any),
+                        ]);
+
+                        if (paymentRequestRes?.success && paymentRequestRes.result) {
+                            await paymentRequestCtr.updatePaymentRequest({}, {
+                                filter: { id: paymentRequestRes.result.id },
+                                update: { $set: { status: E_PaymentRequestStatus.PAID, gatewayResponse: paypalSubscription } },
+                            });
+                        }
+
+                        if (orderRes.success && orderRes.result) {
+                            await orderCtr.updateOrder({}, {
+                                filter: { id: orderRes.result.id },
+                                update: { $set: { status: E_OrderStatus.PAID } },
+                            });
+
+                            await paymentCtr.recordGatewayTransaction({}, {
+                                provider: E_PaymentProvider.PAYPAL,
+                                operation: E_PaymentGatewayOperation.SALE,
+                                transactionId: effectKey!,
+                                userId: orderRes.result.userId,
+                                orderId: orderRes.result.id,
+                                paymentRequestId: localSubscription.paymentRequestId,
+                                subscriptionId,
+                                amount: typeof lastPayment.amount === 'string'
+                                    ? Number.parseFloat(lastPayment.amount)
+                                    : lastPayment.amount ?? undefined,
+                                currency: lastPayment.currency ?? undefined,
+                                status: E_PaymentTransactionStatus.SUCCESS,
+                                success: true,
+                                source: E_PaymentTransactionSource.RECONCILIATION,
+                                responsePayload: paypalSubscription,
+                                occurredAt: lastPaidAt ?? new Date(),
+                                performedAt: new Date(),
+                            });
+
+                            const refreshedOrderRes = await orderCtr.getOrder({}, { filter: { id: orderRes.result.id } });
+                            if (refreshedOrderRes.success && refreshedOrderRes.result) {
+                                await applyOrderPaidEffects({}, refreshedOrderRes.result, {
+                                    effectKey,
+                                    membershipPeriodStartAt: lastPayment.time,
+                                    membershipPeriodEndAt: periodWindow.billingPeriodEndAt,
+                                    membershipAccessUntilAt: periodWindow.accessUntilAt,
+                                    source: E_MembershipEntitlementChangeSource.RECONCILIATION,
+                                    reason: localSubscription.replacementReason === E_PaymentSubscriptionReplacementReason.TOP_UP_REPLACEMENT
+                                        ? E_MembershipEntitlementChangeReason.TOP_UP_REPLACEMENT
+                                        : E_MembershipEntitlementChangeReason.RENEWAL_PAYMENT,
+                                    paymentRequestId: localSubscription.paymentRequestId,
+                                    provider: E_PaymentProvider.PAYPAL,
+                                    providerSubscriptionId: subscriptionId,
+                                    transactionId: effectKey,
+                                });
+                            }
+                        }
+                    }
+
+                    if (localSubscription.replacesSubscriptionId && providerStatus === 'ACTIVE') {
+                        const cancelRes = await paypalCtr.cancelSubscription({} as any, {
+                            subscriptionId: localSubscription.replacesSubscriptionId,
+                            reason: `Replaced by ${subscriptionId}`,
+                        });
+                        if (!cancelRes.success) {
+                            await paymentSubscriptionCtr.markActionRequired(
+                                localSubscription.replacesSubscriptionId,
+                                cancelRes.message ?? 'Failed to cancel replaced subscription during reconciliation',
+                            );
+                        }
+                    }
+
+                    const periodEnd = refreshedSubscription.currentPeriodEndAt
+                        ? new Date(refreshedSubscription.currentPeriodEndAt)
+                        : null;
+                    const graceUntil = refreshedSubscription.graceUntil
+                        ? new Date(refreshedSubscription.graceUntil)
+                        : periodEnd;
+                    const graceExpired = graceUntil ? graceUntil <= new Date() : false;
+                    const terminalStatus = ['CANCELLED', 'EXPIRED'].includes(providerStatus);
+                    const shouldDowngradeSuspended = providerStatus === 'SUSPENDED' && graceExpired;
+                    const activeWithoutPaymentAfterGrace = providerStatus === 'ACTIVE' && graceExpired && !hasNewPayment;
+                    const failedPaymentsRaw = Number((paypalSubscription['billing_info'] as Record<string, any> | undefined)?.['failed_payments_count'] ?? 0);
+                    const failedPaymentsCount = Number.isFinite(failedPaymentsRaw) ? failedPaymentsRaw : 0;
+
+                    if (activeWithoutPaymentAfterGrace) {
+                        const holdUntil = localSubscription.userId && failedPaymentsCount <= 0
+                            ? await extendActivePayPalRenewalDelayHold({
+                                userId: localSubscription.userId,
+                                providerSubscriptionId: subscriptionId,
+                                orderId: localSubscription.orderId,
+                                paymentRequestId: localSubscription.paymentRequestId,
+                                billingPeriodEndAt: periodEnd,
+                                graceUntil,
+                                lastPaidAt,
+                                lastPaymentEffectKey: effectKey,
+                            })
+                            : null;
+                        await paymentSubscriptionCtr.markActionRequired(
+                            subscriptionId,
+                            failedPaymentsCount > 0
+                                ? `PayPal subscription is ACTIVE but has ${failedPaymentsCount} failed payment attempt(s) after the grace window.`
+                                : 'PayPal subscription is ACTIVE but no renewal payment was detected after the grace window; access hold is active while waiting for delayed PayPal renewal.',
+                        );
+                        log.warn('[CRON] PayPal subscription active without a new payment after grace window; marked action required', {
+                            subscriptionId,
+                            userId: localSubscription.userId,
+                            graceUntil: graceUntil?.toISOString(),
+                            failedPaymentsCount,
+                            accessHoldUntil: holdUntil?.toISOString(),
+                        });
+                        continue;
+                    }
+
+                    if (localSubscription.userId && graceExpired && (terminalStatus || shouldDowngradeSuspended)) {
+                        const downgraded = await downgradeUserToFree({
+                            userId: localSubscription.userId,
+                            providerSubscriptionId: subscriptionId,
+                            orderId: localSubscription.orderId,
+                            paymentRequestId: localSubscription.paymentRequestId,
+                            reason: terminalStatus
+                                ? E_MembershipEntitlementChangeReason.CANCELLED_EXPIRED
+                                : E_MembershipEntitlementChangeReason.DOWNGRADE_EXPIRED,
+                            metadata: {
+                                providerStatus,
+                                graceUntil: graceUntil?.toISOString(),
+                                source: 'payment-subscription-reconciliation',
+                                billingPeriodEndAt: periodEnd?.toISOString(),
+                            },
+                        });
+                        if (downgraded) {
+                            log.success(`[CRON] Downgraded expired subscription user ${localSubscription.userId}`);
+                        }
+                    }
+                }
+                catch (error) {
+                    await paymentSubscriptionCtr.markActionRequired(
+                        subscriptionId,
+                        error instanceof Error ? error.message : String(error),
+                    );
+                    log.error('[CRON] Error reconciling PayPal subscription', { subscriptionId, error });
+                }
+            }
+        }
+        catch (error) {
+            log.error('[CRON] paymentSubscriptionReconciliation failed:', error);
+        }
+    },
+
     membershipMaintenance: () => {
         return new CronJob(CRON_JOB_SCHEDULE.EVERY_NIGHT_2AM, async () => {
             log.info('[CRON] Starting nightly membership maintenance (Downgrade expired memberships)');
@@ -631,24 +1047,37 @@ export const cron = {
                         membershipCancelled: user.membershipCancelled,
                     });
 
-                    // Skip if user has NOT cancelled and has an active/suspended PayPal subscription.
+                    // Skip if paid user has NOT cancelled and has an active/suspended PayPal subscription.
                     // IMPORTANT: If the PayPal API is unreachable, we SKIP the user rather than
                     // downgrade — this prevents mass downgrades during PayPal outages.
-                    if (!user.membershipCancelled) {
-                        try {
-                            // Find last payment request with a PayPal subscription ID (starts with I-)
-                            const lastPaymentReq = await paymentRequestCtr.getPaymentRequests({}, {
-                                filter: {
-                                    userId: user.id,
-                                    gateway: E_PaymentProvider.PAYPAL,
-                                    externalOrderId: { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
-                                },
-                                options: { sort: { createdAt: -1 }, pagination: false },
-                            });
-
-                            const subscriptionId = lastPaymentReq.success
-                                ? lastPaymentReq.result?.docs?.[0]?.externalOrderId
+                    const hasPaidMemberRole = user.rolesIds?.includes(paidRoleId);
+                    if (hasPaidMemberRole) {
+                        const localSubscription = await paymentSubscriptionCtr.findLatestPayPalSubscriptionForUser(user.id);
+                        if (localSubscription?.providerSubscriptionId) {
+                            const graceUntil = localSubscription.graceUntil
+                                ? new Date(localSubscription.graceUntil)
                                 : null;
+                            if (graceUntil && graceUntil > now) {
+                                log.info(`[CRON] Skipping membershipMaintenance downgrade for PayPal-linked user ${user.id}; access valid until grace window`, {
+                                    subscriptionId: localSubscription.providerSubscriptionId,
+                                    graceUntil,
+                                });
+                                continue;
+                            }
+
+                            await paymentSubscriptionCtr.scheduleReconciliationNow(localSubscription.providerSubscriptionId);
+                            log.info(`[CRON] Skipping membershipMaintenance downgrade for PayPal-linked user ${user.id}; queued subscription reconciliation`, {
+                                subscriptionId: localSubscription.providerSubscriptionId,
+                                graceUntil,
+                            });
+                            continue;
+                        }
+                    }
+
+                    if (hasPaidMemberRole && !user.membershipCancelled) {
+                        try {
+                            const subscriptionLink = await findLatestPayPalSubscriptionForUser(user.id);
+                            const subscriptionId = subscriptionLink.subscriptionId;
 
                             if (subscriptionId) {
                                 const subRes = await paypalCtr.getSubscription({} as any, { subscriptionId });
@@ -656,6 +1085,9 @@ export const cron = {
 
                                 log.info(`[CRON] PayPal subscription check for user ${user.id}`, {
                                     subscriptionId,
+                                    linkSource: subscriptionLink.source,
+                                    paymentRequestId: subscriptionLink.paymentRequestId,
+                                    orderId: subscriptionLink.orderId,
                                     status: subStatus,
                                     apiSuccess: subRes.success,
                                 });
@@ -676,6 +1108,14 @@ export const cron = {
                                 // Only proceed with downgrade for terminal statuses:
                                 // CANCELLED, EXPIRED, or unexpected statuses
                                 log.info(`[CRON] PayPal subscription ${subscriptionId} is terminal (${subStatus}), proceeding with downgrade for user ${user.id}`);
+                            }
+                            else {
+                                log.warn(`[CRON] Paid user ${user.id} has no linked PayPal subscription; skipping downgrade and flagging for reconciliation`, {
+                                    username: user.username,
+                                    membershipExpiresAt: user.membershipExpiresAt,
+                                    membershipCancelled: user.membershipCancelled,
+                                });
+                                continue;
                             }
                         }
                         catch (subError) {
@@ -705,6 +1145,7 @@ export const cron = {
                             rolesIds: nextRoles,
                             membershipExpiresAt: null,
                             membershipEndDate: null, // clear legacy field as well
+                            freeEventCount: 0,
                         },
                     });
 

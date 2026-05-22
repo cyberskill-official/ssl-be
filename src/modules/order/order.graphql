@@ -23,9 +23,11 @@ type T_Order {
     orderType: E_OrderType
     paymentTransactionId: String
     paymentTransaction: T_PaymentTransaction
+    paymentRequests: [T_PaymentRequest]
     meta: JSON
     pricingId: String
     pricing: T_Pricing
+    effectsAppliedAt: DateTime
 }
 
 input Input_QueryOrder {

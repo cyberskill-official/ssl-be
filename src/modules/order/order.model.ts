@@ -56,7 +56,7 @@ export const OrderModel = mongo.createModel<I_Order>({
             options: {
                 ref: 'PaymentRequest',
                 localField: 'id',
-                foreignField: 'orderId',
+                foreignField: 'meta.orderId',
                 justOne: false,
             },
         },

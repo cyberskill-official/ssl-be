@@ -1,5 +1,6 @@
 enum E_PaymentProvider {
     PAYPAL
+    NETVALVE
 }
 
 enum E_PaymentGatewayOperation {
@@ -16,6 +17,16 @@ enum E_PaymentGatewayOperation {
     GET_ORDER
     GET_ORDERS
     QUERY_TRANSACTION_STATUS
+    HPP_ORDER
+    REBILL
+}
+
+enum E_PaymentTransactionSource {
+    CHECKOUT
+    WEBHOOK
+    STATUS_POLL
+    ADMIN_SYNC
+    RECONCILIATION
 }
 
 type T_PaymentTransaction {
@@ -26,11 +37,20 @@ type T_PaymentTransaction {
     provider: E_PaymentProvider
     operation: E_PaymentGatewayOperation
     transactionId: String
+    providerEventId: String
+    userId: String
+    orderId: String
+    paymentRequestId: String
+    subscriptionId: String
+    amount: Float
+    currency: String
     status: E_PaymentStatus
     success: Boolean
+    source: E_PaymentTransactionSource
     errorCode: String
     errorMessage: String
     responsePayload: JSON
+    occurredAt: DateTime
     performedAt: DateTime
 }
 
@@ -39,12 +59,21 @@ input Input_QueryPaymentTransaction {
     provider: E_PaymentProvider
     operation: E_PaymentGatewayOperation
     transactionId: String
+    providerEventId: String
+    userId: String
+    orderId: String
+    paymentRequestId: String
+    subscriptionId: String
+    amount: Float
+    currency: String
     status: E_PaymentStatus
     success: Boolean
+    source: E_PaymentTransactionSource
     errorCode: String
     errorMessage: String
     createdAt: DateTime
     updatedAt: DateTime
+    occurredAt: DateTime
     performedAt: DateTime
 }
 
@@ -52,11 +81,20 @@ input Input_RecordPaymentTransaction {
     provider: E_PaymentProvider!
     operation: E_PaymentGatewayOperation!
     transactionId: String
+    providerEventId: String
+    userId: String
+    orderId: String
+    paymentRequestId: String
+    subscriptionId: String
+    amount: Float
+    currency: String
     status: E_PaymentStatus
     success: Boolean!
+    source: E_PaymentTransactionSource
     errorCode: String
     errorMessage: String
     responsePayload: JSON
+    occurredAt: DateTime
     performedAt: DateTime
 }
 
