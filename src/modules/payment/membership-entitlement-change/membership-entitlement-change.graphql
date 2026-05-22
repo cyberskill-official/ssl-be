@@ -14,6 +14,7 @@ enum E_MembershipEntitlementChangeReason {
     LEGACY_PAYMENT
     DOWNGRADE_EXPIRED
     CANCELLED_EXPIRED
+    RENEWAL_DELAY_HOLD
     MANUAL_REPAIR
 }
 

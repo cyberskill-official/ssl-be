@@ -1,7 +1,7 @@
 import { log } from '@cyberskill/shared/node/log';
 import { substringBetween } from '@cyberskill/shared/util';
 import { CronJob } from 'cron';
-import { addDays, isAfter, isValid, parse, set, subMonths } from 'date-fns';
+import { addDays, addMinutes, isAfter, isValid, parse, set, subMonths } from 'date-fns';
 import mongoose from 'mongoose';
 
 import type { I_Event } from '#modules/event/index.js';
@@ -27,6 +27,7 @@ import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentRequestStatus } from '#modules/payment/payment-request/payment-request.type.js';
 import { findLatestPayPalSubscriptionForUser } from '#modules/payment/payment-subscription-link.service.js';
 import {
+    getPaymentSubscriptionGraceMinutes,
     paymentSubscriptionCtr,
     resolvePaymentSubscriptionPeriodWindow,
 } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
@@ -49,6 +50,7 @@ import { PromoCodeModel } from '../promo-code/promo-code/promo-code.model.js';
 import { CRON_JOB_SCHEDULE } from './cron.constant.js';
 
 const env = getEnv();
+const ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES = 15;
 
 const AM_PM_REGEX = /\bAM\b|\bPM\b/i;
 
@@ -181,6 +183,96 @@ async function downgradeUserToFree(args: {
     });
 
     return true;
+}
+
+async function extendActivePayPalRenewalDelayHold(args: {
+    userId: string;
+    providerSubscriptionId: string;
+    orderId?: string;
+    paymentRequestId?: string;
+    billingPeriodEndAt?: Date | null;
+    graceUntil?: Date | null;
+    lastPaidAt?: Date | null;
+    lastPaymentEffectKey?: string | null;
+}): Promise<Date | null> {
+    const userRes = await userCtr.getUser({}, { filter: { id: args.userId } });
+    if (!userRes.success || !userRes.result) {
+        return null;
+    }
+
+    const user = userRes.result;
+    const now = new Date();
+    const graceMinutes = getPaymentSubscriptionGraceMinutes();
+    const holdMinutes = Math.max(graceMinutes, ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES);
+    const refreshThreshold = addMinutes(now, ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES);
+    const currentExpiry = user.membershipExpiresAt ? new Date(user.membershipExpiresAt) : null;
+
+    if (currentExpiry && currentExpiry > refreshThreshold) {
+        return currentExpiry;
+    }
+
+    const holdUntil = addMinutes(now, holdMinutes);
+    const updateRes = await userCtr.updateUser({}, {
+        filter: { id: args.userId },
+        update: {
+            membershipExpiresAt: holdUntil,
+            membershipEndDate: holdUntil,
+            membershipCancelled: false,
+        },
+    });
+
+    if (!updateRes.success) {
+        log.warn('[CRON] Failed to extend PayPal renewal delay hold', {
+            userId: args.userId,
+            subscriptionId: args.providerSubscriptionId,
+            message: updateRes.message,
+        });
+        return null;
+    }
+
+    await membershipEntitlementChangeCtr.recordMembershipEntitlementChange({}, {
+        doc: {
+            userId: args.userId,
+            orderId: args.orderId,
+            paymentRequestId: args.paymentRequestId,
+            provider: E_PaymentProvider.PAYPAL,
+            providerSubscriptionId: args.providerSubscriptionId,
+            effectKey: [
+                'paypal',
+                'subscription',
+                args.providerSubscriptionId,
+                'renewal-delay-hold',
+                holdUntil.toISOString(),
+            ].join(':'),
+            source: E_MembershipEntitlementChangeSource.CRON,
+            reason: E_MembershipEntitlementChangeReason.RENEWAL_DELAY_HOLD,
+            beforeMembershipExpiresAt: user.membershipExpiresAt ?? undefined,
+            afterMembershipExpiresAt: holdUntil,
+            beforeRolesIds: [...(user.rolesIds ?? [])],
+            afterRolesIds: [...(user.rolesIds ?? [])],
+            beforeMembershipCancelled: Boolean(user.membershipCancelled),
+            afterMembershipCancelled: false,
+            changedAt: now,
+            metadata: {
+                providerStatus: 'ACTIVE',
+                billingPeriodEndAt: args.billingPeriodEndAt?.toISOString(),
+                graceUntil: args.graceUntil?.toISOString(),
+                holdUntil: holdUntil.toISOString(),
+                holdMinutes,
+                lastPaidAt: args.lastPaidAt?.toISOString(),
+                lastPaymentEffectKey: args.lastPaymentEffectKey,
+                source: 'payment-subscription-reconciliation',
+            },
+        },
+    }).catch((error: unknown) => {
+        log.warn('[CRON] Failed to record PayPal renewal delay hold audit', {
+            userId: args.userId,
+            subscriptionId: args.providerSubscriptionId,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    });
+
+    return holdUntil;
 }
 
 const runningJobs: CronJob[] = [];
@@ -791,16 +883,34 @@ export const cron = {
                     const terminalStatus = ['CANCELLED', 'EXPIRED'].includes(providerStatus);
                     const shouldDowngradeSuspended = providerStatus === 'SUSPENDED' && graceExpired;
                     const activeWithoutPaymentAfterGrace = providerStatus === 'ACTIVE' && graceExpired && !hasNewPayment;
+                    const failedPaymentsRaw = Number((paypalSubscription['billing_info'] as Record<string, any> | undefined)?.['failed_payments_count'] ?? 0);
+                    const failedPaymentsCount = Number.isFinite(failedPaymentsRaw) ? failedPaymentsRaw : 0;
 
                     if (activeWithoutPaymentAfterGrace) {
+                        const holdUntil = localSubscription.userId && failedPaymentsCount <= 0
+                            ? await extendActivePayPalRenewalDelayHold({
+                                userId: localSubscription.userId,
+                                providerSubscriptionId: subscriptionId,
+                                orderId: localSubscription.orderId,
+                                paymentRequestId: localSubscription.paymentRequestId,
+                                billingPeriodEndAt: periodEnd,
+                                graceUntil,
+                                lastPaidAt,
+                                lastPaymentEffectKey: effectKey,
+                            })
+                            : null;
                         await paymentSubscriptionCtr.markActionRequired(
                             subscriptionId,
-                            'PayPal subscription is ACTIVE but no renewal payment was detected after the grace window.',
+                            failedPaymentsCount > 0
+                                ? `PayPal subscription is ACTIVE but has ${failedPaymentsCount} failed payment attempt(s) after the grace window.`
+                                : 'PayPal subscription is ACTIVE but no renewal payment was detected after the grace window; access hold is active while waiting for delayed PayPal renewal.',
                         );
                         log.warn('[CRON] PayPal subscription active without a new payment after grace window; marked action required', {
                             subscriptionId,
                             userId: localSubscription.userId,
                             graceUntil: graceUntil?.toISOString(),
+                            failedPaymentsCount,
+                            accessHoldUntil: holdUntil?.toISOString(),
                         });
                         continue;
                     }
