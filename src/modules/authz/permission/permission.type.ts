@@ -45,4 +45,5 @@ export interface I_Response_ScanPermission {
     name: string;
     type: E_PermissionType;
     method?: E_PermissionMethodGraphQL | E_PermissionMethodRest;
+    isPublic?: boolean;
 }
