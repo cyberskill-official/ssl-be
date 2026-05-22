@@ -1,0 +1,56 @@
+type T_DashboardActivityPoint {
+    date: String
+    label: String
+    totalActivity: Int
+    userRegistrations: Int
+    contentPublished: Int
+}
+
+type T_DashboardReportCounts {
+    totalUsers: Int
+    paidUsersCount: Int
+    promoUsersCount: Int
+    freeUsersCount: Int
+    totalPayingUsersCount: Int
+    blockedUsersCount: Int
+    recentUsersCount: Int
+    totalAds: Int
+    activeAdsCount: Int
+    totalBlogs: Int
+    totalDestinations: Int
+    conversionRate: Float
+}
+
+type T_DashboardReport {
+    generatedAt: DateTime
+    cacheHit: Boolean
+    cacheTtlSeconds: Int
+    counts: T_DashboardReportCounts
+    activity: [T_DashboardActivityPoint]
+}
+
+type T_Response_DashboardReport {
+    success: Boolean
+    message: String
+    result: T_DashboardReport
+}
+
+type T_AdminPendingCounts {
+    generatedAt: DateTime
+    cacheHit: Boolean
+    cacheTtlSeconds: Int
+    ageVerification: Int
+    media: Int
+    messages: Int
+}
+
+type T_Response_AdminPendingCounts {
+    success: Boolean
+    message: String
+    result: T_AdminPendingCounts
+}
+
+type Query {
+    getDashboardReport: T_Response_DashboardReport!
+    getAdminPendingCounts(refresh: Boolean): T_Response_AdminPendingCounts!
+}
