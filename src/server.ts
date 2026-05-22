@@ -7,8 +7,8 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
-import type { I_Context } from '#shared/typescript/index.js';
-import { authzMiddleware, permissionCtr } from '#modules/authz/index.js';
+// import type { I_Context } from '#shared/typescript/index.js';
+// import { authzMiddleware, permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
@@ -75,7 +75,7 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
     mongoose.connection.on('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
-    await permissionCtr.syncPermissions();
+    // await permissionCtr.syncPermissions();
 
     // Apollo Server
     const apolloServer = createApolloServer({
@@ -105,7 +105,7 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         updateUserActivity,
         expressMiddleware(apolloServer, {
             context: async (context) => {
-                await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
+                // await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
 
                 return context;
             },
@@ -137,13 +137,13 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         env.ENDPOINT_RESTAPI,
         restCorsWithWebhookBypass,
         updateUserActivity,
-        (req, res, next) => {
-            authzMiddleware.checkAuthorizedRest(
-                { req } as unknown as I_Context,
-                res,
-                next,
-            ).catch(next);
-        },
+        // (req, res, next) => {
+        //     authzMiddleware.checkAuthorizedRest(
+        //         { req } as unknown as I_Context,
+        //         res,
+        //         next,
+        //     ).catch(next);
+        // },
         mainRouter,
     );
 

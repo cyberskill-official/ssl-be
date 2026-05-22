@@ -99,6 +99,27 @@ function applyGuardianOverrides(user: I_User, ownerId: string): void {
     user.registerStep = user.registerStep ?? E_RegisterStep.COMPLETE;
 }
 
+async function ensureCompletedUserIsEmailVerified(
+    context: I_Context,
+    user: I_User,
+): Promise<void> {
+    if (!user.id || user.isEmailVerified || user.registerStep !== E_RegisterStep.COMPLETE) {
+        return;
+    }
+
+    const updatedUser = await userCtr.updateUser(context, {
+        filter: { id: user.id },
+        update: { isEmailVerified: true },
+    }).catch((error) => {
+        log.warn('[Auth] Failed to normalize completed user email verification:', error);
+        return undefined;
+    });
+
+    if (updatedUser?.success) {
+        user.isEmailVerified = true;
+    }
+}
+
 function clearSessionCookie(req?: I_Request): void {
     const res = (req as any)?.res;
 
@@ -554,6 +575,10 @@ export const authnCtr = {
                 message: 'Account is not active.',
                 code: RESPONSE_STATUS.UNAUTHORIZED.CODE,
             };
+        }
+
+        if (!isGuardianSession && !isAdmin) {
+            await ensureCompletedUserIsEmailVerified(context, userFound.result);
         }
 
         if (!isGuardianSession && !isAdmin && !userFound.result.isEmailVerified) {
@@ -1759,6 +1784,10 @@ export const authnCtr = {
                 message: 'Account is not active.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        if (isUserPortalLogin) {
+            await ensureCompletedUserIsEmailVerified(context, userFound.result);
         }
 
         // IP capture disabled as per requirements

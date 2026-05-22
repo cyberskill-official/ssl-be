@@ -625,6 +625,9 @@ export const userCtr = {
             ...doc,
             rolesIds: sanitizedRolesIds,
             email, // save normalized email
+            isEmailVerified: doc.registerStep === E_RegisterStep.COMPLETE
+                ? true
+                : doc.isEmailVerified,
             password: await hashPassword(password),
             settings: finalSettings,
         });
