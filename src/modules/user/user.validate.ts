@@ -1,6 +1,6 @@
 import { authnCtr } from '#modules/authn/authn.controller.js';
 import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
-import { E_Role, E_Role_Staff, E_Role_User } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff, E_Role_User } from '#modules/authz/role/role.type.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 
 import type { I_User } from './user.type.js';

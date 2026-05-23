@@ -7,16 +7,20 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_AdminPendingCounts, I_DashboardActivityPoint, I_DashboardReport, I_DashboardReportCounts, I_Input_GetAdminPendingCounts } from './dashboard.type.js';
 
-import { AdvertisementModel } from '#modules/advertisement/index.js';
-import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
-import { BlogModel } from '#modules/blog/index.js';
-import { ConversationModel, E_ConversationStatus, E_ConversationType } from '#modules/conversation/conversation/index.js';
-import { MessageModel } from '#modules/conversation/message/index.js';
-import { participantCtr } from '#modules/conversation/participant/index.js';
-import { DestinationModel } from '#modules/destination/index.js';
-import { ModerationMediaModel, E_ModerationMediaStatus } from '#modules/moderation/moderation-media/index.js';
-import { UserModel } from '#modules/user/index.js';
+import { AdvertisementModel } from '#modules/advertisement/advertisement.model.js';
+import { authnCtr } from '#modules/authn/authn.controller.js';
+import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
+import { BlogModel } from '#modules/blog/blog.model.js';
+import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
+import { E_ConversationStatus, E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
+import { MessageModel } from '#modules/conversation/message/message.model.js';
+import { ParticipantModel } from '#modules/conversation/participant/participant.model.js';
+import { DestinationModel } from '#modules/destination/destination.model.js';
+import { ModerationMediaModel } from '#modules/moderation/moderation-media/moderation-media.model.js';
+import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
+import { UserModel } from '#modules/user/user.model.js';
 import { createSystemContext } from '#shared/util/context.js';
 
 import { ADMIN_PENDING_COUNTS_CACHE_TTL_SECONDS, adminPendingCountsCacheStore, DASHBOARD_REPORT_CACHE_TTL_SECONDS, dashboardReportCacheStore } from './dashboard.cache.js';
@@ -92,6 +96,30 @@ async function countUsersByRole(roleId?: string): Promise<number> {
         rolesIds: roleId,
         isDel: false,
     });
+}
+
+async function getConversationIdsByUserId(
+    userId: string,
+    conversationType: E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT | E_ConversationType.ADMIN_BROADCAST,
+): Promise<string[]> {
+    const rows = await ParticipantModel.aggregate<{ conversationId?: string }>([
+        { $match: { userId } },
+        {
+            $lookup: {
+                from: 'conversations',
+                localField: 'conversationId',
+                foreignField: 'id',
+                as: 'conversation',
+            },
+        },
+        { $unwind: '$conversation' },
+        { $match: { 'conversation.type': conversationType } },
+        { $project: { _id: 0, conversationId: 1 } },
+    ]);
+
+    return rows
+        .map(row => row.conversationId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
 async function buildDashboardReport(): Promise<Omit<I_DashboardReport, 'cacheHit'>> {
@@ -175,9 +203,9 @@ async function countNewSupportConversations(context: I_Context): Promise<number>
         pushChatConversationIds,
         adminBroadcastIds,
     ] = await Promise.all([
-        participantCtr.getConversationIdsByUserId(currentUser.id, E_ConversationType.PRIVATE),
-        participantCtr.getConversationIdsByUserId(currentUser.id, E_ConversationType.PUSH_CHAT),
-        participantCtr.getConversationIdsByUserId(currentUser.id, E_ConversationType.ADMIN_BROADCAST),
+        getConversationIdsByUserId(currentUser.id, E_ConversationType.PRIVATE),
+        getConversationIdsByUserId(currentUser.id, E_ConversationType.PUSH_CHAT),
+        getConversationIdsByUserId(currentUser.id, E_ConversationType.ADMIN_BROADCAST),
     ]);
 
     const supportConversationIds = [

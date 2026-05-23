@@ -12,7 +12,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';

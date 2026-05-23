@@ -11,7 +11,7 @@ import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { AGE_VERIFICATION_SKIPPED, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
-import { E_Role, E_Role_Staff } from '#modules/authz/index.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/event.controller.js';

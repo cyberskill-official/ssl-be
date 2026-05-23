@@ -12,7 +12,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role_Staff, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { messageCtr } from '#modules/conversation/message/index.js';
 import { E_MessageType } from '#modules/conversation/message/message.type.js';
 import { userCtr } from '#modules/user/index.js';

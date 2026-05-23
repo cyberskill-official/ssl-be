@@ -12,11 +12,12 @@ import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
-import type { I_Input_UpdateUser, I_User } from '#modules/user/index.js';
+import type { I_Input_UpdateUser, I_User } from '#modules/user/user.type.js';
 import type { I_Request } from '#shared/typescript/express.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role, E_Role_User } from '#modules/authz/role/role.type.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
@@ -36,8 +37,8 @@ import { findLatestPayPalSubscriptionForUser, isPayPalSubscriptionId } from '#mo
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
-import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
-import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { userCtr } from '#modules/user/user.controller.js';
+import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from '#modules/user/user.validate.js';
 import {
     E_VerificationMethod,
     verificationCtr,

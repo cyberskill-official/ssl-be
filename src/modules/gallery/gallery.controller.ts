@@ -18,7 +18,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
-import { E_Role, E_Role_Staff, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';

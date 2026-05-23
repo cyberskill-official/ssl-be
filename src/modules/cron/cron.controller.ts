@@ -7,7 +7,7 @@ import mongoose from 'mongoose';
 import type { I_Event } from '#modules/event/index.js';
 
 import { PROFILE_DELETION_10_DAY, PROFILE_DELETION_30_DAY } from '#modules/authn/authn.constant.js';
-import { roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { emailCtr } from '#modules/email/index.js';
 import { EventModel } from '#modules/event/event.model.js';

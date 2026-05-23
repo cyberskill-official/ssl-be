@@ -18,8 +18,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 import type { I_Input_CreatePermission, I_Input_QueryPermission, I_Input_UpdatePermission, I_Permission } from './permission.type.js';
 
 import { clearAuthzCache, invalidatePermissionAuthzCache } from '../authz.cache.js';
-import { rolePermissionCtr } from '../role-permission/index.js';
-import { roleCtr } from '../role/index.js';
+import { rolePermissionCtr } from '../role-permission/role-permission.controller.js';
+import { roleCtr } from '../role/role.controller.js';
 import { PermissionModel } from './permission.model.js';
 import { scanGraphqlResolvers, scanRestApiEndpoints } from './permission.scan.js';
 import { E_PermissionType } from './permission.type.js';
@@ -112,7 +112,7 @@ export const permissionCtr = {
             log.info('Starting permission synchronization...');
 
             // 1. Scan permissions from code
-            const graphqlPermissions = scanGraphqlResolvers();
+            const graphqlPermissions = await scanGraphqlResolvers();
             const restPermissions = scanRestApiEndpoints();
             const allPermissions = [...graphqlPermissions, ...restPermissions];
 

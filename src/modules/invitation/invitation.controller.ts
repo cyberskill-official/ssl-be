@@ -24,7 +24,7 @@ import { eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
-import { pubsub } from '#shared/graphql/index.js';
+import { pubsub } from '#shared/graphql/pubsub.js';
 import { createSystemContext } from '#shared/util/context.js';
 
 import type {

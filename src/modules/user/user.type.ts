@@ -6,7 +6,7 @@ export enum E_OnboardingType {
 }
 
 import type { E_RegisterStep, I_AgeVerify } from '#modules/authn/index.js';
-import type { I_Role } from '#modules/authz/index.js';
+import type { I_Role } from '#modules/authz/role/role.type.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { I_Language } from '#modules/language/index.js';
 import type { I_Location } from '#modules/location/index.js';

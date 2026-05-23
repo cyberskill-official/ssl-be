@@ -22,7 +22,7 @@ import { E_NotificationEntityType, E_NotificationType } from '#modules/notificat
 import { userCtr } from '#modules/user/index.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
-import { pubsub } from '#shared/graphql/index.js';
+import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
 

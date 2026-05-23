@@ -11,7 +11,8 @@ import { emailCtr } from '#modules/email/index.js';
 import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { isAdminContext } from '#shared/auth-context/index.js';
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 
 import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_User } from './user.type.js';
 

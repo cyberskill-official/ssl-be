@@ -6,7 +6,7 @@ import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js'
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
-import { roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { eventCtr } from '#modules/event/event.controller.js';
 import orderCtr from '#modules/order/order.controller.js';

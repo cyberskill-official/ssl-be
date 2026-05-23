@@ -20,8 +20,11 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/authn.constant.js';
+import { authnCtr } from '#modules/authn/authn.controller.js';
+import { E_RegisterStep } from '#modules/authn/authn.type.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
