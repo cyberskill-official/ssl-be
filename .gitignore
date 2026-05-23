@@ -2,9 +2,10 @@
 .DS_Store
 backup
 build
+logs
 node_modules
 uploads
+docs
 .env
 .migrate-mongo.config.js
 .simple-git-hooks.json
-docs

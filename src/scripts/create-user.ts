@@ -71,7 +71,7 @@ function parseDateArg(name: string): Date | null {
 
     const parsed = new Date(rawValue);
     if (Number.isNaN(parsed.getTime())) {
-        throw new Error(`${name} must be a valid date or ISO datetime`);
+        throw new TypeError(`${name} must be a valid date or ISO datetime`);
     }
 
     return parsed;

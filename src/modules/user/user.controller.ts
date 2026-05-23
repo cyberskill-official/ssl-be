@@ -43,6 +43,7 @@ import { ModerationLogModel } from '#modules/moderation/moderation-log/moderatio
 import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
+import { cancelPayPalSubscriptionForUser } from '#modules/payment/paypal/paypal-subscription.util.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getSessionUser, isAdminUser } from '#shared/auth-context/auth-context.service.js';
 import { getEnv } from '#shared/env/index.js';
@@ -53,17 +54,16 @@ import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_Input_CreateUs
 
 import { userAdminService } from './user-admin.service.js';
 import { UserModel } from './user.model.js';
-import { broadcastNewMemberInArea, createLocationForUser, ensurePopulateIncludes, hasValidMap, isTemporaryLocationActive, normalizeDateField, normalizeDateValue, normalizeRolesFilter, normalizeUserSettings, refreshSessionUser, resolveOnlineStatus, sanitizeRolesIds, upsertLocationForUser } from './user.util.js';
 import {
     E_OnboardingType,
 } from './user.type.js';
+import { broadcastNewMemberInArea, createLocationForUser, ensurePopulateIncludes, hasValidMap, isTemporaryLocationActive, normalizeDateField, normalizeDateValue, normalizeRolesFilter, normalizeUserSettings, refreshSessionUser, resolveOnlineStatus, sanitizeRolesIds, upsertLocationForUser } from './user.util.js';
 import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from './user.validate.js';
 
 const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/;
 const NON_WORD_CHARS_REGEX = /[^\w-]/g;
-import { cancelPayPalSubscriptionForUser } from '#modules/payment/paypal/paypal-subscription.util.js';
 
 function normalizeDocumentId<T extends { id?: unknown; _id?: unknown }>(document: T | null | undefined): T | null | undefined {
     if (!document) {
@@ -149,9 +149,9 @@ export const userCtr = {
         );
         const effectivePopulate = isAdmin
             ? ensurePopulateIncludes(
-                hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
-                ['notes.createdBy'],
-            )
+                    hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
+                    ['notes.createdBy'],
+                )
             : (hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate]);
 
         const userFound = await mongooseCtr.findOne(
@@ -315,7 +315,7 @@ export const userCtr = {
 
             const partnerKey: 'partner1' | 'partner2'
                 = (targetQueue.length ? targetQueue.shift() : undefined)
-                ?? (i === 0 ? 'partner1' : 'partner2');
+                    ?? (i === 0 ? 'partner1' : 'partner2');
             interface PartnerShim { gallery?: { id?: string; url?: string }; galleryId?: string }
             const cu = currentUser as unknown as { partner1?: PartnerShim; partner2?: PartnerShim } | undefined;
             const previousGallery = cu?.[partnerKey]?.gallery;
@@ -387,8 +387,8 @@ export const userCtr = {
                         // Cleanup rejected avatar file from storage
                         const rejectedRelativePath = fullUrl
                             ? (fullUrl.split('?')[0] ?? '')
-                                .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
-                                .replace(LEADING_SLASHES_REGEX, '')
+                                    .replace(`${env.BUNNY_CDN_HOSTNAME}/`, '')
+                                    .replace(LEADING_SLASHES_REGEX, '')
                             : '';
 
                         if (rejectedRelativePath) {
@@ -888,7 +888,7 @@ export const userCtr = {
                 log.info(`[USER] Downgrade detected for user ${userFound.result.id}. Clearing expiry dates and cancelling PayPal.`);
 
                 // 1. Cancel PayPal subscription if any
-                await cancelPayPalSubscriptionForUser(context, userFound.result.id).catch(err => {
+                await cancelPayPalSubscriptionForUser(context, userFound.result.id).catch((err) => {
                     log.warn(`[USER] Failed to cancel PayPal during admin downgrade for ${userFound.result.id}:`, err);
                 });
 

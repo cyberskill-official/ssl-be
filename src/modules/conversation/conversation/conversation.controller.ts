@@ -22,8 +22,8 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
-import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_Staff } from '#modules/authz/role/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';

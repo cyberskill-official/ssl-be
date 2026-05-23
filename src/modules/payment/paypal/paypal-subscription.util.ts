@@ -1,5 +1,7 @@
 import { log } from '@cyberskill/shared/node/log';
+
 import type { I_Context } from '#shared/typescript/index.js';
+
 import orderCtr from '#modules/order/order.controller.js';
 import { paymentRequestCtr } from '#modules/payment/payment-request/index.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
@@ -47,9 +49,9 @@ export async function cancelPayPalSubscriptionForUser(context: I_Context, userId
         // 2. Fallback: search by userId stored directly in meta (in case meta.orderId is missing)
         const fallbackRes = await paymentRequestCtr.getPaymentRequests(context, {
             filter: {
-                'gateway': E_PaymentProvider.PAYPAL,
-                'externalOrderId': { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
-                '$or': [
+                gateway: E_PaymentProvider.PAYPAL,
+                externalOrderId: { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
+                $or: [
                     { 'meta.userId': userId },
                     { 'meta.customId': userId },
                 ],
@@ -65,7 +67,8 @@ export async function cancelPayPalSubscriptionForUser(context: I_Context, userId
                 }
             }
         }
-    } catch (error) {
+    }
+    catch (error) {
         log.error(`[PAYPAL-UTIL] Error cancelling PayPal subscription for user ${userId}:`, error);
         // Best-effort: do not block deletion
     }
@@ -93,10 +96,12 @@ async function cancelSinglePayPalSubscription(context: I_Context, userId: string
 
         if (cancelRes.success) {
             log.success(`[PAYPAL-UTIL] Successfully cancelled PayPal subscription ${subscriptionId} for user ${userId}`);
-        } else {
+        }
+        else {
             log.error(`[PAYPAL-UTIL] Failed to cancel PayPal subscription ${subscriptionId} for user ${userId}: ${cancelRes.message}`);
         }
-    } catch (error) {
+    }
+    catch (error) {
         log.error(`[PAYPAL-UTIL] Exception while cancelling PayPal subscription ${subscriptionId} for user ${userId}:`, error);
     }
 }

@@ -110,3 +110,6 @@ export const VerificationModel = mongo.createModel<I_Verification>({
         },
     },
 });
+
+// Index for cron job performance
+VerificationModel.schema.index({ expiresAt: 1 }, { name: 'idx_verifications_expires_at' });

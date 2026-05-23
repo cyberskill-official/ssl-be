@@ -1,10 +1,5 @@
 import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskill/shared/node/mongo';
 
-export enum E_OnboardingType {
-    DASHBOARD = 'DASHBOARD',
-    PROFILE = 'PROFILE',
-}
-
 import type { E_RegisterStep, I_AgeVerify } from '#modules/authn/index.js';
 import type { I_Role } from '#modules/authz/role/role.type.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
@@ -13,6 +8,11 @@ import type { I_Location } from '#modules/location/index.js';
 import type { I_Input_Note, I_Note } from '#modules/note/index.js';
 import type { I_Tag } from '#modules/tag/index.js';
 import type { T_UploadedFilePromise } from '#modules/upload/upload.type.js';
+
+export enum E_OnboardingType {
+    DASHBOARD = 'DASHBOARD',
+    PROFILE = 'PROFILE',
+}
 
 export enum E_AccountType {
     SINGLE = 'SINGLE',

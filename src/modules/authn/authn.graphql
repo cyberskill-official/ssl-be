@@ -108,7 +108,14 @@ type Mutation {
     registerPreferences(update: Input_Register_Preferences!, ip: String, token: String): T_Response_Auth!
     registerMembership(type: E_MembershipType!, promoCode: String, ip: String, token: String): T_Response_Auth!
     cancelMembership: T_Response_Auth!
-    login(identity: String!, password: String!, loginType: E_LoginType!, rememberMe: Boolean, tempOtp: String, ip: String): T_Response_Auth!
+    login(
+        identity: String!
+        password: String!
+        loginType: E_LoginType!
+        rememberMe: Boolean
+        tempOtp: String
+        ip: String
+    ): T_Response_Auth!
     logout: T_Response_Auth!
     forgotPasswordRequest(email: String!): T_Response_Auth!
     resetPassword(email: String!, otp: String!, newPassword: String!): T_Response_Auth!

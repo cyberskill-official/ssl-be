@@ -93,5 +93,8 @@ extend type Query {
         options: JSON
         populate: JSON
     ): T_Response_MembershipEntitlementChange!
-    getMembershipEntitlementChanges(filter: Input_QueryMembershipEntitlementChange, options: JSON): T_Response_MembershipEntitlementChanges!
+    getMembershipEntitlementChanges(
+        filter: Input_QueryMembershipEntitlementChange
+        options: JSON
+    ): T_Response_MembershipEntitlementChanges!
 }

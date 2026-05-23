@@ -16,21 +16,22 @@ import type { I_Context, I_NextFunction, I_Request, I_Response } from '#shared/t
 
 import { getEnv } from '#shared/env/index.js';
 
-import {
-    AUTHZ_GRAPHQL_PARSE_CACHE_MAX,
-} from './authz.constant.js';
+import type { I_Permission } from './permission/permission.type.js';
+
 import {
     authzPermissionCacheKey,
     authzPermissionRolesCacheKey,
     getAuthzCache,
     setAuthzCache,
 } from './authz.cache.js';
+import {
+    AUTHZ_GRAPHQL_PARSE_CACHE_MAX,
+} from './authz.constant.js';
 import { permissionCtr } from './permission/permission.controller.js';
 import {
     E_PermissionMethodGraphQL,
     E_PermissionType,
 } from './permission/permission.type.js';
-import type { I_Permission } from './permission/permission.type.js';
 import { rolePermissionCtr } from './role-permission/role-permission.controller.js';
 
 const LEADING_SLASHES_REGEX = /^\/+/;
@@ -301,9 +302,9 @@ async function loadAuthzUser(context: I_Context): Promise<I_AuthzUser | null> {
 
     const roles = rolesIds.length > 0
         ? await mongoose.connection.collection<I_AuthzRole>('roles').find({
-            id: { $in: rolesIds },
-            isDel: { $ne: true },
-        }).toArray()
+                id: { $in: rolesIds },
+                isDel: { $ne: true },
+            }).toArray()
         : [];
 
     return {
@@ -382,8 +383,8 @@ async function getPermissionRoleIdsCached(context: I_Context, permissionId: stri
 
     const roleIds = rolePermissionsFound.success && rolePermissionsFound.result
         ? rolePermissionsFound.result.docs
-            .map(rolePermission => rolePermission.roleId)
-            .filter((roleId): roleId is string => typeof roleId === 'string' && roleId.length > 0)
+                .map(rolePermission => rolePermission.roleId)
+                .filter((roleId): roleId is string => typeof roleId === 'string' && roleId.length > 0)
         : [];
 
     await setAuthzCache(cacheKey, roleIds);

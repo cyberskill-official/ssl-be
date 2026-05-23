@@ -122,3 +122,7 @@ export const AdvertisementModel = mongo.createModel<I_Advertisement>({
         },
     ],
 });
+
+// Indexes for cron job performance
+AdvertisementModel.schema.index({ isActive: 1, endDate: 1 }, { name: 'idx_advertisements_active_end_date' });
+AdvertisementModel.schema.index({ isActive: 1, isDel: 1, startDate: 1, endDate: 1 }, { name: 'idx_advertisements_scheduled_activation' });

@@ -10,4 +10,5 @@ export const CRON_JOB_SCHEDULE = {
     ENABLE_SCHEDULED_ADS: '0 * * * *',
     EVERY_15_MINUTES: '*/15 * * * *',
     EVERY_NIGHT_2AM: '0 2 * * *',
+    CLEANUP_CRON_LOGS: '30 2 * * *',
 };

@@ -1,7 +1,7 @@
-import type { I_Response_ScanPermission } from './permission.type.js';
+import type { E_PermissionMethodRest, I_Response_ScanPermission } from './permission.type.js';
 
 import { PUBLIC_GRAPHQL_PERMISSION_TARGETS, REST_PERMISSION_DEFINITIONS } from '../authz.constant.js';
-import { E_PermissionMethodGraphQL, E_PermissionMethodRest, E_PermissionType } from './permission.type.js';
+import { E_PermissionMethodGraphQL, E_PermissionType } from './permission.type.js';
 
 export async function scanGraphqlResolvers(): Promise<I_Response_ScanPermission[]> {
     const { allResolvers } = await import('#shared/graphql/schema.js');

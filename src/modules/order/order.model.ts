@@ -62,3 +62,6 @@ export const OrderModel = mongo.createModel<I_Order>({
         },
     ],
 });
+
+// Index for cron job performance
+OrderModel.schema.index({ status: 1, createdAt: 1, isDel: 1 }, { name: 'idx_orders_unpaid_cleanup' });

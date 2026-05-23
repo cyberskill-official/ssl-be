@@ -3,6 +3,7 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { addDays, addMinutes, addMonths } from 'date-fns';
 
 import type { I_Event, I_Input_CreateEvent } from '#modules/event/event.type.js';
+import type { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
@@ -17,7 +18,6 @@ import {
     E_MembershipEntitlementChangeSource,
 } from '#modules/payment/membership-entitlement-change/membership-entitlement-change.type.js';
 import { getPaymentSubscriptionGraceMinutes } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
-import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { pricingCtr } from '#modules/pricing/index.js';
 import { E_PricingType } from '#modules/pricing/pricing.type.js';
 import { userCtr } from '#modules/user/index.js';
@@ -366,7 +366,7 @@ async function claimPaidEffectKey(orderId: string | undefined, effectKey: string
 
     const claimed = await OrderModel.findOneAndUpdate(
         {
-            id: orderId,
+            'id': orderId,
             'meta.appliedPaidEffectKeys': { $ne: effectKey },
             'meta.pendingPaidEffectKeys': { $ne: effectKey },
         },

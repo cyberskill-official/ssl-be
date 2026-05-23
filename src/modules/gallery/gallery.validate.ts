@@ -4,8 +4,7 @@ import { throwError } from '@cyberskill/shared/node/log';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus } from '#modules/authn/index.js';
-import { E_Role_User } from '#modules/authz/role/role.type.js';
-import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
+import { E_Role, E_Role_Staff, E_Role_User } from '#modules/authz/role/role.type.js';
 import { followCtr } from '#modules/follow/follow.controller.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/index.js';
 import { notificationCtr } from '#modules/notification/notification.controller.js';

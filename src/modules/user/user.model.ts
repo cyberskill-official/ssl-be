@@ -599,6 +599,10 @@ export const UserModel = mongo.createModel<I_User>({
             type: Date,
             default: null,
         },
+        membershipEndDate: {
+            type: Date,
+            default: null,
+        },
         membershipCancelled: {
             type: Boolean,
             default: false,
@@ -699,3 +703,9 @@ export const UserModel = mongo.createModel<I_User>({
         },
     ],
 });
+
+// Indexes for cron job performance
+UserModel.schema.index({ isOnline: 1, lastOnline: 1 }, { name: 'idx_users_online_last_online' });
+UserModel.schema.index({ 'settings.temporaryLocation.endAt': 1 }, { name: 'idx_users_temporary_location_end_at' });
+UserModel.schema.index({ rolesIds: 1, membershipExpiresAt: 1, isDel: 1, isAdminBlocked: 1 }, { name: 'idx_users_membership_expiry' });
+UserModel.schema.index({ rolesIds: 1, lastOnline: 1, createdAt: 1, inactivityDeletionWarning10SentAt: 1 }, { name: 'idx_users_inactivity_cleanup' });

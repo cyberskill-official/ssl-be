@@ -52,3 +52,6 @@ export const PromoCodeModel = mongo.createModel<I_PromoCode>({
         },
     },
 });
+
+// Index for cron job performance
+PromoCodeModel.schema.index({ isActive: 1, expiresAt: 1 }, { name: 'idx_promo_codes_active_expires_at' });

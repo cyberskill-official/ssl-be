@@ -133,6 +133,10 @@ export const EventModel = mongo.createModel<I_Event>({
     ],
 });
 
+// Indexes for cron job performance
+EventModel.schema.index({ isActive: 1, isDel: 1, startDate: 1, endDate: 1 }, { name: 'idx_events_cron_expiry' });
+EventModel.schema.index({ createdById: 1, isActive: 1, isDel: 1 }, { name: 'idx_events_owner_active' });
+
 async function createMiddleware(this: I_Event) {
     try {
         const mongooseCtr = new MongooseController<I_Event>(EventModel);

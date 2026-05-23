@@ -29,8 +29,8 @@ import {
 } from '#modules/payment/payment-subscription/payment-subscription.type.js';
 import { paymentCtr } from '#modules/payment/payment-transaction/index.js';
 import { E_PaymentGatewayOperation, E_PaymentProvider, E_PaymentTransactionSource, E_PaymentStatus as E_PaymentTransactionStatus } from '#modules/payment/payment-transaction/payment-transaction.type.js';
-import { buildPayPalSubscriptionPaymentEffectKey, getPayPalSubscriptionLastPayment } from '#modules/payment/paypal/paypal.effect-key.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
+import { buildPayPalSubscriptionPaymentEffectKey, getPayPalSubscriptionLastPayment } from '#modules/payment/paypal/paypal.effect-key.js';
 import {
     E_PayPalProductCategory,
     E_PayPalProductStatus,

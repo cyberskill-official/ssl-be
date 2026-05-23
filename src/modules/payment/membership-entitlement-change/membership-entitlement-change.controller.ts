@@ -4,12 +4,13 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { MembershipEntitlementChangeModel } from './membership-entitlement-change.model.js';
 import type {
     I_Input_CreateMembershipEntitlementChange,
     I_Input_QueryMembershipEntitlementChange,
     I_MembershipEntitlementChange,
 } from './membership-entitlement-change.type.js';
+
+import { MembershipEntitlementChangeModel } from './membership-entitlement-change.model.js';
 
 const membershipEntitlementChangeMongooseCtr = new MongooseController<I_MembershipEntitlementChange>(MembershipEntitlementChangeModel);
 

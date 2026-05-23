@@ -150,15 +150,15 @@ export const moderationMediaCtr = {
             const [galleriesResult, cataloguesResult] = await Promise.all([
                 galleryEntityIds.size > 0
                     ? galleryMongooseCtr.findPaging(
-                        { id: { $in: [...galleryEntityIds] }, isDel: { $ne: true } },
-                        { pagination: false },
-                    )
+                            { id: { $in: [...galleryEntityIds] }, isDel: { $ne: true } },
+                            { pagination: false },
+                        )
                     : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Gallery>>),
                 catalogueEntityIds.size > 0
                     ? catalogueMongooseCtr.findPaging(
-                        { id: { $in: [...catalogueEntityIds] }, isDel: { $ne: true } },
-                        { pagination: false },
-                    )
+                            { id: { $in: [...catalogueEntityIds] }, isDel: { $ne: true } },
+                            { pagination: false },
+                        )
                     : Promise.resolve({ success: true, result: { docs: [] } } as unknown as I_Return<T_PaginateResult<I_Catalogue>>),
             ]);
 
@@ -182,27 +182,27 @@ export const moderationMediaCtr = {
         const filteredDocs = includeDeletedEntities
             ? moderationDocs
             : moderationDocs.filter((moderationMedia) => {
-                const entityId = moderationMedia?.entityId;
-                if (!entityId) {
+                    const entityId = moderationMedia?.entityId;
+                    if (!entityId) {
+                        return true;
+                    }
+
+                    if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
+                        if (!existingGalleryIds) {
+                            return true;
+                        }
+                        return existingGalleryIds.has(String(entityId));
+                    }
+
+                    if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
+                        if (!existingCatalogueIds) {
+                            return true;
+                        }
+                        return existingCatalogueIds.has(String(entityId));
+                    }
+
                     return true;
-                }
-
-                if (moderationMedia.entity === E_UploadEntity.GALLERY || moderationMedia.entity === E_UploadEntity.USER) {
-                    if (!existingGalleryIds) {
-                        return true;
-                    }
-                    return existingGalleryIds.has(String(entityId));
-                }
-
-                if (moderationMedia.entity === E_UploadEntity.CATALOGUE) {
-                    if (!existingCatalogueIds) {
-                        return true;
-                    }
-                    return existingCatalogueIds.has(String(entityId));
-                }
-
-                return true;
-            });
+                });
 
         moderationMedias.result.docs = filteredDocs.map((moderationMedia) => {
             if (moderationMedia.url) {
@@ -740,20 +740,20 @@ export const moderationMediaCtr = {
                     // Filter messages that are redacted, deleted, or have empty content.value (indicating they were redacted)
                     const redactedMessages = allMessages.success && allMessages.result?.docs
                         ? {
-                            success: true,
-                            result: {
-                                docs: allMessages.result.docs.filter((msg: any) => {
+                                success: true,
+                                result: {
+                                    docs: allMessages.result.docs.filter((msg: any) => {
                                     // Check if message is redacted, deleted, or has empty content.value
-                                    const isRedacted = msg.redacted === true;
-                                    const isDeleted = msg.deletedAt && msg.deletedAt !== null;
-                                    const hasEmptyContent = !msg.content?.value || msg.content.value === '';
-                                    const shouldRestore = isRedacted || isDeleted || hasEmptyContent;
+                                        const isRedacted = msg.redacted === true;
+                                        const isDeleted = msg.deletedAt && msg.deletedAt !== null;
+                                        const hasEmptyContent = !msg.content?.value || msg.content.value === '';
+                                        const shouldRestore = isRedacted || isDeleted || hasEmptyContent;
 
-                                    return shouldRestore;
-                                }),
-                                totalDocs: 0,
-                            },
-                        }
+                                        return shouldRestore;
+                                    }),
+                                    totalDocs: 0,
+                                },
+                            }
                         : { success: false, result: { docs: [] } };
 
                     if (redactedMessages.success && redactedMessages.result?.docs && redactedMessages.result.docs.length > 0) {

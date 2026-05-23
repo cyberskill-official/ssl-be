@@ -98,6 +98,9 @@ export const PaymentSubscriptionModel = mongo.createModel<I_PaymentSubscription>
 });
 
 PaymentSubscriptionModel.schema.index({ provider: 1, providerSubscriptionId: 1 }, { unique: true });
+
+// Index for cron job performance
+PaymentSubscriptionModel.schema.index({ provider: 1, status: 1, nextReconcileAt: 1 }, { name: 'idx_payment_subscriptions_reconcile_due' });
 PaymentSubscriptionModel.schema.index({ userId: 1, status: 1 });
 PaymentSubscriptionModel.schema.index({ nextReconcileAt: 1, status: 1 });
 PaymentSubscriptionModel.schema.index({ replacesSubscriptionId: 1 });

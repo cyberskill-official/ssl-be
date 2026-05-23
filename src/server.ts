@@ -7,6 +7,8 @@ import mongoose from 'mongoose';
 import { createServer } from 'node:http';
 import process from 'node:process';
 
+import type { I_Request } from '#shared/typescript/index.js';
+
 // import type { I_Context } from '#shared/typescript/index.js';
 // import { authzMiddleware, permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
@@ -15,7 +17,6 @@ import { updateUserActivity } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { schema } from '#shared/graphql/schema.js';
 import { E_SessionPortal, getPortalSessionCookieNames, getSessionPortalFromRequest } from '#shared/session/index.js';
-import type { I_Request } from '#shared/typescript/index.js';
 
 const env = getEnv();
 const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
@@ -70,11 +71,12 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         mongoose.set('debug', true);
     }
     await mongoose.connect(env.MONGO_URI, {
-        autoIndex: false,
+        autoIndex: true,
     });
     mongoose.connection.on('error', (err) => {
         log.error('Mongoose connection error:', err);
     });
+
     // await permissionCtr.syncPermissions();
 
     // Apollo Server
@@ -82,13 +84,12 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         server: httpServer,
         schema,
         isDev: !env.IS_PROD,
-        introspection: true,
         async drainServer() {
             if (serverCleanup) {
                 await serverCleanup.dispose();
             }
         },
-    } as any);
+    });
 
     await apolloServer.start();
 
@@ -154,7 +155,7 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
     ['SIGINT', 'SIGTERM'].forEach(signal => process.on(signal, async () => {
         log.info(`🛑 Received ${signal}, starting graceful shutdown...`);
         try {
-            cron.stop();
+            await cron.stop();
             await apolloServer.stop();
             await mongoose.disconnect();
             httpServer.close(() => {

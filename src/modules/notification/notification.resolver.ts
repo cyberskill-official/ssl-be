@@ -65,23 +65,23 @@ const notificationResolver = {
     },
     Subscription: {
         notificationAdded: {
-            subscribe: notificationCtr.subscribeToNotificationAdded(),
+            subscribe: () => notificationCtr.subscribeToNotificationAdded(),
             resolve: (payload: I_NotificationAddedPayload) => payload.notification,
         },
         notificationUpdated: {
-            subscribe: notificationCtr.subscribeToNotificationUpdated(),
+            subscribe: () => notificationCtr.subscribeToNotificationUpdated(),
             resolve: (payload: I_NotificationUpdatedPayload) => payload.notification,
         },
         notificationRead: {
-            subscribe: notificationCtr.subscribeToNotificationRead(),
+            subscribe: () => notificationCtr.subscribeToNotificationRead(),
             resolve: (payload: I_NotificationReadPayload) => payload,
         },
         notificationDismissed: {
-            subscribe: notificationCtr.subscribeToNotificationDismissed(),
+            subscribe: () => notificationCtr.subscribeToNotificationDismissed(),
             resolve: (payload: I_NotificationDismissedPayload) => payload,
         },
         notificationDeleted: {
-            subscribe: notificationCtr.subscribeToNotificationDeleted(),
+            subscribe: () => notificationCtr.subscribeToNotificationDeleted(),
             resolve: (payload: I_NotificationDeletedPayload) => payload,
         },
     },

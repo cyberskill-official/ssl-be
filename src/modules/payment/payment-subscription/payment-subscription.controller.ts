@@ -9,14 +9,14 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { getEnv } from '#shared/env/index.js';
 
+import type { I_Input_QueryPaymentSubscription, I_Input_UpsertPaymentSubscriptionSnapshot, I_PaymentSubscription } from './payment-subscription.type.js';
+
 import { E_PaymentProvider } from '../payment-transaction/payment-transaction.type.js';
 import { PaymentSubscriptionModel } from './payment-subscription.model.js';
 import {
     E_PaymentSubscriptionSource,
     E_PaymentSubscriptionStatus,
-    type I_Input_QueryPaymentSubscription,
-    type I_Input_UpsertPaymentSubscriptionSnapshot,
-    type I_PaymentSubscription,
+
 } from './payment-subscription.type.js';
 
 const paymentSubscriptionMongooseCtr = new MongooseController<I_PaymentSubscription>(PaymentSubscriptionModel);
@@ -262,14 +262,14 @@ export const paymentSubscriptionCtr = {
         const graceUntil = periodWindow.accessUntilAt ?? resolvePaymentSubscriptionAccessUntil(currentPeriodEndAt);
         const normalizedMeta = input.meta
             ? {
-                ...input.meta,
-                ...(periodWindow.usesSetupFeePlan && {
-                    rawPayPalNextBillingAt: periodWindow.rawNextBillingAt?.toISOString(),
-                    expectedBillingPeriodEndAt: periodWindow.expectedPeriodEndAt?.toISOString(),
-                    normalizedBillingPeriodEndAt: currentPeriodEndAt?.toISOString(),
-                    paypalNextBillingAdjusted: periodWindow.paypalNextBillingAdjusted,
-                }),
-            }
+                    ...input.meta,
+                    ...(periodWindow.usesSetupFeePlan && {
+                        rawPayPalNextBillingAt: periodWindow.rawNextBillingAt?.toISOString(),
+                        expectedBillingPeriodEndAt: periodWindow.expectedPeriodEndAt?.toISOString(),
+                        normalizedBillingPeriodEndAt: currentPeriodEndAt?.toISOString(),
+                        paypalNextBillingAdjusted: periodWindow.paypalNextBillingAdjusted,
+                    }),
+                }
             : undefined;
         const nextReconcileAt = resolveNextReconcileAt({
             status,

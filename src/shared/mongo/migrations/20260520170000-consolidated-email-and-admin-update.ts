@@ -1,30 +1,30 @@
 import type { C_Db } from '@cyberskill/shared/node/mongo';
 
 import { log } from '@cyberskill/shared/node/log';
-import { v4 as uuidv4 } from 'uuid';
 import process from 'node:process';
+import { v4 as uuidv4 } from 'uuid';
 
-import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
-import { E_Role_Staff } from '#modules/authz/role/role.type.js';
-import { hashPassword } from '#shared/util/index.js';
 import {
+    ACCOUNT_DELETED,
+    ACCOUNT_SUSPENDED,
     AGE_VERIFICATION_SKIPPED,
     EMAIL_VERIFICATION,
     FORGOT_PASSWORD,
+    MEMBERSHIP_DOWNGRADE,
     NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY,
     NEW_FOLLOWER,
     NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST,
     NEW_MESSAGE,
-    PAYMENT_SUCCESS,
     PAYMENT_FAILED,
-    ACCOUNT_DELETED,
-    ACCOUNT_SUSPENDED,
-    WELCOME_PUSH_NOTIFICATION,
-    MEMBERSHIP_DOWNGRADE,
-    PROFILE_DELETION_30_DAY,
+    PAYMENT_SUCCESS,
     PROFILE_DELETION_10_DAY,
+    PROFILE_DELETION_30_DAY,
     REPLY_FROM_ADMIN,
+    WELCOME_PUSH_NOTIFICATION,
 } from '#modules/authn/authn.constant.js';
+import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
+import { E_Role_Staff } from '#modules/authz/role/role.type.js';
+import { hashPassword } from '#shared/util/index.js';
 
 /**
  * Consolidated migration that merges ALL previously-fragmented email template
@@ -55,7 +55,8 @@ const LOGO_URL = process.env['EMAIL_LOGO_URL']?.trim()
 
 const USER_APP_BASE_URL = (() => {
     const raw = process.env['USER_APP_URL']?.trim();
-    if (!raw) return 'https://development.secretswingerlust.com';
+    if (!raw)
+        return 'https://development.secretswingerlust.com';
     return raw.replace(/\/+$/, '');
 })();
 
@@ -668,23 +669,30 @@ export async function up(db: C_Db) {
 
     const updateFields: Record<string, unknown> = {};
 
-    if (!existingAdmin['username']) updateFields['username'] = DEFAULT_USERNAME;
-    if (!existingAdmin['password']) updateFields['password'] = await hashPassword(DEFAULT_PASSWORD);
+    if (!existingAdmin['username'])
+        updateFields['username'] = DEFAULT_USERNAME;
+    if (!existingAdmin['password'])
+        updateFields['password'] = await hashPassword(DEFAULT_PASSWORD);
 
     const rolesIds = Array.isArray(existingAdmin['rolesIds'])
         ? existingAdmin['rolesIds'].filter(Boolean)
         : [];
-    if (!rolesIds.includes(adminRoleId)) updateFields['rolesIds'] = [...rolesIds, adminRoleId];
-    if (existingAdmin['registerStep'] !== E_RegisterStep.COMPLETE) updateFields['registerStep'] = E_RegisterStep.COMPLETE;
-    if (existingAdmin['isEmailVerified'] !== true) updateFields['isEmailVerified'] = true;
-    if (existingAdmin['isActive'] !== true) updateFields['isActive'] = true;
+    if (!rolesIds.includes(adminRoleId))
+        updateFields['rolesIds'] = [...rolesIds, adminRoleId];
+    if (existingAdmin['registerStep'] !== E_RegisterStep.COMPLETE)
+        updateFields['registerStep'] = E_RegisterStep.COMPLETE;
+    if (existingAdmin['isEmailVerified'] !== true)
+        updateFields['isEmailVerified'] = true;
+    if (existingAdmin['isActive'] !== true)
+        updateFields['isActive'] = true;
 
     const existingAgeVerify = existingAdmin['ageVerify'] as
         | { status?: E_AgeVerifyStatus; approvedAt?: Date }
         | undefined;
     if (existingAgeVerify?.status !== E_AgeVerifyStatus.APPROVED) {
         updateFields['ageVerify'] = { status: E_AgeVerifyStatus.APPROVED, approvedAt: now };
-    } else if (!existingAgeVerify?.approvedAt) {
+    }
+    else if (!existingAgeVerify?.approvedAt) {
         updateFields['ageVerify'] = { ...existingAgeVerify, approvedAt: now };
     }
 

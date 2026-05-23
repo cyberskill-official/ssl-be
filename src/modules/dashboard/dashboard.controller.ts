@@ -5,8 +5,6 @@ import { log } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import type { I_AdminPendingCounts, I_DashboardActivityPoint, I_DashboardReport, I_DashboardReportCounts, I_Input_GetAdminPendingCounts } from './dashboard.type.js';
-
 import { AdvertisementModel } from '#modules/advertisement/advertisement.model.js';
 import { authnCtr } from '#modules/authn/authn.controller.js';
 import { E_AgeVerifyStatus } from '#modules/authn/authn.type.js';
@@ -22,6 +20,8 @@ import { ModerationMediaModel } from '#modules/moderation/moderation-media/moder
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { createSystemContext } from '#shared/util/context.js';
+
+import type { I_AdminPendingCounts, I_DashboardActivityPoint, I_DashboardReport, I_DashboardReportCounts, I_Input_GetAdminPendingCounts } from './dashboard.type.js';
 
 import { ADMIN_PENDING_COUNTS_CACHE_TTL_SECONDS, adminPendingCountsCacheStore, DASHBOARD_REPORT_CACHE_TTL_SECONDS, dashboardReportCacheStore } from './dashboard.cache.js';
 
@@ -230,7 +230,7 @@ async function countNewSupportConversations(context: I_Context): Promise<number>
         .filter((id): id is string => typeof id === 'string' && id.length > 0);
     const contactLastMessageIds = supportLastMessageIds.length > 0
         ? await MessageModel.distinct('id', {
-                id: { $in: supportLastMessageIds },
+                'id': { $in: supportLastMessageIds },
                 'content.contactAdmin': { $exists: true, $ne: null },
             })
         : [];
