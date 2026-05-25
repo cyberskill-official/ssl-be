@@ -4,8 +4,11 @@ import type { IncomingMessage } from 'node:http';
 
 import type { I_SessionPayload } from '#modules/authn/authn.type.js';
 import type { I_User } from '#modules/user/index.js';
+import type { E_SessionPortal } from '#shared/session/index.js';
 
 export interface I_Request extends Partial<Request> {
+    sessionCookieName?: string;
+    sessionPortal?: E_SessionPortal;
     session?: Session & Partial<SessionData> & {
         user?: I_User;
         guardianView?: {
@@ -29,6 +32,8 @@ export interface I_GuardianTokenPayload extends I_SessionPayload {
 }
 
 export interface I_IncomingMessage extends IncomingMessage {
+    sessionCookieName?: string;
+    sessionPortal?: E_SessionPortal;
     session?: Session & Partial<SessionData> & {
         user?: I_User;
     };

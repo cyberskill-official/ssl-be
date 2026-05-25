@@ -22,7 +22,7 @@ import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { authnCtr, REPLY_FROM_ADMIN } from '#modules/authn/index.js';
-import { roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_Staff } from '#modules/authz/role/index.js';
 import { emailTemplateCtr } from '#modules/email-template/index.js';
 import { emailCtr } from '#modules/email/email.controller.js';
@@ -37,7 +37,7 @@ import {
     E_RedirectType,
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
-import { pubsub } from '#shared/graphql/index.js';
+import { pubsub } from '#shared/graphql/pubsub.js';
 import { createSystemContext } from '#shared/util/context.js';
 import { getBlockedUserIds, validate } from '#shared/util/index.js';
 
@@ -1525,7 +1525,7 @@ export const conversationCtr = {
 
                             // Also send an email copy to the provided guest email and require it to succeed.
                             try {
-                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const subject = '[Secret® Swinger Lust] Reply from admin';
                                 const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                                 let subjectText = subject;
                                 let html: string;
@@ -1565,7 +1565,7 @@ export const conversationCtr = {
 
                     // No valid conversationId provided and the email resolves to the admin account -> send external email
                     // so the admin's reply goes to the email address rather than creating a self-message.
-                    const subject = '[Secret Swinger Lust] Reply from admin';
+                    const subject = '[Secret® Swinger Lust] Reply from admin';
                     try {
                         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                         let subjectText = subject;
@@ -1784,7 +1784,7 @@ export const conversationCtr = {
 
                             // Send an email copy to the guest and require it to succeed; if it fails, bubble error.
                             try {
-                                const subject = '[Secret Swinger Lust] Reply from admin';
+                                const subject = '[Secret® Swinger Lust] Reply from admin';
                                 const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
                                 let subjectText = subject;
                                 let html: string;

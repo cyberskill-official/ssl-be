@@ -14,7 +14,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_CreateRolePermission, I_Input_QueryRolePermission, I_RolePermission } from './role-permission.type.js';
 
-import { roleCtr } from '../role/index.js';
+import { clearAuthzCache, invalidatePermissionAuthzCache } from '../authz.cache.js';
+import { roleCtr } from '../role/role.controller.js';
 import { RolePermissionModel } from './role-permission.model.js';
 
 const mongooseCtr = new MongooseController<I_RolePermission>(RolePermissionModel);
@@ -58,6 +59,7 @@ export const rolePermissionCtr = {
         const result = await mongooseCtr.createOne(doc);
 
         if (result.success) {
+            await invalidatePermissionAuthzCache(doc.permissionId);
             await rolePermissionCtr.propagatePermissionChange(_context, doc.roleId, doc.permissionId, true);
         }
 
@@ -67,7 +69,11 @@ export const rolePermissionCtr = {
         _context: I_Context,
         { docs }: { docs: Array<{ roleId: string; permissionId: string }> },
     ): Promise<I_Return<I_RolePermission[]>> => {
-        return mongooseCtr.createMany(docs);
+        const result = await mongooseCtr.createMany(docs);
+        if (result.success) {
+            await clearAuthzCache();
+        }
+        return result;
     },
     deleteRolePermission: async (
         context: I_Context,
@@ -78,6 +84,7 @@ export const rolePermissionCtr = {
         const result = await mongooseCtr.deleteOne(filter);
 
         if (result.success && existingRolePermission.success && existingRolePermission.result) {
+            await invalidatePermissionAuthzCache(existingRolePermission.result.permissionId);
             await rolePermissionCtr.propagatePermissionChange(
                 context,
                 existingRolePermission.result.roleId!,
@@ -163,6 +170,8 @@ export const rolePermissionCtr = {
 
                 await rolePermissionCtr.revokeFromChildren(context, childRoleId, permissionId);
             }
+
+            await invalidatePermissionAuthzCache(permissionId);
 
             return {
                 success: true,

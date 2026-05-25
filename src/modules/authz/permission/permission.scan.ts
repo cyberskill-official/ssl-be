@@ -1,31 +1,41 @@
-import { allResolvers } from '#shared/graphql/schema.js';
-
 import type { I_Response_ScanPermission } from './permission.type.js';
 
+import { PUBLIC_GRAPHQL_PERMISSION_TARGETS, REST_PERMISSION_DEFINITIONS } from '../authz.constant.js';
 import { E_PermissionMethodGraphQL, E_PermissionMethodRest, E_PermissionType } from './permission.type.js';
 
-export function scanGraphqlResolvers(): I_Response_ScanPermission[] {
+export async function scanGraphqlResolvers(): Promise<I_Response_ScanPermission[]> {
+    const { allResolvers } = await import('#shared/graphql/schema.js');
     const permissions: I_Response_ScanPermission[] = [];
 
-    if (allResolvers['Query']) {
-        for (const key of Object.keys(allResolvers['Query'])) {
-            permissions.push({
-                type: E_PermissionType.GRAPHQL,
-                method: E_PermissionMethodGraphQL.QUERY,
-                target: `QUERY_${key}`,
-                name: `QUERY_${key}`,
-            });
-        }
-    }
+    const operationResolvers = [
+        {
+            resolverKey: 'Query',
+            method: E_PermissionMethodGraphQL.QUERY,
+        },
+        {
+            resolverKey: 'Mutation',
+            method: E_PermissionMethodGraphQL.MUTATION,
+        },
+        {
+            resolverKey: 'Subscription',
+            method: E_PermissionMethodGraphQL.SUBSCRIPTION,
+        },
+    ];
 
-    // Extract Mutation resolvers
-    if (allResolvers['Mutation']) {
-        for (const key of Object.keys(allResolvers['Mutation'])) {
+    for (const { resolverKey, method } of operationResolvers) {
+        const resolver = allResolvers[resolverKey];
+        if (!resolver) {
+            continue;
+        }
+
+        for (const key of Object.keys(resolver)) {
+            const target = `${method}_${key}`;
             permissions.push({
                 type: E_PermissionType.GRAPHQL,
-                method: E_PermissionMethodGraphQL.MUTATION,
-                target: `MUTATION_${key}`,
-                name: `MUTATION_${key}`,
+                method,
+                target,
+                name: target,
+                isPublic: PUBLIC_GRAPHQL_PERMISSION_TARGETS.has(target),
             });
         }
     }
@@ -34,12 +44,11 @@ export function scanGraphqlResolvers(): I_Response_ScanPermission[] {
 }
 
 export function scanRestApiEndpoints(): I_Response_ScanPermission[] {
-    return [
-        {
-            type: E_PermissionType.REST,
-            method: E_PermissionMethodRest.GET,
-            target: '/api/example',
-            name: '/api/example',
-        },
-    ];
+    return REST_PERMISSION_DEFINITIONS.map(definition => ({
+        type: E_PermissionType.REST,
+        method: definition.method as E_PermissionMethodRest,
+        target: `${definition.method} ${definition.path}`,
+        name: `${definition.method} ${definition.path}`,
+        isPublic: definition.isPublic === true,
+    }));
 }

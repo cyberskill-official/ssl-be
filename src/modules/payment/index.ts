@@ -1,4 +1,9 @@
 // Re-export gateway setting and gateway modules
+export * from './membership-entitlement-change/index.js';
+export * from './payment-gateway-event/payment-gateway-event.controller.js';
+export * from './payment-gateway-event/payment-gateway-event.model.js';
+export * from './payment-gateway-event/payment-gateway-event.resolver.js';
+export * from './payment-gateway-event/payment-gateway-event.type.js';
 export * from './payment-gateway-setting/payment-gateway-setting.controller.js';
 
 export * from './payment-gateway-setting/payment-gateway-setting.model.js';
@@ -11,6 +16,8 @@ export * from './payment-request/payment-request.controller.js';
 
 export * from './payment-request/payment-request.model.js';
 export * from './payment-request/payment-request.type.js';
+export * from './payment-subscription-link.service.js';
+export * from './payment-subscription/index.js';
 export * from './payment-transaction/payment-transaction.controller.js';
 
 export * from './payment-transaction/payment-transaction.resolver.js';

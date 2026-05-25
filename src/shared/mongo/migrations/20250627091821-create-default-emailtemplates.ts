@@ -15,7 +15,7 @@ interface I_EmailTemplateRaw extends I_Input_CreateEmailTemplate {
 // Use static logo URL (prefer EMAIL_LOGO_URL, fallback USER_APP_URL/images/Logo_secretswingerlust_white.png)
 fileURLToPath(import.meta.url); // keep for consistency with other migrations
 const EMAIL_LOGO_URL = process.env['EMAIL_LOGO_URL']?.trim();
-const LOGO_BASE64 = EMAIL_LOGO_URL || `https://ssl-development.b-cdn.net/LOGO/Logo_secretswingerlust_white.png`;
+const LOGO_BASE64 = EMAIL_LOGO_URL || `https://ssl-development.b-cdn.net/LOGO/logo.png`;
 
 /**
  * Generate email template with consistent design

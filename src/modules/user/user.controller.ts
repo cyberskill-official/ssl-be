@@ -20,8 +20,11 @@ import path from 'node:path';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, authnCtr, E_RegisterStep, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/index.js';
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { ACCOUNT_DELETED, ACCOUNT_SUSPENDED, MEMBERSHIP_DOWNGRADE, WELCOME_PUSH_NOTIFICATION } from '#modules/authn/authn.constant.js';
+import { authnCtr } from '#modules/authn/authn.controller.js';
+import { E_RegisterStep } from '#modules/authn/authn.type.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
 import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
@@ -40,8 +43,6 @@ import { ModerationLogModel } from '#modules/moderation/moderation-log/moderatio
 import { NotificationModel } from '#modules/notification/notification.model.js';
 import { orderCtr } from '#modules/order/index.js';
 import { paymentRequestCtr } from '#modules/payment/index.js';
-import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
-import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { UPLOAD_CONFIG } from '#modules/upload/upload.constant.js';
 import { getSessionUser, isAdminUser } from '#shared/auth-context/auth-context.service.js';
 import { getEnv } from '#shared/env/index.js';
@@ -62,104 +63,7 @@ const mongooseCtr = new MongooseController<I_User>(UserModel);
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/;
 const NON_WORD_CHARS_REGEX = /[^\w-]/g;
-const PAYPAL_SUBSCRIPTION_ID_REGEX = /^I-/;
-
-/**
- * Cancel any active PayPal subscription for a user.
- * Best-effort: failures are logged but do not block the caller.
- * This MUST be called before deleting or deactivating a user to prevent
- * PayPal from continuing to charge the user after account removal.
- */
-async function cancelPayPalSubscriptionForUser(context: I_Context, userId: string): Promise<void> {
-    try {
-        // Find the most recent PayPal payment request with a subscription ID (starts with I-)
-        const paymentReqRes = await paymentRequestCtr.getPaymentRequests(context, {
-            filter: {
-                'meta.orderId': { $exists: true },
-                'gateway': E_PaymentProvider.PAYPAL,
-                'externalOrderId': { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
-            } as any,
-            options: { sort: { createdAt: -1 }, pagination: false },
-        } as any);
-
-        if (!paymentReqRes.success || !paymentReqRes.result?.docs?.length) {
-            // Fallback: search by userId stored in meta
-            const fallbackRes = await paymentRequestCtr.getPaymentRequests(context, {
-                filter: {
-                    'gateway': E_PaymentProvider.PAYPAL,
-                    'externalOrderId': { $regex: PAYPAL_SUBSCRIPTION_ID_REGEX },
-                    '$or': [
-                        { 'meta.userId': userId },
-                        { 'meta.customId': userId },
-                    ],
-                } as any,
-                options: { sort: { createdAt: -1 }, pagination: false },
-            } as any);
-
-            if (!fallbackRes.success || !fallbackRes.result?.docs?.length) {
-                log.info(`[USER] No PayPal subscription found for user ${userId}, skipping cancel`);
-                return;
-            }
-
-            // Process fallback results
-            for (const pr of fallbackRes.result.docs) {
-                const subscriptionId = pr.externalOrderId;
-                if (subscriptionId && PAYPAL_SUBSCRIPTION_ID_REGEX.test(subscriptionId)) {
-                    await cancelSinglePayPalSubscription(context, userId, subscriptionId);
-                }
-            }
-            return;
-        }
-
-        // Filter payment requests that belong to this user by checking associated orders
-        for (const pr of paymentReqRes.result.docs) {
-            const orderId = (pr.meta as any)?.orderId;
-            if (!orderId) continue;
-
-            const orderRes = await orderCtr.getOrder(context, { filter: { id: orderId } });
-            if (!orderRes.success || !orderRes.result) continue;
-            if (orderRes.result.userId !== userId) continue;
-
-            const subscriptionId = pr.externalOrderId;
-            if (subscriptionId && PAYPAL_SUBSCRIPTION_ID_REGEX.test(subscriptionId)) {
-                await cancelSinglePayPalSubscription(context, userId, subscriptionId);
-            }
-        }
-    } catch (error) {
-        log.error(`[USER] Error cancelling PayPal subscription for user ${userId}:`, error);
-        // Best-effort: do not block deletion
-    }
-}
-
-async function cancelSinglePayPalSubscription(context: I_Context, userId: string, subscriptionId: string): Promise<void> {
-    try {
-        // Check if subscription is still active before attempting cancel
-        const subRes = await paypalCtr.getSubscription(context, { subscriptionId });
-        if (!subRes.success) {
-            log.warn(`[USER] Could not fetch PayPal subscription ${subscriptionId} for user ${userId}: ${subRes.message}`);
-            return;
-        }
-
-        const subStatus = (subRes.result as any)?.status;
-        if (subStatus === 'CANCELLED' || subStatus === 'EXPIRED') {
-            log.info(`[USER] PayPal subscription ${subscriptionId} already ${subStatus} for user ${userId}`);
-            return;
-        }
-
-        const cancelRes = await paypalCtr.cancelSubscription(context, {
-            subscriptionId,
-            reason: 'User account deleted',
-        });
-
-        if (cancelRes.success) {
-            log.info(`[USER] Successfully cancelled PayPal subscription ${subscriptionId} for user ${userId}`);
-        } else {
-            log.warn(`[USER] Failed to cancel PayPal subscription ${subscriptionId} for user ${userId}: ${cancelRes.message}`);
-        }
-    } catch (error) {
-        log.error(`[USER] Error cancelling PayPal subscription ${subscriptionId} for user ${userId}:`, error);
-    }
-}
+import { cancelPayPalSubscriptionForUser } from '#modules/payment/paypal/paypal-subscription.util.js';
 
 function normalizeDocumentId<T extends { id?: unknown; _id?: unknown }>(document: T | null | undefined): T | null | undefined {
     if (!document) {
@@ -724,6 +628,9 @@ export const userCtr = {
             ...doc,
             rolesIds: sanitizedRolesIds,
             email, // save normalized email
+            isEmailVerified: doc.registerStep === E_RegisterStep.COMPLETE
+                ? true
+                : doc.isEmailVerified,
             password: await hashPassword(password),
             settings: finalSettings,
         });
@@ -971,6 +878,35 @@ export const userCtr = {
 
             sanitizedRolesIds = sanitized.sanitizedRolesIds;
             promoRoleId = sanitized.roleIds.promoRoleId;
+            const { paidRoleId, freeRoleId } = sanitized.roleIds;
+
+            // Detect Downgrade: from PAID/PROMO to FREE
+            const wasPaidOrPromo = (paidRoleId && existingRoles.includes(paidRoleId)) || (promoRoleId && existingRoles.includes(promoRoleId));
+            const isFreeNow = freeRoleId && sanitizedRolesIds.includes(freeRoleId) && !(paidRoleId && sanitizedRolesIds.includes(paidRoleId)) && !(promoRoleId && sanitizedRolesIds.includes(promoRoleId));
+
+            if (wasPaidOrPromo && isFreeNow) {
+                log.info(`[USER] Downgrade detected for user ${userFound.result.id}. Clearing expiry dates and cancelling PayPal.`);
+
+                // 1. Cancel PayPal subscription if any
+                await cancelPayPalSubscriptionForUser(context, userFound.result.id).catch(err => {
+                    log.warn(`[USER] Failed to cancel PayPal during admin downgrade for ${userFound.result.id}:`, err);
+                });
+
+                // 2. Nullify expiry dates and set membershipCancelled: true
+                if (hasAtomicOperators) {
+                    if (!updateRecord.$set) {
+                        updateRecord.$set = {};
+                    }
+                    updateRecord.$set['membershipExpiresAt'] = null;
+                    updateRecord.$set['membershipEndDate'] = null;
+                    updateRecord.$set['membershipCancelled'] = true;
+                }
+                else {
+                    update.membershipExpiresAt = null;
+                    update.membershipEndDate = null;
+                    update.membershipCancelled = true;
+                }
+            }
 
             // Update the source (either direct or $set)
             if (hasAtomicOperators) {
@@ -1464,10 +1400,26 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const userFound = await userCtr.getUser(context, { filter });
+        const sessionUser = getSessionUser(context);
+        if (!sessionUser) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+        const isAdmin = await isAdminUser(context, sessionUser);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: {
+                ...filter,
+                isDel: { $in: [true, false] } as any,
+            } as any,
+        });
 
         if (!userFound.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        const userId = userFound.result.id;
+        if (!isAdmin && sessionUser.id !== userId) {
+            throwError({ message: 'You can only recover your own account.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         // Recover: clear isDel flag and isDeactivated flag
@@ -1477,19 +1429,49 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const userFound = await userCtr.getUser(context, { filter });
+        const sessionUser = getSessionUser(context);
+        if (!sessionUser) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+        const isAdmin = await isAdminUser(context, sessionUser);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: {
+                ...filter,
+                isDel: { $in: [true, false] } as any,
+            } as any,
+        });
 
         if (!userFound.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        // Deactivate: hide profile, allow login to reactivate
         const deactivateUserId = userFound.result.id;
+        if (!isAdmin && sessionUser.id !== deactivateUserId) {
+            throwError({ message: 'You can only deactivate your own account.', status: RESPONSE_STATUS.FORBIDDEN });
+        }
+
+        // Deactivate: hide profile, allow login to reactivate
         if (deactivateUserId) {
             await cancelPayPalSubscriptionForUser(context, deactivateUserId);
         }
 
-        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: true, membershipCancelled: true }, options);
+        const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+        const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
+
+        const updatePayload: any = {
+            isDel: true,
+            isDeactivated: true,
+            membershipCancelled: true,
+            membershipExpiresAt: null,
+            membershipEndDate: null,
+        };
+
+        if (freeRoleId) {
+            updatePayload.rolesIds = [freeRoleId];
+        }
+
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, updatePayload, options);
     },
     completeOnboarding: async (context: I_Context, { type }: { type: E_OnboardingType }): Promise<I_Return<I_User>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
@@ -1513,17 +1495,32 @@ export const userCtr = {
         context: I_Context,
         { filter, options }: I_Input_DeleteOne<I_Input_QueryUser>,
     ): Promise<I_Return<I_User>> => {
-        const userFound = await userCtr.getUser(context, { filter });
+        const sessionUser = getSessionUser(context);
+        if (!sessionUser) {
+            throwError({ message: 'User not authenticated.', status: RESPONSE_STATUS.UNAUTHORIZED });
+        }
+        const isAdmin = await isAdminUser(context, sessionUser);
+
+        const userFound = await userCtr.getUser(context, {
+            filter: {
+                ...filter,
+                isDel: { $in: [true, false] } as any,
+            } as any,
+        });
 
         if (!userFound.success) {
             throwError({ message: 'User not found.', status: RESPONSE_STATUS.NOT_FOUND });
+        }
+
+        const softDeleteUserId = userFound.result.id;
+        if (!isAdmin && sessionUser.id !== softDeleteUserId) {
+            throwError({ message: 'You can only delete your own account.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
         // Soft delete (isDel: true), keeps data in DB, prevents new account creation
 
         // Cancel any active PayPal subscription BEFORE soft-deleting.
         // This prevents PayPal from continuing to charge a deactivated user.
-        const softDeleteUserId = userFound.result.id;
         if (softDeleteUserId) {
             await cancelPayPalSubscriptionForUser(context, softDeleteUserId);
         }
@@ -1538,7 +1535,22 @@ export const userCtr = {
 
         // Also mark membership as cancelled so cron jobs won't attempt rebill
         // For "Delete my Profile", we set isDeactivated: false so it won't auto-reactivate on login
-        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, { isDel: true, isDeactivated: false, membershipCancelled: true }, options);
+        const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+        const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
+
+        const updatePayload: any = {
+            isDel: true,
+            isDeactivated: false,
+            membershipCancelled: true,
+            membershipExpiresAt: null,
+            membershipEndDate: null,
+        };
+
+        if (freeRoleId) {
+            updatePayload.rolesIds = [freeRoleId];
+        }
+
+        return mongooseCtr.updateOne(filter as T_QueryFilter<I_User>, updatePayload, options);
     },
 
     getEmailsByUserGroup: async (target: E_UserGroup, customRecipientsIds?: string[]): Promise<string[]> => {

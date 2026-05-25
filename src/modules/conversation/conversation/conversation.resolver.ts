@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { pubsub } from '#shared/graphql/index.js';
+import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type {
     I_ContactAdmin,

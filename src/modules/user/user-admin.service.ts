@@ -11,10 +11,13 @@ import { emailCtr } from '#modules/email/index.js';
 import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { isAdminContext } from '#shared/auth-context/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 
 import type { I_Input_AdminBlockUser, I_Input_AdminUnBlockUser, I_User } from './user.type.js';
 
 import { userRepository } from './user.repository.js';
+import { cancelPayPalSubscriptionForUser } from '#modules/payment/paypal/paypal-subscription.util.js';
 
 export const userAdminService = {
     adminBlockUser: async (
@@ -56,7 +59,26 @@ export const userAdminService = {
             }
         }
 
-        const updateResult = await userRepository.updateById(userId, { isAdminBlocked: true, isDel: true });
+        if (userFound.result?.id) {
+            await cancelPayPalSubscriptionForUser(context, userFound.result.id);
+        }
+
+        const freeRole = await roleCtr.getRole(context, { filter: { name: E_Role_User.FREE_MEMBER } });
+        const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
+
+        const updatePayload: any = {
+            isAdminBlocked: true,
+            isDel: true,
+            membershipCancelled: true,
+            membershipExpiresAt: null,
+            membershipEndDate: null,
+        };
+
+        if (freeRoleId) {
+            updatePayload.rolesIds = [freeRoleId];
+        }
+
+        const updateResult = await userRepository.updateById(userId, updatePayload);
 
         if (updateResult.success && sessionUser?.id && userFound.result?.id) {
             try {

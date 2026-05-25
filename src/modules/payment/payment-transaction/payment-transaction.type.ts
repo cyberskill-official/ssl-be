@@ -2,6 +2,7 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 export enum E_PaymentProvider {
     PAYPAL = 'PAYPAL',
+    NETVALVE = 'NETVALVE',
 }
 
 export enum E_PaymentStatus {
@@ -27,17 +28,36 @@ export enum E_PaymentGatewayOperation {
     GET_ORDER = 'GET_ORDER',
     GET_ORDERS = 'GET_ORDERS',
     QUERY_TRANSACTION_STATUS = 'QUERY_TRANSACTION_STATUS',
+    HPP_ORDER = 'HPP_ORDER',
+    REBILL = 'REBILL',
+}
+
+export enum E_PaymentTransactionSource {
+    CHECKOUT = 'CHECKOUT',
+    WEBHOOK = 'WEBHOOK',
+    STATUS_POLL = 'STATUS_POLL',
+    ADMIN_SYNC = 'ADMIN_SYNC',
+    RECONCILIATION = 'RECONCILIATION',
 }
 
 export interface I_PaymentTransaction extends I_GenericDocument {
     provider?: E_PaymentProvider;
     operation?: E_PaymentGatewayOperation;
     transactionId?: string;
+    providerEventId?: string;
+    userId?: string;
+    orderId?: string;
+    paymentRequestId?: string;
+    subscriptionId?: string;
+    amount?: number;
+    currency?: string;
     status?: E_PaymentStatus;
     success: boolean;
+    source?: E_PaymentTransactionSource;
     errorCode?: string;
     errorMessage?: string;
     responsePayload?: Record<string, unknown> | null;
+    occurredAt?: Date;
     performedAt?: Date;
 }
 

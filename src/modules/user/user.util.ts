@@ -12,7 +12,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { E_User_PinStyle } from '#modules/location/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { E_LocationEntityType, locationCtr, resolveUserPinStyle } from '#modules/location/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
@@ -450,9 +451,10 @@ export async function broadcastNewMemberInArea(
                     }
                 }
                 else {
-                    // Track failed for retry
-                    failedRecipientIds.push('unknown');
-                    log.warn('[USER] broadcastNewMemberInArea: notification failed:', result.reason);
+                    // Track failed recipient ID for retry
+                    const failedId = (result as PromiseRejectedResult & { value?: { recipientId?: string } })?.value?.recipientId ?? 'unknown';
+                    failedRecipientIds.push(failedId);
+                    log.warn('[USER] broadcastNewMemberInArea: notification failed:', { recipientId: failedId, reason: result.reason });
                 }
             }
 
@@ -462,9 +464,45 @@ export async function broadcastNewMemberInArea(
             page += 1;
         }
 
-        // ── 4. Log failures if any ──
+        // ── 4. Retry failed notifications once ──
         if (failedRecipientIds.length > 0) {
-            log.warn('[USER] broadcastNewMemberInArea: some notifications failed', { count: failedRecipientIds.length });
+            log.info('[USER] broadcastNewMemberInArea: retrying failed notifications', { count: failedRecipientIds.length });
+
+            const retryableIds = failedRecipientIds.filter(id => id !== 'unknown');
+            if (retryableIds.length > 0) {
+                // Short delay before retry to let transient issues resolve
+                await new Promise(r => setTimeout(r, 1000));
+
+                const retryResults = await processChunked(
+                    retryableIds,
+                    BROADCAST_CONCURRENCY,
+                    async (recipientId) => {
+                        const res = await notificationCtr.createNotificationWithSettings(context, {
+                            doc: {
+                                targetId: recipientId,
+                                type: [E_NotificationType.NEW_MEMBER_IN_YOUR_AREA_OF_INTEREST],
+                                entityType: E_NotificationEntityType.USER,
+                                entityId: newUser!.id,
+                                actorId: newUser!.id,
+                                presentation: cachedPresentation,
+                            },
+                        });
+                        return { recipientId, res };
+                    },
+                );
+
+                let retrySuccess = 0;
+                let retryFailed = 0;
+                for (const result of retryResults) {
+                    if (result.status === 'fulfilled' && result.value.res && 'result' in result.value.res && result.value.res.result) {
+                        retrySuccess++;
+                    }
+                    else {
+                        retryFailed++;
+                    }
+                }
+                log.info('[USER] broadcastNewMemberInArea: retry completed', { retrySuccess, retryFailed });
+            }
         }
 
         log.info('[USER] broadcastNewMemberInArea: COMPLETED', {

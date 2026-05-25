@@ -21,7 +21,7 @@ const EMAIL_LOGO_URL = (() => {
     if (raw) {
         return raw;
     }
-    return `https://ssl-development.b-cdn.net/LOGO/Logo_secretswingerlust_white.png`;
+    return `https://ssl-development.b-cdn.net/LOGO/SecretswingerlustlogoRwhite.webp`;
 })();
 
 export function sanitizeSlug(value?: string | null): string | undefined {
@@ -140,7 +140,7 @@ export function sendMediaLikedEmail(input: {
     thumbnailUrl?: string;
 }) {
     // Remove username from subject to comply with Postmark (no usernames in emails)
-    const subject = `[Secret Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
+    const subject = `[Secret® Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
     const html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,

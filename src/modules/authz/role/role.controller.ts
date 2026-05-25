@@ -15,7 +15,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import type { I_Input_CreateRole, I_Input_QueryRole, I_Input_UpdateRole, I_Role } from './role.type.js';
 
-import { rolePermissionCtr } from '../role-permission/index.js';
+import { rolePermissionCtr } from '../role-permission/role-permission.controller.js';
 import { RoleModel } from './role.model.js';
 
 const mongooseCtr = new MongooseController<I_Role>(RoleModel);

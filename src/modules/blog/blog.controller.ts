@@ -8,7 +8,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { E_Role, E_Role_Staff, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
 import { notificationCtr } from '#modules/notification/index.js';

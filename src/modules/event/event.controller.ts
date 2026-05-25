@@ -897,6 +897,10 @@ export const eventCtr = {
 
             // Perform notifications in background to avoid request timeout (Failed to fetch)
             (async () => {
+                const failedTargetIds: string[] = [];
+                let totalSent = 0;
+                let totalSkipped = 0;
+
                 try {
                     // Notify followers
                     const followers = await followCtr.getFollowers(context, {
@@ -924,11 +928,15 @@ export const eventCtr = {
                                         presentation: commonPresentation,
                                     },
                                 });
-                                if (notiResult?.success) {
-                                    log.info(`[CreateEvent] Follower notification sent to ${targetId}`);
+                                if (notiResult?.success && 'result' in notiResult && notiResult.result) {
+                                    totalSent++;
+                                }
+                                else {
+                                    totalSkipped++;
                                 }
                             }
                             catch (followerNotiErr) {
+                                failedTargetIds.push(targetId);
                                 log.warn(`[CreateEvent] Failed to send follower notification to ${targetId}:`, followerNotiErr);
                             }
                         }
@@ -976,11 +984,15 @@ export const eventCtr = {
                                         presentation: commonPresentation,
                                     },
                                 });
-                                if (notiResult?.success) {
-                                    log.info(`[CreateEvent] Nearby notification sent to ${u.id}`);
+                                if (notiResult?.success && 'result' in notiResult && notiResult.result) {
+                                    totalSent++;
+                                }
+                                else {
+                                    totalSkipped++;
                                 }
                             }
                             catch (nearbyNotiErr) {
+                                failedTargetIds.push(u.id);
                                 log.warn(`[CreateEvent] Failed to send nearby notification to ${u.id}:`, nearbyNotiErr);
                             }
                         }
@@ -990,9 +1002,49 @@ export const eventCtr = {
                         }
                         nearbyPage += 1;
                     }
+
+                    // Retry failed notifications once
+                    if (failedTargetIds.length > 0) {
+                        log.info('[CreateEvent] Retrying failed announcement notifications', { count: failedTargetIds.length });
+                        await new Promise(r => setTimeout(r, 1000));
+
+                        let retrySuccess = 0;
+                        let retryFailed = 0;
+                        for (const targetId of failedTargetIds) {
+                            try {
+                                const retryResult = await notificationCtr.createNotificationWithSettings(context, {
+                                    doc: {
+                                        targetId,
+                                        type: [E_NotificationType.NEW_ANNOUNCEMENT_IN_INTEREST_AREA_OR_FOLLOWED],
+                                        entityType: E_NotificationEntityType.EVENT,
+                                        entityId: eventCreated.result.id,
+                                        actorId: currentUser.id,
+                                        presentation: commonPresentation,
+                                    },
+                                });
+                                if (retryResult?.success && 'result' in retryResult && retryResult.result) {
+                                    retrySuccess++;
+                                }
+                                else {
+                                    retryFailed++;
+                                }
+                            }
+                            catch {
+                                retryFailed++;
+                            }
+                        }
+                        log.info('[CreateEvent] Announcement retry completed', { retrySuccess, retryFailed });
+                    }
+
+                    log.info('[CreateEvent] Announcement broadcast COMPLETED', {
+                        eventId: eventCreated.result.id,
+                        totalSent,
+                        totalSkipped,
+                        totalFailed: failedTargetIds.length,
+                    });
                 }
                 catch (notifErr) {
-                    log.error('Background notification failed:', notifErr);
+                    log.error('[CreateEvent] Background notification failed:', notifErr);
                 }
             })();
 

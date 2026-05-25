@@ -1,10 +1,11 @@
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
 
-import type { E_Role, E_Role_User } from '#modules/authz/index.js';
+import type { E_Role, E_Role_User } from '#modules/authz/role/role.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role_Staff, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role_Staff } from '#modules/authz/role/role.type.js';
 
 interface T_RoleLike {
     id?: string;

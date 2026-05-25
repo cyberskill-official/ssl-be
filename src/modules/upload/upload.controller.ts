@@ -456,6 +456,19 @@ export const uploadCtr = {
                 uploadPath,
                 userId: currentUser.id,
             });
+
+            // Clean up the created database records to prevent ghost records
+            try {
+                if (moderationCreated.result?.id) {
+                    await moderationMediaCtr.deleteModerationMedia(context, {
+                        filter: { id: moderationCreated.result.id },
+                    });
+                }
+            }
+            catch (cleanupError) {
+                log.error('Failed to clean up moderation media after upload failure:', cleanupError);
+            }
+
             throwError({
                 message: `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
                 status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,

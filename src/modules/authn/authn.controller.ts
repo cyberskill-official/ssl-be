@@ -12,11 +12,12 @@ import jwt from 'jsonwebtoken';
 import { omit } from 'lodash-es';
 
 import type { I_Input_UploadMany } from '#modules/upload/index.js';
-import type { I_Input_UpdateUser, I_User } from '#modules/user/index.js';
+import type { I_Input_UpdateUser, I_User } from '#modules/user/user.type.js';
 import type { I_Request } from '#shared/typescript/express.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
-import { E_Role, E_Role_User, roleCtr } from '#modules/authz/index.js';
+import { roleCtr } from '#modules/authz/role/role.controller.js';
+import { E_Role, E_Role_User } from '#modules/authz/role/role.type.js';
 import { rekognitionController } from '#modules/aws/index.js';
 import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
@@ -32,11 +33,12 @@ import {
 import orderCtr from '#modules/order/order.controller.js';
 import { E_OrderStatus, E_OrderType } from '#modules/order/order.type.js';
 import { paymentCtr, paymentRequestCtr, paypalCtr } from '#modules/payment/index.js';
+import { findLatestPayPalSubscriptionForUser, isPayPalSubscriptionId } from '#modules/payment/payment-subscription-link.service.js';
 import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-transaction.type.js';
 import { promoCodeCtr } from '#modules/promo-code/index.js';
 import { uploadCtr } from '#modules/upload/index.js';
-import { isAdultDateOfBirth, userCtr } from '#modules/user/index.js';
-import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { userCtr } from '#modules/user/user.controller.js';
+import { getViewerMediaContext, hydrateUserMedia, isAdultDateOfBirth } from '#modules/user/user.validate.js';
 import {
     E_VerificationMethod,
     verificationCtr,
@@ -74,7 +76,7 @@ import {
     TOKEN_EXPIRES,
     VERIFICATION_EXPIRES,
 } from './authn.constant.js';
-import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_MembershipType, E_RegisterStep } from './authn.type.js';
+import { E_AgeVerifyMethod, E_AgeVerifyStatus, E_LoginType, E_MembershipType, E_RegisterStep } from './authn.type.js';
 
 const env = getEnv();
 const OTP_FORMAT_REGEX = /^[A-Z0-9]{6}$/;
@@ -98,6 +100,27 @@ function applyGuardianOverrides(user: I_User, ownerId: string): void {
     user.registerStep = user.registerStep ?? E_RegisterStep.COMPLETE;
 }
 
+async function ensureCompletedUserIsEmailVerified(
+    context: I_Context,
+    user: I_User,
+): Promise<void> {
+    if (!user.id || user.isEmailVerified || user.registerStep !== E_RegisterStep.COMPLETE) {
+        return;
+    }
+
+    const updatedUser = await userCtr.updateUser(context, {
+        filter: { id: user.id },
+        update: { isEmailVerified: true },
+    }).catch((error) => {
+        log.warn('[Auth] Failed to normalize completed user email verification:', error);
+        return undefined;
+    });
+
+    if (updatedUser?.success) {
+        user.isEmailVerified = true;
+    }
+}
+
 function clearSessionCookie(req?: I_Request): void {
     const res = (req as any)?.res;
 
@@ -110,8 +133,12 @@ function clearSessionCookie(req?: I_Request): void {
         ...(env.IS_DEV ? {} : { sameSite: 'none', secure: true }),
     };
 
+    if (!req?.sessionCookieName) {
+        return;
+    }
+
     try {
-        res.clearCookie(env.SESSION_NAME, cookieOptions);
+        res.clearCookie(req.sessionCookieName, cookieOptions);
     }
     catch {
         // best-effort; ignore
@@ -248,8 +275,21 @@ export const authnCtr = {
 
         const userFound = await userCtr.getUser(context, {
             filter: { email: emailLowerCase },
+            populate: [{ path: 'roles' }],
         });
         if (!userFound.success) {
+            return {
+                success: false,
+                message: 'User not found.',
+                code: RESPONSE_STATUS.BAD_REQUEST.CODE,
+            };
+        }
+
+        const isStaffAccount = await userHasRole(context, userFound.result, E_Role.STAFF, {
+            notFoundMessage: 'Staff role not found.',
+        });
+
+        if (!isStaffAccount) {
             return {
                 success: false,
                 message: 'User not found.',
@@ -538,6 +578,10 @@ export const authnCtr = {
             };
         }
 
+        if (!isGuardianSession && !isAdmin) {
+            await ensureCompletedUserIsEmailVerified(context, userFound.result);
+        }
+
         if (!isGuardianSession && !isAdmin && !userFound.result.isEmailVerified) {
             return {
                 success: false,
@@ -591,11 +635,6 @@ export const authnCtr = {
                 }
             }
 
-            log.warn('[AUTH] getUserFromSession failed:', {
-                message: authChecked.message,
-                code: authChecked.code,
-                sessionId: context?.req?.sessionID,
-            });
             throwError({
                 message: 'User not authenticated.',
                 status: RESPONSE_STATUS.UNAUTHORIZED,
@@ -1303,6 +1342,10 @@ export const authnCtr = {
         let gatewayName = 'Unknown';
 
         try {
+            const subscriptionLink = await findLatestPayPalSubscriptionForUser(currentUser.id);
+            let subscriptionId = subscriptionLink.subscriptionId ?? undefined;
+            let provider: string | undefined = subscriptionId ? E_PaymentProvider.PAYPAL : undefined;
+
             // Find the last paid subscription order to get transaction ID
             const ordersRes = await orderCtr.getOrders(context, {
                 filter: {
@@ -1320,7 +1363,6 @@ export const authnCtr = {
 
             const lastOrder = ordersRes.success ? ordersRes.result?.docs?.[0] : null;
             let transactionId: string | undefined;
-            let provider: string | undefined;
 
             if (lastOrder) {
                 // Try to get provider and transaction ID from payment transaction
@@ -1344,21 +1386,12 @@ export const authnCtr = {
 
             if (provider === E_PaymentProvider.PAYPAL) {
                 gatewayName = 'PayPal';
-                let subscriptionId: string | undefined;
+                subscriptionId ||= transactionId;
 
-                // Robust lookup for PayPal Subscription ID (must start with "I-")
-                // 1. Try transactionId from the PaymentTransaction
-                if (transactionId?.startsWith('I-')) {
-                    subscriptionId = transactionId;
-                }
-
-                // 2. Try the new externalOrderId field on the Order
-                if (!subscriptionId && (lastOrder as any)?.externalOrderId?.startsWith('I-')) {
-                    subscriptionId = (lastOrder as any).externalOrderId;
-                }
-
-                // 3. Try the linked PaymentRequest
-                if (!subscriptionId && (lastOrder as any)?.paymentRequestId) {
+                // For PayPal, we need the subscription ID (starts with I-)
+                // If transactionId is missing or doesn't look like a subscription ID (e.g. might be a capture ID if mistakenly stored),
+                // check PaymentRequest which should store the detailed external order ID
+                if (!isPayPalSubscriptionId(subscriptionId) && (lastOrder as any)?.paymentRequestId) {
                     const prRes = await paymentRequestCtr.getPaymentRequest(context, {
                         filter: { id: (lastOrder as any).paymentRequestId },
                     });
@@ -1367,37 +1400,7 @@ export const authnCtr = {
                     }
                 }
 
-                // 4. Try searching PaymentRequests by Order ID
-                if (!subscriptionId && lastOrder?.id) {
-                    const prSearchRes = await paymentRequestCtr.getPaymentRequests(context, {
-                        filter: { 'meta.orderId': lastOrder.id, 'externalOrderId': /^I-/ } as any,
-                        options: { sort: { createdAt: -1 }, limit: 1 },
-                    } as any);
-                    if (prSearchRes.success && prSearchRes.result?.docs?.[0]?.externalOrderId) {
-                        subscriptionId = prSearchRes.result.docs[0].externalOrderId;
-                    }
-                }
-
-                // 5. Last Resort: Search all PayPal subscription requests for this user
-                if (!subscriptionId) {
-                    const prUserSearchRes = await paymentRequestCtr.getPaymentRequests(context, {
-                        filter: {
-                            gateway: E_PaymentProvider.PAYPAL,
-                            externalOrderId: /^I-/,
-                            $or: [
-                                { 'meta.userId': currentUser.id },
-                                { 'meta.customId': currentUser.id },
-                            ],
-                        } as any,
-                        options: { sort: { createdAt: -1 }, limit: 1 },
-                    } as any);
-                    if (prUserSearchRes.success && prUserSearchRes.result?.docs?.[0]?.externalOrderId) {
-                        subscriptionId = prUserSearchRes.result.docs[0].externalOrderId;
-                    }
-                }
-
-                if (subscriptionId && subscriptionId.startsWith('I-')) {
-                    log.info(`[Membership] Attempting PayPal cancellation for user ${currentUser.id} with subscriptionId ${subscriptionId}`);
+                if (isPayPalSubscriptionId(subscriptionId)) {
                     const cancelRes = await paypalCtr.cancelSubscription(context, {
                         subscriptionId,
                         reason: 'User requested cancellation via website',
@@ -1405,10 +1408,18 @@ export const authnCtr = {
 
                     if (cancelRes.success) {
                         gatewayCancelSuccess = true;
-                        log.info(`[Membership] PayPal subscription cancelled successfully for user ${currentUser.id}, subscriptionId=${subscriptionId}`);
+                        log.info(`[Membership] PayPal subscription cancelled for user ${currentUser.id}, subscriptionId=${subscriptionId}`, {
+                            linkSource: subscriptionLink.source,
+                            paymentRequestId: subscriptionLink.paymentRequestId,
+                            orderId: subscriptionLink.orderId,
+                        });
                     }
                     else {
-                        log.warn(`[Membership] PayPal cancel failed for user ${currentUser.id} (${subscriptionId}): ${cancelRes.message}`);
+                        log.warn(`[Membership] PayPal cancel failed for user ${currentUser.id}: ${cancelRes.message}`);
+                        throwError({
+                            message: cancelRes.message ?? 'Failed to cancel PayPal subscription. Please try again.',
+                            status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+                        });
                     }
                 }
                 else {
@@ -1579,19 +1590,47 @@ export const authnCtr = {
             });
         }
 
+        const { identity, password, rememberMe, loginType } = args;
+        const isAdminPortalLogin = loginType === E_LoginType.ADMIN;
+        const isUserPortalLogin = loginType === E_LoginType.USER;
+
+        if (!isAdminPortalLogin && !isUserPortalLogin) {
+            throwError({
+                message: 'Login type is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
         const authChecked = await authnCtr.checkAuth(context);
 
         if (authChecked.success) {
-            return authChecked;
+            const sessionUser = authChecked.result?.user;
+
+            if (sessionUser) {
+                const [isSessionStaff, isSessionUser] = await Promise.all([
+                    userHasRole(context, sessionUser, E_Role.STAFF, {
+                        notFoundMessage: 'Staff role not found.',
+                    }),
+                    userHasRole(context, sessionUser, E_Role.USER, {
+                        notFoundMessage: 'User role not found.',
+                    }),
+                ]);
+
+                if (
+                    (isAdminPortalLogin && isSessionStaff)
+                    || (isUserPortalLogin && isSessionUser && !isSessionStaff)
+                ) {
+                    return authChecked;
+                }
+            }
         }
 
         delete context.req.session.guardianView;
 
-        const { identity, password, rememberMe } = args;
-
         const userFound = await userCtr.getUser(context, {
             filter: {
                 $or: [{ email: identity }, { username: identity }],
+                isDel: { $in: [true, false] } as any, // Allow finding deactivated/soft-deleted users for login check
             },
             populate: [
                 { path: 'roles' },
@@ -1622,7 +1661,29 @@ export const authnCtr = {
             });
         }
 
-        const isAdminLogin = await isAdminUser(context, userFound.result);
+        const [isStaffAccount, isUserAccount] = await Promise.all([
+            userHasRole(context, userFound.result, E_Role.STAFF, {
+                notFoundMessage: 'Staff role not found.',
+            }),
+            userHasRole(context, userFound.result, E_Role.USER, {
+                notFoundMessage: 'User role not found.',
+            }),
+        ]);
+
+        if (isAdminPortalLogin && !isStaffAccount) {
+            throwError({
+                message: 'Invalid login information.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
+        if (isUserPortalLogin && (!isUserAccount || isStaffAccount)) {
+            throwError({
+                message: 'Invalid login information.',
+                status: RESPONSE_STATUS.FORBIDDEN,
+            });
+        }
+
         const otpValue = userFound.result.tempOtp;
         const otpCreatedAt = userFound.result.tempOtpCreatedAt ? new Date(userFound.result.tempOtpCreatedAt) : null;
         const otpAgeMs = otpCreatedAt ? Date.now() - otpCreatedAt.getTime() : null;
@@ -1636,7 +1697,7 @@ export const authnCtr = {
         }
 
         const skipOtp = disableOtpEnforcement;
-        const requiresOtp = !skipOtp && isAdminLogin && Boolean(otpValue) && !otpExpired;
+        const requiresOtp = !skipOtp && isAdminPortalLogin && Boolean(otpValue) && !otpExpired;
 
         if (skipOtp && otpValue) {
             await userCtr.updateUser(context, {
@@ -1678,14 +1739,14 @@ export const authnCtr = {
             await verificationCtr.deleteVerifications(context, { filter: { identifier } }).catch(() => { /* best-effort */ });
             await userCtr.updateUser(context, { filter: { id: userFound.result.id }, update: { tempOtp: null, tempOtpCreatedAt: null } }).catch(() => { /* best-effort */ });
         }
-        else if (!skipOtp && isAdminLogin && otpExpired) {
+        else if (!skipOtp && isAdminPortalLogin && otpExpired) {
             throwError({
                 message: 'OTP expired. Please request a new code.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
         }
 
-        if (!isAdminLogin && userFound.result.isAdminBlocked) {
+        if (isUserPortalLogin && userFound.result.isAdminBlocked) {
             throwError({ message: 'Account is blocked by admin.', status: RESPONSE_STATUS.FORBIDDEN });
         }
 
@@ -1711,7 +1772,7 @@ export const authnCtr = {
             }
         }
 
-        if (!skipOtp && !isAdminLogin && userFound.result.tempOtp !== null) {
+        if (!skipOtp && isUserPortalLogin && userFound.result.tempOtp !== null) {
             const expectedOtp = String(userFound.result.tempOtp || '').toUpperCase();
             const providedOtp = typeof args.tempOtp === 'string' ? args.tempOtp.trim().toUpperCase() : '';
             if (expectedOtp !== providedOtp) {
@@ -1719,11 +1780,15 @@ export const authnCtr = {
             }
         }
 
-        if (!isAdminLogin && !userFound.result.isActive) {
+        if (isUserPortalLogin && !userFound.result.isActive) {
             throwError({
                 message: 'Account is not active.',
                 status: RESPONSE_STATUS.BAD_REQUEST,
             });
+        }
+
+        if (isUserPortalLogin) {
+            await ensureCompletedUserIsEmailVerified(context, userFound.result);
         }
 
         // IP capture disabled as per requirements
@@ -1750,7 +1815,7 @@ export const authnCtr = {
             ? authnCtr.generateToken(context, userFound.result.id)
             : '';
 
-        if (isAdminLogin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
+        if (isAdminPortalLogin && (userFound.result.isGuardianView || userFound.result.guardianOwnerId)) {
             await userCtr.updateUser(context, {
                 filter: { id: userFound.result.id },
                 update: { isGuardianView: false, guardianOwnerId: null },
@@ -1766,7 +1831,7 @@ export const authnCtr = {
 
         const sanitizedLoginUser = omit(userObj, 'password') as I_User;
 
-        if (isAdminLogin) {
+        if (isAdminPortalLogin) {
             applyAdminOverrides(sanitizedLoginUser);
         }
 
