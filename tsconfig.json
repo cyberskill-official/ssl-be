@@ -19,5 +19,12 @@
     "include": [
         "**/*.ts",
         "**/*.tsx"
+    ],
+    "exclude": [
+        "node_modules",
+        "build",
+        "vitest.config.ts",
+        "**/*.test.ts",
+        "**/*.spec.ts"
     ]
 }

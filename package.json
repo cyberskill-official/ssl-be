@@ -6,6 +6,8 @@
     "main": "./src/server.js",
     "scripts": {
         "build": "run-s tsc tsc:alias copy:graphql",
+        "arch:deps:pilot": "depcruise --config .dependency-cruiser.cjs --include-only '^src/modules/menu/' --output-type err-long src/modules/menu",
+        "arch:deps:report": "depcruise --config .dependency-cruiser.cjs --collapse '^src/modules/[^/]+' --output-type err src",
         "copy:graphql": "tsx src/shared/graphql/copy.ts",
         "cyberskill:ready": "cyberskill ready",
         "dev": "run-s ready migrate:up start:dev",
@@ -20,6 +22,9 @@
         "ready": "run-s cyberskill:ready migrate:ready",
         "reset": "cyberskill reset",
         "start:dev": "tsx watch ./src/server.ts",
+        "test": "vitest run",
+        "test:unit": "vitest run",
+        "test:watch": "vitest",
         "tsc": "tsc",
         "tsc:alias": "tsc-alias -p tsconfig.json"
     },
@@ -84,6 +89,7 @@
         "@types/node": "25.5.0",
         "@types/tz-lookup": "6.1.2",
         "@types/validator": "13.15.10",
+        "dependency-cruiser": "^17.4.2",
         "eslint": "10.1.0",
         "lint-staged": "16.4.0",
         "node-modules-inspector": "1.4.2",

@@ -3,13 +3,23 @@ import mongoose from 'mongoose';
 
 import { E_ConversationType } from '#modules/conversation/conversation/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
-import { MapSchema } from '#modules/location/location/location.model.js';
 import { E_LocationEntityType } from '#modules/location/location/location.type.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 
 import type { I_Notification, I_NotificationContext, I_NotificationPresentation, I_NotificationRedirect, T_NotificationPresentationActor } from './notification.type.js';
 
 import { E_NotificationChannel, E_NotificationEntityType, E_NotificationStatus, E_NotificationType, E_RedirectType } from './notification.type.js';
+
+type T_NotificationMap = NonNullable<I_NotificationRedirect['map']>;
+
+const NotificationMapSchema = mongo.createSchema<T_NotificationMap>({
+    standalone: true,
+    mongoose,
+    schema: {
+        latitude: { type: Number },
+        longitude: { type: Number },
+    },
+});
 
 export const RedirectSchema = mongo.createSchema<I_NotificationRedirect>({
     standalone: true,
@@ -23,7 +33,7 @@ export const RedirectSchema = mongo.createSchema<I_NotificationRedirect>({
         url: { type: String }, // Added url field for persistence and type safety
         locationId: { type: String },
         map: {
-            type: MapSchema,
+            type: NotificationMapSchema,
         },
         eventType: { type: String, enum: Object.values(E_EventType) },
         commentId: { type: String },
