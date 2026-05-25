@@ -1,5 +1,6 @@
 export const CRON_JOB_SCHEDULE = {
     EVERYDAY_MIDNIGHT: '00 00 * * *',
+    EVERY_HOUR: '0 * * * *',
     EVERY_10_MINUTES: '*/10 * * * *',
     EVERY_5_MINUTES: '*/5 * * * *',
     EVERY_3_MINUTES: '*/3 * * * *',
