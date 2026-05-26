@@ -34,18 +34,17 @@ function signProfileImage(
     // Membership checks
     const viewerIsPaidMember = options?.viewerIsPaidMember ?? false;
 
-    // Case 1: Owner chưa xác thực tuổi → owner thấy blur, người khác thấy null (default image)
     // Case 1: Owner not age-verified -> EVERYONE sees blurred image (not default)
     if (!ownerAgeVerified) {
-        // Staff/admin can see clear images even if owner is not verified
-        if (viewerExempt) {
+        // Staff/admin and the owner themselves can see clear images even if owner is not verified
+        if (viewerExempt || isOwner) {
             return bunnyCtr.generateSignedUrl({
                 fullUrl: url,
                 extraQueryParams: { class: 'normal' },
             });
         }
 
-        // Everyone else (including owner) sees blurred image
+        // Everyone else sees blurred image
         // UX improvement: Show blurred image instead of default to encourage age verification
         return bunnyCtr.generateBlurredUrl({ fullUrl: url, extraQueryParams: { class: 'blur' } });
     }

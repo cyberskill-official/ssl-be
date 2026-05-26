@@ -140,19 +140,28 @@ export const userCtr = {
             effectiveFilter = { $and: [...baseConds, normalizedFilter] };
         }
 
-        // Ensure ageVerify is always populated for blur logic to work correctly
+        // Ensure ageVerify and galleries are always populated for media hydration
         const basePopulate = Array.isArray(populate) ? populate : [];
-        const ageVerifyPopulate = { path: 'ageVerify' };
+        const extraPopulates = [
+            { path: 'ageVerify' },
+            { path: 'partner1', populate: [{ path: 'gallery' }] },
+            { path: 'partner2', populate: [{ path: 'gallery' }] },
+        ];
+        // Only append ageVerify if not already present
         const hasAgeVerifyPopulate = basePopulate.some((p: any) =>
             (typeof p === 'string' && p === 'ageVerify')
             || (typeof p === 'object' && p.path === 'ageVerify'),
         );
+        const populatesToAppend = hasAgeVerifyPopulate 
+            ? [extraPopulates[1], extraPopulates[2]] 
+            : extraPopulates;
+        
         const effectivePopulate = isAdmin
             ? ensurePopulateIncludes(
-                    hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate],
+                    [...basePopulate, ...populatesToAppend],
                     ['notes.createdBy'],
                 )
-            : (hasAgeVerifyPopulate ? basePopulate : [...basePopulate, ageVerifyPopulate]);
+            : [...basePopulate, ...populatesToAppend];
 
         const userFound = await mongooseCtr.findOne(
             effectiveFilter,
