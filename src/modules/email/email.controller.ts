@@ -72,9 +72,6 @@ export const emailCtr = {
             let subjectText: string;
 
             subjectText = subject || 'No Subject';
-            if (env.IS_DEV || env.IS_STAG) {
-                subjectText = `[SECRETWINGERLUST] ${subjectText}`;
-            }
 
             if (templateFromCache) {
                 log.warn('[Email][sendEmail] template source: cache', { templateKey });
@@ -83,9 +80,6 @@ export const emailCtr = {
                 if (templateSubject) {
                     const rendered = subject || await ejs.render(templateSubject, renderData);
                     subjectText = rendered || subjectText;
-                    if (env.IS_DEV || env.IS_STAG) {
-                        subjectText = `[SECRETWINGERLUST] ${subjectText}`;
-                    }
                 }
 
                 html = content ? await ejs.render(content, renderData) : emailCtr.generateBasicTemplate(renderData);
@@ -101,9 +95,6 @@ export const emailCtr = {
                     if (templateSubject) {
                         const rendered = subject || await ejs.render(templateSubject, renderData);
                         subjectText = rendered || subjectText;
-                        if (env.IS_DEV || env.IS_STAG) {
-                            subjectText = `[SECRETWINGERLUST] ${subjectText}`;
-                        }
                     }
 
                     if (content) {
@@ -167,9 +158,6 @@ export const emailCtr = {
         try {
             const emails = Array.isArray(to) ? to : [to];
             let subjectText = subject || 'No Subject';
-            if (env.IS_DEV || env.IS_STAG) {
-                subjectText = `[SECRETWINGERLUST] ${subjectText}`;
-            }
 
             const emailData: I_EmailJobData = {
                 to: emails,
