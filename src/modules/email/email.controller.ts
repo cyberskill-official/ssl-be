@@ -4,6 +4,7 @@ import { log } from '@cyberskill/shared/node/log';
 import ejs from 'ejs';
 
 import { emailTemplateCtr } from '#modules/email-template/index.js';
+import { UserModel } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type {
@@ -43,8 +44,19 @@ export const emailCtr = {
             // Get USER_APP_URL from env and ensure it doesn't end with trailing slash
             const userAppUrl = env.USER_APP_URL ? env.USER_APP_URL.replace(TRAILING_SLASHES_REGEX, '') : '';
 
+            // ── Trademark First-Email Rule ──
+            // First email a user receives shows "Secret® Swinger Lust",
+            // all subsequent emails show "Secret Swinger Lust" (no ®).
+            const recipientEmail = Array.isArray(to) ? to[0] : to;
+            const recipientUser = await UserModel.findOne({ email: recipientEmail })
+                .select('isFirstBrandEmailSent')
+                .lean();
+            const isFirstEmail = !recipientUser?.isFirstBrandEmailSent;
+            const brandName = isFirstEmail ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+
             const renderData = {
                 ...safeTemplateData,
+                brandName,
                 email: (safeTemplateData as Record<string, any>)?.['email']
                     ?? (Array.isArray(to) ? to[0] : to)
                     ?? '',
@@ -123,6 +135,14 @@ export const emailCtr = {
             };
 
             const job = await emailQueue.addTransactionalEmail({ ...emailData, type: 'transactional' }, options);
+
+            // Mark first brand email as sent (fire-and-forget to avoid blocking)
+            if (isFirstEmail && recipientUser) {
+                UserModel.updateOne(
+                    { email: recipientEmail },
+                    { $set: { isFirstBrandEmailSent: true } },
+                ).catch(err => log.error('[EMAIL] Failed to update isFirstBrandEmailSent', { err }));
+            }
 
             return {
                 success: true,
