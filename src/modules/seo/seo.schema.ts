@@ -8,25 +8,31 @@ export const SeoSchema = mongo.createSchema<I_Seo>({
     mongoose,
     schema: {
         title: {
-            type: String,
+            type: Object,
         },
         description: {
-            type: String,
+            type: Object,
         },
         keywords: {
-            type: [String],
+            type: Object,
         },
         socialImage: {
             type: String,
         },
         socialMediaDescription: {
-            type: String,
+            type: Object,
         },
         urlSlug: {
             type: String,
         },
         altTextForImages: {
-            type: String,
+            type: Object,
+        },
+        imageAltTexts: {
+            type: [{
+                imageUrl: String,
+                alt: Object,
+            }],
         },
     },
 });

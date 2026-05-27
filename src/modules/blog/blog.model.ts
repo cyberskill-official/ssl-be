@@ -10,6 +10,19 @@ import type { I_Blog } from './blog.type.js';
 
 import { E_BlogCategory, E_BlogType } from './blog.type.js';
 
+export const FaqSchema = mongo.createSchema({
+    standalone: true,
+    mongoose,
+    schema: {
+        question: {
+            type: Object,
+        },
+        answer: {
+            type: Object,
+        },
+    },
+});
+
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,
     name: 'Blog',
@@ -136,6 +149,9 @@ export const BlogModel = mongo.createModel<I_Blog>({
         seo: {
             type: SeoSchema,
         },
+        faqs: {
+            type: [FaqSchema],
+        },
         isActive: {
             type: Boolean,
             default: false,
@@ -194,12 +210,15 @@ export const BlogModel = mongo.createModel<I_Blog>({
 });
 
 async function createMiddleware(this: I_Blog) {
+    if (!this.isNew)
+        return;
     try {
         const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 
+        const titleEn = typeof this.title === 'string' ? this.title : (this.title as any)?.en;
         const newSlug = await mongooseCtr.createSlug({
             field: 'title',
-            from: this,
+            from: { title: titleEn } as any,
         });
 
         if (!newSlug.success) {
@@ -214,7 +233,7 @@ async function createMiddleware(this: I_Blog) {
         }
         throw new Error(String(error));
     }
-};
+}
 
 async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>) {
     try {
@@ -227,16 +246,19 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>) {
             throw new Error('Page not found');
         }
 
+        const oldTitleEn = typeof oldData.title === 'string' ? oldData.title : (oldData.title as any)?.en;
+        const newTitleEn = typeof newData.title === 'string' ? newData.title : (newData.title as any)?.en;
+
         const shouldGenerateSlug = !!(
-            newData.title
-            && oldData.title
-            && newData.title !== oldData.title
+            newTitleEn
+            && oldTitleEn
+            && newTitleEn !== oldTitleEn
         );
 
         if (shouldGenerateSlug) {
             const newSlug = await mongooseCtr.createSlug({
                 field: 'title',
-                from: newData,
+                from: { title: newTitleEn } as any,
             });
 
             if (!newSlug.success) {

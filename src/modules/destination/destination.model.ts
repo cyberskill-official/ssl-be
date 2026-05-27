@@ -3,6 +3,7 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { FaqSchema } from '#modules/blog/blog.model.js';
 import { RatingSchema } from '#modules/rating/index.js';
 import { SeoSchema } from '#modules/seo/index.js';
 
@@ -199,6 +200,9 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         seo: {
             type: SeoSchema,
         },
+        faqs: {
+            type: [FaqSchema],
+        },
         linkTo: {
             type: String,
         },
@@ -243,6 +247,8 @@ export const DestinationModel = mongo.createModel<I_Destination>({
 });
 
 async function createMiddleware(this: I_Destination) {
+    if (!this.isNew)
+        return;
     try {
         const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
 

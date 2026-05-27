@@ -22,6 +22,8 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, cleanFullUrl, normalizeStoragePath } from '#modules/bunny/index.js';
 import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
+import { E_SessionPortal } from '#shared/session/index.js';
+import { localizeDocument } from '#shared/util/index.js';
 
 import type {
     I_Destination,
@@ -33,6 +35,7 @@ import type {
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
+import { translationQueue } from '../translation/translation.queue.js';
 import { buildCountryIdFilter, buildCountryNameFilter, mergeFilters, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
@@ -110,7 +113,14 @@ export const destinationCtr = {
             doc.introductionContentPlain = intro;
         }
 
-        return { ...destinationFound, result: doc };
+        let localizedDoc = doc;
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            localizedDoc = localizeDocument(doc, locale);
+        }
+
+        return { ...destinationFound, result: localizedDoc };
     },
     getDestinations: async (
         _context: I_Context,
@@ -227,7 +237,14 @@ export const destinationCtr = {
             }),
         );
 
-        destinations.result.docs = sortDestinationsByRating<I_Destination>(signedDocs);
+        let finalDocs = sortDestinationsByRating<I_Destination>(signedDocs);
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            finalDocs = finalDocs.map(doc => localizeDocument(doc, locale));
+        }
+
+        destinations.result.docs = finalDocs;
         return destinations;
     },
 
@@ -410,7 +427,14 @@ export const destinationCtr = {
             return locationCreated;
         }
 
-        return mongooseCtr.updateOne({ id: destinationCreated.result.id }, { locationId: locationCreated.result.id });
+        const updateResult = await mongooseCtr.updateOne({ id: destinationCreated.result.id }, { locationId: locationCreated.result.id });
+        if (updateResult.success && destinationCreated.result.id) {
+            translationQueue.add({
+                type: 'destination',
+                id: destinationCreated.result.id,
+            }).catch(e => log.error('[DestinationController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     updateDestination: async (
         context: I_Context,
@@ -599,7 +623,14 @@ export const destinationCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update);
+        const updateResult = await mongooseCtr.updateOne(filter, update);
+        if (updateResult.success && destinationFound.result.id) {
+            translationQueue.add({
+                type: 'destination',
+                id: destinationFound.result.id,
+            }).catch(e => log.error('[DestinationController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     deleteDestination: async (
         context: I_Context,

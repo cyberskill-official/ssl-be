@@ -1,17 +1,21 @@
 type T_Seo {
-    title: String
-    description: String
-    keywords: [String]
+    title: JSON
+    description: JSON
+    keywords: JSON
     socialImage: String
-    socialMediaDescription: String
-    altTextForImages: String
+    socialMediaDescription: JSON
+    urlSlug: String
+    altTextForImages: JSON
+    imageAltTexts: JSON
 }
 
 input Input_Seo {
-    title: String
-    description: String
-    keywords: [String]
+    title: JSON
+    description: JSON
+    keywords: JSON
     socialImage: String
-    socialMediaDescription: String
-    altTextForImages: String
+    socialMediaDescription: JSON
+    urlSlug: String
+    altTextForImages: JSON
+    imageAltTexts: JSON
 }

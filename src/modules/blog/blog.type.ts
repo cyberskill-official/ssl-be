@@ -46,6 +46,10 @@ export interface I_Blog extends I_GenericDocument {
     authorId?: string;
     author?: I_User;
     seo?: I_Seo;
+    faqs?: Array<{
+        question: I_LocalizedString;
+        answer: I_LocalizedString;
+    }>;
     isActive?: boolean;
     readCount?: number;
     isLustEditorial?: boolean;

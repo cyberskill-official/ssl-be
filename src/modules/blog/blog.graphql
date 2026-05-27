@@ -1,3 +1,13 @@
+type T_FAQ {
+    question: JSON
+    answer: JSON
+}
+
+input Input_FAQ {
+    question: JSON
+    answer: JSON
+}
+
 enum E_BlogType {
     BLOG
     PODCAST
@@ -42,6 +52,7 @@ type T_Blog {
     authorId: String
     author: T_User
     seo: T_Seo
+    faqs: [T_FAQ]
     isActive: Boolean
     readCount: Int
     isLustEditorial: Boolean
@@ -69,6 +80,7 @@ input Input_QueryBlog {
     socialLinks: [Input_SocialLink]
     authorId: String
     seo: Input_Seo
+    faqs: [Input_FAQ]
     isActive: Boolean
     readCount: Int
     isLustEditorial: Boolean
@@ -95,6 +107,7 @@ input Input_CreateBlog {
     file: String
     socialLinks: [Input_SocialLink]
     seo: Input_Seo
+    faqs: [Input_FAQ]
     isActive: Boolean
     isLustEditorial: Boolean
     iframe: String
@@ -121,6 +134,7 @@ input Input_UpdateBlog {
     file: String
     socialLinks: [Input_SocialLink]
     seo: Input_Seo
+    faqs: [Input_FAQ]
     isActive: Boolean
     isLustEditorial: Boolean
     iframe: String

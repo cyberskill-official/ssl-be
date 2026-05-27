@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -16,10 +16,12 @@ import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
-import { getBlockedUserIds } from '#shared/util/index.js';
+import { E_SessionPortal } from '#shared/session/index.js';
+import { getBlockedUserIds, localizeDocument } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
+import { translationQueue } from '../translation/translation.queue.js';
 import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
 
@@ -40,6 +42,13 @@ export const blogCtr = {
                 blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' } });
             }
         }
+
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            blogFound.result = localizeDocument(blogFound.result, locale);
+        }
+
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
@@ -77,6 +86,12 @@ export const blogCtr = {
 
             return blog;
         });
+
+        const rawLocale = context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            filteredDocs = filteredDocs.map(doc => localizeDocument(doc, locale));
+        }
 
         // Update result with filtered docs (keep original pagination meta if present)
         blogs.result.docs = filteredDocs;
@@ -172,6 +187,15 @@ export const blogCtr = {
             }
         }
         catch { }
+
+        // Trigger background translation
+        if (blogResult.success && blogResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: blogResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+
         return blogResult;
     },
     updateBlog: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>): Promise<I_Return<I_Blog>> => {
@@ -278,7 +302,14 @@ export const blogCtr = {
             throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const updateResult = await mongooseCtr.updateOne(filter, update, options);
+        if (updateResult.success && updateResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: updateResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     deleteBlog: async (context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter, options });

@@ -63,6 +63,10 @@ export interface I_Destination extends I_GenericDocument {
     highlightBar?: I_LocalizedString;
     highlightDance?: I_LocalizedString;
     seo?: I_Seo;
+    faqs?: Array<{
+        question: I_LocalizedString;
+        answer: I_LocalizedString;
+    }>;
     linkTo?: string;
     isActive?: boolean;
     createdById?: string;
