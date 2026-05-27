@@ -34,7 +34,7 @@ const TARGET_CASES = [
 const APPLY_CONFIRMATION = 'paypal-case-16-local-access-repair';
 const DEFAULT_OUT_DIR = '/Users/ryantruong/Documents/Obsidian Vault';
 const FILE_TIMESTAMP_UNSAFE_CHARS_REGEX = /[:.]/g;
-const MAX_NEGATIVE_DRIFT_MS = 60_000;
+const MAX_ALLOWED_DRIFT_MS = 60_000;
 
 interface T_Args {
     apply: boolean;
@@ -152,7 +152,7 @@ function resolveAction(params: {
     if (expectedAccessUntil.getTime() <= Date.now()) {
         return 'SKIP_MANUAL_REVIEW';
     }
-    if (localExpiresAt.getTime() - expectedAccessUntil.getTime() <= MAX_NEGATIVE_DRIFT_MS) {
+    if (Math.abs(localExpiresAt.getTime() - expectedAccessUntil.getTime()) <= MAX_ALLOWED_DRIFT_MS) {
         return 'NO_CHANGE';
     }
     return 'NORMALIZE_ACCESS_TO_PAYPAL_GRACE';
@@ -245,7 +245,7 @@ async function buildRow(params: {
             membershipExpiresAtVietnam: formatVietnamDate(expectedAccessUntil),
             localMinusExpectedHours,
             reason: action === 'NORMALIZE_ACCESS_TO_PAYPAL_GRACE'
-                ? 'Local access is longer than active PayPal next_billing_time + grace.'
+                ? 'Local access is different from active PayPal next_billing_time + grace.'
                 : action === 'NO_CHANGE'
                     ? 'Local access is already aligned with PayPal grace window.'
                     : 'Skipped because PayPal is not active, next billing is missing/past, or local expiry is missing.',
