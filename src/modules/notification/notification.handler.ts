@@ -1,4 +1,7 @@
+import { log } from '@cyberskill/shared/node/log';
+
 import { emailCtr } from '#modules/email/email.controller.js';
+import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import { E_NotificationType } from './notification.type.js';
@@ -45,8 +48,10 @@ export function buildMediaLikedEmailHtml(input: {
     mediaKindLabel: string;
     mediaLink: string;
     thumbnailUrl?: string;
+    brandName?: string;
 }) {
     const greetingName = input.targetDisplayName?.trim() || 'there';
+    const brandName = input.brandName || 'Secret Swinger Lust';
     // Remove thumbnail and actorDisplayName to comply with Postmark (no images, no usernames)
     return `
 <!DOCTYPE html>
@@ -72,7 +77,7 @@ export function buildMediaLikedEmailHtml(input: {
                             <h1 style="font-size:28px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Hi ${greetingName},</h1>
                             <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:0 0 16px;text-align:center;font-family:Myanmar Text;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
                             <div style="font-size:16px;color:#000000;margin:0 0 20px;text-align:center;line-height:1.6;font-family:Myanmar Text;">
-                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">SecretSwingerLust.com</a>.</p>
+                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">${brandName}</a>.</p>
                             </div>
                             <!-- Button -->
                             <div style="text-align:center;margin:30px 0;">
@@ -80,7 +85,7 @@ export function buildMediaLikedEmailHtml(input: {
                             </div>
                             <p style="font-size:12px;color:#000000;margin:24px 0;text-align:left;font-family:Myanmar Text;">
                                 Yours playfully,<br/>
-                                Secretswingerlust Team
+                                ${brandName} Team
                             </p>
                             <!-- Separator -->
                             <hr style="border:none;border-top:1px solid #e0e0e0;margin:30px 0;" />
@@ -88,14 +93,14 @@ export function buildMediaLikedEmailHtml(input: {
                             <div style="margin-top:30px;">
                                 <h2 style="font-size:18px;color:#000000;margin:0 0 12px;font-family:Myanmar Text;">Want fewer emails?</h2>
                                 <p style="font-size:14px;color:#000000;margin:0 0 16px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
-                                    You're receiving this email because notifications are enabled on your Secretswingerlust profile.
+                                    You're receiving this email because notifications are enabled on your ${brandName} profile.
                                 </p>
                                 <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Myanmar Text;font-weight:normal">
                                     It's easy to adjust your preferences:
                                 </p>
                                 <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1;font-family:Myanmar Text;">
                                     <li style="margin-bottom:8px;">
-                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secretswingerlust.com</a>
+                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">${brandName}</a>
                                     </li>
                                     <li style="margin-bottom:8px;">Click My Profile (top-right)</li>
                                     <li style="margin-bottom:8px;">Select Notifications</li>
@@ -120,7 +125,7 @@ export function buildMediaLikedEmailHtml(input: {
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">Secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -131,7 +136,7 @@ export function buildMediaLikedEmailHtml(input: {
 </html>`;
 }
 
-export function sendMediaLikedEmail(input: {
+export async function sendMediaLikedEmail(input: {
     targetEmail: string;
     targetDisplayName?: string;
     actorDisplayName: string;
@@ -139,27 +144,49 @@ export function sendMediaLikedEmail(input: {
     mediaLink: string;
     thumbnailUrl?: string;
 }) {
-    // Remove username from subject to comply with Postmark (no usernames in emails)
-    const subject = `[Secret® Swinger Lust] Someone liked your ${input.mediaKindLabel}`;
+    const systemContext: any = { req: { headers: {} } };
+    const recipientUserResult = input.targetEmail
+        ? await userCtr.getUser(systemContext, {
+                filter: { email: input.targetEmail.toLowerCase() },
+                projection: { id: 1, sentBrandEmailTemplates: 1 },
+            })
+        : null;
+    const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
+    const templateKey = 'media-liked';
+    const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
+    const isFirstForTemplate = !sentTemplates.includes(templateKey);
+    const brandName = isFirstForTemplate ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+
+    const subject = `[${brandName}] Someone liked your ${input.mediaKindLabel}`;
     const html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,
         mediaKindLabel: input.mediaKindLabel,
         mediaLink: input.mediaLink,
         thumbnailUrl: input.thumbnailUrl,
+        brandName,
     });
 
-    return emailCtr.sendEmailRaw({
+    const response = await emailCtr.sendEmailRaw({
         to: input.targetEmail,
         subject,
         html,
         metadata: {
-            templateKey: 'media-liked',
+            templateKey,
             actorDisplayName: input.actorDisplayName,
             mediaKind: input.mediaKindLabel,
             mediaLink: input.mediaLink,
         },
     });
+
+    if (response.success && isFirstForTemplate && recipientUser) {
+        userCtr.updateUser(systemContext, {
+            filter: { id: recipientUser.id },
+            update: { $addToSet: { sentBrandEmailTemplates: templateKey } } as any,
+        }).catch(err => log.error('[EMAIL] Failed to update sentBrandEmailTemplates via userCtr', { err }));
+    }
+
+    return response;
 }
 
 export const ALLOW_INCOMPLETE_PROFILE_TYPES = new Set<E_NotificationType>([

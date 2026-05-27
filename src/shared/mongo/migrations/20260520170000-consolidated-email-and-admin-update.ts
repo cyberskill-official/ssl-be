@@ -90,7 +90,7 @@ function generateEmailTemplate(options: {
         <div style="margin-top:30px;font-weight:normal;">
             <h2 style="font-size:18px;font-weight:bold;color:#000000;margin:0 0 12px;font-family:Myanmar Text;">Want fewer emails?</h2>
             <p style="font-size:14px;color:#000000;margin:0 0 16px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
-                You're receiving this email because notifications are enabled on your Secretswingerlust profile.
+                You're receiving this email because notifications are enabled on your <%= brandName %> profile.
             </p>
             <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
                 It's easy to adjust your preferences:
@@ -131,7 +131,7 @@ function generateEmailTemplate(options: {
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="<%= brandName %> Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -144,7 +144,7 @@ function generateEmailTemplate(options: {
                             </div>
                             <p style="font-size:20px;color:#000000;margin:24px 0;text-align:center;font-family:Myanmar Text;">
                                 Yours playfully,<br/>
-                                Secretswingerlust Team
+                                <%= brandName %> Team
                             </p>
                             ${buttonHtml}
                             ${notificationPreferencesHtml}
@@ -188,7 +188,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="<%= brandName %> Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -242,7 +242,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="<%= brandName %> Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -285,7 +285,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
         subject: '[<%= brandName %>] Someone just followed you',
         content: generateEmailTemplate({
             title: 'Someone just followed you 👀',
-            message: `You have a new follower on <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;"><%= brandName %></a>.`,
+            message: `You have a new follower on <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">Secretswingerlust.com</a>.`,
             showNotificationPreferences: true,
         }),
     },
@@ -340,8 +340,8 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
     [WELCOME_PUSH_NOTIFICATION]: {
         subject: '[<%= brandName %>] Welcome – Where Real Swinger Adventures Begin ❤️‍🔥',
         content: generateEmailTemplate({
-            title: 'Welcome to Secretswingerlust – Where Real Swinger Adventures Begin ❤️‍🔥',
-            message: `Welcome to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not secretswingerlust.com<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At Secretswingerlust, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
+            title: 'Welcome to <%= brandName %> – Where Real Swinger Adventures Begin ❤️‍🔥',
+            message: `Welcome to <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – your new favourite place for exploring the world of real, honest, and exciting swinger experiences!<br/><br/>We're proud to be brought to you by Jolo Media, and even prouder to invite you into a universe created with love for the swinger community.<br/><br/>Our platform was born out of one simple idea: no one should waste time on clubs that look better online than in reality. That's why we personally visit and review every club we feature – no exceptions, no paid fluff, just honest insights.<br/><br/><strong style="color:#000000;">What you can expect:</strong><br/><br/>💋 A low monthly price – no hidden fees<br/>💌 Private messaging and full notification control – your privacy matters<br/>👁‍🗨 If you see a profile you know or simply don't want to connect with, you can use the "Hide" function. It will hide both your profile from them – and their profile from you.<br/>💡 Got a tip? Let us know which club is the best in your area – just use the "TIP" feature at the bottom of the page. We might swing by soon 😉<br/>🔐 Discreet billing – your receipt will say Jolo Media, not secretswingerlust.com<br/>📩 You'll receive email notifications when something important happens on your profile – but you can turn these off anytime in the menu under "Notifications"<br/><br/>At <%= brandName %>, you're not just a profile – you're part of shaping something real. We're here to create a space where swinger adventures begin with trust, respect and real people – just like you.<br/><br/>Please note: When you lock in a subscription price with us, we stick to it. But if you cancel and decide to return later, the price at that time may have changed.<br/><br/>Let's create amazing experiences together – both online and out there in the clubs and parties.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -352,7 +352,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
         subject: '[<%= brandName %>] You\'re still part of the adventure 💫',
         content: generateEmailTemplate({
             title: 'You\'re still part of the adventure 💫',
-            message: `Thank you for your time as a valued member of <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – we've truly enjoyed having you as part of our paying community.<br/><br/>Although you've chosen to end your membership, your profile remains active, and we hope you'll continue to explore and engage in our playful universe. You're still very much part of the SecretSwingerLust community!<br/><br/>Some features will no longer be available with your free profile – but there's still plenty of excitement waiting for you. And who knows… maybe you'll be tempted to upgrade again in the future 😉<br/><br/>Until then, we're happy to have you here.`,
+            message: `Thank you for your time as a valued member of <a href="${USER_APP_BASE_URL}/home" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a> – we've truly enjoyed having you as part of our paying community.<br/><br/>Although you've chosen to end your membership, your profile remains active, and we hope you'll continue to explore and engage in our playful universe. You're still very much part of the <%= brandName %> community!<br/><br/>Some features will no longer be available with your free profile – but there's still plenty of excitement waiting for you. And who knows… maybe you'll be tempted to upgrade again in the future 😉<br/><br/>Until then, we're happy to have you here.`,
             greeting: 'Hi there,',
             buttonText: '',
             buttonLink: '',
@@ -409,7 +409,7 @@ const TEMPLATE_UPDATES: Record<string, { subject: string; content: string; varia
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="<%= brandName %> Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->
@@ -474,7 +474,7 @@ const PAYMENT_RECEIPT_CONTENT = `
                     <!-- Header -->
                     <tr>
                         <td style="background-color:#631B1C;padding:30px 20px;text-align:center;">
-                            <img src="${LOGO_URL}" alt="Secret SwingerLust Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
+                            <img src="${LOGO_URL}" alt="<%= brandName %> Logo" style="max-width:150px;height:auto;display:block;margin:0 auto;" />
                         </td>
                     </tr>
                     <!-- Main Content -->

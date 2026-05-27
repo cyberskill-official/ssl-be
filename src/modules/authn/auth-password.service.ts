@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import ejs from 'ejs';
 import { omit } from 'lodash-es';
 
@@ -167,27 +167,46 @@ export const authPasswordService = {
         let emailSent = false;
         let lastError: string | undefined;
 
+        const systemContext: any = { req: { headers: {} } };
+        const recipientUserResult = email
+            ? await userCtr.getUser(systemContext, {
+                    filter: { email: email.toLowerCase() },
+                    projection: { id: 1, sentBrandEmailTemplates: 1 },
+                })
+            : null;
+        const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
+        const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
+        const isFirstForTemplate = !sentTemplates.includes(FORGOT_PASSWORD);
+        const brandName = isFirstForTemplate ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+
         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
         let subjectText = '[No Subject]';
         let html: string;
+
+        const renderVars = {
+            otp,
+            expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
+            email,
+            brandName,
+        };
 
         if (tpl.success && tpl.result) {
             const { content, subject: tplSubject } = tpl.result;
 
             if (tplSubject) {
-                subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                subjectText = await ejs.render(tplSubject, renderVars);
             }
 
             if (content) {
-                html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                html = await ejs.render(content, renderVars);
             }
             else {
-                html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                html = emailCtr.generateBasicTemplate(renderVars);
             }
         }
         else {
-            subjectText = '[Reset password]';
-            html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+            subjectText = `[${brandName}] Reset password`;
+            html = emailCtr.generateBasicTemplate(renderVars);
         }
 
         const maxRetries = 3;
@@ -196,6 +215,12 @@ export const authPasswordService = {
                 const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
                 if (sendResult.success) {
                     emailSent = true;
+                    if (isFirstForTemplate && recipientUser) {
+                        userCtr.updateUser(systemContext, {
+                            filter: { id: recipientUser.id },
+                            update: { $addToSet: { sentBrandEmailTemplates: FORGOT_PASSWORD } } as any,
+                        }).catch(err => log.error('[EMAIL] Failed to update sentBrandEmailTemplates via userCtr', { err }));
+                    }
                     break;
                 }
                 else {
