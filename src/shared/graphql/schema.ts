@@ -1,7 +1,7 @@
 import type { IResolvers, TypeSource } from '@graphql-tools/utils';
 
 import { path, resolve } from '@cyberskill/shared/node/path';
-import { loadFilesSync } from '@graphql-tools/load-files';
+import { loadFiles } from '@graphql-tools/load-files';
 import { mergeResolvers, mergeTypeDefs } from '@graphql-tools/merge';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { GraphQLDateTime, GraphQLJSON } from 'graphql-scalars';
@@ -13,23 +13,49 @@ const __dirname = path.dirname(__filename);
 
 const currentDir = resolve(__dirname, '../../');
 
-const typesArray: TypeSource = loadFilesSync<TypeSource>(path.join(currentDir, '/**/*.graphql'), {
-    recursive: true,
-});
+interface T_GraphqlArtifacts {
+    allResolvers: IResolvers;
+    schema: ReturnType<typeof makeExecutableSchema>;
+}
 
-const resolversArray: IResolvers[] = loadFilesSync<IResolvers>(path.join(currentDir, '/**/*.resolver.{js,ts}'), {
-    recursive: true,
-});
+let graphqlArtifactsPromise: Promise<T_GraphqlArtifacts> | undefined;
 
-const allTypes = mergeTypeDefs(typesArray);
+async function loadGraphqlArtifacts(): Promise<T_GraphqlArtifacts> {
+    const typesArray = await loadFiles(path.join(currentDir, '/**/*.graphql'), {
+        recursive: true,
+    }) as TypeSource;
 
-export const allResolvers = omit(mergeResolvers(resolversArray), ['default']);
+    const resolversArray = await loadFiles(path.join(currentDir, '/**/*.resolver.{js,ts}'), {
+        recursive: true,
+    }) as IResolvers[];
 
-export const schema = makeExecutableSchema({
-    typeDefs: allTypes,
-    resolvers: {
-        JSON: GraphQLJSON,
-        DateTime: GraphQLDateTime,
-        ...allResolvers,
-    },
-});
+    const allTypes = mergeTypeDefs(typesArray);
+    const allResolvers = omit(mergeResolvers(resolversArray), ['default']) as IResolvers;
+
+    return {
+        allResolvers,
+        schema: makeExecutableSchema({
+            typeDefs: allTypes,
+            resolvers: {
+                JSON: GraphQLJSON,
+                DateTime: GraphQLDateTime,
+                ...allResolvers,
+            },
+        }),
+    };
+}
+
+async function getGraphqlArtifacts(): Promise<T_GraphqlArtifacts> {
+    graphqlArtifactsPromise ??= loadGraphqlArtifacts();
+    return graphqlArtifactsPromise;
+}
+
+export async function getAllResolvers(): Promise<IResolvers> {
+    const { allResolvers } = await getGraphqlArtifacts();
+    return allResolvers;
+}
+
+export async function getSchema(): Promise<ReturnType<typeof makeExecutableSchema>> {
+    const { schema } = await getGraphqlArtifacts();
+    return schema;
+}

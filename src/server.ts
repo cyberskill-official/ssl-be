@@ -15,7 +15,7 @@ import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
-import { schema } from '#shared/graphql/schema.js';
+import { getSchema } from '#shared/graphql/schema.js';
 import { E_SessionPortal, getPortalSessionCookieNames, getSessionPortalFromRequest } from '#shared/session/index.js';
 
 const env = getEnv();
@@ -64,6 +64,7 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         path: env.ENDPOINT_WS,
         sessionParser,
     });
+    const schema = await getSchema();
     const serverCleanup = initGraphQLWS({ schema, server: wsServer });
 
     // MongoDB
@@ -106,8 +107,6 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
         updateUserActivity,
         expressMiddleware(apolloServer, {
             context: async (context) => {
-                // await authzMiddleware.checkAuthorizedGraphql(context as unknown as I_Context);
-
                 return context;
             },
         }) as unknown as express.RequestHandler,
