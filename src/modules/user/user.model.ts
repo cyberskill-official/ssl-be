@@ -636,7 +636,6 @@ export const UserModel = mongo.createModel<I_User>({
         hasSeenDashboardTour: { type: Boolean, default: false },
         hasSeenProfileTour: { type: Boolean, default: false },
         guardianOwnerId: { type: String, default: null },
-        sentBrandEmailTemplates: { type: [String], default: [] },
     },
     virtuals: [
         {

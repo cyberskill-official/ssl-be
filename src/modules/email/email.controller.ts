@@ -4,7 +4,6 @@ import { log } from '@cyberskill/shared/node/log';
 import ejs from 'ejs';
 
 import { emailTemplateCtr } from '#modules/email-template/index.js';
-import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import type {
@@ -45,20 +44,6 @@ export const emailCtr = {
             // Get USER_APP_URL from env and ensure it doesn't end with trailing slash
             const userAppUrl = env.USER_APP_URL ? env.USER_APP_URL.replace(TRAILING_SLASHES_REGEX, '') : '';
 
-            // ── Trademark Per-Template First-Email Rule ──
-            // The trademark ® symbol is used on the first send of each unique email template type
-            // per user, for both subject and body content. Subsequent sends of that template type do not have ®.
-            const recipientEmail = Array.isArray(to) ? to[0] : to;
-            const systemContext: any = { req: { headers: {} } };
-            const recipientUserResult = recipientEmail
-                ? await userCtr.getUser(systemContext, {
-                        filter: { email: recipientEmail.toLowerCase() },
-                        projection: { id: 1, sentBrandEmailTemplates: 1 },
-                    })
-                : null;
-            const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
-            const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
-            const isFirstForTemplate = !sentTemplates.includes(templateKey);
             const brandName = 'Secret Swinger Lust';
 
             const renderData = {
@@ -122,10 +107,6 @@ export const emailCtr = {
                 }
             }
 
-            if (isFirstForTemplate) {
-                html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
-            }
-
             const sanitized = sanitizeEmailContent(html, subjectText);
             html = sanitized.html;
             subjectText = sanitized.subject;
@@ -142,13 +123,7 @@ export const emailCtr = {
 
             const job = await emailQueue.addTransactionalEmail({ ...emailData, type: 'transactional' }, options);
 
-            // Mark template as sent to this user (fire-and-forget to avoid blocking)
-            if (isFirstForTemplate && recipientUser) {
-                userCtr.updateUser(systemContext, {
-                    filter: { id: recipientUser.id },
-                    update: { $addToSet: { sentBrandEmailTemplates: templateKey } } as any,
-                }).catch(err => log.error('[EMAIL] Failed to update sentBrandEmailTemplates via userCtr', { err }));
-            }
+            // No tracking of sent brand email templates is needed anymore
 
             return {
                 success: true,

@@ -1429,16 +1429,6 @@ export const conversationCtr = {
         requestType?: string,
     ): Promise<{ success: boolean; message?: string }> => {
         try {
-            const systemContext: any = { req: { headers: {} } };
-            const recipientUserResult = toEmail
-                ? await userCtr.getUser(systemContext, {
-                        filter: { email: toEmail.toLowerCase() },
-                        projection: { id: 1, sentBrandEmailTemplates: 1 },
-                    })
-                : null;
-            const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
-            const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
-            const isFirstForTemplate = !sentTemplates.includes(REPLY_FROM_ADMIN);
             const brandName = 'Secret Swinger Lust';
 
             const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
@@ -1470,23 +1460,11 @@ export const conversationCtr = {
                 html = emailCtr.generateBasicTemplate(renderVars);
             }
 
-            if (isFirstForTemplate) {
-                html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
-            }
-
             const immediate = await emailService.sendEmail({ to: toEmail, subject: subjectText, html });
             if (!immediate.success) {
                 const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, toEmail, renderVars);
                 if (!sendResult.success) {
                     return { success: false, message: sendResult.message };
-                }
-            }
-            else {
-                if (isFirstForTemplate && recipientUser) {
-                    userCtr.updateUser(systemContext, {
-                        filter: { id: recipientUser.id },
-                        update: { $addToSet: { sentBrandEmailTemplates: REPLY_FROM_ADMIN } } as any,
-                    }).catch(() => {});
                 }
             }
             return { success: true };
@@ -2171,8 +2149,9 @@ export const conversationCtr = {
         let isFreeMember = false;
         let isAdminUser = false;
         try {
-            isFreeMember = await authnCtr.isFreeMember(context);
-            isAdminUser = await authnCtr.isAdmin(context);
+            const currentUser = await authnCtr.getUserFromSession(context);
+            isFreeMember = await authnCtr.isFreeMemberUser(context, currentUser);
+            isAdminUser = await authnCtr.isAdminUser(context, currentUser);
         }
         catch {
             isFreeMember = false;
@@ -2292,29 +2271,7 @@ export const conversationCtr = {
                 },
             });
 
-            try {
-                const recipientRes = await userCtr.getUser(context, {
-                    filter: { id: recipientId },
-                    projection: 'id email settings.notification username',
-                });
-
-                if (recipientRes?.success) {
-                    // const targetEmail = recipientRes.result.email || '';
-                    // const wantsEmail = (recipientRes.result.settings?.notification?.receiveMessage) !== false;
-
-                    // if (wantsEmail && targetEmail) {
-                    //     validate.email.validate(targetEmail);
-                    //     const templateData = {
-                    //         email: targetEmail,
-                    //         sender: senderUser?.username || senderId,
-                    //         message: preview,
-                    //         preview,
-                    //     };
-                    //     await emailCtr.sendEmail(NEW_MESSAGE, targetEmail, templateData);
-                    // }
-                }
-            }
-            catch { /* ignore */ }
+            // Recipient email notification is handled asynchronously via notificationCtr.createNotificationWithSettings above
 
             return {
                 success: true,
@@ -2399,7 +2356,7 @@ export const conversationCtr = {
             // Only check if senderId matches the current session user (not admin sending on behalf)
             const currentUser = await authnCtr.getUserFromSession(context);
             if (currentUser.id === senderId) {
-                const isFreeMember = await authnCtr.isFreeMember(context);
+                const isFreeMember = await authnCtr.isFreeMemberUser(context, currentUser);
                 const isPublicThread = isOpenPublicThread(conversation);
                 // Block FREE_MEMBER from sending messages only if:
                 // - They are NOT a participant or owner

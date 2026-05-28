@@ -146,7 +146,6 @@ export interface I_User extends I_GenericDocument {
     hasSeenDashboardTour?: boolean;
     hasSeenProfileTour?: boolean;
     guardianOwnerId?: string | null;
-    sentBrandEmailTemplates?: string[];
     notes?: I_Note[];
 }
 

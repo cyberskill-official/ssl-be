@@ -9,39 +9,53 @@ const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 export function sanitizeEmailContent(html: string, subject: string): { html: string; subject: string } {
     let sanitizedHtml = html || '';
 
-    // 1. Protect the signature block. It might have ® (Secret® Swinger Lust Team) or not (Secret Swinger Lust Team)
-    const signatureMatch = html ? html.match(/Secret®?\s+Swinger\s*Lust\s+Team/gi) : null;
-    const signatureText = signatureMatch ? signatureMatch[0] : null;
-
-    if (signatureText) {
+    // 1. Protect the signature block (which must be Secret Swinger Lust Team without ®)
+    const hasSignature = /Secret®?\s+Swinger\s*Lust\s+Team/i.test(sanitizedHtml);
+    if (hasSignature) {
         sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+Team/gi, '__SIGNATURE_TEAM_PLACEHOLDER__');
     }
 
-    // 2. Protect logo alt text in header
-    sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*Swinger\s*Lust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
-    sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*SwingerLust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
-
-    // 3. Replace the footer line (legal info)
-    sanitizedHtml = sanitizedHtml.replace(
-        /Secret®?\s+Swinger\s*Lust\s+by\s+JOLO\s+Media\s+ApS,\s+Denmark\.\s+Secret®?\s+is\s+a\s+registered\s+EU\s+trademark\./gi,
-        'secretswingerlust.com by JOLO Media ApS, Denmark.',
-    );
-
-    // 4. Specific body text replacements
-    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+profile/gi, 'profile');
-    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+community/gi, 'secretswingerlust.com community');
-
-    // 5. Generic replacement for any remaining occurrences of the brand name in the body
-    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust/gi, 'secretswingerlust.com');
-
-    // 6. Restore placeholders
-    if (signatureText) {
-        sanitizedHtml = sanitizedHtml.replace(/__SIGNATURE_TEAM_PLACEHOLDER__/g, signatureText);
+    // 2. Protect the legal footer block (which does not count towards the body "only once" rule)
+    const hasFooter = /Secret®?\s+Swinger\s*Lust\s+by\s+JOLO\s+Media\s+ApS,\s+Denmark\.\s+Secret®?\s+is\s+a\s+registered\s+EU\s+trademark\./i.test(sanitizedHtml);
+    if (hasFooter) {
+        sanitizedHtml = sanitizedHtml.replace(
+            /Secret®?\s+Swinger\s*Lust\s+by\s+JOLO\s+Media\s+ApS,\s+Denmark\.\s+Secret®?\s+is\s+a\s+registered\s+EU\s+trademark\./gi,
+            '__FOOTER_LEGAL_PLACEHOLDER__',
+        );
     }
-    sanitizedHtml = sanitizedHtml.replace(/__LOGO_ALT_PLACEHOLDER__/g, 'Secret Swinger Lust Logo');
 
-    // 7. Sanitize subject
-    const sanitizedSubject = (subject || '').replace(/Secret®?\s+Swinger\s*Lust/gi, 'secretswingerlust.com');
+    // 3. Protect logo alt text in header (which must be Secret Swinger Lust Logo without ®)
+    const hasLogo = /alt=["']Secret®?\s*Swinger\s*Lust\s*Logo["']/i.test(sanitizedHtml) || /alt=["']Secret®?\s*SwingerLust\s*Logo["']/i.test(sanitizedHtml);
+    if (hasLogo) {
+        sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*Swinger\s*Lust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
+        sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*SwingerLust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
+    }
+
+    // 4. Generic replacement for remaining brand name occurrences in the body:
+    // The FIRST occurrence in the body becomes "Secret® Swinger Lust" (with ®).
+    // Any SUBSEQUENT occurrences in the body become "Secret Swinger Lust" (without ®).
+    let firstFound = false;
+    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust/gi, () => {
+        if (!firstFound) {
+            firstFound = true;
+            return 'Secret® Swinger Lust';
+        }
+        return 'Secret Swinger Lust';
+    });
+
+    // 5. Restore placeholders
+    if (hasSignature) {
+        sanitizedHtml = sanitizedHtml.replace(/__SIGNATURE_TEAM_PLACEHOLDER__/g, 'Secret Swinger Lust Team');
+    }
+    if (hasFooter) {
+        sanitizedHtml = sanitizedHtml.replace(/__FOOTER_LEGAL_PLACEHOLDER__/g, 'Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.');
+    }
+    if (hasLogo) {
+        sanitizedHtml = sanitizedHtml.replace(/__LOGO_ALT_PLACEHOLDER__/g, 'Secret Swinger Lust Logo');
+    }
+
+    // 6. Sanitize subject (ensure no ® in subject line, keep as Secret Swinger Lust)
+    const sanitizedSubject = (subject || '').replace(/Secret®?\s+Swinger\s*Lust/gi, 'Secret Swinger Lust');
 
     return { html: sanitizedHtml, subject: sanitizedSubject };
 }

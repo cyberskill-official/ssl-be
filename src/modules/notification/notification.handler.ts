@@ -1,7 +1,4 @@
-import { log } from '@cyberskill/shared/node/log';
-
 import { emailCtr } from '#modules/email/email.controller.js';
-import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 
 import { E_NotificationType } from './notification.type.js';
@@ -77,7 +74,7 @@ export function buildMediaLikedEmailHtml(input: {
                             <h1 style="font-size:28px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Hi ${greetingName},</h1>
                             <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:0 0 16px;text-align:center;font-family:Myanmar Text;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
                             <div style="font-size:16px;color:#000000;margin:0 0 20px;text-align:center;line-height:1.6;font-family:Myanmar Text;">
-                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a>.</p>
+                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">Secret Swinger Lust</a>.</p>
                             </div>
                             <!-- Button -->
                             <div style="text-align:center;margin:30px 0;">
@@ -100,7 +97,7 @@ export function buildMediaLikedEmailHtml(input: {
                                 </p>
                                 <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1;font-family:Myanmar Text;">
                                     <li style="margin-bottom:8px;">
-                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">secretswingerlust.com</a>
+                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">Secret Swinger Lust</a>
                                     </li>
                                     <li style="margin-bottom:8px;">Click My Profile (top-right)</li>
                                     <li style="margin-bottom:8px;">Select Notifications</li>
@@ -125,7 +122,7 @@ export function buildMediaLikedEmailHtml(input: {
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">secretswingerlust.com by JOLO Media ApS, Denmark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
                         </td>
                     </tr>
                 </table>
@@ -144,21 +141,11 @@ export async function sendMediaLikedEmail(input: {
     mediaLink: string;
     thumbnailUrl?: string;
 }) {
-    const systemContext: any = { req: { headers: {} } };
-    const recipientUserResult = input.targetEmail
-        ? await userCtr.getUser(systemContext, {
-                filter: { email: input.targetEmail.toLowerCase() },
-                projection: { id: 1, sentBrandEmailTemplates: 1 },
-            })
-        : null;
-    const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
     const templateKey = 'media-liked';
-    const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
-    const isFirstForTemplate = !sentTemplates.includes(templateKey);
     const brandName = 'Secret Swinger Lust';
 
-    const subject = `[secretswingerlust.com] Someone liked your ${input.mediaKindLabel}`;
-    let html = buildMediaLikedEmailHtml({
+    const subject = `[${brandName}] Someone liked your ${input.mediaKindLabel}`;
+    const html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,
         mediaKindLabel: input.mediaKindLabel,
@@ -166,10 +153,6 @@ export async function sendMediaLikedEmail(input: {
         thumbnailUrl: input.thumbnailUrl,
         brandName,
     });
-
-    if (isFirstForTemplate) {
-        html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
-    }
 
     const response = await emailCtr.sendEmailRaw({
         to: input.targetEmail,
@@ -182,13 +165,6 @@ export async function sendMediaLikedEmail(input: {
             mediaLink: input.mediaLink,
         },
     });
-
-    if (response.success && isFirstForTemplate && recipientUser) {
-        userCtr.updateUser(systemContext, {
-            filter: { id: recipientUser.id },
-            update: { $addToSet: { sentBrandEmailTemplates: templateKey } } as any,
-        }).catch(err => log.error('[EMAIL] Failed to update sentBrandEmailTemplates via userCtr', { err }));
-    }
 
     return response;
 }

@@ -25,6 +25,7 @@
         "build",
         "vitest.config.ts",
         "**/*.test.ts",
-        "**/*.spec.ts"
+        "**/*.spec.ts",
+        "src/scripts"
     ]
 }

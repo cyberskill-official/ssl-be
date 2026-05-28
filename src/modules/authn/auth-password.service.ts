@@ -1,7 +1,7 @@
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { log, throwError } from '@cyberskill/shared/node/log';
+import { throwError } from '@cyberskill/shared/node/log';
 import ejs from 'ejs';
 import { omit } from 'lodash-es';
 
@@ -167,16 +167,6 @@ export const authPasswordService = {
         let emailSent = false;
         let lastError: string | undefined;
 
-        const systemContext: any = { req: { headers: {} } };
-        const recipientUserResult = email
-            ? await userCtr.getUser(systemContext, {
-                    filter: { email: email.toLowerCase() },
-                    projection: { id: 1, sentBrandEmailTemplates: 1 },
-                })
-            : null;
-        const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
-        const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
-        const isFirstForTemplate = !sentTemplates.includes(FORGOT_PASSWORD);
         const brandName = 'Secret Swinger Lust';
 
         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
@@ -209,22 +199,12 @@ export const authPasswordService = {
             html = emailCtr.generateBasicTemplate(renderVars);
         }
 
-        if (isFirstForTemplate) {
-            html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
-        }
-
         const maxRetries = 3;
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const sendResult = await emailService.sendEmail({ to: email, subject: subjectText, html });
                 if (sendResult.success) {
                     emailSent = true;
-                    if (isFirstForTemplate && recipientUser) {
-                        userCtr.updateUser(systemContext, {
-                            filter: { id: recipientUser.id },
-                            update: { $addToSet: { sentBrandEmailTemplates: FORGOT_PASSWORD } } as any,
-                        }).catch(err => log.error('[EMAIL] Failed to update sentBrandEmailTemplates via userCtr', { err }));
-                    }
                     break;
                 }
                 else {
