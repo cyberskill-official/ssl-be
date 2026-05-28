@@ -10,7 +10,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr, E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
-import { conversationCtr, E_ConversationType, E_MessageType } from '#modules/conversation/index.js';
+import { E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
+import { E_MessageType } from '#modules/conversation/index.js';
 import { userCtr } from '#modules/user/index.js';
 
 import type { I_Input_CreatePushChatMessage, I_Input_QueryPushChatMessage, I_PushChatMessage, I_SendPushChatResult } from './push-chat.type.js';
@@ -145,6 +146,7 @@ export const pushChatCtr = {
             // Send messages in background
             (async () => {
                 try {
+                    const { conversationCtr } = await import('#modules/conversation/conversation/conversation.controller.js');
                     const messageTasks = recipientUserIds.map(async (userId) => {
                         try {
                             // Create or get private conversation between system user and recipient

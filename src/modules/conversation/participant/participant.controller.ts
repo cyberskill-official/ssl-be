@@ -26,7 +26,8 @@ import { pubsub } from '#shared/graphql/pubsub.js';
 
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
 
-import { conversationCtr, E_CONVERSATION_EVENTS, E_ConversationType } from '../conversation/index.js';
+import { E_ConversationType } from '../conversation/conversation.type.js';
+import { conversationCtr, E_CONVERSATION_EVENTS } from '../conversation/index.js';
 import { messageStatusCtr } from '../message-status/index.js';
 import { messageCtr } from '../message/index.js';
 import { ParticipantModel } from './participant.model.js';
