@@ -6,6 +6,46 @@ import type { I_EmailJobData, I_EmailJobResult } from './email.type.js';
 
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
 
+export function sanitizeEmailContent(html: string, subject: string): { html: string; subject: string } {
+    let sanitizedHtml = html || '';
+
+    // 1. Protect the signature block. It might have ® (Secret® Swinger Lust Team) or not (Secret Swinger Lust Team)
+    const signatureMatch = html ? html.match(/Secret®?\s+Swinger\s*Lust\s+Team/gi) : null;
+    const signatureText = signatureMatch ? signatureMatch[0] : null;
+
+    if (signatureText) {
+        sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+Team/gi, '__SIGNATURE_TEAM_PLACEHOLDER__');
+    }
+
+    // 2. Protect logo alt text in header
+    sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*Swinger\s*Lust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
+    sanitizedHtml = sanitizedHtml.replace(/alt=["']Secret®?\s*SwingerLust\s*Logo["']/gi, 'alt="__LOGO_ALT_PLACEHOLDER__"');
+
+    // 3. Replace the footer line (legal info)
+    sanitizedHtml = sanitizedHtml.replace(
+        /Secret®?\s+Swinger\s*Lust\s+by\s+JOLO\s+Media\s+ApS,\s+Denmark\.\s+Secret®?\s+is\s+a\s+registered\s+EU\s+trademark\./gi,
+        'secretswingerlust.com by JOLO Media ApS, Denmark.',
+    );
+
+    // 4. Specific body text replacements
+    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+profile/gi, 'profile');
+    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust\s+community/gi, 'secretswingerlust.com community');
+
+    // 5. Generic replacement for any remaining occurrences of the brand name in the body
+    sanitizedHtml = sanitizedHtml.replace(/Secret®?\s+Swinger\s*Lust/gi, 'secretswingerlust.com');
+
+    // 6. Restore placeholders
+    if (signatureText) {
+        sanitizedHtml = sanitizedHtml.replace(/__SIGNATURE_TEAM_PLACEHOLDER__/g, signatureText);
+    }
+    sanitizedHtml = sanitizedHtml.replace(/__LOGO_ALT_PLACEHOLDER__/g, 'Secret Swinger Lust Logo');
+
+    // 7. Sanitize subject
+    const sanitizedSubject = (subject || '').replace(/Secret®?\s+Swinger\s*Lust/gi, 'secretswingerlust.com');
+
+    return { html: sanitizedHtml, subject: sanitizedSubject };
+}
+
 export const emailService = {
     /**
      * Send a simple email
@@ -13,11 +53,12 @@ export const emailService = {
     sendEmail: async (emailJob: I_EmailJobData): Promise<I_EmailJobResult> => {
         try {
             const recipients = Array.isArray(emailJob.to) ? emailJob.to : [emailJob.to];
+            const { html, subject } = sanitizeEmailContent(emailJob.html || '', emailJob.subject);
 
             await postmarkController.sendEmail({
                 to: Array.isArray(emailJob.to) ? emailJob.to.join(',') : emailJob.to,
-                subject: emailJob.subject,
-                body: emailJob.html || emailJob.text || '',
+                subject,
+                body: html || emailJob.text || '',
             });
             return {
                 success: true,
@@ -47,11 +88,12 @@ export const emailService = {
     sendBulkEmails: async (emailJob: I_EmailJobData): Promise<I_EmailJobResult> => {
         try {
             const recipients = Array.isArray(emailJob.to) ? emailJob.to : [emailJob.to];
+            const { html, subject } = sanitizeEmailContent(emailJob.html || '', emailJob.subject);
 
             await postmarkController.sendBulkEmail({
                 to: recipients,
-                subject: emailJob.subject,
-                html: emailJob.html || '',
+                subject,
+                html: html || '',
             });
 
             return {

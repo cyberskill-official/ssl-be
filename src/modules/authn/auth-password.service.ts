@@ -177,7 +177,7 @@ export const authPasswordService = {
         const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
         const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
         const isFirstForTemplate = !sentTemplates.includes(FORGOT_PASSWORD);
-        const brandName = isFirstForTemplate ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+        const brandName = 'Secret Swinger Lust';
 
         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
         let subjectText = '[No Subject]';
@@ -207,6 +207,10 @@ export const authPasswordService = {
         else {
             subjectText = `[${brandName}] Reset password`;
             html = emailCtr.generateBasicTemplate(renderVars);
+        }
+
+        if (isFirstForTemplate) {
+            html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
         }
 
         const maxRetries = 3;

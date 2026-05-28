@@ -5,10 +5,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { RoleModel } from '../modules/authz/role/role.model.js';
-import { ensurePayPalCredentials, getPayPalRequest } from '../modules/payment/paypal/paypal.handler.js';
 import { PaymentSubscriptionModel } from '../modules/payment/payment-subscription/payment-subscription.model.js';
 import { E_PaymentSubscriptionSource, E_PaymentSubscriptionStatus } from '../modules/payment/payment-subscription/payment-subscription.type.js';
 import { E_PaymentProvider } from '../modules/payment/payment-transaction/payment-transaction.type.js';
+import { ensurePayPalCredentials, getPayPalRequest } from '../modules/payment/paypal/paypal.handler.js';
 import { UserModel } from '../modules/user/user.model.js';
 import { getEnv } from '../shared/env/index.js';
 
@@ -314,7 +314,8 @@ function renderHtmlReport(params: {
             <td>${escapeHtml(row.local.lastOnlineVietnam ?? '-')}<br><small>${escapeHtml(row.local.lastOnline ?? '-')}</small></td>
             <td>${row.warnings.map(warning => `<div>${escapeHtml(warning)}</div>`).join('') || '-'}</td>
         </tr>
-    `).join('\n');
+    `)
+        .join('\n');
 
     return `<!doctype html>
 <html lang="vi">
@@ -435,7 +436,7 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch(error => {
+main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });

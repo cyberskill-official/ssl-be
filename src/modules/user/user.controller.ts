@@ -152,10 +152,10 @@ export const userCtr = {
             (typeof p === 'string' && p === 'ageVerify')
             || (typeof p === 'object' && p.path === 'ageVerify'),
         );
-        const populatesToAppend = hasAgeVerifyPopulate 
-            ? [extraPopulates[1], extraPopulates[2]] 
+        const populatesToAppend = hasAgeVerifyPopulate
+            ? [extraPopulates[1], extraPopulates[2]]
             : extraPopulates;
-        
+
         const effectivePopulate = isAdmin
             ? ensurePopulateIncludes(
                     [...basePopulate, ...populatesToAppend],

@@ -11,8 +11,8 @@ import { PaymentRequestModel } from '../modules/payment/payment-request/payment-
 import { PaymentSubscriptionModel } from '../modules/payment/payment-subscription/payment-subscription.model.js';
 import { PaymentTransactionModel } from '../modules/payment/payment-transaction/payment-transaction.model.js';
 import { ensurePayPalCredentials, getPayPalRequest } from '../modules/payment/paypal/paypal.handler.js';
-import { PromoCodeModel } from '../modules/promo-code/promo-code/promo-code.model.js';
 import { PromoCodeUsageModel } from '../modules/promo-code/promo-code-usage/promo-code-usage.model.js';
+import { PromoCodeModel } from '../modules/promo-code/promo-code/promo-code.model.js';
 import { UserModel } from '../modules/user/user.model.js';
 import { getEnv } from '../shared/env/index.js';
 
@@ -371,12 +371,12 @@ async function buildRow(params: {
 
     const promoCodes = promoCodeIds.length
         ? await PromoCodeModel.find({
-            id: { $in: promoCodeIds },
-        }, {
-            id: 1,
-            code: 1,
-            grantDays: 1,
-        }).lean<Array<{ id?: string; code?: string; grantDays?: number }>>().exec()
+                id: { $in: promoCodeIds },
+            }, {
+                id: 1,
+                code: 1,
+                grantDays: 1,
+            }).lean<Array<{ id?: string; code?: string; grantDays?: number }>>().exec()
         : [];
     const promoCodeById = new Map(promoCodes.map(code => [code.id, code]));
 
@@ -419,10 +419,10 @@ async function buildRow(params: {
 
         const planRes = subscriptionRes.result.plan_id
             ? await getPayPalRequest<T_PayPalPlan>(
-                credentials,
-                `/v1/billing/plans/${encodeURIComponent(subscriptionRes.result.plan_id)}`,
-                'get-plan',
-            )
+                    credentials,
+                    `/v1/billing/plans/${encodeURIComponent(subscriptionRes.result.plan_id)}`,
+                    'get-plan',
+                )
             : null;
         const plan = planRes?.success ? planRes.result : null;
         const regularCycle = firstRegularCycle(plan);
@@ -518,19 +518,19 @@ async function buildRow(params: {
     if (apply && recommendedAction !== 'NO_EVIDENCE') {
         const update = isStillEntitled
             ? {
-                rolesIds: recommendedRoleIds,
-                membershipExpiresAt: resolved.accessExpiresAt,
-                membershipEndDate: resolved.accessExpiresAt,
-                membershipCancelled: true,
-                freeEventCount: 0,
-            }
+                    rolesIds: recommendedRoleIds,
+                    membershipExpiresAt: resolved.accessExpiresAt,
+                    membershipEndDate: resolved.accessExpiresAt,
+                    membershipCancelled: true,
+                    freeEventCount: 0,
+                }
             : {
-                rolesIds: recommendedRoleIds,
-                membershipExpiresAt: null,
-                membershipEndDate: null,
-                membershipCancelled: true,
-                freeEventCount: 0,
-            };
+                    rolesIds: recommendedRoleIds,
+                    membershipExpiresAt: null,
+                    membershipEndDate: null,
+                    membershipCancelled: true,
+                    freeEventCount: 0,
+                };
         await UserModel.updateOne({ id: user.id }, { $set: update }).exec();
         row.appliedActions.push(isStillEntitled ? 'set-correct-entitlement' : 'downgrade-to-free');
     }
@@ -691,7 +691,7 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch(error => {
+main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
 });

@@ -18,6 +18,7 @@ import type {
 import type { I_EmailJobRegistryFilter } from './queue-registry/index.js';
 
 import { emailQueue } from './email.queue.js';
+import { sanitizeEmailContent } from './email.service.js';
 import { emailTemplateCache } from './email.template-cache.js';
 import { emailQueueRegistryCtr } from './queue-registry/index.js';
 
@@ -58,7 +59,7 @@ export const emailCtr = {
             const recipientUser = recipientUserResult?.success ? recipientUserResult.result : null;
             const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
             const isFirstForTemplate = !sentTemplates.includes(templateKey);
-            const brandName = isFirstForTemplate ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+            const brandName = 'Secret Swinger Lust';
 
             const renderData = {
                 ...safeTemplateData,
@@ -120,6 +121,14 @@ export const emailCtr = {
                     html = emailCtr.generateBasicTemplate(renderData);
                 }
             }
+
+            if (isFirstForTemplate) {
+                html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
+            }
+
+            const sanitized = sanitizeEmailContent(html, subjectText);
+            html = sanitized.html;
+            subjectText = sanitized.subject;
 
             const emailData: I_EmailJobData = {
                 to: emails,

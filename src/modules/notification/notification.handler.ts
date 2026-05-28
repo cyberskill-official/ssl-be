@@ -77,7 +77,7 @@ export function buildMediaLikedEmailHtml(input: {
                             <h1 style="font-size:28px;font-weight:bold;color:#000000;margin:0 0 20px;text-align:center;font-family:Myanmar Text;">Hi ${greetingName},</h1>
                             <h2 style="font-size:20px;font-weight:bold;color:#000000;margin:0 0 16px;text-align:center;font-family:Myanmar Text;">Someone just liked your ${input.mediaKindLabel} 💖</h2>
                             <div style="font-size:16px;color:#000000;margin:0 0 20px;text-align:center;line-height:1.6;font-family:Myanmar Text;">
-                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">${brandName}</a>.</p>
+                                <p style="margin:0 0 16px;color:#000000;">Someone just liked your ${input.mediaKindLabel} on <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:none;">secretswingerlust.com</a>.</p>
                             </div>
                             <!-- Button -->
                             <div style="text-align:center;margin:30px 0;">
@@ -93,14 +93,14 @@ export function buildMediaLikedEmailHtml(input: {
                             <div style="margin-top:30px;">
                                 <h2 style="font-size:18px;color:#000000;margin:0 0 12px;font-family:Myanmar Text;">Want fewer emails?</h2>
                                 <p style="font-size:14px;color:#000000;margin:0 0 16px;line-height:1.6;font-family:Myanmar Text;font-weight:normal;">
-                                    You're receiving this email because notifications are enabled on your ${brandName} profile.
+                                    You're receiving this email because notifications are enabled on your profile.
                                 </p>
                                 <p style="font-size:14px;color:#000000;margin:0 0 12px;line-height:1.6;font-family:Myanmar Text;font-weight:normal">
                                     It's easy to adjust your preferences:
                                 </p>
                                 <ol style="font-size:14px;color:#000000;margin:0 0 16px;padding-left:20px;line-height:1;font-family:Myanmar Text;">
                                     <li style="margin-bottom:8px;">
-                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">${brandName}</a>
+                                        Sign in to <a href="${USER_APP_BASE_URL}" target="_blank" rel="noopener noreferrer" style="color:#631B1C;text-decoration:underline;">secretswingerlust.com</a>
                                     </li>
                                     <li style="margin-bottom:8px;">Click My Profile (top-right)</li>
                                     <li style="margin-bottom:8px;">Select Notifications</li>
@@ -125,7 +125,7 @@ export function buildMediaLikedEmailHtml(input: {
                     </tr>
                     <tr>
                         <td style="background-color:#2a2a2a;padding:15px;text-align:center;">
-                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">Secret Swinger Lust by JOLO Media ApS, Denmark. Secret® is a registered EU trademark.</p>
+                            <p style="color:#777877;font-size:15px;margin:0;font-weight:bold">secretswingerlust.com by JOLO Media ApS, Denmark.</p>
                         </td>
                     </tr>
                 </table>
@@ -155,10 +155,10 @@ export async function sendMediaLikedEmail(input: {
     const templateKey = 'media-liked';
     const sentTemplates = recipientUser?.sentBrandEmailTemplates || [];
     const isFirstForTemplate = !sentTemplates.includes(templateKey);
-    const brandName = isFirstForTemplate ? 'Secret® Swinger Lust' : 'Secret Swinger Lust';
+    const brandName = 'Secret Swinger Lust';
 
-    const subject = `[${brandName}] Someone liked your ${input.mediaKindLabel}`;
-    const html = buildMediaLikedEmailHtml({
+    const subject = `[secretswingerlust.com] Someone liked your ${input.mediaKindLabel}`;
+    let html = buildMediaLikedEmailHtml({
         targetDisplayName: input.targetDisplayName,
         actorDisplayName: input.actorDisplayName,
         mediaKindLabel: input.mediaKindLabel,
@@ -166,6 +166,10 @@ export async function sendMediaLikedEmail(input: {
         thumbnailUrl: input.thumbnailUrl,
         brandName,
     });
+
+    if (isFirstForTemplate) {
+        html = html.replace(/Secret\s+Swinger\s*Lust\s+Team/g, 'Secret® Swinger Lust Team');
+    }
 
     const response = await emailCtr.sendEmailRaw({
         to: input.targetEmail,
