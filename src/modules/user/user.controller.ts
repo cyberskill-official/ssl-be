@@ -848,7 +848,7 @@ export const userCtr = {
 
         let sanitizedRolesIds: string[] | undefined;
         let promoRoleId: string | null = null;
-        let shouldSendPromoExpiryNotice = false;
+        let shouldSendDowngradeEmail = false;
         const updateSetRecord = updateRecord.$set ?? {};
         const updateHasMembershipExpiresAt = hasAtomicOperators
             ? Object.hasOwn(updateSetRecord, 'membershipExpiresAt')
@@ -929,6 +929,20 @@ export const userCtr = {
             }
         }
 
+        const updateHasMembershipCancelled = hasAtomicOperators
+            ? Object.hasOwn(updateSetRecord, 'membershipCancelled')
+            : Object.hasOwn(update, 'membershipCancelled');
+        const nextMembershipCancelled = updateHasMembershipCancelled
+            ? (hasAtomicOperators ? updateSetRecord['membershipCancelled'] : updateRecord['membershipCancelled'])
+            : undefined;
+
+        const previousMembershipCancelled = Boolean(userFound.result.membershipCancelled);
+        const intendsToCancel = nextMembershipCancelled === true && !previousMembershipCancelled;
+
+        if (intendsToCancel) {
+            shouldSendDowngradeEmail = true;
+        }
+
         if (updateHasMembershipExpiresAt || updateHasMembershipEndDate) {
             const hadPreviousExpiry = previousExpiry !== null && previousExpiry !== undefined;
             const expiryIsNull = nextExpiry === null;
@@ -943,7 +957,7 @@ export const userCtr = {
                     }
                 }
                 if (promoRoleId && existingRoles.includes(promoRoleId)) {
-                    shouldSendPromoExpiryNotice = true;
+                    shouldSendDowngradeEmail = true;
                 }
             }
         }
@@ -1112,7 +1126,7 @@ export const userCtr = {
             }
         }
 
-        if (shouldSendPromoExpiryNotice && promoRoleId && targetEmail) {
+        if (shouldSendDowngradeEmail && targetEmail) {
             const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
             if (!emailResponse.success) {
                 log.error('[USER] Failed to queue membership downgrade email', { error: emailResponse.message });

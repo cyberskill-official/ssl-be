@@ -70,7 +70,7 @@ export async function up(db: C_Db) {
 }
 
 /**
- * @param db {C_Db}
+ * @param _db {C_Db}
  * @returns {Promise<void>}
  */
 export async function down(_db: C_Db) {
