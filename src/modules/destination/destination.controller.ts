@@ -33,7 +33,7 @@ import type {
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
-import { buildCountryIdFilter, buildCountryNameFilter, mergeFilters, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
+import { buildCountryIdFilter, buildCountryNameFilter, buildDestinationSort, mergeFilters, sanitizeFilter } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
@@ -181,7 +181,27 @@ export const destinationCtr = {
         const countryFilter = await buildCountryIdFilter(rawCountryId);
         const effectiveFilter = mergeFilters(baseFilter, countryFilter) ?? baseFilter;
 
-        const destinations = await mongooseCtr.findPaging(effectiveFilter ?? undefined, finalOptions);
+        const finalSort = buildDestinationSort(finalOptions.sort as Record<string, 1 | -1> | undefined);
+        const aggregatePipeline = [
+            { $match: effectiveFilter ?? {} },
+            {
+                $addFields: {
+                    ratingOrder: {
+                        $switch: {
+                            branches: [
+                                { case: { $eq: ['$rating', 'GOLD'] }, then: 0 },
+                                { case: { $eq: ['$rating', 'SILVER'] }, then: 1 },
+                                { case: { $eq: ['$rating', 'BRONZE'] }, then: 2 },
+                            ],
+                            default: 99,
+                        },
+                    },
+                },
+            },
+            { $sort: finalSort },
+        ];
+
+        const destinations = await mongooseCtr.findPagingAggregate(aggregatePipeline, { ...finalOptions, sort: finalSort });
         if (!destinations.success)
             return destinations;
 
@@ -223,11 +243,15 @@ export const destinationCtr = {
                     doc.introductionContentPlain = intro;
                 }
 
+                if ('ratingOrder' in doc) {
+                    delete doc.ratingOrder;
+                }
+
                 return doc as I_Destination;
             }),
         );
 
-        destinations.result.docs = sortDestinationsByRating<I_Destination>(signedDocs);
+        destinations.result.docs = signedDocs;
         return destinations;
     },
 
