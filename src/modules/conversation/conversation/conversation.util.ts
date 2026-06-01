@@ -328,45 +328,10 @@ export async function transformConversationMedia<T extends I_Conversation>(
     const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage, options) ?? plainConversation.lastMessage;
 
     // Get viewer context for media hydration
+    // getUserFromSession is per-request cached, so this is free after the first call
     let sessionUser: any;
     try {
-        const viewer = await authnCtr.getUserFromSession(context);
-        if (viewer?.id) {
-            // Fetch full user data with roles and ageVerify to avoid circular dependency
-            const mongooseCtr = new MongooseController(UserModel);
-            const sessionUserPopulated = await mongooseCtr.findOne(
-                { id: viewer.id },
-                {
-                    id: 1,
-                    roles: 1,
-                    rolesIds: 1,
-                    ageVerify: 1,
-                    membershipExpiresAt: 1,
-                    membershipEndDate: 1,
-                    partner1: 1,
-                    partner2: 1,
-                } as any,
-                undefined,
-                [
-                    { path: 'roles' },
-                    { path: 'ageVerify' },
-                    {
-                        path: 'partner1',
-                        populate: [{ path: 'gallery' }],
-                    },
-                    {
-                        path: 'partner2',
-                        populate: [{ path: 'gallery' }],
-                    },
-                ],
-            );
-            if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                sessionUser = sessionUserPopulated.result;
-            }
-            else {
-                sessionUser = viewer;
-            }
-        }
+        sessionUser = await authnCtr.getUserFromSession(context);
     }
     catch {
         sessionUser = undefined;
