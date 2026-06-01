@@ -108,16 +108,16 @@ export const destinationCtr = {
             );
         }
 
-        const intro = extractPlainTextFromRichContent(doc.introductionContent);
-        if (intro) {
-            doc.introductionContentPlain = intro;
-        }
-
         let localizedDoc = doc;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
             localizedDoc = localizeDocument(doc, locale);
+        }
+
+        const intro = extractPlainTextFromRichContent(localizedDoc.introductionContent);
+        if (intro) {
+            localizedDoc.introductionContentPlain = intro;
         }
 
         return { ...destinationFound, result: localizedDoc };
@@ -146,7 +146,6 @@ export const destinationCtr = {
         );
 
         // Find 'location' entry
-        // find 'location' entry
         const locIdx = normalized.findIndex(n => n.path === 'location');
 
         if (locIdx === -1) {
@@ -248,11 +247,6 @@ export const destinationCtr = {
                     );
                 }
 
-                const intro = extractPlainTextFromRichContent(doc.introductionContent);
-                if (intro) {
-                    doc.introductionContentPlain = intro;
-                }
-
                 if ('ratingOrder' in doc) {
                     delete doc.ratingOrder;
                 }
@@ -266,6 +260,13 @@ export const destinationCtr = {
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
             finalDocs = finalDocs.map(doc => localizeDocument(doc, locale));
+        }
+
+        for (const doc of finalDocs) {
+            const intro = extractPlainTextFromRichContent((doc as any).introductionContent);
+            if (intro) {
+                (doc as any).introductionContentPlain = intro;
+            }
         }
 
         destinations.result.docs = finalDocs;

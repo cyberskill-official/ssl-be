@@ -54,6 +54,7 @@ export interface I_Blog extends I_GenericDocument {
     readCount?: number;
     isLustEditorial?: boolean;
     iframe?: string;
+    translationSnapshot?: Record<string, any>;
 }
 
 export type T_Blog_Populate = 'relatedBlogs' | 'language' | 'author';

@@ -302,6 +302,37 @@ export const blogCtr = {
             throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
+        const getLocalizedValue = (val: unknown): string => {
+            if (typeof val === 'object' && val !== null)
+                return (val as Record<string, string>)['en'] ?? (val as Record<string, string>)['fr'] ?? (val as Record<string, string>)['de'] ?? (val as Record<string, string>)['da'] ?? '';
+            return typeof val === 'string' ? val : '';
+        };
+
+        const requiredLocalizedFields: Array<{ field: string; label: string }> = [
+            { field: 'title', label: 'title' },
+            { field: 'contentHeadline', label: 'content headline' },
+            { field: 'contentSubHeadline', label: 'content sub headline' },
+            { field: 'content', label: 'content' },
+        ];
+
+        for (const { field, label } of requiredLocalizedFields) {
+            if (Object.hasOwn(update, field) && !getLocalizedValue((update as Record<string, unknown>)[field]).trim()) {
+                throwError({ message: `Blog ${label} cannot be empty`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
+        }
+
+        if (Object.hasOwn(update, 'featuredImage') && !(update as Record<string, unknown>)['featuredImage']) {
+            throwError({ message: 'Blog featured image cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'type') && !(update as Record<string, unknown>)['type']) {
+            throwError({ message: 'Blog type cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'category') && !(update as Record<string, unknown>)['category']) {
+            throwError({ message: 'Blog category cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
         const updateResult = await mongooseCtr.updateOne(filter, update, options);
         if (updateResult.success && updateResult.result?.id) {
             translationQueue.add({

@@ -59,6 +59,38 @@ translationQueue.process(1, async (job) => {
     }
 });
 
+function getEn(val: any): string {
+    if (typeof val === 'object' && val)
+        return val.en || '';
+    return typeof val === 'string' ? val : '';
+}
+
+function getEnKeywords(val: any): string {
+    if (Array.isArray(val))
+        return val.join(', ');
+    if (typeof val === 'object' && val?.en)
+        return Array.isArray(val.en) ? val.en.join(', ') : val.en;
+    return typeof val === 'string' ? val : '';
+}
+
+function ensureMultilingual(doc: any, field: string, enValue: string): void {
+    if (!doc[field] || typeof doc[field] === 'string')
+        doc[field] = { en: enValue };
+}
+
+function applyTranslations(doc: any, field: string, translations: Record<string, string>, enValue: string): void {
+    ensureMultilingual(doc, field, enValue);
+    for (const [lang, val] of Object.entries(translations)) {
+        doc[field][lang] = val;
+    }
+}
+
+function ensureMultilingualValue(val: any, enValue: string): Record<string, string> {
+    if (val && typeof val === 'object')
+        return { ...val };
+    return { en: enValue };
+}
+
 export async function translateBlog(id: string) {
     const blog = await BlogModel.findOne({ id, isDel: { $ne: true } });
     if (!blog) {
@@ -66,125 +98,193 @@ export async function translateBlog(id: string) {
         return;
     }
 
-    const title = typeof blog.title === 'object' && blog.title ? blog.title.en : blog.title;
-    const contentHeadline = typeof blog.contentHeadline === 'object' && blog.contentHeadline ? blog.contentHeadline.en : blog.contentHeadline;
-    const contentSubHeadline = typeof blog.contentSubHeadline === 'object' && blog.contentSubHeadline ? blog.contentSubHeadline.en : blog.contentSubHeadline;
-    const content = typeof blog.content === 'object' && blog.content ? blog.content.en : blog.content;
+    const title = getEn(blog.title);
+    const contentHeadline = getEn(blog.contentHeadline);
+    const contentSubHeadline = getEn(blog.contentSubHeadline);
+    const content = getEn(blog.content);
+    const seoTitle = getEn(blog.seo?.title);
+    const seoDescription = getEn(blog.seo?.description);
+    const seoKeywords = getEnKeywords(blog.seo?.keywords);
+    const socialMediaDescription = getEn(blog.seo?.socialMediaDescription);
 
     if (!title || !contentHeadline || !content) {
-        log.warn(`[TranslationQueue] Blog ${id} is missing core English fields. Values:`, { title, contentHeadline, content });
+        log.warn(`[TranslationQueue] Blog ${id} is missing core English fields.`);
         return;
     }
 
-    const images: Array<{ id: string; url: string; altText?: string }> = [];
-    if (blog.featuredImage) {
-        const rawAltText = blog.seo?.altTextForImages;
-        const altText = (typeof rawAltText === 'object' && rawAltText)
-            ? (rawAltText as any).en
-            : (typeof rawAltText === 'string' ? rawAltText : '');
-        images.push({
-            id: 'featuredImage',
-            url: blog.featuredImage,
-            altText,
-        });
+    const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
+
+    // Detect changed fields
+    const changedSmall: Record<string, string> = {};
+    if (title !== (snapshot['title'] || ''))
+        changedSmall['title'] = title;
+    if (contentHeadline !== (snapshot['contentHeadline'] || ''))
+        changedSmall['contentHeadline'] = contentHeadline;
+    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || ''))
+        changedSmall['contentSubHeadline'] = contentSubHeadline;
+    if (seoTitle !== (snapshot['seoTitle'] || ''))
+        changedSmall['seoTitle'] = seoTitle;
+    if (seoDescription !== (snapshot['seoDescription'] || ''))
+        changedSmall['seoDescription'] = seoDescription;
+    if (seoKeywords !== (snapshot['seoKeywords'] || ''))
+        changedSmall['seoKeywords'] = seoKeywords;
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || ''))
+        changedSmall['socialMediaDescription'] = socialMediaDescription;
+
+    const contentChanged = content !== (snapshot['content'] || '');
+
+    // Check FAQ changes
+    const currentFaqs = (blog.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
+    const snapshotFaqs = snapshot['faqs'] || [];
+    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs);
+
+    if (Object.keys(changedSmall).length === 0 && !contentChanged && !faqsChanged) {
+        log.info(`[TranslationQueue] Blog ${id}: no translatable fields changed, skipping.`);
+        return;
     }
 
-    log.info(`[TranslationQueue] Starting translation for Blog ${id} into ${TARGET_LANGS.length} languages.`);
+    log.info(`[TranslationQueue] Blog ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${faqsChanged ? ', faqs' : ''}`);
 
-    for (const lang of TARGET_LANGS) {
-        try {
-            log.info(`[TranslationQueue] Translating Blog ${id} to ${lang}`);
-            const result = await translationService.translateContent({
-                title,
-                contentHeadline,
-                contentSubHeadline,
-                content,
-                images,
-            }, lang);
+    try {
+        // Prepare FAQ fields
+        const faqFields: Record<string, string> = {};
+        if (faqsChanged && currentFaqs.length > 0) {
+            for (let i = 0; i < currentFaqs.length; i++) {
+                const faq = currentFaqs[i]!;
+                faqFields[`faq_${i}_question`] = faq.q;
+                faqFields[`faq_${i}_answer`] = faq.a;
+            }
+        }
 
-            if (!blog.title || typeof blog.title === 'string')
-                blog.title = { en: title };
-            blog.title[lang] = result.title;
+        // Run all translations in parallel
+        const [smallResults, contentResults, faqResults] = await Promise.all([
+            Object.keys(changedSmall).length > 0
+                ? translationService.translateFields(changedSmall, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, Record<string, string>>),
+            contentChanged
+                ? translationService.translateRichContent('content', content, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, string>),
+            Object.keys(faqFields).length > 0
+                ? translationService.translateFields(faqFields, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, Record<string, string>>),
+        ]);
 
-            if (!blog.contentHeadline || typeof blog.contentHeadline === 'string')
-                blog.contentHeadline = { en: contentHeadline };
-            blog.contentHeadline[lang] = result.contentHeadline;
+        // Build $set payload with only translated fields
+        const $set: Record<string, unknown> = {};
+        const currentSeo: Record<string, any> = blog.seo ? { ...blog.seo as any } : {};
 
-            if (!blog.contentSubHeadline || typeof blog.contentSubHeadline === 'string')
-                blog.contentSubHeadline = { en: contentSubHeadline || '' };
-            blog.contentSubHeadline[lang] = result.contentSubHeadline;
+        // Apply small field translations
+        for (const [field, translations] of Object.entries(smallResults)) {
+            if (field === 'title') {
+                const multilingual = ensureMultilingualValue(blog.title, title);
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                $set['title'] = multilingual;
+            }
+            else if (field === 'contentHeadline') {
+                const multilingual = ensureMultilingualValue(blog.contentHeadline, contentHeadline);
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                $set['contentHeadline'] = multilingual;
+            }
+            else if (field === 'contentSubHeadline') {
+                const multilingual = ensureMultilingualValue(blog.contentSubHeadline, contentSubHeadline);
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                $set['contentSubHeadline'] = multilingual;
+            }
+            else if (field === 'seoTitle') {
+                if (!currentSeo['title'])
+                    currentSeo['title'] = { en: seoTitle };
+                const multilingual = typeof currentSeo['title'] === 'object' ? { ...currentSeo['title'] } : { en: currentSeo['title'] };
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                currentSeo['title'] = multilingual;
+            }
+            else if (field === 'seoDescription') {
+                if (!currentSeo['description'])
+                    currentSeo['description'] = { en: seoDescription };
+                const multilingual = typeof currentSeo['description'] === 'object' ? { ...currentSeo['description'] } : { en: currentSeo['description'] };
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                currentSeo['description'] = multilingual;
+            }
+            else if (field === 'seoKeywords') {
+                if (!currentSeo['keywords'])
+                    currentSeo['keywords'] = { en: seoKeywords };
+                const multilingual = typeof currentSeo['keywords'] === 'object' ? { ...currentSeo['keywords'] } : { en: currentSeo['keywords'] };
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                currentSeo['keywords'] = multilingual;
+            }
+            else if (field === 'socialMediaDescription') {
+                if (!currentSeo['socialMediaDescription'])
+                    currentSeo['socialMediaDescription'] = { en: socialMediaDescription };
+                const multilingual = typeof currentSeo['socialMediaDescription'] === 'object' ? { ...currentSeo['socialMediaDescription'] } : { en: currentSeo['socialMediaDescription'] };
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = val;
+                currentSeo['socialMediaDescription'] = multilingual;
+            }
+        }
 
-            if (!blog.content || typeof blog.content === 'string')
-                blog.content = { en: content };
-            blog.content[lang] = result.content;
+        if (Object.keys(currentSeo).length > 0) {
+            $set['seo'] = currentSeo;
+        }
 
-            if (!blog.seo)
-                blog.seo = {};
-            if (!blog.seo.title || typeof blog.seo.title === 'string')
-                blog.seo.title = { en: blog.seo.title || '' };
-            blog.seo.title[lang] = result.seo_title;
+        // Apply content translations
+        if (contentChanged && Object.keys(contentResults).length > 0) {
+            const multilingual = ensureMultilingualValue(blog.content, content);
+            for (const [lang, val] of Object.entries(contentResults)) {
+                multilingual[lang] = val;
+            }
+            $set['content'] = multilingual;
+        }
 
-            if (!blog.seo.description || typeof blog.seo.description === 'string')
-                blog.seo.description = { en: blog.seo.description || '' };
-            blog.seo.description[lang] = result.meta_description;
-
-            if (!blog.seo.keywords || typeof blog.seo.keywords === 'string')
-                blog.seo.keywords = { en: blog.seo.keywords || [] };
-            blog.seo.keywords[lang] = result.seo_keywords;
-
-            if (!blog.seo.socialMediaDescription || typeof blog.seo.socialMediaDescription === 'string')
-                blog.seo.socialMediaDescription = { en: blog.seo.socialMediaDescription || '' };
-            blog.seo.socialMediaDescription[lang] = result.social_description;
-
-            if (result.image_alt_texts) {
-                if (!blog.seo.imageAltTexts)
-                    blog.seo.imageAltTexts = [];
-                for (const imgAlt of result.image_alt_texts) {
-                    let existing = blog.seo.imageAltTexts.find(x => x.imageUrl === imgAlt.imageUrl);
-                    if (!existing) {
-                        existing = { imageUrl: imgAlt.imageUrl, alt: {} };
-                        blog.seo.imageAltTexts.push(existing);
+        // Apply FAQ translations
+        if (Object.keys(faqResults).length > 0) {
+            const updatedFaqs = [...(blog.faqs || [])];
+            for (let i = 0; i < currentFaqs.length; i++) {
+                if (!updatedFaqs[i])
+                    updatedFaqs[i] = { question: {}, answer: {} };
+                const faqNode = updatedFaqs[i]!;
+                const qKey = `faq_${i}_question`;
+                const aKey = `faq_${i}_answer`;
+                if (faqResults[qKey]) {
+                    const qMultilingual = typeof faqNode.question === 'object' ? { ...faqNode.question as Record<string, string> } : {};
+                    for (const [lang, val] of Object.entries(faqResults[qKey])) {
+                        qMultilingual[lang] = val;
                     }
-                    existing.alt[lang] = imgAlt.alt;
-
-                    if (imgAlt.id === 'featuredImage') {
-                        if (!blog.seo.altTextForImages || typeof blog.seo.altTextForImages === 'string')
-                            blog.seo.altTextForImages = { en: blog.seo.altTextForImages || '' };
-                        blog.seo.altTextForImages[lang] = imgAlt.alt;
+                    faqNode.question = qMultilingual;
+                }
+                if (faqResults[aKey]) {
+                    const aMultilingual = typeof faqNode.answer === 'object' ? { ...faqNode.answer as Record<string, string> } : {};
+                    for (const [lang, val] of Object.entries(faqResults[aKey])) {
+                        aMultilingual[lang] = val;
                     }
+                    faqNode.answer = aMultilingual;
                 }
             }
-
-            if (result.faqs) {
-                if (!blog.faqs)
-                    blog.faqs = [];
-                for (let i = 0; i < result.faqs.length; i++) {
-                    const faq = result.faqs[i];
-                    if (!blog.faqs[i]) {
-                        blog.faqs[i] = { question: {}, answer: {} };
-                    }
-                    const faqNode = blog.faqs[i]!;
-                    if (!faqNode.question)
-                        faqNode.question = {};
-                    if (!faqNode.answer)
-                        faqNode.answer = {};
-                    faqNode.question[lang] = faq.question;
-                    faqNode.answer[lang] = faq.answer;
-                }
-            }
-
-            blog.markModified('title');
-            blog.markModified('contentHeadline');
-            blog.markModified('contentSubHeadline');
-            blog.markModified('content');
-            blog.markModified('seo');
-            blog.markModified('faqs');
-
-            await blog.save({ validateBeforeSave: false });
+            $set['faqs'] = updatedFaqs;
         }
-        catch (err) {
-            log.error(`[TranslationQueue] Error translating Blog ${id} to ${lang}:`, err);
-        }
+
+        // Update snapshot
+        $set['translationSnapshot'] = {
+            title,
+            contentHeadline,
+            contentSubHeadline,
+            content,
+            seoTitle,
+            seoDescription,
+            seoKeywords,
+            socialMediaDescription,
+            faqs: currentFaqs,
+        };
+
+        await BlogModel.findOneAndUpdate({ id, isDel: { $ne: true } }, { $set });
+        log.info(`[TranslationQueue] Blog ${id} translation completed.`);
+    }
+    catch (err) {
+        log.error(`[TranslationQueue] Error translating Blog ${id}:`, err);
     }
 }
 
@@ -195,184 +295,241 @@ export async function translateDestination(id: string) {
         return;
     }
 
-    const name = destination.name || '';
-    const introductionHeadline = typeof destination.introductionHeadline === 'object' && destination.introductionHeadline ? destination.introductionHeadline.en : destination.introductionHeadline;
-    const introductionContent = typeof destination.introductionContent === 'object' && destination.introductionContent ? destination.introductionContent.en : destination.introductionContent;
+    const introductionHeadline = getEn(destination.introductionHeadline);
+    const introductionContent = getEn(destination.introductionContent);
 
     if (!introductionHeadline || !introductionContent) {
-        log.warn(`[TranslationQueue] Destination ${id} is missing core English fields. Values:`, { introductionHeadline, introductionContent });
+        log.warn(`[TranslationQueue] Destination ${id} is missing core English fields.`);
         return;
     }
 
-    const images: Array<{ id: string; url: string; altText?: string }> = [];
-    if (destination.images && destination.images.length > 0) {
-        destination.images.forEach((url, index) => {
-            const rawAltText = destination.seo?.altTextForImages;
-            const altText = (typeof rawAltText === 'object' && rawAltText)
-                ? (rawAltText as any).en
-                : (typeof rawAltText === 'string' ? rawAltText : '');
-            images.push({
-                id: `image_${index}`,
-                url,
-                altText,
-            });
-        });
+    const womenDressCode = getEn(destination.womenDressCode);
+    const menDressCode = getEn(destination.menDressCode);
+    const highlightSex = getEn(destination.highlightSex);
+    const highlightWellness = getEn(destination.highlightWellness);
+    const highlightBar = getEn(destination.highlightBar);
+    const highlightDance = getEn(destination.highlightDance);
+    const seoTitle = getEn(destination.seo?.title);
+    const seoDescription = getEn(destination.seo?.description);
+    const seoKeywords = getEnKeywords(destination.seo?.keywords);
+    const socialMediaDescription = getEn(destination.seo?.socialMediaDescription);
+
+    const snapshot: Record<string, any> = (destination as any).translationSnapshot || {};
+
+    // Detect changed fields
+    const changedSmall: Record<string, string> = {};
+    if (introductionHeadline !== (snapshot['introductionHeadline'] || ''))
+        changedSmall['introductionHeadline'] = introductionHeadline;
+    if (womenDressCode !== (snapshot['womenDressCode'] || ''))
+        changedSmall['womenDressCode'] = womenDressCode;
+    if (menDressCode !== (snapshot['menDressCode'] || ''))
+        changedSmall['menDressCode'] = menDressCode;
+    if (highlightSex !== (snapshot['highlightSex'] || ''))
+        changedSmall['highlightSex'] = highlightSex;
+    if (highlightWellness !== (snapshot['highlightWellness'] || ''))
+        changedSmall['highlightWellness'] = highlightWellness;
+    if (highlightBar !== (snapshot['highlightBar'] || ''))
+        changedSmall['highlightBar'] = highlightBar;
+    if (highlightDance !== (snapshot['highlightDance'] || ''))
+        changedSmall['highlightDance'] = highlightDance;
+    if (seoTitle !== (snapshot['seoTitle'] || ''))
+        changedSmall['seoTitle'] = seoTitle;
+    if (seoDescription !== (snapshot['seoDescription'] || ''))
+        changedSmall['seoDescription'] = seoDescription;
+    if (seoKeywords !== (snapshot['seoKeywords'] || ''))
+        changedSmall['seoKeywords'] = seoKeywords;
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || ''))
+        changedSmall['socialMediaDescription'] = socialMediaDescription;
+
+    const contentChanged = introductionContent !== (snapshot['introductionContent'] || '');
+
+    // Check nearbyHotels changes
+    const currentHotels = (destination.nearbyHotels || []).map(h => ({ name: h.name || '', desc: getEn(h.description) }));
+    const snapshotHotels = snapshot['nearbyHotels'] || [];
+    const hotelsChanged = JSON.stringify(currentHotels) !== JSON.stringify(snapshotHotels);
+
+    // Check FAQ changes
+    const currentFaqs = (destination.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
+    const snapshotFaqs = snapshot['faqs'] || [];
+    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs);
+
+    if (Object.keys(changedSmall).length === 0 && !contentChanged && !hotelsChanged && !faqsChanged) {
+        log.info(`[TranslationQueue] Destination ${id}: no translatable fields changed, skipping.`);
+        return;
     }
 
-    log.info(`[TranslationQueue] Starting translation for Destination ${id} into ${TARGET_LANGS.length} languages.`);
+    log.info(`[TranslationQueue] Destination ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${hotelsChanged ? ', hotels' : ''}${faqsChanged ? ', faqs' : ''}`);
 
-    for (const lang of TARGET_LANGS) {
-        try {
-            const womenDressCode = typeof destination.womenDressCode === 'object' && destination.womenDressCode ? destination.womenDressCode.en : destination.womenDressCode;
-            const menDressCode = typeof destination.menDressCode === 'object' && destination.menDressCode ? destination.menDressCode.en : destination.menDressCode;
-            const highlightSex = typeof destination.highlightSex === 'object' && destination.highlightSex ? destination.highlightSex.en : destination.highlightSex;
-            const highlightWellness = typeof destination.highlightWellness === 'object' && destination.highlightWellness ? destination.highlightWellness.en : destination.highlightWellness;
-            const highlightBar = typeof destination.highlightBar === 'object' && destination.highlightBar ? destination.highlightBar.en : destination.highlightBar;
-            const highlightDance = typeof destination.highlightDance === 'object' && destination.highlightDance ? destination.highlightDance.en : destination.highlightDance;
+    try {
+        // Prepare hotel fields
+        const hotelFields: Record<string, string> = {};
+        if (hotelsChanged && currentHotels.length > 0) {
+            for (let i = 0; i < currentHotels.length; i++) {
+                const hotel = currentHotels[i]!;
+                if (hotel.desc) {
+                    hotelFields[`hotel_${i}_description`] = hotel.desc;
+                }
+            }
+        }
 
-            log.info(`[TranslationQueue] Translating Destination ${id} to ${lang}`);
-            const result = await translationService.translateDestination({
-                name,
-                introductionHeadline,
-                introductionContent,
-                womenDressCode,
-                menDressCode,
-                highlightSex,
-                highlightWellness,
-                highlightBar,
-                highlightDance,
-                nearbyHotels: destination.nearbyHotels?.map(h => ({
-                    name: h.name || '',
-                    description: typeof h.description === 'object' && h.description ? h.description.en : h.description,
-                })),
-                images,
-            }, lang);
+        // Prepare FAQ fields
+        const faqFields: Record<string, string> = {};
+        if (faqsChanged && currentFaqs.length > 0) {
+            for (let i = 0; i < currentFaqs.length; i++) {
+                const faq = currentFaqs[i]!;
+                faqFields[`faq_${i}_question`] = faq.q;
+                faqFields[`faq_${i}_answer`] = faq.a;
+            }
+        }
 
-            if (!destination.introductionHeadline || typeof destination.introductionHeadline === 'string')
-                destination.introductionHeadline = { en: introductionHeadline };
-            destination.introductionHeadline[lang] = result.introductionHeadline;
+        // Run all translations in parallel
+        const [smallResults, contentResults, hotelResults, faqResults] = await Promise.all([
+            Object.keys(changedSmall).length > 0
+                ? translationService.translateFields(changedSmall, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, Record<string, string>>),
+            contentChanged
+                ? translationService.translateRichContent('introductionContent', introductionContent, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, string>),
+            Object.keys(hotelFields).length > 0
+                ? translationService.translateFields(hotelFields, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, Record<string, string>>),
+            Object.keys(faqFields).length > 0
+                ? translationService.translateFields(faqFields, TARGET_LANGS)
+                : Promise.resolve({} as Record<string, Record<string, string>>),
+        ]);
 
-            if (!destination.introductionContent || typeof destination.introductionContent === 'string')
-                destination.introductionContent = { en: introductionContent };
-            destination.introductionContent[lang] = result.introductionContent;
+        // Apply small field translations
+        for (const [field, translations] of Object.entries(smallResults)) {
+            if (field === 'introductionHeadline') {
+                applyTranslations(destination, 'introductionHeadline', translations, introductionHeadline);
+            }
+            else if (field === 'womenDressCode') {
+                applyTranslations(destination, 'womenDressCode', translations, womenDressCode);
+            }
+            else if (field === 'menDressCode') {
+                applyTranslations(destination, 'menDressCode', translations, menDressCode);
+            }
+            else if (field === 'highlightSex') {
+                applyTranslations(destination, 'highlightSex', translations, highlightSex);
+            }
+            else if (field === 'highlightWellness') {
+                applyTranslations(destination, 'highlightWellness', translations, highlightWellness);
+            }
+            else if (field === 'highlightBar') {
+                applyTranslations(destination, 'highlightBar', translations, highlightBar);
+            }
+            else if (field === 'highlightDance') {
+                applyTranslations(destination, 'highlightDance', translations, highlightDance);
+            }
+            else if (field === 'seoTitle') {
+                if (!destination.seo)
+                    destination.seo = {};
+                applyTranslations(destination.seo, 'title', translations, seoTitle);
+            }
+            else if (field === 'seoDescription') {
+                if (!destination.seo)
+                    destination.seo = {};
+                applyTranslations(destination.seo, 'description', translations, seoDescription);
+            }
+            else if (field === 'seoKeywords') {
+                if (!destination.seo)
+                    destination.seo = {};
+                applyTranslations(destination.seo, 'keywords', translations, seoKeywords);
+            }
+            else if (field === 'socialMediaDescription') {
+                if (!destination.seo)
+                    destination.seo = {};
+                applyTranslations(destination.seo, 'socialMediaDescription', translations, socialMediaDescription);
+            }
+        }
 
-            if (result.womenDressCode) {
-                if (!destination.womenDressCode || typeof destination.womenDressCode === 'string')
-                    destination.womenDressCode = { en: womenDressCode || '' };
-                destination.womenDressCode[lang] = result.womenDressCode;
+        // Apply content translations
+        if (contentChanged && Object.keys(contentResults).length > 0) {
+            ensureMultilingual(destination, 'introductionContent', introductionContent);
+            for (const [lang, val] of Object.entries(contentResults)) {
+                destination.introductionContent![lang] = val;
             }
-            if (result.menDressCode) {
-                if (!destination.menDressCode || typeof destination.menDressCode === 'string')
-                    destination.menDressCode = { en: menDressCode || '' };
-                destination.menDressCode[lang] = result.menDressCode;
-            }
-            if (result.highlightSex) {
-                if (!destination.highlightSex || typeof destination.highlightSex === 'string')
-                    destination.highlightSex = { en: highlightSex || '' };
-                destination.highlightSex[lang] = result.highlightSex;
-            }
-            if (result.highlightWellness) {
-                if (!destination.highlightWellness || typeof destination.highlightWellness === 'string')
-                    destination.highlightWellness = { en: highlightWellness || '' };
-                destination.highlightWellness[lang] = result.highlightWellness;
-            }
-            if (result.highlightBar) {
-                if (!destination.highlightBar || typeof destination.highlightBar === 'string')
-                    destination.highlightBar = { en: highlightBar || '' };
-                destination.highlightBar[lang] = result.highlightBar;
-            }
-            if (result.highlightDance) {
-                if (!destination.highlightDance || typeof destination.highlightDance === 'string')
-                    destination.highlightDance = { en: highlightDance || '' };
-                destination.highlightDance[lang] = result.highlightDance;
-            }
+        }
 
-            if (result.nearbyHotels && destination.nearbyHotels) {
-                for (let i = 0; i < destination.nearbyHotels.length; i++) {
-                    const match = result.nearbyHotels[i];
-                    const hotelNode = destination.nearbyHotels[i];
-                    if (match && hotelNode) {
-                        const originalDesc = typeof hotelNode.description === 'object' && hotelNode.description ? hotelNode.description.en : hotelNode.description;
-                        if (!hotelNode.description || typeof hotelNode.description === 'string') {
-                            hotelNode.description = { en: originalDesc || '' };
-                        }
-                        hotelNode.description[lang] = match.description;
+        // Apply hotel translations
+        if (Object.keys(hotelResults).length > 0) {
+            for (let i = 0; i < currentHotels.length; i++) {
+                const key = `hotel_${i}_description`;
+                const hotelNode = destination.nearbyHotels?.[i];
+                const currentHotel = currentHotels[i]!;
+                if (hotelResults[key] && hotelNode) {
+                    if (!hotelNode.description || typeof hotelNode.description === 'string') {
+                        hotelNode.description = { en: currentHotel.desc };
+                    }
+                    for (const [lang, val] of Object.entries(hotelResults[key])) {
+                        (hotelNode.description as any)[lang] = val;
                     }
                 }
             }
+        }
 
-            if (!destination.seo)
-                destination.seo = {};
-            const seo = destination.seo!;
-            if (!seo.title || typeof seo.title === 'string')
-                seo.title = { en: seo.title || '' };
-            seo.title[lang] = result.seo_title;
-
-            if (!seo.description || typeof seo.description === 'string')
-                seo.description = { en: seo.description || '' };
-            seo.description[lang] = result.meta_description;
-
-            if (!seo.keywords || typeof seo.keywords === 'string')
-                seo.keywords = { en: seo.keywords || [] };
-            seo.keywords[lang] = result.seo_keywords;
-
-            if (!seo.socialMediaDescription || typeof seo.socialMediaDescription === 'string')
-                seo.socialMediaDescription = { en: seo.socialMediaDescription || '' };
-            seo.socialMediaDescription[lang] = result.social_description;
-
-            if (result.image_alt_texts) {
-                if (!seo.imageAltTexts)
-                    seo.imageAltTexts = [];
-                for (const imgAlt of result.image_alt_texts) {
-                    let existing = seo.imageAltTexts.find(x => x.imageUrl === imgAlt.imageUrl);
-                    if (!existing) {
-                        existing = { imageUrl: imgAlt.imageUrl, alt: {} };
-                        seo.imageAltTexts.push(existing);
-                    }
-                    existing.alt[lang] = imgAlt.alt;
-
-                    if (imgAlt.id === 'image_0') {
-                        if (!seo.altTextForImages || typeof seo.altTextForImages === 'string')
-                            seo.altTextForImages = { en: seo.altTextForImages || '' };
-                        seo.altTextForImages[lang] = imgAlt.alt;
-                    }
-                }
-            }
-
-            if (result.faqs) {
-                if (!destination.faqs)
-                    destination.faqs = [];
-                for (let i = 0; i < result.faqs.length; i++) {
-                    const faq = result.faqs[i];
-                    if (!destination.faqs[i]) {
-                        destination.faqs[i] = { question: {}, answer: {} };
-                    }
-                    const faqNode = destination.faqs[i]!;
+        // Apply FAQ translations
+        if (Object.keys(faqResults).length > 0) {
+            if (!destination.faqs)
+                destination.faqs = [];
+            for (let i = 0; i < currentFaqs.length; i++) {
+                if (!destination.faqs[i])
+                    destination.faqs[i] = { question: {}, answer: {} };
+                const faqNode = destination.faqs[i]!;
+                const qKey = `faq_${i}_question`;
+                const aKey = `faq_${i}_answer`;
+                if (faqResults[qKey]) {
                     if (!faqNode.question)
                         faqNode.question = {};
+                    for (const [lang, val] of Object.entries(faqResults[qKey])) {
+                        faqNode.question[lang] = val;
+                    }
+                }
+                if (faqResults[aKey]) {
                     if (!faqNode.answer)
                         faqNode.answer = {};
-                    faqNode.question[lang] = faq.question;
-                    faqNode.answer[lang] = faq.answer;
+                    for (const [lang, val] of Object.entries(faqResults[aKey])) {
+                        faqNode.answer[lang] = val;
+                    }
                 }
             }
-
-            destination.markModified('introductionHeadline');
-            destination.markModified('introductionContent');
-            destination.markModified('womenDressCode');
-            destination.markModified('menDressCode');
-            destination.markModified('highlightSex');
-            destination.markModified('highlightWellness');
-            destination.markModified('highlightBar');
-            destination.markModified('highlightDance');
-            destination.markModified('nearbyHotels');
-            destination.markModified('seo');
-            destination.markModified('faqs');
-
-            await destination.save({ validateBeforeSave: false });
         }
-        catch (err) {
-            log.error(`[TranslationQueue] Error translating Destination ${id} to ${lang}:`, err);
-        }
+
+        // Update snapshot
+        (destination as any).translationSnapshot = {
+            introductionHeadline,
+            introductionContent,
+            womenDressCode,
+            menDressCode,
+            highlightSex,
+            highlightWellness,
+            highlightBar,
+            highlightDance,
+            seoTitle,
+            seoDescription,
+            seoKeywords,
+            socialMediaDescription,
+            nearbyHotels: currentHotels,
+            faqs: currentFaqs,
+        };
+
+        destination.markModified('introductionHeadline');
+        destination.markModified('introductionContent');
+        destination.markModified('womenDressCode');
+        destination.markModified('menDressCode');
+        destination.markModified('highlightSex');
+        destination.markModified('highlightWellness');
+        destination.markModified('highlightBar');
+        destination.markModified('highlightDance');
+        destination.markModified('nearbyHotels');
+        destination.markModified('seo');
+        destination.markModified('faqs');
+        destination.markModified('translationSnapshot');
+
+        await destination.save({ validateBeforeSave: false });
+        log.info(`[TranslationQueue] Destination ${id} translation completed.`);
+    }
+    catch (err) {
+        log.error(`[TranslationQueue] Error translating Destination ${id}:`, err);
     }
 }

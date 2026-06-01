@@ -72,6 +72,9 @@ type T_Destination {
     isActive: Boolean
     createdById: String
     createdBy: T_User
+    canonicalUrl: String
+    hreflangLinks: [T_HreflangLink]
+    structuredData: JSON
 }
 
 input Input_QueryDestination {

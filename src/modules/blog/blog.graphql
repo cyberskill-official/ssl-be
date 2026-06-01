@@ -57,6 +57,9 @@ type T_Blog {
     readCount: Int
     isLustEditorial: Boolean
     iframe: String
+    canonicalUrl: String
+    hreflangLinks: [T_HreflangLink]
+    structuredData: JSON
 }
 
 input Input_QueryBlog {

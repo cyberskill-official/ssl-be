@@ -53,6 +53,7 @@ import type {
     I_Input_UpdateEvent,
 } from './event.type.js';
 
+import { translationQueue } from '../translation/translation.queue.js';
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
 import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
@@ -611,6 +612,14 @@ export const eventCtr = {
         if (!eventCreated.success)
             return eventCreated;
 
+        // Trigger background translation
+        if (eventCreated.result?.id) {
+            translationQueue.add({
+                type: 'event' as any,
+                id: eventCreated.result.id,
+            }).catch(e => log.error('[EventController] Failed to add translation job to queue:', e));
+        }
+
         // If PRIVATE, create conversation using final title (doc.title) and rollback if it fails
         if (type === E_EventType.PRIVATE) {
             const { conversationCtr } = await import('#modules/conversation/conversation/conversation.controller.js');
@@ -1138,7 +1147,14 @@ export const eventCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const updateResult = await mongooseCtr.updateOne(filter, update, options);
+        if (updateResult.success && updateResult.result?.id) {
+            translationQueue.add({
+                type: 'event',
+                id: updateResult.result.id,
+            } as any).catch(e => log.error('[EventController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     updateEvents: async (
         _context: I_Context,

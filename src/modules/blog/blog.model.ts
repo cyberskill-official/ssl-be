@@ -3,7 +3,7 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { SeoSchema } from '#modules/seo/index.js';
+import { SeoSchema } from '#modules/seo/seo.schema.js';
 import { SocialLinkSchema } from '#modules/setting/index.js';
 
 import type { I_Blog } from './blog.type.js';
@@ -166,6 +166,10 @@ export const BlogModel = mongo.createModel<I_Blog>({
         },
         iframe: {
             type: String,
+        },
+        translationSnapshot: {
+            type: Object,
+            default: {},
         },
     },
     virtuals: [

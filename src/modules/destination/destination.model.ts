@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 
 import { FaqSchema } from '#modules/blog/blog.model.js';
 import { RatingSchema } from '#modules/rating/index.js';
-import { SeoSchema } from '#modules/seo/index.js';
+import { SeoSchema } from '#modules/seo/seo.schema.js';
 
 import type { I_Destination, I_Hotel } from './destination.type.js';
 
@@ -212,6 +212,10 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         },
         createdById: {
             type: String,
+        },
+        translationSnapshot: {
+            type: Object,
+            default: {},
         },
     },
     virtuals: [

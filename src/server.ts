@@ -13,6 +13,7 @@ import type { I_Request } from '#shared/typescript/index.js';
 // import { authzMiddleware, permissionCtr } from '#modules/authz/index.js';
 import { cron } from '#modules/cron/index.js';
 import { mainRouter } from '#modules/rest-api/index.js';
+import { seoRouter } from '#modules/seo/index.js';
 import { updateUserActivity } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { schema } from '#shared/graphql/schema.js';
@@ -117,6 +118,9 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
     await new Promise<void>(resolve =>
         httpServer.listen({ port: env.PORT }, resolve),
     );
+
+    // SEO endpoints (robots.txt, sitemap.xml) - mounted at root level
+    app.use(seoRouter);
 
     log.info(`🔌 RestAPI ready at http://localhost:${env.PORT}${env.ENDPOINT_RESTAPI}`);
 

@@ -71,6 +71,7 @@ export interface I_Destination extends I_GenericDocument {
     isActive?: boolean;
     createdById?: string;
     createdBy?: I_User;
+    translationSnapshot?: Record<string, any>;
 }
 
 export type T_Destination_Populate = 'createdBy';

@@ -3,6 +3,9 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { FaqSchema } from '#modules/blog/blog.model.js';
+import { SeoSchema } from '#modules/seo/seo.schema.js';
+
 import type { I_Event } from './event.type.js';
 
 import { E_EventType } from './event.type.js';
@@ -86,6 +89,12 @@ export const EventModel = mongo.createModel<I_Event>({
         },
         pushMessage: {
             type: String,
+        },
+        seo: {
+            type: SeoSchema,
+        },
+        faqs: {
+            type: [FaqSchema],
         },
         isActive: {
             type: Boolean,

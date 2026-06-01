@@ -28,7 +28,12 @@ type T_Event {
     fee: Float
     currency: String
     pushMessage: String
+    seo: T_Seo
+    faqs: [T_FAQ]
     isActive: Boolean
+    canonicalUrl: String
+    hreflangLinks: [T_HreflangLink]
+    structuredData: JSON
 }
 
 input Input_QueryEvent {
@@ -67,6 +72,8 @@ input Input_CreateEvent {
     fee: Float
     currency: String
     pushMessage: String
+    seo: Input_Seo
+    faqs: [Input_FAQ]
     isActive: Boolean!
 }
 
@@ -86,6 +93,8 @@ input Input_UpdateEvent {
     fee: Float
     currency: String
     pushMessage: String
+    seo: Input_Seo
+    faqs: [Input_FAQ]
     isActive: Boolean
 }
 
