@@ -27,7 +27,8 @@ import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
-import { conversationCtr, E_ConversationType, E_ParticipantRole, participantCtr } from '#modules/conversation/index.js';
+import { E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
+import { E_ParticipantRole, participantCtr } from '#modules/conversation/index.js';
 import { destinationCtr } from '#modules/destination/index.js';
 import { followCtr } from '#modules/follow/index.js';
 import {
@@ -612,6 +613,7 @@ export const eventCtr = {
 
         // If PRIVATE, create conversation using final title (doc.title) and rollback if it fails
         if (type === E_EventType.PRIVATE) {
+            const { conversationCtr } = await import('#modules/conversation/conversation/conversation.controller.js');
             const createdConversation = await conversationCtr.createConversationInternal(context, {
                 doc: {
                     name: (typeof (doc.title ?? title) === 'object' ? ((doc.title ?? title) as any)?.en ?? ((doc.title ?? title) as any)?.fr ?? ((doc.title ?? title) as any)?.de ?? ((doc.title ?? title) as any)?.da : (doc.title ?? title)) as string | undefined,

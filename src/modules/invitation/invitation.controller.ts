@@ -18,7 +18,8 @@ import { withFilter } from 'graphql-subscriptions';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { authnCtr } from '#modules/authn/index.js';
-import { conversationCtr, E_ConversationType } from '#modules/conversation/conversation/index.js';
+import { E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
+import { conversationCtr } from '#modules/conversation/conversation/index.js';
 import { E_ParticipantRole, participantCtr } from '#modules/conversation/participant/index.js';
 import { eventCtr } from '#modules/event/index.js';
 import { notificationCtr } from '#modules/notification/index.js';

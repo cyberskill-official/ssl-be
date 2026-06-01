@@ -167,27 +167,36 @@ export const authPasswordService = {
         let emailSent = false;
         let lastError: string | undefined;
 
+        const brandName = 'Secret Swinger Lust';
+
         const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: FORGOT_PASSWORD } });
         let subjectText = '[No Subject]';
         let html: string;
+
+        const renderVars = {
+            otp,
+            expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60),
+            email,
+            brandName,
+        };
 
         if (tpl.success && tpl.result) {
             const { content, subject: tplSubject } = tpl.result;
 
             if (tplSubject) {
-                subjectText = await ejs.render(tplSubject, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                subjectText = await ejs.render(tplSubject, renderVars);
             }
 
             if (content) {
-                html = await ejs.render(content, { otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                html = await ejs.render(content, renderVars);
             }
             else {
-                html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+                html = emailCtr.generateBasicTemplate(renderVars);
             }
         }
         else {
-            subjectText = '[Reset password]';
-            html = emailCtr.generateBasicTemplate({ otp, expireIn: Math.floor(VERIFICATION_EXPIRES.FORGOT_PASSWORD / 60), email });
+            subjectText = `[${brandName}] Reset password`;
+            html = emailCtr.generateBasicTemplate(renderVars);
         }
 
         const maxRetries = 3;

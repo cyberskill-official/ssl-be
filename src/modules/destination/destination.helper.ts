@@ -20,6 +20,15 @@ export function sortDestinationsByRating<T extends { rating?: string }>(destinat
     });
 }
 
+export function buildDestinationSort(sort?: Record<string, 1 | -1>): Record<string, 1 | -1> {
+    if (!sort || typeof sort !== 'object' || Array.isArray(sort)) {
+        return { ratingOrder: 1, createdAt: -1 };
+    }
+
+    const { ratingOrder: _ignored, ...rest } = sort as Record<string, 1 | -1>;
+    return { ratingOrder: 1, ...rest };
+}
+
 export function sanitizeFilter(rawFilter?: Record<string, unknown>) {
     return Object.entries(rawFilter ?? {}).reduce<Record<string, unknown>>((acc, [key, value]) => {
         if (value !== undefined) {

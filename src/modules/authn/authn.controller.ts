@@ -654,7 +654,11 @@ export const authnCtr = {
     isAdmin: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
 
-        return isAdminUser(context, currentUser);
+        return authnCtr.isAdminUser(context, currentUser);
+    },
+
+    isAdminUser: async (context: I_Context, user: I_User): Promise<boolean> => {
+        return isAdminUser(context, user);
     },
 
     // add near other role helpers in authnCtr
@@ -686,9 +690,13 @@ export const authnCtr = {
             notFoundMessage: 'User role not found.',
         });
     },
+
     isFreeMember: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+        return authnCtr.isFreeMemberUser(context, currentUser);
+    },
 
+    isFreeMemberUser: async (context: I_Context, currentUser: I_User): Promise<boolean> => {
         const [hasFreeRole, hasPaidRole, hasPromoRole] = await Promise.all([
             userHasRole(context, currentUser, E_Role_User.FREE_MEMBER, {
                 notFoundMessage: 'Free member role not found.',

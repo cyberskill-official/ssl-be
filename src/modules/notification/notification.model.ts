@@ -1,7 +1,7 @@
 import { mongo } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { E_ConversationType } from '#modules/conversation/conversation/index.js';
+import { E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { E_LocationEntityType } from '#modules/location/location/location.type.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
@@ -57,7 +57,7 @@ export const ContextSchema = mongo.createSchema<I_NotificationContext>({
     standalone: true,
     mongoose,
     schema: {
-        conversationType: { type: String, enum: Object.values(E_ConversationType || {}) },
+        conversationType: { type: String, enum: Object.values(E_ConversationType) },
         groupName: { type: String },
         isOpenComment: { type: Boolean },
         parentMessageId: { type: String },

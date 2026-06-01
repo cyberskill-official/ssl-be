@@ -26,8 +26,9 @@ import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role_User } from '#modules/authz/role/role.type.js';
 import { bunnyCtr, storageZone } from '#modules/bunny/index.js';
+import { conversationCtr } from '#modules/conversation/conversation/conversation.controller.js';
 import { ConversationModel } from '#modules/conversation/conversation/conversation.model.js';
-import { conversationCtr, E_ConversationType } from '#modules/conversation/index.js';
+import { E_ConversationType } from '#modules/conversation/conversation/conversation.type.js';
 import { messageCtr } from '#modules/conversation/message/message.controller.js';
 import { participantCtr } from '#modules/conversation/participant/participant.controller.js';
 import { E_UserGroup } from '#modules/email-campaign/index.js';
@@ -152,10 +153,10 @@ export const userCtr = {
             (typeof p === 'string' && p === 'ageVerify')
             || (typeof p === 'object' && p.path === 'ageVerify'),
         );
-        const populatesToAppend = hasAgeVerifyPopulate 
-            ? [extraPopulates[1], extraPopulates[2]] 
+        const populatesToAppend = hasAgeVerifyPopulate
+            ? [extraPopulates[1], extraPopulates[2]]
             : extraPopulates;
-        
+
         const effectivePopulate = isAdmin
             ? ensurePopulateIncludes(
                     [...basePopulate, ...populatesToAppend],
@@ -848,7 +849,7 @@ export const userCtr = {
 
         let sanitizedRolesIds: string[] | undefined;
         let promoRoleId: string | null = null;
-        let shouldSendPromoExpiryNotice = false;
+        let shouldSendDowngradeEmail = false;
         const updateSetRecord = updateRecord.$set ?? {};
         const updateHasMembershipExpiresAt = hasAtomicOperators
             ? Object.hasOwn(updateSetRecord, 'membershipExpiresAt')
@@ -929,6 +930,20 @@ export const userCtr = {
             }
         }
 
+        const updateHasMembershipCancelled = hasAtomicOperators
+            ? Object.hasOwn(updateSetRecord, 'membershipCancelled')
+            : Object.hasOwn(update, 'membershipCancelled');
+        const nextMembershipCancelled = updateHasMembershipCancelled
+            ? (hasAtomicOperators ? updateSetRecord['membershipCancelled'] : updateRecord['membershipCancelled'])
+            : undefined;
+
+        const previousMembershipCancelled = Boolean(userFound.result.membershipCancelled);
+        const intendsToCancel = nextMembershipCancelled === true && !previousMembershipCancelled;
+
+        if (intendsToCancel) {
+            shouldSendDowngradeEmail = true;
+        }
+
         if (updateHasMembershipExpiresAt || updateHasMembershipEndDate) {
             const hadPreviousExpiry = previousExpiry !== null && previousExpiry !== undefined;
             const expiryIsNull = nextExpiry === null;
@@ -943,7 +958,7 @@ export const userCtr = {
                     }
                 }
                 if (promoRoleId && existingRoles.includes(promoRoleId)) {
-                    shouldSendPromoExpiryNotice = true;
+                    shouldSendDowngradeEmail = true;
                 }
             }
         }
@@ -1112,7 +1127,7 @@ export const userCtr = {
             }
         }
 
-        if (shouldSendPromoExpiryNotice && promoRoleId && targetEmail) {
+        if (shouldSendDowngradeEmail && targetEmail) {
             const emailResponse = await emailCtr.sendEmail(MEMBERSHIP_DOWNGRADE, targetEmail);
             if (!emailResponse.success) {
                 log.error('[USER] Failed to queue membership downgrade email', { error: emailResponse.message });

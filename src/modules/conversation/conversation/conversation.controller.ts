@@ -1422,6 +1422,59 @@ export const conversationCtr = {
         return { success: true, message: 'Support request recorded for admins.', result: { conversationId: guestConversationId } };
     },
 
+    sendAdminReplyEmailHelper: async (
+        toEmail: string,
+        message: string,
+        topic?: string,
+        requestType?: string,
+    ): Promise<{ success: boolean; message?: string }> => {
+        try {
+            const brandName = 'Secret Swinger Lust';
+
+            const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
+            let subjectText = `[${brandName}] Reply from admin`;
+            let html: string;
+
+            const renderVars = {
+                brandName,
+                reply_subject: topic || 'Reply from admin',
+                topic: topic || 'Support',
+                requestType: requestType || '',
+                reply: message,
+                email: toEmail,
+            };
+
+            if (tpl.success && tpl.result) {
+                const { content, subject: tplSubject } = tpl.result;
+                if (tplSubject) {
+                    subjectText = await ejs.render(tplSubject, renderVars);
+                }
+                if (content) {
+                    html = await ejs.render(content, renderVars);
+                }
+                else {
+                    html = emailCtr.generateBasicTemplate(renderVars);
+                }
+            }
+            else {
+                html = emailCtr.generateBasicTemplate(renderVars);
+            }
+
+            const immediate = await emailService.sendEmail({ to: toEmail, subject: subjectText, html });
+            if (!immediate.success) {
+                const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, toEmail, renderVars);
+                if (!sendResult.success) {
+                    return { success: false, message: sendResult.message };
+                }
+            }
+            return { success: true };
+        }
+        catch (error) {
+            log.error('Failed to send admin reply email', { error });
+            return { success: false, message: (error as Error).message };
+        }
+    },
+
     adminReplyGuest: async (
         context: I_Context,
         input: I_Input_AdminReplyGuest,
@@ -1464,7 +1517,6 @@ export const conversationCtr = {
         }
 
         // prepare email payload (used only when sending email to guests)
-        const emailPayload = { email: rawEmail, message: trimmedMessage, topic: topic ?? '', requestType: validatedRequestType ?? '' };
 
         try {
             // FIRST: check if the email belongs to a registered user
@@ -1524,37 +1576,9 @@ export const conversationCtr = {
                             catch { /* swallow WS errors */ }
 
                             // Also send an email copy to the provided guest email and require it to succeed.
-                            try {
-                                const subject = '[Secret® Swinger Lust] Reply from admin';
-                                const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
-                                let subjectText = subject;
-                                let html: string;
-                                if (tpl.success && tpl.result) {
-                                    const { content, subject: tplSubject } = tpl.result;
-                                    if (tplSubject) {
-                                        subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
-                                    }
-                                    if (content) {
-                                        html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
-                                    }
-                                    else {
-                                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                                    }
-                                }
-                                else {
-                                    html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                                }
-
-                                const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
-                                if (!immediate.success) {
-                                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                                    if (!sendResult.success) {
-                                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                                    }
-                                }
-                            }
-                            catch {
-                                throwError({ message: 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            const emailRes = await conversationCtr.sendAdminReplyEmailHelper(rawEmail, trimmedMessage, topic, validatedRequestType);
+                            if (!emailRes.success) {
+                                throwError({ message: emailRes.message ?? 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                             }
 
                             return { success: true, message: 'Reply posted to conversation.', result: true };
@@ -1565,40 +1589,9 @@ export const conversationCtr = {
 
                     // No valid conversationId provided and the email resolves to the admin account -> send external email
                     // so the admin's reply goes to the email address rather than creating a self-message.
-                    const subject = '[Secret® Swinger Lust] Reply from admin';
-                    try {
-                        const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
-                        let subjectText = subject;
-                        let html: string;
-                        if (tpl.success && tpl.result) {
-                            const { content, subject: tplSubject } = tpl.result;
-                            if (tplSubject) {
-                                subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
-                            }
-                            if (content) {
-                                html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
-                            }
-                            else {
-                                html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                            }
-                        }
-                        else {
-                            html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                        }
-
-                        const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
-                        if (!immediate.success) {
-                            const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                            if (!sendResult.success) {
-                                throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                            }
-                        }
-                    }
-                    catch {
-                        const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                        if (!sendResult.success) {
-                            throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                        }
+                    const emailRes = await conversationCtr.sendAdminReplyEmailHelper(rawEmail, trimmedMessage, topic, validatedRequestType);
+                    if (!emailRes.success) {
+                        throwError({ message: emailRes.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                     }
 
                     return { success: true, message: 'Reply sent to guest via email.', result: true };
@@ -1783,37 +1776,9 @@ export const conversationCtr = {
                             catch { /* swallow WS/notification errors */ }
 
                             // Send an email copy to the guest and require it to succeed; if it fails, bubble error.
-                            try {
-                                const subject = '[Secret® Swinger Lust] Reply from admin';
-                                const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
-                                let subjectText = subject;
-                                let html: string;
-                                if (tpl.success && tpl.result) {
-                                    const { content, subject: tplSubject } = tpl.result;
-                                    if (tplSubject) {
-                                        subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
-                                    }
-                                    if (content) {
-                                        html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
-                                    }
-                                    else {
-                                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                                    }
-                                }
-                                else {
-                                    html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                                }
-
-                                const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
-                                if (!immediate.success) {
-                                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                                    if (!sendResult.success) {
-                                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                                    }
-                                }
-                            }
-                            catch {
-                                throwError({ message: 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
+                            const emailRes = await conversationCtr.sendAdminReplyEmailHelper(rawEmail, trimmedMessage, topic, validatedRequestType);
+                            if (!emailRes.success) {
+                                throwError({ message: emailRes.message ?? 'Failed to send reply email to guest.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                             }
 
                             return { success: true, message: 'Reply posted to conversation and guest notified.', result: true };
@@ -1825,41 +1790,9 @@ export const conversationCtr = {
                 }
 
                 // Fallback: send external email to guest
-                const subject = '[Secret Swinger Lust] Reply from admin';
-                try {
-                    // Try immediate send (bypass queue) for reliability and lower latency
-                    const tpl = await emailTemplateCtr.getEmailTemplate({}, { filter: { templateKey: REPLY_FROM_ADMIN } });
-                    let subjectText = subject;
-                    let html: string;
-                    if (tpl.success && tpl.result) {
-                        const { content, subject: tplSubject } = tpl.result;
-                        if (tplSubject) {
-                            subjectText = await ejs.render(tplSubject, { reply: trimmedMessage, email: rawEmail });
-                        }
-                        if (content) {
-                            html = await ejs.render(content, { reply: trimmedMessage, email: rawEmail });
-                        }
-                        else {
-                            html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                        }
-                    }
-                    else {
-                        html = emailCtr.generateBasicTemplate({ reply: trimmedMessage, email: rawEmail });
-                    }
-
-                    const immediate = await emailService.sendEmail({ to: rawEmail, subject: subjectText, html });
-                    if (!immediate.success) {
-                        const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                        if (!sendResult.success) {
-                            throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                        }
-                    }
-                }
-                catch {
-                    const sendResult = await emailCtr.sendEmail(REPLY_FROM_ADMIN, rawEmail, emailPayload, subject);
-                    if (!sendResult.success) {
-                        throwError({ message: sendResult.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
-                    }
+                const emailRes = await conversationCtr.sendAdminReplyEmailHelper(rawEmail, trimmedMessage, topic, validatedRequestType);
+                if (!emailRes.success) {
+                    throwError({ message: emailRes.message ?? 'Failed to send reply email.', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
                 }
 
                 return { success: true, message: 'Reply sent to guest via email.', result: true };
@@ -2216,8 +2149,9 @@ export const conversationCtr = {
         let isFreeMember = false;
         let isAdminUser = false;
         try {
-            isFreeMember = await authnCtr.isFreeMember(context);
-            isAdminUser = await authnCtr.isAdmin(context);
+            const currentUser = await authnCtr.getUserFromSession(context);
+            isFreeMember = await authnCtr.isFreeMemberUser(context, currentUser);
+            isAdminUser = await authnCtr.isAdminUser(context, currentUser);
         }
         catch {
             isFreeMember = false;
@@ -2337,29 +2271,7 @@ export const conversationCtr = {
                 },
             });
 
-            try {
-                const recipientRes = await userCtr.getUser(context, {
-                    filter: { id: recipientId },
-                    projection: 'id email settings.notification username',
-                });
-
-                if (recipientRes?.success) {
-                    // const targetEmail = recipientRes.result.email || '';
-                    // const wantsEmail = (recipientRes.result.settings?.notification?.receiveMessage) !== false;
-
-                    // if (wantsEmail && targetEmail) {
-                    //     validate.email.validate(targetEmail);
-                    //     const templateData = {
-                    //         email: targetEmail,
-                    //         sender: senderUser?.username || senderId,
-                    //         message: preview,
-                    //         preview,
-                    //     };
-                    //     await emailCtr.sendEmail(NEW_MESSAGE, targetEmail, templateData);
-                    // }
-                }
-            }
-            catch { /* ignore */ }
+            // Recipient email notification is handled asynchronously via notificationCtr.createNotificationWithSettings above
 
             return {
                 success: true,
@@ -2444,7 +2356,7 @@ export const conversationCtr = {
             // Only check if senderId matches the current session user (not admin sending on behalf)
             const currentUser = await authnCtr.getUserFromSession(context);
             if (currentUser.id === senderId) {
-                const isFreeMember = await authnCtr.isFreeMember(context);
+                const isFreeMember = await authnCtr.isFreeMemberUser(context, currentUser);
                 const isPublicThread = isOpenPublicThread(conversation);
                 // Block FREE_MEMBER from sending messages only if:
                 // - They are NOT a participant or owner

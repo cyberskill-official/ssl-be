@@ -12,10 +12,10 @@ import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
 
-import type { I_Conversation, I_ConversationMeta } from './index.js';
+import type { I_Conversation, I_ConversationMeta } from './conversation.type.js';
 
 import { transformMessageMedia } from '../message/index.js';
-import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './index.js';
+import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './conversation.type.js';
 
 const MULTI_NEWLINE_REGEX = /\n{3,}/g;
 

@@ -28,7 +28,8 @@ import { E_ModerationLogAction, E_ModerationLogType } from '#modules/moderation/
 
 import type { I_Input_CreateMessage, I_Input_QueryMessage, I_Input_UpdateMessage, I_Message } from './message.type.js';
 
-import { conversationCtr, E_ConversationType } from '../conversation/index.js';
+import { E_ConversationType } from '../conversation/conversation.type.js';
+import { conversationCtr } from '../conversation/index.js';
 import { messageStatusCtr } from '../message-status/index.js';
 import { E_ParticipantRole } from '../participant/participant.type.js';
 import { MessageModel } from './message.model.js';

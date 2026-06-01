@@ -7,6 +7,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { withFilter } from 'graphql-subscriptions';
 import mongoose, { isValidObjectId, Types } from 'mongoose';
 
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
 import { AGE_VERIFICATION_SKIPPED, NEW_ANNOUNCEMENT_FOLLOWED_OR_NEARBY, NEW_FOLLOWER, NEW_MEMBER_JOIN_IN_YOUR_AREA_INTEREST, NEW_MESSAGE, PAYMENT_FAILED } from '#modules/authn/authn.constant.js';
@@ -17,7 +18,7 @@ import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/event.controller.js';
 import { followCtr } from '#modules/follow/index.js';
 import { galleryCtr } from '#modules/gallery/gallery.controller.js';
-import { userCtr } from '#modules/user/index.js';
+import { userCtr, UserModel } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
@@ -677,13 +678,13 @@ export const notificationCtr = {
         }
 
         // lookup recipient by any supported key
-        const userFound = await userCtr.getUser(context, { filter: { $or: orFilters } });
-        if (!userFound?.success) {
+        const recipientUser = await UserModel.findOne({ $or: orFilters }).lean<I_User>().exec();
+        if (!recipientUser) {
             throwError({ message: 'Target user not found', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
-        const isTargetDeleted = userFound.result?.isDel === true;
-        const isProfileComplete = userFound.result?.registerStep === E_RegisterStep.COMPLETE;
+        const isTargetDeleted = recipientUser?.isDel === true;
+        const isProfileComplete = recipientUser?.registerStep === E_RegisterStep.COMPLETE;
         const allowIncompleteProfile = types.some(type => ALLOW_INCOMPLETE_PROFILE_TYPES.has(type));
 
         // Không gửi thông báo nếu user đã bị xóa
@@ -700,12 +701,12 @@ export const notificationCtr = {
 
         // Respect blocks: do not notify if there is a bidirectional block between actor and target
         const blockedUserIds = await getBlockedUserIds(context);
-        if (userFound.result?.id && blockedUserIds.has(userFound.result.id)) {
+        if (recipientUser?.id && blockedUserIds.has(recipientUser.id)) {
             log.info('[Notification] skip: target blocked by actor', { targetId: tid, types });
             return { success: true, message: null };
         }
 
-        const rawSettings = userFound.result.settings?.notification ?? {};
+        const rawSettings = recipientUser.settings?.notification ?? {};
         // Default to true if not explicitly set (null/undefined means true by default)
         const s = {
             gainFollower: rawSettings.gainFollower !== false,
@@ -1088,8 +1089,8 @@ export const notificationCtr = {
             if (result.result.channels?.includes(E_NotificationChannel.EMAIL) && !result.result.isEmailSuppressed) {
                 (async () => {
                     try {
-                        const userRes = await userCtr.getUser({}, { filter: { id: result.result.targetId } });
-                        const targetEmail = userRes.success && userRes.result ? userRes.result.email : '';
+                        const targetUser = await UserModel.findOne({ id: result.result.targetId }, { email: 1 }).lean<I_User>().exec();
+                        const targetEmail = targetUser?.email || '';
                         if (!targetEmail) {
                             await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.FAILED });
                             return;
