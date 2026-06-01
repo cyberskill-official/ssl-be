@@ -366,6 +366,12 @@ export async function transformMessageMedia(
         }
     }
 
+    // Strip empty contactAdmin subdocument — Mongoose initializes embedded schemas
+    // with all-null fields even when never set, which violates non-nullable GraphQL constraints.
+    if (content?.contactAdmin && !content.contactAdmin.topic) {
+        content.contactAdmin = undefined;
+    }
+
     // Check if message has pending keyword moderation (needs redaction)
     // Only redact for other users, not the sender
     const messageId = plainMessage.id || (plainMessage._id ? String(plainMessage._id) : undefined);
