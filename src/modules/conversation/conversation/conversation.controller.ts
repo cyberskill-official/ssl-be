@@ -37,7 +37,9 @@ import {
     E_RedirectType,
 } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
+import { UserModel } from '#modules/user/user.model.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { createSystemContext } from '#shared/util/context.js';
 import { getBlockedUserIds, validate } from '#shared/util/index.js';
 
@@ -68,6 +70,13 @@ import { E_MessageType, messageCtr } from '../message/index.js';
 import { MessageModel } from '../message/message.model.js';
 import { transformMessageMedia } from '../message/message.util.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
+import {
+    bumpConversationDirectMessageCacheInBackground,
+    bumpConversationPrivateListCacheInBackground,
+    CONVERSATION_PRIVATE_LIST_CACHE_TTL_SECONDS,
+    conversationPrivateListCacheKey,
+    conversationPrivateListCacheScope,
+} from './conversation.cache.js';
 import { ConversationModel } from './conversation.model.js';
 import {
     E_ContactTopic,
@@ -80,6 +89,32 @@ import {
 import { buildMessagePreview, classifyConversation, getOtherParticipantId, getRequestTypesByTopic, isOpenPublicThread, isPrivateConversationParticipant, transformConversationDocs, transformConversationMedia } from './conversation.util.js';
 
 const mongooseCtr = new MongooseController<I_Conversation>(ConversationModel);
+const LAST_ACTIVITY_SORT = {
+    lastMessageAt: -1,
+    updatedAt: -1,
+    createdAt: -1,
+} as const;
+
+function withLastActivitySort(options?: Record<string, any>) {
+    return {
+        ...(options ?? {}),
+        sort: options?.['sort'] ?? LAST_ACTIVITY_SORT,
+    };
+}
+
+function createConversationNotificationInBackground(
+    context: I_Context,
+    payload: Parameters<typeof notificationCtr.createNotificationWithSettings>[1],
+    trace: Record<string, unknown>,
+) {
+    void notificationCtr.createNotificationWithSettings(context, payload)
+        .catch((error) => {
+            log.warn('Conversation notification side-effect failed', {
+                ...trace,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        });
+}
 
 // Helper function to map contact topic to category
 function mapTopicToCategory(topic: E_ContactTopic): E_ConversationCategory {
@@ -431,69 +466,137 @@ export const conversationCtr = {
 
     getMyPrivateConversations: async (
         context: I_Context,
-        { options }: I_Input_FindPaging<I_Input_QueryConversation>,
+        { options, search }: I_Input_FindPaging<I_Input_QueryConversation> & { search?: string },
     ): Promise<I_Return<T_PaginateResult<I_Conversation>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const privateConversationIds = await participantCtr.getConversationIdsByUserId(
-            currentUser.id,
+        const conversationTypes = [
             E_ConversationType.PRIVATE,
-
-        );
-        const pushChatConversationIds = await participantCtr.getConversationIdsByUserId(
-            currentUser.id,
             E_ConversationType.PUSH_CHAT,
-        );
-        const adminBroadcastIds = await participantCtr.getConversationIdsByUserId(
-            currentUser.id,
             E_ConversationType.ADMIN_BROADCAST,
-        );
-        const userConversationIds = [...new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds])];
+        ];
+        const normalizedSearch = search?.trim();
+        return queryCacheService.getOrSet({
+            scope: conversationPrivateListCacheScope(currentUser.id),
+            key: conversationPrivateListCacheKey({ userId: currentUser.id, search: normalizedSearch, options }),
+            ttl: CONVERSATION_PRIVATE_LIST_CACHE_TTL_SECONDS,
+            shouldCache: result => result.success,
+            loader: async () => {
+                let userConversationIds: string[] = [];
+                let blockedUserIds = new Set<string>();
 
-        const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, {
-            ...options,
-            populate: [
-                ...(Array.isArray(options?.populate) ? options.populate : []),
-                {
-                    path: 'participants',
-                    populate: [
-                        {
-                            path: 'user',
-                            select: 'id username accountType partner1 partner2',
-                            populate: [
-                                { path: 'ageVerify' },
-                                { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
-                                { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
-                            ],
-                        },
-                    ],
-                },
-            ] as any,
-        });
-        if (!result.success || !result.result)
-            return result;
+                if (normalizedSearch) {
+                    const [
+                        privateConversationIds,
+                        pushChatConversationIds,
+                        adminBroadcastIds,
+                        blockedIds,
+                    ] = await Promise.all([
+                        participantCtr.getConversationIdsByUserId(
+                            currentUser.id,
+                            E_ConversationType.PRIVATE,
+                            normalizedSearch,
+                        ),
+                        participantCtr.getConversationIdsByUserId(
+                            currentUser.id,
+                            E_ConversationType.PUSH_CHAT,
+                            normalizedSearch,
+                        ),
+                        participantCtr.getConversationIdsByUserId(
+                            currentUser.id,
+                            E_ConversationType.ADMIN_BROADCAST,
+                            normalizedSearch,
+                        ),
+                        getBlockedUserIds(context),
+                    ]);
+                    userConversationIds = [...new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds])];
+                    blockedUserIds = blockedIds;
+                }
+                else {
+                    const [participants, blockedIds] = await Promise.all([
+                        ParticipantModel.find(
+                            { userId: currentUser.id },
+                            { _id: 0, conversationId: 1 },
+                        ).lean<Array<{ conversationId?: string }>>().exec(),
+                        getBlockedUserIds(context),
+                    ]);
+                    userConversationIds = [
+                        ...new Set(
+                            participants
+                                .map(participant => participant.conversationId)
+                                .filter((conversationId): conversationId is string => !!conversationId),
+                        ),
+                    ];
+                    blockedUserIds = blockedIds;
+                }
 
-        // Block check - filter out conversations with blocked users (bidirectional)
-        const blockedUserIds = await getBlockedUserIds(context);
-        let filteredDocs = result.result.docs;
-        if (blockedUserIds.size > 0) {
-            filteredDocs = result.result.docs.filter((conv) => {
-                if (!conv.participants || conv.participants.length !== 2)
-                    return true;
-                const otherParticipantId = getOtherParticipantId(conv.participants, currentUser.id);
-                return !otherParticipantId || !blockedUserIds.has(otherParticipantId);
-            });
-        }
+                const nextOptions = conversationCtr.normalizePopulateOptions(options as Record<string, any> | undefined, [
+                    'createdBy',
+                    'lastMessage',
+                    'resolvedBy',
+                ]);
 
-        const docs = await transformConversationDocs(context, filteredDocs);
+                const result = await mongooseCtr.findPaging(
+                    {
+                        id: { $in: userConversationIds },
+                        type: { $in: conversationTypes },
+                        isDel: { $ne: true },
+                    } as any,
+                    withLastActivitySort(nextOptions) as any,
+                );
+                if (!result.success || !result.result)
+                    return result;
 
-        return {
-            ...result,
-            result: {
-                ...result.result,
-                docs,
-                totalDocs: docs.length,
+                // Block check - filter out conversations with blocked users (bidirectional)
+                let filteredDocs = result.result.docs;
+                const otherUserIds = [
+                    ...new Set(
+                        filteredDocs
+                            .map(conv => conv.participants && conv.participants.length >= 2
+                                ? getOtherParticipantId(conv.participants, currentUser.id)
+                                : null)
+                            .filter((userId): userId is string => !!userId),
+                    ),
+                ];
+                const unavailableUsers = otherUserIds.length
+                    ? await UserModel.find(
+                            {
+                                id: { $in: otherUserIds },
+                                $or: [
+                                    { isDel: true },
+                                    { isAdminBlocked: true },
+                                ],
+                            },
+                            { _id: 0, id: 1 },
+                        ).lean<Array<{ id?: string }>>().exec()
+                    : [];
+                const unavailableUserIds = new Set(
+                    unavailableUsers
+                        .map(user => user.id)
+                        .filter((userId): userId is string => !!userId),
+                );
+
+                if (blockedUserIds.size > 0 || unavailableUserIds.size > 0) {
+                    filteredDocs = result.result.docs.filter((conv) => {
+                        if (!conv.participants || conv.participants.length < 2)
+                            return true;
+                        const otherParticipantId = getOtherParticipantId(conv.participants, currentUser.id);
+                        return !otherParticipantId
+                            || (!blockedUserIds.has(otherParticipantId) && !unavailableUserIds.has(otherParticipantId));
+                    });
+                }
+
+                const docs = await transformConversationDocs(context, filteredDocs);
+
+                return {
+                    ...result,
+                    result: {
+                        ...result.result,
+                        docs,
+                        totalDocs: docs.length,
+                    },
+                };
             },
-        };
+        });
     },
 
     getMyGroupConversations: async (
@@ -502,37 +605,30 @@ export const conversationCtr = {
         search?: string,
     ): Promise<I_Return<T_PaginateResult<I_Conversation>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
-        const groupConversationIds = await participantCtr.getConversationIdsByUserId(
-            currentUser.id,
-            E_ConversationType.GROUP,
-            search,
+        const [groupConversationIds, blockedUserIds] = await Promise.all([
+            participantCtr.getConversationIdsByUserId(
+                currentUser.id,
+                E_ConversationType.GROUP,
+                search,
+            ),
+            getBlockedUserIds(context),
+        ]);
+
+        const nextOptions = conversationCtr.normalizePopulateOptions(options as Record<string, any> | undefined, [
+            'createdBy',
+            'lastMessage',
+            'resolvedBy',
+        ]);
+
+        const result = await mongooseCtr.findPaging(
+            { id: { $in: groupConversationIds } },
+            withLastActivitySort(nextOptions) as any,
         );
-        const result = await mongooseCtr.findPaging({ id: { $in: groupConversationIds } }, {
-            ...options,
-            populate: [
-                ...(Array.isArray(options?.populate) ? options.populate : []),
-                {
-                    path: 'participants',
-                    populate: [
-                        {
-                            path: 'user',
-                            select: 'id username accountType partner1 partner2',
-                            populate: [
-                                { path: 'ageVerify' },
-                                { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
-                                { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
-                            ],
-                        },
-                    ],
-                },
-            ] as any,
-        });
         if (!result.success || !result.result)
             return result;
 
         // Block check - filter out group conversations with blocked users (bidirectional)
         // For groups, we hide the entire conversation if ANY participant is blocked
-        const blockedUserIds = await getBlockedUserIds(context);
         let filteredDocs = result.result.docs;
         if (blockedUserIds.size > 0) {
             filteredDocs = result.result.docs.filter((conv) => {
@@ -681,7 +777,22 @@ export const conversationCtr = {
         conversationId: string,
         messageId: string | null,
     ): Promise<I_Return<I_Conversation>> => {
-        return mongooseCtr.updateOne({ id: conversationId }, { lastMessageId: messageId });
+        if (!messageId) {
+            return mongooseCtr.updateOne({ id: conversationId }, {
+                lastMessageId: null,
+                lastMessageAt: null,
+            } as any);
+        }
+
+        const message = await MessageModel.findOne(
+            { id: messageId },
+            { createdAt: 1 },
+        ).lean();
+
+        return mongooseCtr.updateOne({ id: conversationId }, {
+            lastMessageId: messageId,
+            lastMessageAt: message?.createdAt ? new Date(message.createdAt) : new Date(),
+        });
     },
 
     _populateConversationWithParticipants: async (
@@ -1990,12 +2101,23 @@ export const conversationCtr = {
             const latest = messages.at(-1);
             if (latest?.id) {
                 await participantCtr.updateLastReadMessage(conversationId, userId, latest.id);
+                bumpConversationPrivateListCacheInBackground([userId], {
+                    conversationId,
+                    userId,
+                    source: 'markAllMessagesAsRead',
+                });
             }
+
+            const refreshedConversationResult
+                = await conversationCtr._populateConversationWithParticipants(conversationId);
+            const responseConversation = refreshedConversationResult.success
+                ? refreshedConversationResult.result
+                : conversation;
 
             return {
                 success: true,
                 message: `Marked ${totalMarked} messages as read`,
-                result: { conversation, totalMarked },
+                result: { conversation: responseConversation, totalMarked },
             };
         }
         catch (error) {
@@ -2261,6 +2383,18 @@ export const conversationCtr = {
                 senderId,
                 messageResult.result.id,
             );
+            bumpConversationPrivateListCacheInBackground([senderId, recipientId], {
+                conversationId: directMessageResult.conversationId,
+                senderId,
+                recipientId,
+                source: 'createPrivateConversationWithFirstMessage',
+            });
+            bumpConversationDirectMessageCacheInBackground(senderId, recipientId, {
+                conversationId: directMessageResult.conversationId,
+                senderId,
+                recipientId,
+                source: 'createPrivateConversationWithFirstMessage',
+            });
 
             const finalConversationResult = await conversationCtr._populateConversationWithParticipants(
                 directMessageResult.conversationId,
@@ -2285,7 +2419,7 @@ export const conversationCtr = {
                 : content;
             const preview = buildMessagePreview(previewSource);
 
-            await notificationCtr.createNotificationWithSettings(context, {
+            createConversationNotificationInBackground(context, {
                 doc: {
                     targetId: recipientId,
                     type: [E_NotificationType.NEW_MESSAGE],
@@ -2305,6 +2439,11 @@ export const conversationCtr = {
                         context: { conversationType, isOpenComment: false, participantCount: 2 },
                     },
                 },
+            }, {
+                conversationId: directMessageResult.conversationId,
+                recipientId,
+                senderId,
+                source: 'createPrivateConversationWithFirstMessage',
             });
 
             // Recipient email notification is handled asynchronously via notificationCtr.createNotificationWithSettings above
@@ -2457,6 +2596,12 @@ export const conversationCtr = {
                 || (conversation.type === E_ConversationType.GROUP && isParticipantInGroup)
             ) {
                 await participantCtr.updateLastReadMessage(conversationId, senderId, messageResult.result.id);
+            }
+            if (conversation.type && [E_ConversationType.PRIVATE, E_ConversationType.PUSH_CHAT, E_ConversationType.ADMIN_BROADCAST].includes(conversation.type)) {
+                bumpConversationPrivateListCacheInBackground(
+                    conversation.participants?.map(participant => participant.userId) ?? [senderId],
+                    { conversationId, senderId, source: 'sendMessage' },
+                );
             }
 
             // 7) Get populated conversation for notifications / pubsub (lastMessage, participants.user populated)
@@ -2674,49 +2819,52 @@ export const conversationCtr = {
                 }
 
                 for (const targetId of recipients) {
-                    try {
-                        await notificationCtr.createNotificationWithSettings(context, {
-                            doc: {
-                                targetId,
-                                actorId: senderId,
-                                type: [notifType],
-                                entityType,
-                                entityId,
-                                body: preview,
-                                channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
-                                presentation: {
-                                    redirect: makeRedirect(targetId),
-                                    actor: actorView,
-                                    headline,
-                                    context: {
-                                        conversationType: populatedConversation.type,
-                                        isOpenComment: isPublic,
-                                        // Provide the specific message id to enable direct navigation to the comment in UI
-                                        parentMessageId: messageResult.result?.id,
-                                        participantCount: memberCount,
-                                        // Include groupName for GROUP conversations
-                                        ...(populatedConversation.type === E_ConversationType.GROUP && populatedConversation.name
-                                            ? { groupName: populatedConversation.name }
-                                            : {}),
-                                        // Only include profileOwnerId for non-gallery comments
-                                        ...(populatedConversation.type !== E_ConversationType.GALLERY_COMMENT && profileOwnerId
-                                            ? { profileOwnerId }
-                                            : {}),
-                                        // For gallery comments, include galleryId, galleryType, and gallery owner username
-                                        ...(populatedConversation.type === E_ConversationType.GALLERY_COMMENT && populatedConversation.entityId
-                                            ? {
-                                                    mediaId: populatedConversation.entityId,
-                                                    galleryType: galleryType || undefined,
-                                                    isVideo: galleryType === 'VIDEO' || undefined,
-                                                    ...(galleryOwnerUsername ? { profileOwnerUsername: galleryOwnerUsername } : {}),
-                                                }
-                                            : {}),
-                                    },
+                    createConversationNotificationInBackground(context, {
+                        doc: {
+                            targetId,
+                            actorId: senderId,
+                            type: [notifType],
+                            entityType,
+                            entityId,
+                            body: preview,
+                            channels: [E_NotificationChannel.IN_APP, E_NotificationChannel.EMAIL],
+                            presentation: {
+                                redirect: makeRedirect(targetId),
+                                actor: actorView,
+                                headline,
+                                context: {
+                                    conversationType: populatedConversation.type,
+                                    isOpenComment: isPublic,
+                                    // Provide the specific message id to enable direct navigation to the comment in UI
+                                    parentMessageId: messageResult.result?.id,
+                                    participantCount: memberCount,
+                                    // Include groupName for GROUP conversations
+                                    ...(populatedConversation.type === E_ConversationType.GROUP && populatedConversation.name
+                                        ? { groupName: populatedConversation.name }
+                                        : {}),
+                                    // Only include profileOwnerId for non-gallery comments
+                                    ...(populatedConversation.type !== E_ConversationType.GALLERY_COMMENT && profileOwnerId
+                                        ? { profileOwnerId }
+                                        : {}),
+                                    // For gallery comments, include galleryId, galleryType, and gallery owner username
+                                    ...(populatedConversation.type === E_ConversationType.GALLERY_COMMENT && populatedConversation.entityId
+                                        ? {
+                                                mediaId: populatedConversation.entityId,
+                                                galleryType: galleryType || undefined,
+                                                isVideo: galleryType === 'VIDEO' || undefined,
+                                                ...(galleryOwnerUsername ? { profileOwnerUsername: galleryOwnerUsername } : {}),
+                                            }
+                                        : {}),
                                 },
                             },
-                        });
-                    }
-                    catch { /* swallow */ }
+                        },
+                    }, {
+                        conversationId,
+                        entityId,
+                        targetId,
+                        senderId,
+                        source: 'sendMessage',
+                    });
                 }
             }
 
@@ -2756,11 +2904,26 @@ export const conversationCtr = {
                 status: RESPONSE_STATUS.FORBIDDEN,
             });
         }
+        const participantUserIds = conversation.result.participants
+            ?.map(participant => participant.userId)
+            .filter((userId): userId is string => !!userId) ?? [];
+        const otherParticipantId = getOtherParticipantId(conversation.result.participants ?? [], currentUser.id);
 
         try {
             await messageCtr.deleteMessages(context, { filter: { conversationId } });
             await participantCtr.deleteParticipants(context, { filter: { conversationId } });
             await mongooseCtr.deleteOne({ id: conversationId });
+            bumpConversationPrivateListCacheInBackground(participantUserIds, {
+                conversationId,
+                userId: currentUser.id,
+                source: 'deletePrivateConversation',
+            });
+            bumpConversationDirectMessageCacheInBackground(currentUser.id, otherParticipantId, {
+                conversationId,
+                userId: currentUser.id,
+                otherParticipantId,
+                source: 'deletePrivateConversation',
+            });
 
             const deletedType = conversationType as E_ConversationType.PRIVATE | E_ConversationType.PUSH_CHAT;
             const payload: I_ConversationEventPayload = {
@@ -2870,6 +3033,11 @@ export const conversationCtr = {
         if (!result.success) {
             throwError({ message: 'Failed to mark conversation as read', status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR });
         }
+        bumpConversationPrivateListCacheInBackground([currentUser.id], {
+            conversationId,
+            userId: currentUser.id,
+            source: 'markConversationAsRead',
+        });
 
         return result;
     },

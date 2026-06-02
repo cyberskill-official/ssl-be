@@ -87,6 +87,7 @@ type T_Conversation {
     createdById: String
     createdBy: T_User
     lastMessageId: String
+    lastMessageAt: DateTime
     lastMessage: T_Message
     entityId: String
     entity: U_ConversationEntity
@@ -139,6 +140,7 @@ input Input_QueryConversation {
     entityId: String
     createdById: String
     lastMessageId: String
+    lastMessageAt: DateTime
 }
 
 input Input_CreateConversation {
@@ -146,6 +148,7 @@ input Input_CreateConversation {
     name: String
     createdById: String
     lastMessageId: String
+    lastMessageAt: DateTime
     entityId: String
     entityType: E_ConversationType
 }
@@ -184,6 +187,7 @@ input Input_UpdateConversation {
     entityId: String
     entityType: E_ConversationType
     lastMessageId: String
+    lastMessageAt: DateTime
 }
 
 input Input_CreateBroadcast {

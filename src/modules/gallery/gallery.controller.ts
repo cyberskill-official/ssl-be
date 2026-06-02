@@ -31,6 +31,7 @@ import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.vali
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
@@ -893,6 +894,10 @@ export const galleryCtr = {
             await notifyGalleryFollowersOnPublish(context, galleryResult.result);
         }
 
+        if (galleryResult.success) {
+            await queryCacheService.bumpVersion('gallery');
+        }
+
         return galleryResult;
     },
 
@@ -932,7 +937,11 @@ export const galleryCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const result = await mongooseCtr.updateOne(filter, update, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('gallery');
+        }
+        return result;
     },
     notifyGalleryPublished: async (context: I_Context, galleryId: string): Promise<void> => {
         const galleryFound = await mongooseCtr.findOne({ id: galleryId });
@@ -974,7 +983,11 @@ export const galleryCtr = {
             }
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        const result = await mongooseCtr.deleteOne(filter, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('gallery');
+        }
+        return result;
     },
     deleteGalleriesByUserId: async (
         context: I_Context,
@@ -1133,8 +1146,16 @@ export const galleryCtr = {
         }
 
         if (typeof galleryFound.result.id === 'string' && galleryFound.result.id.trim()) {
-            return mongooseCtr.deleteOne({ id: galleryFound.result.id.trim() });
+            const result = await mongooseCtr.deleteOne({ id: galleryFound.result.id.trim() });
+            if (result.success) {
+                await queryCacheService.bumpVersion('gallery');
+            }
+            return result;
         }
-        return mongooseCtr.deleteOne({ _id: galleryFound.result._id } as any);
+        const result = await mongooseCtr.deleteOne({ _id: galleryFound.result._id } as any);
+        if (result.success) {
+            await queryCacheService.bumpVersion('gallery');
+        }
+        return result;
     },
 };

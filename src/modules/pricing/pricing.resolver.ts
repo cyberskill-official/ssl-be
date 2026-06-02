@@ -2,16 +2,29 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
+
 import type { I_Input_CreatePricing, I_Input_QueryPricing, I_Input_UpdatePricing } from './pricing.type.js';
 
 import { pricingCtr } from './pricing.controller.js';
+
+function getViewerCacheId(context: I_Context): string {
+    return context.req?.session?.user?.id ?? 'guest';
+}
 
 const pricingResolver = {
     Query: {
         getPricing: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryPricing>, context: I_Context) => pricingCtr.getPricing(context, args),
         getPricings: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryPricing>, context: I_Context) => pricingCtr.getPricings(context, args),
         getSubscriptionPrice: async (_parent: unknown, _args: unknown, context: I_Context) => {
-            const response = await pricingCtr.getSubscriptionPrice(context);
+            const response = await queryCacheService.getOrSet({
+                scope: 'pricing:getSubscriptionPrice',
+                key: { viewerId: getViewerCacheId(context) },
+                ttl: 300,
+                dependencies: ['pricing', 'country'],
+                shouldCache: value => value.success === true,
+                loader: () => pricingCtr.getSubscriptionPrice(context),
+            });
             if (!response.success) {
                 throw new Error(response.message ?? 'Failed to resolve subscription price');
             }

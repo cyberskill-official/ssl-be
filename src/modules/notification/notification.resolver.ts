@@ -8,6 +8,8 @@ import type {
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
+
 import type {
     I_Input_CreateNotification,
     I_Input_QueryNotification,
@@ -21,6 +23,12 @@ import type {
 
 import { notificationCtr } from './notification.controller.js';
 
+function getViewerCacheId(context: I_Context): string {
+    return context.req?.session?.user?.id ?? 'guest';
+}
+
+const NOTIFICATION_LIST_CACHE_TTL_SECONDS = 10;
+
 const notificationResolver = {
     Query: {
         getNotification: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryNotification>, context: I_Context) => notificationCtr.getNotification(context, args),
@@ -28,8 +36,22 @@ const notificationResolver = {
             _parent: unknown,
             args: I_Input_FindPaging<I_Input_QueryNotification>,
             context: I_Context,
-        ) => notificationCtr.getNotifications(context, args),
-        getNotificationCounters: (_parent: unknown, _agrs: unknown, context: I_Context) => notificationCtr.getNotificationCounters(context),
+        ) => queryCacheService.getOrSet({
+            scope: 'notification:getNotifications',
+            key: { viewerId: getViewerCacheId(context), args },
+            ttl: NOTIFICATION_LIST_CACHE_TTL_SECONDS,
+            dependencies: ['notification'],
+            shouldCache: value => value?.success === true,
+            loader: () => notificationCtr.getNotifications(context, args),
+        }),
+        getNotificationCounters: (_parent: unknown, _agrs: unknown, context: I_Context) =>
+            queryCacheService.getOrSet({
+                scope: 'notification:getNotificationCounters',
+                key: { viewerId: getViewerCacheId(context) },
+                ttl: 5,
+                dependencies: ['notification'],
+                loader: () => notificationCtr.getNotificationCounters(context),
+            }),
     },
     Mutation: {
         createNotification: (

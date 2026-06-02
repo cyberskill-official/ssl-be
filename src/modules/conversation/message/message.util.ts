@@ -324,6 +324,9 @@ export async function transformMessageMedia(
         return plainMessage;
 
     const transformOptions = options ?? {};
+    if (!transformOptions.userHydrationCache) {
+        transformOptions.userHydrationCache = new Map();
+    }
 
     const content = plainMessage.content ? { ...plainMessage.content } : undefined;
     let sender = plainMessage.sender ? toPlain(plainMessage.sender) : undefined;

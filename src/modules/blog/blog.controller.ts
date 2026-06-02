@@ -16,6 +16,7 @@ import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
@@ -172,6 +173,7 @@ export const blogCtr = {
             }
         }
         catch { }
+        await queryCacheService.bumpVersion('blog');
         return blogResult;
     },
     updateBlog: async (context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdateBlog>): Promise<I_Return<I_Blog>> => {
@@ -278,7 +280,11 @@ export const blogCtr = {
             throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const result = await mongooseCtr.updateOne(filter, update, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('blog');
+        }
+        return result;
     },
     deleteBlog: async (context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter, options });
@@ -296,7 +302,11 @@ export const blogCtr = {
             }
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        const result = await mongooseCtr.deleteOne(filter, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('blog');
+        }
+        return result;
     },
     updateReadCount: async (context: I_Context, { filter }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter });

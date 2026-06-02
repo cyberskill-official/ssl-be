@@ -477,6 +477,9 @@ export async function transformConversationMedia<T extends I_Conversation>(
 
     const plainConversation = toPlainConversation(conversation);
     const transformOptions = options ?? {};
+    if (!transformOptions.userHydrationCache) {
+        transformOptions.userHydrationCache = new Map();
+    }
     const viewerMediaOptions = await resolveViewerMediaContext(context, transformOptions);
 
     // Transform lastMessage (includes sender avatar blur and keyword masking)

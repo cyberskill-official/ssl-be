@@ -30,6 +30,7 @@ import { eventCtr, EventModel } from '#modules/event/index.js';
 import { UserModel } from '#modules/user/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
 import { getBlockedUserIds } from '#shared/util/block-helper.js';
 import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
@@ -573,7 +574,11 @@ export const locationCtr = {
         _context: I_Context,
         { doc }: I_Input_CreateOne<I_Input_CreateLocation>,
     ): Promise<I_Return<I_Location>> => {
-        return mongooseCtr.createOne(doc);
+        const result = await mongooseCtr.createOne(doc);
+        if (result.success) {
+            await queryCacheService.bumpVersion('location');
+        }
+        return result;
     },
     updateLocation: async (
         context: I_Context,
@@ -588,7 +593,11 @@ export const locationCtr = {
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
-        return mongooseCtr.updateOne(filter, update, options);
+        const result = await mongooseCtr.updateOne(filter, update, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('location');
+        }
+        return result;
     },
     deleteLocation: async (
         context: I_Context,
@@ -603,7 +612,11 @@ export const locationCtr = {
                 status: RESPONSE_STATUS.NOT_FOUND,
             });
         }
-        return mongooseCtr.deleteOne(filter, options);
+        const result = await mongooseCtr.deleteOne(filter, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('location');
+        }
+        return result;
     },
     getLocationsInViewport: async (
         context: I_Context,
