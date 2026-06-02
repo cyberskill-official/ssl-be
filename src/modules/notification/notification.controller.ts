@@ -160,24 +160,35 @@ export const notificationCtr = {
         if (res.success && res.result && Array.isArray(res.result.docs)) {
             const notificationsToDismiss: string[] = [];
 
+            // Batch fetch: collect all USER entityIds and check isDel in a single query
+            const userIdsToCheck = [
+                ...new Set(
+                    res.result.docs
+                        .filter(n => !n.dismissedAt && n.status !== E_NotificationStatus.DISMISSED
+                            && n.entityType === E_NotificationEntityType.USER && n.entityId)
+                        .map(n => n.entityId!),
+                ),
+            ];
+            const deletedUserIds = new Set<string>();
+            if (userIdsToCheck.length > 0) {
+                try {
+                    const usersRes = await UserModel.find(
+                        { id: { $in: userIdsToCheck }, isDel: true },
+                        { id: 1 },
+                    ).lean();
+                    usersRes.forEach((u: any) => deletedUserIds.add(u.id));
+                }
+                catch {
+                    // non-fatal
+                }
+            }
+
             for (const n of res.result.docs) {
-                // Skip if already dismissed
                 if (n.dismissedAt || n.status === E_NotificationStatus.DISMISSED) {
                     continue;
                 }
-
-                // Check if entity (especially USER) still exists
-                if (n.entityType === E_NotificationEntityType.USER && n.entityId) {
-                    try {
-                        const entityUser = await userCtr.getUser(_context, { filter: { id: n.entityId } });
-                        // If user is explicitly confirmed as deleted, dismiss notification
-                        if (entityUser.success && entityUser.result?.isDel === true) {
-                            notificationsToDismiss.push(n.id!);
-                        }
-                    }
-                    catch {
-                        // Ignore check failures to avoid accidental dismissal
-                    }
+                if (n.entityType === E_NotificationEntityType.USER && n.entityId && deletedUserIds.has(n.entityId)) {
+                    notificationsToDismiss.push(n.id!);
                 }
             }
 

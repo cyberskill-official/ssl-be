@@ -448,7 +448,26 @@ export const conversationCtr = {
         );
         const userConversationIds = [...new Set([...privateConversationIds, ...pushChatConversationIds, ...adminBroadcastIds])];
 
-        const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, options);
+        const result = await mongooseCtr.findPaging({ id: { $in: userConversationIds } }, {
+            ...options,
+            populate: [
+                ...(Array.isArray(options?.populate) ? options.populate : []),
+                {
+                    path: 'participants',
+                    populate: [
+                        {
+                            path: 'user',
+                            select: 'id username accountType partner1 partner2',
+                            populate: [
+                                { path: 'ageVerify' },
+                                { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                                { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                            ],
+                        },
+                    ],
+                },
+            ] as any,
+        });
         if (!result.success || !result.result)
             return result;
 
@@ -487,7 +506,26 @@ export const conversationCtr = {
             E_ConversationType.GROUP,
             search,
         );
-        const result = await mongooseCtr.findPaging({ id: { $in: groupConversationIds } }, options);
+        const result = await mongooseCtr.findPaging({ id: { $in: groupConversationIds } }, {
+            ...options,
+            populate: [
+                ...(Array.isArray(options?.populate) ? options.populate : []),
+                {
+                    path: 'participants',
+                    populate: [
+                        {
+                            path: 'user',
+                            select: 'id username accountType partner1 partner2',
+                            populate: [
+                                { path: 'ageVerify' },
+                                { path: 'partner1', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                                { path: 'partner2', select: 'id galleryId gender', populate: [{ path: 'gallery', select: 'id url' }] },
+                            ],
+                        },
+                    ],
+                },
+            ] as any,
+        });
         if (!result.success || !result.result)
             return result;
 
