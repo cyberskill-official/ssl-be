@@ -92,11 +92,22 @@ function ensureMultilingualValue(val: any, enValue: string): Record<string, stri
 }
 
 export async function translateBlog(id: string) {
-    const blog = await BlogModel.findOne({ id, isDel: { $ne: true } });
-    if (!blog) {
+    // Check if already being translated
+    const existingBlog = await BlogModel.findOne({ id, isDel: { $ne: true } });
+    if (!existingBlog) {
         log.warn(`[TranslationQueue] Blog not found or deleted: ${id}`);
         return;
     }
+
+    if ((existingBlog as any).translationInProgress) {
+        log.warn(`[TranslationQueue] Blog ${id} is already being translated. Skipping to avoid duplicate work.`);
+        return;
+    }
+
+    // Set lock
+    await BlogModel.findOneAndUpdate({ id }, { $set: { translationInProgress: true } });
+
+    const blog = existingBlog;
 
     const title = getEn(blog.title);
     const contentHeadline = getEn(blog.contentHeadline);
@@ -114,24 +125,31 @@ export async function translateBlog(id: string) {
 
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
 
-    // Detect changed fields
+    // Helper: check if field already has all target languages
+    function hasAllTranslations(fieldValue: any): boolean {
+        if (!fieldValue || typeof fieldValue !== 'object')
+            return false;
+        return TARGET_LANGS.every(lang => fieldValue[lang] && fieldValue[lang].length > 0);
+    }
+
+    // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
-    if (title !== (snapshot['title'] || ''))
+    if (title !== (snapshot['title'] || '') && !hasAllTranslations(blog.title))
         changedSmall['title'] = title;
-    if (contentHeadline !== (snapshot['contentHeadline'] || ''))
+    if (contentHeadline !== (snapshot['contentHeadline'] || '') && !hasAllTranslations(blog.contentHeadline))
         changedSmall['contentHeadline'] = contentHeadline;
-    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || ''))
+    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || '') && !hasAllTranslations(blog.contentSubHeadline))
         changedSmall['contentSubHeadline'] = contentSubHeadline;
-    if (seoTitle !== (snapshot['seoTitle'] || ''))
+    if (seoTitle !== (snapshot['seoTitle'] || '') && !hasAllTranslations(blog.seo?.title))
         changedSmall['seoTitle'] = seoTitle;
-    if (seoDescription !== (snapshot['seoDescription'] || ''))
+    if (seoDescription !== (snapshot['seoDescription'] || '') && !hasAllTranslations(blog.seo?.description))
         changedSmall['seoDescription'] = seoDescription;
-    if (seoKeywords !== (snapshot['seoKeywords'] || ''))
+    if (seoKeywords !== (snapshot['seoKeywords'] || '') && !hasAllTranslations(blog.seo?.keywords))
         changedSmall['seoKeywords'] = seoKeywords;
-    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || ''))
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') && !hasAllTranslations(blog.seo?.socialMediaDescription))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
-    const contentChanged = content !== (snapshot['content'] || '');
+    const contentChanged = content !== (snapshot['content'] || '') && !hasAllTranslations(blog.content);
 
     // Check FAQ changes
     const currentFaqs = (blog.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
@@ -139,9 +157,12 @@ export async function translateBlog(id: string) {
     const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs);
 
     if (Object.keys(changedSmall).length === 0 && !contentChanged && !faqsChanged) {
-        log.info(`[TranslationQueue] Blog ${id}: no translatable fields changed, skipping.`);
+        log.info(`[TranslationQueue] Blog ${id}: all fields already translated or unchanged, skipping.`);
         return;
     }
+
+    log.info(`[TranslationQueue] Blog ${id}: fields to translate: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${faqsChanged ? ', faqs' : ''}`);
+    log.info(`[TranslationQueue] Blog ${id}: skipped (already translated): ${['title', 'contentHeadline', 'contentSubHeadline', 'seoTitle', 'seoDescription', 'seoKeywords', 'socialMediaDescription'].filter(f => !changedSmall[f]).join(', ')}`);
 
     log.info(`[TranslationQueue] Blog ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${faqsChanged ? ', faqs' : ''}`);
 
@@ -171,7 +192,7 @@ export async function translateBlog(id: string) {
 
         // Build $set payload with only translated fields
         const $set: Record<string, unknown> = {};
-        const currentSeo: Record<string, any> = blog.seo ? { ...blog.seo as any } : {};
+        const currentSeo: Record<string, any> = blog.seo ? JSON.parse(JSON.stringify(blog.seo)) : {};
 
         // Apply small field translations
         for (const [field, translations] of Object.entries(smallResults)) {
@@ -286,14 +307,29 @@ export async function translateBlog(id: string) {
     catch (err) {
         log.error(`[TranslationQueue] Error translating Blog ${id}:`, err);
     }
+    finally {
+        // Release lock
+        await BlogModel.findOneAndUpdate({ id }, { $set: { translationInProgress: false } });
+    }
 }
 
 export async function translateDestination(id: string) {
-    const destination = await DestinationModel.findOne({ id, isDel: { $ne: true } });
-    if (!destination) {
+    // Check if already being translated
+    const existingDestination = await DestinationModel.findOne({ id, isDel: { $ne: true } });
+    if (!existingDestination) {
         log.warn(`[TranslationQueue] Destination not found or deleted: ${id}`);
         return;
     }
+
+    if ((existingDestination as any).translationInProgress) {
+        log.warn(`[TranslationQueue] Destination ${id} is already being translated. Skipping to avoid duplicate work.`);
+        return;
+    }
+
+    // Set lock
+    await DestinationModel.findOneAndUpdate({ id }, { $set: { translationInProgress: true } });
+
+    const destination = existingDestination;
 
     const introductionHeadline = getEn(destination.introductionHeadline);
     const introductionContent = getEn(destination.introductionContent);
@@ -531,5 +567,9 @@ export async function translateDestination(id: string) {
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Destination ${id}:`, err);
+    }
+    finally {
+        // Release lock
+        await DestinationModel.findOneAndUpdate({ id }, { $set: { translationInProgress: false } });
     }
 }
