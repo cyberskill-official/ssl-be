@@ -55,7 +55,7 @@ export async function getBlockedUserIds(context: I_Context): Promise<Set<string>
 
         // Fetch all blocks where user is either blocker or blocked
         const blocks = await blockCtr.getBlocks(context, {
-            options: { pagination: false },
+            options: { pagination: false, populate: [] },
         });
 
         if (!blocks.success || !blocks.result?.docs) {

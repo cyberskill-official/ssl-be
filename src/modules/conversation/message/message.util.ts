@@ -6,6 +6,8 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
 import mongoose from 'mongoose';
 
+import type { I_User } from '#modules/user/user.type.js';
+import type { I_HydrateUserMediaOptions } from '#modules/user/user.validate.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { authnCtr, E_AgeVerifyStatus } from '#modules/authn/index.js';
@@ -13,7 +15,6 @@ import { bunnyCtr, normalizeStoragePath } from '#modules/bunny/index.js';
 import { keywordCtr } from '#modules/keyword/index.js';
 import { moderationLogCtr } from '#modules/moderation/moderation-log/moderation-log.controller.js';
 import { E_ModerationLogAction } from '#modules/moderation/moderation-log/moderation-log.type.js';
-import { userCtr } from '#modules/user/user.controller.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { hasToObject } from '#shared/util/has-to-object.js';
@@ -25,6 +26,170 @@ import { E_MessageType } from './message.type.js';
 const SPECIAL_CHARS_REGEX = /[^\w\s]/;
 
 const mongooseCtr = new MongooseController(UserModel);
+
+interface I_TransformMessageMediaOptions {
+    activeKeywords?: any[];
+    approveLogs?: any[];
+    viewer?: I_User | null;
+    sessionUser?: I_User | null;
+    viewerMediaOptions?: I_HydrateUserMediaOptions;
+    userHydrationCache?: Map<string, Promise<I_User | null>>;
+}
+
+function userNeedsMediaHydration(user?: Partial<I_User> | null): boolean {
+    if (!user)
+        return true;
+
+    const partner1GalleryMissing = !user.partner1?.gallery
+        || !user.partner1.gallery.url;
+    const partner2GalleryMissing = !user.partner2?.gallery
+        || !user.partner2.gallery.url;
+
+    return !user.ageVerify
+        || !user.roles
+        || !user.rolesIds
+        || user.membershipExpiresAt === undefined
+        || (user as any).membershipEndDate === undefined
+        || partner1GalleryMissing
+        || partner2GalleryMissing;
+}
+
+async function getCachedHydratedUser(
+    userId: string,
+    cache?: Map<string, Promise<I_User | null>>,
+): Promise<I_User | null> {
+    const cachedUser = cache?.get(userId);
+    if (cachedUser) {
+        return cachedUser;
+    }
+
+    const loadUserPromise = (async () => {
+        try {
+            const userResult = await mongooseCtr.findOne(
+                { id: userId },
+                {
+                    id: 1,
+                    roles: 1,
+                    rolesIds: 1,
+                    ageVerify: 1,
+                    membershipExpiresAt: 1,
+                    membershipEndDate: 1,
+                    partner1: 1,
+                    partner2: 1,
+                } as any,
+                undefined,
+                [
+                    { path: 'ageVerify' },
+                    { path: 'roles' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+
+            if (!userResult.success || !userResult.result) {
+                return null;
+            }
+
+            return userResult.result;
+        }
+        catch {
+            return null;
+        }
+    })();
+
+    cache?.set(userId, loadUserPromise);
+    return loadUserPromise;
+}
+
+async function resolveViewerMediaContext(
+    context: I_Context,
+    options: I_TransformMessageMediaOptions,
+): Promise<{
+    viewer: I_User | null;
+    sessionUser: I_User | null;
+    viewerMediaOptions: I_HydrateUserMediaOptions;
+}> {
+    let viewer = options.viewer;
+    if (viewer === undefined) {
+        try {
+            viewer = await authnCtr.getUserFromSession(context);
+        }
+        catch {
+            viewer = null;
+        }
+        options.viewer = viewer ?? null;
+    }
+
+    let sessionUser = options.sessionUser;
+    if (sessionUser === undefined) {
+        if (viewer?.id) {
+            sessionUser = await getCachedHydratedUser(
+                viewer.id,
+                options.userHydrationCache,
+            );
+        }
+        else {
+            sessionUser = null;
+        }
+        options.sessionUser = sessionUser ?? null;
+    }
+
+    const baseViewer = sessionUser ?? viewer ?? null;
+    const viewerMediaOptions = options.viewerMediaOptions
+        ?? getViewerMediaContext(baseViewer).mediaOptions;
+
+    options.viewerMediaOptions = viewerMediaOptions;
+
+    return {
+        viewer: viewer ?? null,
+        sessionUser: sessionUser ?? null,
+        viewerMediaOptions,
+    };
+}
+
+async function resolveMessageSender(
+    sender: I_Message['sender'] | undefined,
+    senderId: string | undefined,
+    options: I_TransformMessageMediaOptions,
+    forcePopulate = false,
+): Promise<I_Message['sender'] | undefined> {
+    const plainSender = sender ? toPlain(sender) : undefined;
+    const effectiveSenderId = plainSender?.id || senderId;
+
+    if (!effectiveSenderId) {
+        return plainSender;
+    }
+
+    if (!forcePopulate && !userNeedsMediaHydration(plainSender as Partial<I_User> | null | undefined)) {
+        return plainSender;
+    }
+
+    const hydratedSender = await getCachedHydratedUser(
+        effectiveSenderId,
+        options.userHydrationCache,
+    );
+
+    if (!hydratedSender) {
+        return plainSender;
+    }
+
+    if (!plainSender) {
+        return hydratedSender;
+    }
+
+    return {
+        ...plainSender,
+        ...hydratedSender,
+        partner1: hydratedSender.partner1 || plainSender.partner1,
+        partner2: hydratedSender.partner2 || plainSender.partner2,
+    } as I_Message['sender'];
+}
 
 function toPlain<T>(input: T): T {
     if (hasToObject(input)) {
@@ -149,10 +314,7 @@ export async function removeMessageMedia(context: I_Context, message: I_Message)
 export async function transformMessageMedia(
     context: I_Context,
     message: I_Message | null | undefined,
-    options?: {
-        activeKeywords?: any[];
-        approveLogs?: any[];
-    },
+    options?: I_TransformMessageMediaOptions,
 ): Promise<I_Message | null | undefined> {
     if (!message)
         return message;
@@ -161,56 +323,15 @@ export async function transformMessageMedia(
     if (!plainMessage)
         return plainMessage;
 
+    const transformOptions = options ?? {};
+
     const content = plainMessage.content ? { ...plainMessage.content } : undefined;
+    let sender = plainMessage.sender ? toPlain(plainMessage.sender) : undefined;
 
-    // Get viewer once for use in multiple checks
-    let viewer = null;
-    let sessionUser: any = null;
-    try {
-        viewer = await authnCtr.getUserFromSession(context);
-
-        // Fetch full session user data with roles and ageVerify for media hydration
-        if (viewer?.id) {
-            const sessionUserPopulated = await mongooseCtr.findOne(
-                { id: viewer.id },
-                {
-                    id: 1,
-                    roles: 1,
-                    rolesIds: 1,
-                    ageVerify: 1,
-                    membershipExpiresAt: 1,
-                    membershipEndDate: 1,
-                    partner1: 1,
-                    partner2: 1,
-                } as any,
-                undefined,
-                [
-                    { path: 'roles' },
-                    { path: 'ageVerify' },
-                    {
-                        path: 'partner1',
-                        populate: [{ path: 'gallery' }],
-                    },
-                    {
-                        path: 'partner2',
-                        populate: [{ path: 'gallery' }],
-                    },
-                ],
-            );
-            if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                sessionUser = sessionUserPopulated.result;
-            }
-            else {
-                sessionUser = viewer;
-            }
-        }
-    }
-    catch {
-        viewer = null;
-        sessionUser = null;
-    }
-
-    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+    const { viewer, sessionUser, viewerMediaOptions } = await resolveViewerMediaContext(
+        context,
+        transformOptions,
+    );
 
     if (content?.type === E_MessageType.VIDEO) {
         // Re-sign video URL with current viewer's IP to avoid 403 errors
@@ -258,34 +379,17 @@ export async function transformMessageMedia(
         }
     }
     else if (content?.type === E_MessageType.IMAGE) {
+        sender = await resolveMessageSender(
+            sender,
+            plainMessage.senderId,
+            transformOptions,
+            true,
+        );
+
         if (typeof content.value === 'string' && content.value) {
-            // Get sender and ensure it has ageVerify and roles populated
-            let sender = plainMessage.sender;
-
-            // Populate sender if needed
-            if (sender && (!sender.ageVerify || !sender.roles)) {
-                try {
-                    const senderPopulated = await userCtr.getUser(context as any, {
-                        filter: { id: sender.id || plainMessage.senderId },
-                        projection: { ageVerify: 1, roles: 1, membershipEndDate: 1 },
-                    });
-                    if (senderPopulated.success && senderPopulated.result) {
-                        sender = {
-                            ...sender,
-                            ageVerify: senderPopulated.result.ageVerify,
-                            roles: senderPopulated.result.roles,
-                            membershipEndDate: (senderPopulated.result as any).membershipEndDate,
-                        } as any;
-                    }
-                }
-                catch {
-                    // If fetch fails, continue with existing sender data
-                }
-            }
-
             const senderAgeVerified = sender?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            const viewerId = viewer?.id;
-            const senderId = plainMessage.senderId;
+            const viewerId = viewer?.id ?? sessionUser?.id;
+            const senderId = plainMessage.senderId ?? sender?.id;
             const isOwner = viewerId && senderId && viewerId === senderId;
 
             // Check if viewer is staff/admin
@@ -434,92 +538,21 @@ export async function transformMessageMedia(
     }
 
     // Transform sender avatar using hydrateUserMedia
-    // Handle both Mongoose Document and plain object
-    let sender = plainMessage.sender;
     if (sender) {
         try {
-            // Transform sender avatars (partner1 and partner2)
-            const plainSender = (sender as any).toObject ? (sender as any).toObject() : sender;
-            let transformedSender = { ...plainSender };
+            sender = await resolveMessageSender(
+                sender,
+                plainMessage.senderId,
+                transformOptions,
+            );
 
-            // Ensure ageVerify, roles, and galleries are populated for blur logic to work correctly
-            // Always check if galleries are missing, even if other fields are present
-            // Check if gallery objects exist but are null (not populated) or if gallery.url is missing
-            const partner1GalleryMissing = !transformedSender.partner1?.gallery
-                || (transformedSender.partner1?.gallery && !transformedSender.partner1.gallery.url);
-            const partner2GalleryMissing = !transformedSender.partner2?.gallery
-                || (transformedSender.partner2?.gallery && !transformedSender.partner2.gallery.url);
-
-            const needsPopulate = !transformedSender.ageVerify
-                || !transformedSender.roles
-                || !transformedSender.rolesIds
-                || transformedSender.membershipExpiresAt === undefined
-                || (transformedSender as any).membershipEndDate === undefined
-                || partner1GalleryMissing
-                || partner2GalleryMissing;
-
-            if (needsPopulate && transformedSender.id) {
-                try {
-                    const mongooseCtr = new MongooseController(UserModel);
-                    const senderPopulated = await mongooseCtr.findOne(
-                        { id: transformedSender.id },
-                        {
-                            id: 1,
-                            roles: 1,
-                            rolesIds: 1,
-                            ageVerify: 1,
-                            membershipExpiresAt: 1,
-                            membershipEndDate: 1,
-                            partner1: 1,
-                            partner2: 1,
-                        } as any,
-                        undefined,
-                        [
-                            { path: 'ageVerify' },
-                            { path: 'roles' },
-                            {
-                                path: 'partner1',
-                                populate: [{ path: 'gallery' }],
-                            },
-                            {
-                                path: 'partner2',
-                                populate: [{ path: 'gallery' }],
-                            },
-                        ],
-                    );
-                    if (senderPopulated.success && senderPopulated.result) {
-                        // Merge ageVerify, roles, and galleries into sender
-                        // Always use populated galleries if available, otherwise keep existing
-                        // Prioritize populated data to ensure gallery.url is correctly populated
-                        const populatedPartner1 = senderPopulated.result.partner1;
-                        const populatedPartner2 = senderPopulated.result.partner2;
-
-                        transformedSender = {
-                            ...transformedSender,
-                            ageVerify: senderPopulated.result.ageVerify || transformedSender.ageVerify,
-                            roles: senderPopulated.result.roles || transformedSender.roles,
-                            membershipEndDate: (senderPopulated.result as any).membershipEndDate || (transformedSender as any).membershipEndDate,
-                            // Use populated partner if it has gallery with URL, otherwise keep existing
-                            partner1: (populatedPartner1?.gallery?.url)
-                                ? populatedPartner1
-                                : (transformedSender.partner1?.gallery?.url
-                                        ? transformedSender.partner1
-                                        : populatedPartner1 || transformedSender.partner1),
-                            partner2: (populatedPartner2?.gallery?.url)
-                                ? populatedPartner2
-                                : (transformedSender.partner2?.gallery?.url
-                                        ? transformedSender.partner2
-                                        : populatedPartner2 || transformedSender.partner2),
-                        };
-                    }
-                }
-                catch {
-                    // If fetch fails, continue with existing sender data
-                }
-            }
+            const plainSender = sender ? toPlain(sender) : sender;
+            const transformedSender = plainSender ? { ...plainSender } : plainSender;
 
             // Use hydrateUserMedia to apply proper blur/default image logic
-            hydrateUserMedia(transformedSender, viewerMediaOptions);
+            if (transformedSender) {
+                hydrateUserMedia(transformedSender, viewerMediaOptions);
+            }
 
             sender = transformedSender as typeof sender;
         }
@@ -569,10 +602,17 @@ export async function transformMessagesPagingResult(context: I_Context, result: 
 
     const activeKeywords = activeKeywordsRes.success && Array.isArray(activeKeywordsRes.result) ? activeKeywordsRes.result : undefined;
     const approveLogs = approveLogsRes.success && approveLogsRes.result?.docs ? approveLogsRes.result.docs : undefined;
+    const sharedTransformOptions: I_TransformMessageMediaOptions = {
+        activeKeywords,
+        approveLogs,
+        userHydrationCache: new Map<string, Promise<I_User | null>>(),
+    };
+
+    await resolveViewerMediaContext(context, sharedTransformOptions);
 
     const docs = await Promise.all(
         (result.result.docs || []).map(async message =>
-            await transformMessageMedia(context, message, { activeKeywords, approveLogs }) ?? message,
+            await transformMessageMedia(context, message, sharedTransformOptions) ?? message,
         ),
     );
 

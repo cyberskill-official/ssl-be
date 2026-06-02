@@ -102,3 +102,8 @@ export const GalleryModel = mongo.createModel<I_Gallery>({
         },
     ],
 });
+
+GalleryModel.schema.index(
+    { uploadedById: 1, type: 1, status: 1, isDel: 1, createdAt: -1 },
+    { name: 'idx_galleries_dashboard_media_lookup' },
+);

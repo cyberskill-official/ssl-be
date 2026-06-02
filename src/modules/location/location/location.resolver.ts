@@ -40,6 +40,8 @@ const locationResolver = {
         getLocation: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryLocation>, context: I_Context) => locationCtr.getLocation(context, args),
         getLocations: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryLocation>, context: I_Context) => locationCtr.getLocations(context, args),
         getLocationsInViewport: (_parent: unknown, args: I_Input_FindPaging<I_Input_GetLocationInViewport>, context: I_Context) => locationCtr.getLocationsInViewport(context, args),
+        getDashboardProfilesInViewport: (_parent: unknown, args: I_Input_FindPaging<I_Input_GetLocationInViewport>, context: I_Context) => locationCtr.getDashboardProfilesInViewport(context, args),
+        getDashboardEventsInViewport: (_parent: unknown, args: I_Input_FindPaging<I_Input_GetLocationInViewport>, context: I_Context) => locationCtr.getDashboardEventsInViewport(context, args),
         getLocationsInViewportMap: (_parent: unknown, args: I_Input_FindPaging<I_Input_GetLocationInViewport>, context: I_Context) => locationCtr.getLocationsInViewportMap(context, args),
     },
 };

@@ -14,6 +14,7 @@ import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isValidObjectId, Types } from 'mongoose';
 
+import type { I_Location } from '#modules/location/location/location.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
@@ -22,6 +23,8 @@ import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
+import { LocationModel } from '#modules/location/location/location.model.js';
+import { E_LocationEntityType } from '#modules/location/location/location.type.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import { userCtr } from '#modules/user/index.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
@@ -33,6 +36,7 @@ import { getBlockedUserIds } from '#shared/util/index.js';
 import type {
     I_Gallery,
     I_Input_CreateGallery,
+    I_Input_QueryDashboardGalleryInViewport,
     I_Input_QueryGallery,
     I_Input_QueryGalleryByUserId,
     I_Input_UpdateGallery,
@@ -45,10 +49,90 @@ import { assertCanUploadVideo, isUploaderAgeVerified, notifyGalleryFollowersOnPu
 const env = getEnv();
 
 const mongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
+const locationMongooseCtr = new MongooseController<I_Location>(LocationModel);
 
 type CreateGalleryInput = I_Input_CreateOne<I_Input_CreateGallery> & {
     bypassAgeVerification?: boolean;
 };
+
+function buildEmptyGalleryPage(page: number, limit: number): T_PaginateResult<I_Gallery> {
+    return {
+        docs: [],
+        totalDocs: 0,
+        limit,
+        totalPages: 0,
+        page,
+        pagingCounter: 0,
+        hasPrevPage: false,
+        hasNextPage: false,
+        prevPage: null,
+        nextPage: null,
+        offset: 0,
+    };
+}
+
+async function attachUploaderLocationsToGalleries(galleries: I_Gallery[]) {
+    const locationIds = Array.from(
+        new Set(
+            galleries.flatMap((gallery) => {
+                const uploadedBy = gallery.uploadedBy;
+                if (!uploadedBy) {
+                    return [];
+                }
+
+                return [
+                    uploadedBy.partner1?.locationId,
+                    uploadedBy.partner2?.locationId,
+                ].filter(
+                    (locationId): locationId is string =>
+                        typeof locationId === 'string' && locationId.trim().length > 0,
+                );
+            }),
+        ),
+    );
+
+    if (!locationIds.length) {
+        return;
+    }
+
+    const locationsResult = await locationMongooseCtr.findPaging(
+        { id: { $in: locationIds } } as T_QueryFilter<I_Location>,
+        {
+            pagination: false,
+            limit: locationIds.length,
+            populate: [
+                { path: 'country' },
+                { path: 'city' },
+            ],
+        },
+    );
+
+    if (!locationsResult.success || !locationsResult.result) {
+        return;
+    }
+
+    const locationById = new Map<string, I_Location>();
+    for (const location of locationsResult.result.docs ?? []) {
+        if (location?.id) {
+            locationById.set(location.id, location);
+        }
+    }
+
+    galleries.forEach((gallery) => {
+        const uploadedBy = gallery.uploadedBy;
+        if (!uploadedBy) {
+            return;
+        }
+
+        if (uploadedBy.partner1?.locationId) {
+            uploadedBy.partner1.location = locationById.get(uploadedBy.partner1.locationId);
+        }
+
+        if (uploadedBy.partner2?.locationId) {
+            uploadedBy.partner2.location = locationById.get(uploadedBy.partner2.locationId);
+        }
+    });
+}
 
 export const galleryCtr = {
     /**
@@ -668,6 +752,98 @@ export const galleryCtr = {
                 sort: { createdAt: -1, ...(sortOptions ?? {}) },
             },
         });
+    },
+
+    getDashboardGalleriesInViewport: async (
+        context: I_Context,
+        args: {
+            filter: I_Input_QueryDashboardGalleryInViewport;
+            options?: I_Input_FindPaging<I_Input_QueryGallery>;
+        },
+    ): Promise<I_Return<T_PaginateResult<I_Gallery>>> => {
+        const { filter, options } = args;
+
+        if (
+            !filter
+            || typeof filter.southWestLatitude !== 'number'
+            || typeof filter.southWestLongitude !== 'number'
+            || typeof filter.northEastLatitude !== 'number'
+            || typeof filter.northEastLongitude !== 'number'
+            || !filter.type
+        ) {
+            throwError({
+                message: 'Filter (southWestLatitude, southWestLongitude, northEastLatitude, northEastLongitude, type) is required.',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const pagingOptions = options ?? {};
+        const { limit = 0, page = 1, sort: sortOptions } = pagingOptions as {
+            limit?: number;
+            page?: number;
+            sort?: Record<string, unknown>;
+        };
+
+        const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+        const locationFilter: T_QueryFilter<I_Location> = {
+            'entityType': E_LocationEntityType.USER,
+            'map.latitude': {
+                $gte: filter.southWestLatitude,
+                $lte: filter.northEastLatitude,
+            },
+            ...(crossesAntimeridian
+                ? {
+                        $or: [
+                            { 'map.longitude': { $gte: filter.southWestLongitude } },
+                            { 'map.longitude': { $lte: filter.northEastLongitude } },
+                        ],
+                    }
+                : {
+                        'map.longitude': {
+                            $gte: filter.southWestLongitude,
+                            $lte: filter.northEastLongitude,
+                        },
+                    }),
+        };
+
+        const viewportUserIdsResult = await locationMongooseCtr.distinct('entityId', locationFilter);
+        if (!viewportUserIdsResult.success) {
+            throwError({
+                message: viewportUserIdsResult.message || 'Failed to load viewport users for dashboard galleries.',
+                status: RESPONSE_STATUS.INTERNAL_SERVER_ERROR,
+            });
+        }
+
+        const viewportUserIds = (viewportUserIdsResult.result ?? []).filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0,
+        );
+
+        if (!viewportUserIds.length) {
+            return {
+                success: true,
+                message: 'No galleries found for provided viewport.',
+                result: buildEmptyGalleryPage(page, limit),
+            };
+        }
+
+        const galleriesResult = await galleryCtr.getGalleriesByUserIds(context, {
+            filter: {
+                userIds: viewportUserIds,
+                type: filter.type,
+                status: E_ModerationMediaStatus.APPROVED,
+                isDel: false,
+            },
+            options: {
+                ...pagingOptions,
+                sort: { createdAt: -1, ...(sortOptions ?? {}) },
+            } as I_Input_FindPaging<I_Input_QueryGallery>,
+        });
+
+        if (galleriesResult.success && galleriesResult.result?.docs?.length) {
+            await attachUploaderLocationsToGalleries(galleriesResult.result.docs);
+        }
+
+        return galleriesResult;
     },
 
     createGallery: async (

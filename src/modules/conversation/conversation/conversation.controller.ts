@@ -65,6 +65,7 @@ import type {
 
 import { messageStatusCtr } from '../message-status/index.js';
 import { E_MessageType, messageCtr } from '../message/index.js';
+import { MessageModel } from '../message/message.model.js';
 import { transformMessageMedia } from '../message/message.util.js';
 import { E_ParticipantRole, participantCtr, ParticipantModel } from '../participant/index.js';
 import { ConversationModel } from './conversation.model.js';
@@ -1934,8 +1935,8 @@ export const conversationCtr = {
 
             const conversation = conversationResult.result;
 
-            const participantResult = await participantCtr.getParticipant(context, { filter: { conversationId, userId } });
-            if (!participantResult.success || !participantResult.result) {
+            const participant = conversation.participants?.find(p => p.userId === userId);
+            if (!participant) {
                 throwError({
                     message: 'You are not a participant in this conversation',
                     status: RESPONSE_STATUS.FORBIDDEN,
@@ -1964,16 +1965,14 @@ export const conversationCtr = {
                     });
             }
 
-            const messagesResult = await messageCtr.getMessages(context, {
-                filter: { conversationId },
-                options: {
-                    pagination: false,
-                    projection: { id: 1, senderId: 1, createdAt: 1 },
-                    sort: { createdAt: 1 },
-                },
-            });
+            const messages = await MessageModel.find(
+                { conversationId },
+                { id: 1, senderId: 1, createdAt: 1 },
+            )
+                .sort({ createdAt: 1 })
+                .lean();
 
-            if (!messagesResult.success || messagesResult.result.docs.length === 0) {
+            if (messages.length === 0) {
                 return {
                     success: true,
                     message: 'No messages to mark as read',
@@ -1981,7 +1980,6 @@ export const conversationCtr = {
                 };
             }
 
-            const messages = messagesResult.result.docs;
             const idsToMark = messages
                 .filter(m => m.senderId !== userId && !!m.id)
                 .map(m => m.id);

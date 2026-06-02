@@ -6,6 +6,7 @@ import type {
 import type { I_Context } from '#shared/typescript/index.js';
 
 import type {
+    I_Input_QueryDashboardGalleryInViewport,
     I_Input_QueryGallery,
 } from './gallery.type.js';
 
@@ -22,6 +23,11 @@ const galleryResolver = {
             args: { filter: I_Input_QueryGallery; options?: I_Input_FindPaging<I_Input_QueryGallery> },
             context: I_Context,
         ) => galleryCtr.getGalleriesByUserIds(context, args),
+        getDashboardGalleriesInViewport: (
+            _parent: unknown,
+            args: { filter: I_Input_QueryDashboardGalleryInViewport; options?: I_Input_FindPaging<I_Input_QueryGallery> },
+            context: I_Context,
+        ) => galleryCtr.getDashboardGalleriesInViewport(context, args),
 
     },
     Mutation: {

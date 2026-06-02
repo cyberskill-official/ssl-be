@@ -158,3 +158,8 @@ export const NotificationModel = mongo.createModel<I_Notification>({
         },
     ],
 });
+
+NotificationModel.schema.index(
+    { targetId: 1, status: 1, dismissedAt: 1, entityType: 1, type: 1, channels: 1 },
+    { name: 'idx_notifications_unread_counters' },
+);

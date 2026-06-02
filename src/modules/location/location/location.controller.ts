@@ -12,8 +12,9 @@ import type { I_Return } from '@cyberskill/shared/typescript';
 import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
+import process from 'node:process';
 
 import type { I_Destination } from '#modules/destination/destination.type.js';
 import type { I_Event } from '#modules/event/index.js';
@@ -23,8 +24,10 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, cleanFullUrl } from '#modules/bunny/index.js';
+import { DestinationModel } from '#modules/destination/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
-import { eventCtr } from '#modules/event/index.js';
+import { eventCtr, EventModel } from '#modules/event/index.js';
+import { UserModel } from '#modules/user/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
@@ -43,10 +46,130 @@ import { LocationModel } from './location.model.js';
 import { E_LocationEntityType, E_User_PinStyle } from './location.type.js';
 
 const mongooseCtr = new MongooseController<I_Location>(LocationModel);
+const userMongooseCtr = new MongooseController<I_User>(UserModel);
+const eventMongooseCtr = new MongooseController<I_Event>(EventModel);
+const destinationMongooseCtr = new MongooseController<I_Destination>(DestinationModel);
 
 const USER_PIN_STYLE_VALUES = new Set<E_User_PinStyle>(
     Object.values(E_User_PinStyle) as E_User_PinStyle[],
 );
+
+const MAP_VIEWPORT_UNPAGINATED_CHUNK_SIZE = 1000;
+const MAP_EVENT_OWNER_SELECT = 'id isDel isAdminBlocked';
+const MAP_EVENT_INJECTION_LOCATION_SELECT = 'id map pinStyle';
+const MAP_USER_ENTITY_PROJECTION = {
+    id: 1,
+    username: 1,
+    isDel: 1,
+    isAdminBlocked: 1,
+    registerStep: 1,
+    accountType: 1,
+    isOnline: 1,
+    hasUpcomingEvent: 1,
+    partner1: 1,
+    partner2: 1,
+    settings: 1,
+};
+const MAP_EVENT_ENTITY_PROJECTION = {
+    id: 1,
+    title: 1,
+    isDel: 1,
+    createdById: 1,
+    type: 1,
+    endDate: 1,
+    isAdminBlocked: 1,
+};
+const MAP_DESTINATION_ENTITY_PROJECTION = {
+    id: 1,
+    name: 1,
+    isDel: 1,
+    createdById: 1,
+    isActive: 1,
+};
+const DASHBOARD_PROFILE_ENTITY_SELECT = [
+    'id',
+    'isDel',
+    'isAdminBlocked',
+    'registerStep',
+    'username',
+    'accountType',
+    'isOnline',
+    'membershipExpiresAt',
+    'followerCount',
+    'ageVerify',
+    'partner1',
+    'partner2',
+    'lookingFor',
+    'profilePurpose',
+    'settings',
+].join(' ');
+const DASHBOARD_PROFILE_PARTNER_SELECT = 'dateOfBirth galleryId locationId';
+const DASHBOARD_PROFILE_LOCATION_SELECT = 'id cityId countryId';
+const DASHBOARD_PROFILE_LOCATION_POPULATE: PopulateOptions[] = [
+    { path: 'city', select: 'name' },
+    { path: 'country', select: 'name' },
+];
+const DASHBOARD_EVENT_DEFAULT_LIMIT = 20;
+const DASHBOARD_EVENT_MAX_LIMIT = 50;
+const DASHBOARD_EVENT_MAX_SCAN_LIMIT = 250;
+const DASHBOARD_EVENT_LOCATION_SELECT = 'id countryId cityId map';
+const DASHBOARD_EVENT_OWNER_SELECT = 'id username accountType ageVerify partner1 partner2 isDel isAdminBlocked';
+const DASHBOARD_EVENT_PARTNER1_SELECT = 'dateOfBirth gender galleryId';
+const DASHBOARD_EVENT_PARTNER2_SELECT = 'dateOfBirth galleryId';
+const DASHBOARD_EVENT_ENTITY_PROJECTION = {
+    id: 1,
+    isDel: 1,
+    createdAt: 1,
+    type: 1,
+    title: 1,
+    slug: 1,
+    description: 1,
+    startDate: 1,
+    endDate: 1,
+    image: 1,
+    startTime: 1,
+    endTime: 1,
+    locationId: 1,
+    fee: 1,
+    currency: 1,
+    createdById: 1,
+    isActive: 1,
+};
+const DASHBOARD_EVENT_LOCATION_PROJECTION = {
+    id: 1,
+    entityId: 1,
+    entityType: 1,
+    map: 1,
+    isDel: 1,
+    createdAt: 1,
+};
+const DASHBOARD_EVENT_POPULATE: PopulateOptions[] = [
+    {
+        path: 'createdBy',
+        select: DASHBOARD_EVENT_OWNER_SELECT,
+        populate: [
+            { path: 'ageVerify', select: 'status' },
+            {
+                path: 'partner1',
+                select: DASHBOARD_EVENT_PARTNER1_SELECT,
+                populate: [{ path: 'gallery', select: 'url' }],
+            },
+            {
+                path: 'partner2',
+                select: DASHBOARD_EVENT_PARTNER2_SELECT,
+                populate: [{ path: 'gallery', select: 'url' }],
+            },
+        ],
+    },
+    {
+        path: 'location',
+        select: DASHBOARD_EVENT_LOCATION_SELECT,
+        populate: [
+            { path: 'country', select: 'name iso2 emoji' },
+            { path: 'city', select: 'name' },
+        ],
+    },
+];
 
 export function resolveUserPinStyle(user?: I_User | null): E_User_PinStyle {
     if (!user) {
@@ -134,6 +257,261 @@ function dedupeUserLocationDocs(docs: I_Location[]): I_Location[] {
 
     const bestUserDocs = Array.from(perUserBest.values()).map(v => v.doc);
     return [...nonUserDocs, ...bestUserDocs];
+}
+
+async function hydrateMapViewportEntities(docs: I_Location[]): Promise<I_Location[]> {
+    const userIds = new Set<string>();
+    const eventIds = new Set<string>();
+    const destinationIds = new Set<string>();
+
+    for (const doc of docs) {
+        if (doc?.entity || !doc?.entityId)
+            continue;
+
+        if (doc.entityType === E_LocationEntityType.USER) {
+            userIds.add(doc.entityId);
+        }
+        else if (doc.entityType === E_LocationEntityType.EVENT) {
+            userIds.delete(doc.entityId);
+            eventIds.add(doc.entityId);
+        }
+        else if (doc.entityType === E_LocationEntityType.DESTINATION) {
+            destinationIds.add(doc.entityId);
+        }
+    }
+
+    const [usersResult, eventsResult, destinationsResult] = await Promise.all([
+        userIds.size > 0
+            ? userMongooseCtr.findAll(
+                    { id: { $in: Array.from(userIds) } } as any,
+                    MAP_USER_ENTITY_PROJECTION as any,
+                    { limit: userIds.size } as any,
+                )
+            : Promise.resolve({ success: true, result: [] as I_User[] }),
+        eventIds.size > 0
+            ? eventMongooseCtr.findAll(
+                    { id: { $in: Array.from(eventIds) } } as any,
+                    MAP_EVENT_ENTITY_PROJECTION as any,
+                    { limit: eventIds.size } as any,
+                )
+            : Promise.resolve({ success: true, result: [] as I_Event[] }),
+        destinationIds.size > 0
+            ? destinationMongooseCtr.findAll(
+                    { id: { $in: Array.from(destinationIds) } } as any,
+                    MAP_DESTINATION_ENTITY_PROJECTION as any,
+                    { limit: destinationIds.size } as any,
+                )
+            : Promise.resolve({ success: true, result: [] as I_Destination[] }),
+    ]);
+
+    const users = usersResult.success ? (usersResult.result ?? []) : [];
+    const rawEvents = eventsResult.success ? (eventsResult.result ?? []) : [];
+    const destinations = destinationsResult.success ? (destinationsResult.result ?? []) : [];
+
+    const eventOwnerIds = Array.from(new Set(rawEvents
+        .map(event => event.createdById)
+        .filter((createdById): createdById is string => typeof createdById === 'string' && createdById.length > 0)));
+
+    const eventOwnersResult = eventOwnerIds.length > 0
+        ? await userMongooseCtr.findAll(
+                { id: { $in: eventOwnerIds } } as any,
+                { id: 1, isDel: 1, isAdminBlocked: 1 } as any,
+                { limit: eventOwnerIds.length } as any,
+            )
+        : { success: true, result: [] as I_User[] };
+
+    const eventOwners = eventOwnersResult.success ? (eventOwnersResult.result ?? []) : [];
+    const eventOwnerMap = new Map<string, I_User>(
+        eventOwners.map((owner: I_User) => [owner.id, owner]),
+    );
+    const events = rawEvents.map((event: I_Event) => {
+        if (!event.createdById)
+            return event;
+
+        return {
+            ...event,
+            createdBy: eventOwnerMap.get(event.createdById),
+        };
+    });
+
+    const userMap = new Map<string, I_User>(users.map((user: I_User) => [user.id, user]));
+    const eventMap = new Map<string, I_Event>(events.map((event: I_Event) => [event.id, event]));
+    const destinationMap = new Map<string, I_Destination>(
+        destinations.map((destination: I_Destination) => [destination.id, destination]),
+    );
+
+    return docs.map((doc) => {
+        if (doc.entity || !doc.entityId)
+            return doc;
+
+        if (doc.entityType === E_LocationEntityType.USER) {
+            const entity = userMap.get(doc.entityId);
+            return entity ? ({ ...doc, entity } as I_Location) : doc;
+        }
+        if (doc.entityType === E_LocationEntityType.EVENT) {
+            const entity = eventMap.get(doc.entityId);
+            return entity ? ({ ...doc, entity } as I_Location) : doc;
+        }
+        if (doc.entityType === E_LocationEntityType.DESTINATION) {
+            const entity = destinationMap.get(doc.entityId);
+            return entity ? ({ ...doc, entity } as I_Location) : doc;
+        }
+
+        return doc;
+    });
+}
+
+async function hydrateViewportDocsForViewer(
+    context: I_Context,
+    docs: I_Location[],
+): Promise<I_Location[]> {
+    let sessionUser: I_User | undefined;
+    try {
+        const viewer = await authnCtr.getUserFromSession(context);
+        if (viewer?.id) {
+            // Fetch full user data with roles/ageVerify/membership to avoid circular dependency.
+            const sessionUserPopulated = await mongooseCtr.findOne(
+                { id: viewer.id },
+                {
+                    id: 1,
+                    roles: 1,
+                    rolesIds: 1,
+                    ageVerify: 1,
+                    membershipExpiresAt: 1,
+                    membershipEndDate: 1,
+                    partner1: 1,
+                    partner2: 1,
+                } as any,
+                undefined,
+                [
+                    { path: 'roles' },
+                    { path: 'ageVerify' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+            if (sessionUserPopulated.success && sessionUserPopulated.result) {
+                sessionUser = sessionUserPopulated.result;
+            }
+            else {
+                sessionUser = viewer;
+            }
+        }
+    }
+    catch {
+        sessionUser = undefined;
+    }
+
+    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+    return docs.map((doc) => {
+        try {
+            const entity = doc.entity as I_User | I_Event | I_Destination;
+            if (!entity)
+                return doc;
+
+            if (doc.entityType === E_LocationEntityType.USER) {
+                hydrateUserMedia(entity as I_User, viewerMediaOptions);
+            }
+
+            if (doc.entityType === E_LocationEntityType.EVENT) {
+                const event = entity as I_Event;
+
+                if (event?.image) {
+                    event.image = bunnyCtr.generateSignedUrl({
+                        fullUrl: event.image,
+                        extraQueryParams: { class: 'normal' },
+                    });
+                }
+
+                try {
+                    const creator = event.createdBy as I_User | undefined;
+                    if (creator) {
+                        hydrateUserMedia(creator, viewerMediaOptions);
+                    }
+                }
+                catch {
+                    // Ignore per-event creator processing errors.
+                }
+            }
+
+            if (doc.entityType === E_LocationEntityType.DESTINATION) {
+                const destination = typeof (entity as any).toObject === 'function'
+                    ? (entity as any).toObject()
+                    : { ...entity } as I_Destination;
+                doc.entity = destination;
+
+                if (Array.isArray(destination.images)) {
+                    destination.images = destination.images.map((url: string) => (viewerMediaOptions.viewerAgeVerified ?? false)
+                        ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(url), extraQueryParams: { class: 'normal' } })
+                        : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(url), extraQueryParams: { class: 'blur' } }));
+                }
+                if (destination.logo) {
+                    destination.logo = (viewerMediaOptions.viewerAgeVerified ?? false)
+                        ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(destination.logo), extraQueryParams: { class: 'normal' } })
+                        : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(destination.logo), extraQueryParams: { class: 'blur' } });
+                }
+                const intro = extractPlainTextFromRichContent(destination.introductionContent);
+                if (intro) {
+                    destination.introductionContentPlain = intro;
+                }
+            }
+        }
+        catch {
+            // Swallow per-doc errors and keep original doc.
+        }
+        return doc;
+    });
+}
+
+async function hydrateDashboardEventDocsForViewer(
+    context: I_Context,
+    docs: I_Location[],
+): Promise<I_Location[]> {
+    let sessionUser = context?.req?.session?.user as I_User | undefined;
+    if (!sessionUser) {
+        try {
+            sessionUser = await authnCtr.getUserFromSession(context);
+        }
+        catch {
+            sessionUser = undefined;
+        }
+    }
+
+    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+
+    return docs.map((doc) => {
+        try {
+            if (doc.entityType !== E_LocationEntityType.EVENT) {
+                return doc;
+            }
+
+            const event = doc.entity as I_Event | undefined;
+            if (!event) {
+                return doc;
+            }
+
+            if (event.image) {
+                event.image = bunnyCtr.generateSignedUrl({
+                    fullUrl: event.image,
+                    extraQueryParams: { class: 'normal' },
+                });
+            }
+
+            hydrateUserMedia(event.createdBy, viewerMediaOptions);
+        }
+        catch {
+            // Keep the original doc if a single media item cannot be hydrated.
+        }
+
+        return doc;
+    });
 }
 
 export const locationCtr = {
@@ -274,26 +652,59 @@ export const locationCtr = {
             baseFilter.entityType = filter.entityType;
         }
 
+        const { dashboardSlim: _dashboardSlim, ...queryOptions } = (options ?? {}) as Record<string, unknown>;
+        const isDashboardEventViewport
+            = _dashboardSlim === true
+                && filter.entityType === E_LocationEntityType.EVENT;
+
         const basePopulate: PopulateOptions[] = [
             { path: 'city' },
             { path: 'country' },
         ];
 
-        const eventPopulate: PopulateOptions[] = [
-            { path: 'createdBy' },
-            {
-                path: 'createdBy',
-                populate: [
-                    { path: 'partner1', populate: [{ path: 'gallery' }] },
-                    { path: 'partner2', populate: ['gallery'] },
-                ],
-            },
-            { path: 'location' },
-            {
-                path: 'location',
-                populate: [{ path: 'country' }, { path: 'city' }],
-            },
-        ];
+        const eventPopulate: PopulateOptions[] = isDashboardEventViewport
+            ? [
+                    {
+                        path: 'createdBy',
+                        select: 'id username accountType ageVerify partner1 partner2 isDel isAdminBlocked',
+                        populate: [
+                            { path: 'ageVerify', select: 'status' },
+                            {
+                                path: 'partner1',
+                                select: 'dateOfBirth gender galleryId',
+                                populate: [{ path: 'gallery', select: 'url' }],
+                            },
+                            {
+                                path: 'partner2',
+                                select: 'dateOfBirth galleryId',
+                                populate: [{ path: 'gallery', select: 'url' }],
+                            },
+                        ],
+                    },
+                    {
+                        path: 'location',
+                        select: 'id countryId cityId map',
+                        populate: [
+                            { path: 'country', select: 'name iso2 emoji' },
+                            { path: 'city', select: 'name' },
+                        ],
+                    },
+                ]
+            : [
+                    { path: 'createdBy' },
+                    {
+                        path: 'createdBy',
+                        populate: [
+                            { path: 'partner1', populate: [{ path: 'gallery' }] },
+                            { path: 'partner2', populate: ['gallery'] },
+                        ],
+                    },
+                    { path: 'location' },
+                    {
+                        path: 'location',
+                        populate: [{ path: 'country' }, { path: 'city' }],
+                    },
+                ];
 
         const userPopulate: PopulateOptions[] = [
             { path: 'ageVerify' }, // Add ageVerify for media hydration
@@ -351,6 +762,11 @@ export const locationCtr = {
             ...basePopulate,
             {
                 path: 'entity',
+                ...(isDashboardEventViewport
+                    ? {
+                            select: 'id isDel createdAt type title slug description startDate endDate image startTime endTime locationId fee currency createdById isActive',
+                        }
+                    : {}),
                 populate: [
                     ...(filter.entityType === E_LocationEntityType.EVENT
                         ? eventPopulate
@@ -373,7 +789,7 @@ export const locationCtr = {
         ];
 
         const pagingResult = await mongooseCtr.findPaging(baseFilter, {
-            ...(options ?? {}),
+            ...queryOptions,
             ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
             populate: populates,
         });
@@ -1087,8 +1503,13 @@ export const locationCtr = {
             return [...nonUser, ...bestUserDocs];
         };
 
-        docs = dedupeFinalDocs(docs);
-        docs = dedupeUserLocationDocs(docs);
+        // The non-paginated map path already resolves one effective doc per user
+        // inside preprocessBatch, so rerunning the final user-dedupe passes just
+        // burns CPU on large viewports without changing the pin set.
+        if (usePagination || filter.entityId) {
+            docs = dedupeFinalDocs(docs);
+            docs = dedupeUserLocationDocs(docs);
+        }
 
         if (filter.entityId) {
             const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
@@ -1125,114 +1546,7 @@ export const locationCtr = {
             docs = docs.slice(0, requestedLimit);
         }
 
-        // --- Post-process: blur or sign media URLs according to viewer age verification ---
-        // Get viewer context for media hydration
-        let sessionUser: I_User | undefined;
-        try {
-            const viewer = await authnCtr.getUserFromSession(context);
-            if (viewer?.id) {
-                // Fetch full user data with roles/ageVerify/membership to avoid circular dependency
-                const sessionUserPopulated = await mongooseCtr.findOne(
-                    { id: viewer.id },
-                    {
-                        id: 1,
-                        roles: 1,
-                        rolesIds: 1,
-                        ageVerify: 1,
-                        membershipExpiresAt: 1,
-                        membershipEndDate: 1,
-                        partner1: 1,
-                        partner2: 1,
-                    } as any,
-                    undefined,
-                    [
-                        { path: 'roles' },
-                        { path: 'ageVerify' },
-                        {
-                            path: 'partner1',
-                            populate: [{ path: 'gallery' }],
-                        },
-                        {
-                            path: 'partner2',
-                            populate: [{ path: 'gallery' }],
-                        },
-                    ],
-                );
-                if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                    sessionUser = sessionUserPopulated.result;
-                }
-                else {
-                    sessionUser = viewer;
-                }
-            }
-        }
-        catch {
-            sessionUser = undefined;
-        }
-
-        const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
-
-        docs = docs.map((d) => {
-            try {
-                const e = d.entity as I_User | I_Event | I_Destination;
-                if (!e)
-                    return d;
-
-                // USER entity: hydrate user media (blur/sign/default based on age verification)
-                if (d.entityType === E_LocationEntityType.USER) {
-                    const user = e as I_User;
-                    hydrateUserMedia(user, viewerMediaOptions);
-                }
-
-                // EVENT entity: blur event image
-                if (d.entityType === E_LocationEntityType.EVENT) {
-                    const ev = e as I_Event;
-
-                    if (ev?.image) {
-                        ev.image = bunnyCtr.generateSignedUrl({
-                            fullUrl: ev.image,
-                            extraQueryParams: { class: 'normal' },
-                        });
-                    }
-                    // Also ensure event creator's avatar/gallery respects age verification rules
-                    try {
-                        const creator = ev.createdBy as I_User | undefined;
-                        if (creator) {
-                            hydrateUserMedia(creator, viewerMediaOptions);
-                        }
-                    }
-                    catch {
-                        // ignore per-event creator processing errors
-                    }
-                }
-
-                // DESTINATION entity: blur images/logo if present
-                if (d.entityType === E_LocationEntityType.DESTINATION) {
-                    // Clone the entity to prevent in-place cache poisoning
-                    const dest = typeof (e as any).toObject === 'function' ? (e as any).toObject() : { ...e } as I_Destination;
-                    d.entity = dest;
-
-                    if (Array.isArray(dest.images)) {
-                        dest.images = dest.images.map((u: string) => (viewerMediaOptions.viewerAgeVerified ?? false)
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(u), extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(u), extraQueryParams: { class: 'blur' } }));
-                    }
-                    if (dest.logo) {
-                        dest.logo = (viewerMediaOptions.viewerAgeVerified ?? false)
-                            ? bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(dest.logo), extraQueryParams: { class: 'normal' } })
-                            : bunnyCtr.generateBlurredUrl({ fullUrl: cleanFullUrl(dest.logo), extraQueryParams: { class: 'blur' } });
-                    }
-                    const intro = extractPlainTextFromRichContent(dest.introductionContent);
-                    if (intro) {
-                        dest.introductionContentPlain = intro;
-                    }
-                }
-            }
-            catch {
-                // swallow per-doc errors and return original doc
-            }
-            return d;
-        });
+        docs = await hydrateViewportDocsForViewer(context, docs);
 
         // --- điều chỉnh metadata paging sau khi post-process docs ---
         const pageSize = requestedLimit as number;
@@ -1269,6 +1583,452 @@ export const locationCtr = {
 
         return { success: true, result: adjustedPagingResult };
     },
+    getDashboardEventsInViewport: async (
+        context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
+    ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+        if (
+            !filter
+            || typeof filter.southWestLatitude !== 'number'
+            || typeof filter.southWestLongitude !== 'number'
+            || typeof filter.northEastLatitude !== 'number'
+            || typeof filter.northEastLongitude !== 'number'
+        ) {
+            throwError({
+                message: 'Filter (southWestLatitude, southWestLongitude, northEastLatitude, northEastLongitude) must be numbers',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const requestedLimit = Math.min(
+            Math.max(
+                typeof options?.limit === 'number' && options.limit > 0
+                    ? Math.trunc(options.limit)
+                    : DASHBOARD_EVENT_DEFAULT_LIMIT,
+                1,
+            ),
+            DASHBOARD_EVENT_MAX_LIMIT,
+        );
+        const scanLimit = Math.min(
+            Math.max(requestedLimit * 5, requestedLimit + 20),
+            DASHBOARD_EVENT_MAX_SCAN_LIMIT,
+        );
+        const now = new Date();
+        const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+        const locationBoundsFilter: T_QueryFilter<I_Location> = {
+            'map.latitude': {
+                $gte: filter.southWestLatitude,
+                $lte: filter.northEastLatitude,
+            },
+            ...(crossesAntimeridian
+                ? {
+                        $or: [
+                            { 'map.longitude': { $gte: filter.southWestLongitude } },
+                            { 'map.longitude': { $lte: filter.northEastLongitude } },
+                        ],
+                    }
+                : {
+                        'map.longitude': {
+                            $gte: filter.southWestLongitude,
+                            $lte: filter.northEastLongitude,
+                        },
+                    }),
+        };
+
+        const eventLocationFilter: T_QueryFilter<I_Location> = {
+            ...locationBoundsFilter,
+            entityType: E_LocationEntityType.EVENT,
+            isDel: { $ne: true },
+        };
+
+        const shouldInjectClubVisits
+            = !filter.eventType || filter.eventType === E_EventType.CLUB_VISIT;
+        const locationSort = typeof options?.sort === 'object' && options.sort
+            ? options.sort
+            : { createdAt: -1 };
+
+        const [eventLocationsResult, destinationIdsResult] = await Promise.all([
+            mongooseCtr.findAll(
+                eventLocationFilter,
+                DASHBOARD_EVENT_LOCATION_PROJECTION,
+                {
+                    limit: scanLimit,
+                    sort: locationSort,
+                } as any,
+            ),
+            shouldInjectClubVisits
+                ? mongooseCtr.distinct('id', {
+                        ...locationBoundsFilter,
+                        entityType: E_LocationEntityType.DESTINATION,
+                        isDel: { $ne: true },
+                    } as any)
+                : Promise.resolve({ success: true, result: [] as unknown[] }),
+        ]);
+
+        if (!eventLocationsResult.success || !eventLocationsResult.result) {
+            return eventLocationsResult as unknown as I_Return<T_PaginateResult<I_Location>>;
+        }
+
+        const eventLocations = eventLocationsResult.result ?? [];
+        const directEventIds = Array.from(new Set(
+            eventLocations
+                .map(location => location.entityId)
+                .filter((entityId): entityId is string => typeof entityId === 'string' && entityId.length > 0),
+        ));
+        const destinationLocationIds = destinationIdsResult.success
+            ? (destinationIdsResult.result ?? []).filter(
+                    (locationId): locationId is string => typeof locationId === 'string' && locationId.length > 0,
+                )
+            : [];
+
+        const eventOrFilters: Record<string, unknown>[] = [];
+        if (directEventIds.length > 0) {
+            eventOrFilters.push({ id: { $in: directEventIds } });
+        }
+        if (shouldInjectClubVisits && destinationLocationIds.length > 0) {
+            eventOrFilters.push({
+                type: E_EventType.CLUB_VISIT,
+                locationId: { $in: destinationLocationIds },
+            });
+        }
+
+        const emptyResult = {
+            docs: [],
+            totalDocs: 0,
+            limit: requestedLimit,
+            totalPages: 1,
+            page: 1,
+            pagingCounter: 0,
+            hasPrevPage: false,
+            hasNextPage: false,
+            prevPage: null,
+            nextPage: null,
+            offset: 0,
+        } as T_PaginateResult<I_Location>;
+
+        if (eventOrFilters.length === 0) {
+            return {
+                success: true,
+                result: emptyResult,
+            };
+        }
+
+        const eventFilter: T_QueryFilter<I_Event> = {
+            isActive: true,
+            isDel: { $ne: true },
+            $and: [
+                {
+                    $or: [
+                        { endDate: { $gt: now } },
+                        { endDate: null },
+                        { endDate: { $exists: false } },
+                    ],
+                },
+            ],
+            $or: eventOrFilters,
+            ...(filter.eventType ? { type: filter.eventType } : {}),
+        } as any;
+
+        const eventSort = typeof options?.sort === 'object' && options.sort
+            ? options.sort
+            : { createdAt: -1 };
+        const eventFetchLimit = Math.min(
+            Math.max(scanLimit, directEventIds.length + destinationLocationIds.length),
+            DASHBOARD_EVENT_MAX_SCAN_LIMIT,
+        );
+
+        const [eventsResult, blockedUserIds] = await Promise.all([
+            eventMongooseCtr.findAll(
+                eventFilter,
+                DASHBOARD_EVENT_ENTITY_PROJECTION as any,
+                {
+                    limit: eventFetchLimit,
+                    sort: eventSort,
+                } as any,
+                DASHBOARD_EVENT_POPULATE,
+            ),
+            getBlockedUserIds(context),
+        ]);
+
+        if (!eventsResult.success || !eventsResult.result) {
+            return eventsResult as unknown as I_Return<T_PaginateResult<I_Location>>;
+        }
+
+        const directLocationByEventId = new Map<string, I_Location>();
+        for (const location of eventLocations) {
+            if (location.entityId && !directLocationByEventId.has(location.entityId)) {
+                directLocationByEventId.set(location.entityId, location);
+            }
+        }
+
+        const docs = (eventsResult.result ?? [])
+            .filter((event) => {
+                if (!event?.id || event.isDel || event.isActive === false) {
+                    return false;
+                }
+
+                if (event.endDate) {
+                    const endDate = new Date(event.endDate);
+                    if (!Number.isNaN(endDate.getTime()) && endDate <= now) {
+                        return false;
+                    }
+                }
+
+                const creator = event.createdBy as I_User | undefined | null;
+                const creatorId = creator?.id ?? event.createdById;
+                if (creator?.isDel === true || creator?.isAdminBlocked === true) {
+                    return false;
+                }
+                if (event.createdById && !creator) {
+                    return false;
+                }
+                if (creatorId && blockedUserIds.has(creatorId)) {
+                    return false;
+                }
+
+                return true;
+            })
+            .map((event) => {
+                const directLocation = event.id
+                    ? directLocationByEventId.get(event.id)
+                    : undefined;
+                const eventLocation = event.location as I_Location | undefined;
+                const sourceLocation = directLocation ?? eventLocation;
+                if (!event.id || !sourceLocation?.map) {
+                    return null;
+                }
+
+                return {
+                    id: sourceLocation.id ?? `${event.locationId ?? event.id}-event-${event.id}`,
+                    entityId: event.id,
+                    entityType: E_LocationEntityType.EVENT,
+                    map: sourceLocation.map,
+                    entity: event,
+                } as I_Location;
+            })
+            .filter((doc): doc is I_Location => Boolean(doc));
+
+        const hydratedDocs = await hydrateDashboardEventDocsForViewer(
+            context,
+            docs.slice(0, requestedLimit),
+        );
+        const hasNextPage = docs.length > requestedLimit;
+
+        return {
+            success: true,
+            result: {
+                ...emptyResult,
+                docs: hydratedDocs,
+                totalDocs: docs.length,
+                pagingCounter: hydratedDocs.length > 0 ? 1 : 0,
+                hasNextPage,
+                nextPage: hasNextPage ? 2 : null,
+            },
+        };
+    },
+    getDashboardProfilesInViewport: async (
+        context: I_Context,
+        { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
+    ): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+        if (
+            !filter
+            || typeof filter.southWestLatitude !== 'number'
+            || typeof filter.southWestLongitude !== 'number'
+            || typeof filter.northEastLatitude !== 'number'
+            || typeof filter.northEastLongitude !== 'number'
+        ) {
+            throwError({
+                message: 'Filter (southWestLatitude, southWestLongitude, northEastLatitude, northEastLongitude) must be numbers',
+                status: RESPONSE_STATUS.BAD_REQUEST,
+            });
+        }
+
+        const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+        const baseFilter: T_QueryFilter<I_Location> = {
+            'entityType': E_LocationEntityType.USER,
+            'map.latitude': {
+                $gte: filter.southWestLatitude,
+                $lte: filter.northEastLatitude,
+            },
+            ...(crossesAntimeridian
+                ? {
+                        $or: [
+                            { 'map.longitude': { $gte: filter.southWestLongitude } },
+                            { 'map.longitude': { $lte: filter.northEastLongitude } },
+                        ],
+                    }
+                : {
+                        'map.longitude': {
+                            $gte: filter.southWestLongitude,
+                            $lte: filter.northEastLongitude,
+                        },
+                    }),
+        };
+
+        const locationProjection = {
+            id: 1,
+            cityId: 1,
+            countryId: 1,
+            entityId: 1,
+            entityType: 1,
+            isDel: 1,
+        };
+
+        const populates: PopulateOptions[] = [
+            {
+                path: 'entity',
+                select: DASHBOARD_PROFILE_ENTITY_SELECT,
+                populate: [
+                    { path: 'ageVerify', select: 'status' },
+                    { path: 'lookingFor', select: 'name' },
+                    { path: 'profilePurpose', select: 'name' },
+                    {
+                        path: 'partner1',
+                        select: DASHBOARD_PROFILE_PARTNER_SELECT,
+                        populate: [
+                            { path: 'gallery', select: 'url' },
+                            {
+                                path: 'location',
+                                select: DASHBOARD_PROFILE_LOCATION_SELECT,
+                                populate: DASHBOARD_PROFILE_LOCATION_POPULATE,
+                            },
+                        ],
+                    },
+                    {
+                        path: 'partner2',
+                        select: DASHBOARD_PROFILE_PARTNER_SELECT,
+                        populate: [
+                            { path: 'gallery', select: 'url' },
+                            {
+                                path: 'location',
+                                select: DASHBOARD_PROFILE_LOCATION_SELECT,
+                                populate: DASHBOARD_PROFILE_LOCATION_POPULATE,
+                            },
+                        ],
+                    },
+                    {
+                        path: 'settings',
+                        select: 'temporaryLocation',
+                        populate: [
+                            {
+                                path: 'temporaryLocation',
+                                select: 'locationId endAt',
+                                populate: [{ path: 'location', select: 'id' }],
+                            },
+                        ],
+                    },
+                ],
+            },
+            ...DASHBOARD_PROFILE_LOCATION_POPULATE,
+        ];
+
+        const effectiveOptions = {
+            ...(options ?? {}),
+            ...(options?.pagination === undefined ? { pagination: false, limit: 20 } : {}),
+        };
+
+        const pagingResult = effectiveOptions.pagination === false
+            ? await (async (): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+                    const requestedLimit = typeof effectiveOptions.limit === 'number' && effectiveOptions.limit > 0
+                        ? effectiveOptions.limit
+                        : 20;
+                    const locationsResult = await mongooseCtr.findAll(
+                        baseFilter,
+                        locationProjection,
+                        {
+                            limit: requestedLimit,
+                            ...(effectiveOptions.sort ? { sort: effectiveOptions.sort } : {}),
+                        } as any,
+                        populates,
+                    );
+
+                    if (!locationsResult.success || !locationsResult.result) {
+                        return locationsResult as unknown as I_Return<T_PaginateResult<I_Location>>;
+                    }
+
+                    return {
+                        success: true,
+                        result: {
+                            docs: locationsResult.result,
+                            totalDocs: locationsResult.result.length,
+                            limit: requestedLimit,
+                            totalPages: 1,
+                            page: 1,
+                            pagingCounter: locationsResult.result.length > 0 ? 1 : 0,
+                            hasPrevPage: false,
+                            hasNextPage: false,
+                            prevPage: null,
+                            nextPage: null,
+                            offset: 0,
+                        },
+                    };
+                })()
+            : await mongooseCtr.findPaging(baseFilter, {
+                    ...effectiveOptions,
+                    projection: locationProjection,
+                    populate: populates,
+                });
+
+        if (!pagingResult.success || !pagingResult.result) {
+            return pagingResult;
+        }
+
+        const blockedUserIds = await getBlockedUserIds(context);
+        const filteredDocs = (pagingResult.result.docs ?? []).filter((doc) => {
+            const user = doc.entity as I_User | undefined;
+            if (!user?.id) {
+                return false;
+            }
+
+            if (doc.isDel || user.isDel || user.isAdminBlocked) {
+                return false;
+            }
+
+            if (blockedUserIds.has(user.id)) {
+                return false;
+            }
+
+            const registerStep = user.registerStep as E_RegisterStep | undefined;
+            if (registerStep && registerStep !== E_RegisterStep.COMPLETE) {
+                return false;
+            }
+
+            return true;
+        });
+
+        let docs = dedupeUserLocationDocs(filteredDocs);
+        docs = await hydrateViewportDocsForViewer(context, docs);
+
+        if (effectiveOptions.pagination === false) {
+            return {
+                success: true,
+                result: {
+                    ...pagingResult.result,
+                    docs,
+                    totalDocs: docs.length,
+                    limit: typeof effectiveOptions.limit === 'number' && effectiveOptions.limit > 0
+                        ? effectiveOptions.limit
+                        : 20,
+                    totalPages: 1,
+                    page: 1,
+                    pagingCounter: docs.length > 0 ? 1 : 0,
+                    hasPrevPage: false,
+                    hasNextPage: false,
+                    prevPage: null,
+                    nextPage: null,
+                    offset: 0,
+                },
+            };
+        }
+
+        return {
+            success: true,
+            result: {
+                ...pagingResult.result,
+                docs,
+            },
+        };
+    },
     getLocationsInViewportMap: async (
         context: I_Context,
         { filter, options }: I_Input_FindPaging<I_Input_GetLocationInViewport>,
@@ -1287,6 +2047,47 @@ export const locationCtr = {
         }
 
         const crossesAntimeridian = filter.southWestLongitude > filter.northEastLongitude;
+        const viewportPerfRequested = process.env['DEBUG_VIEWPORT_MAP_TIMING'] === '1';
+        const shouldLogViewportPerf = viewportPerfRequested || process.env['NODE_ENV'] !== 'production';
+        const viewportPerfStartedAt = Date.now();
+        const viewportLatSpan = Number((filter.northEastLatitude - filter.southWestLatitude).toFixed(4));
+        const viewportLngSpan = crossesAntimeridian
+            ? null
+            : Number((filter.northEastLongitude - filter.southWestLongitude).toFixed(4));
+        const loggedEntityType = typeof filter.entityType === 'string' ? filter.entityType : null;
+        const loggedEventType = typeof filter.eventType === 'string' ? filter.eventType : null;
+        const viewportPerfTimings: Record<string, number> = {};
+        const viewportPerfCounts: Record<string, number | boolean | null | string> = {
+            usePagination: options?.pagination !== false,
+            page: typeof options?.page === 'number' ? options.page : 1,
+            limit: typeof options?.limit === 'number' ? options.limit : null,
+            hasFocusEntity: Boolean(filter.entityId),
+            entityType: loggedEntityType,
+            eventType: loggedEventType,
+        };
+        const markViewportPerf = (label: string, startedAt: number) => {
+            if (!shouldLogViewportPerf)
+                return;
+            viewportPerfTimings[label] = Date.now() - startedAt;
+        };
+        const logViewportPerf = (phase: 'success' | 'initial-query-failure') => {
+            if (!shouldLogViewportPerf)
+                return;
+            const totalMs = Date.now() - viewportPerfStartedAt;
+            if (!viewportPerfRequested && totalMs < 250)
+                return;
+            log.info('[MapViewportPerf]', {
+                phase,
+                totalMs,
+                viewport: {
+                    latSpan: viewportLatSpan,
+                    lngSpan: viewportLngSpan,
+                    crossesAntimeridian,
+                },
+                counts: viewportPerfCounts,
+                timings: viewportPerfTimings,
+            });
+        };
 
         const locationBoundsFilter: T_QueryFilter<I_Location> = {
             'map.latitude': {
@@ -1316,51 +2117,125 @@ export const locationCtr = {
         // MAP-OPTIMISED populates: only what is required for filtering logic and pin display.
         // No gallery, no city/country, no ageVerify, no lookingFor/profilePurpose.
 
-        // Event: createdBy needed for block-check; location for coordinates.
-        const eventPopulate: PopulateOptions[] = [
-            { path: 'createdBy' },
-            { path: 'location' },
-        ];
+        // Event: only creator status is needed for block/inactive filtering.
+        const populates: PopulateOptions[] = [];
 
-        // User: partner1/partner2 location for pinStyle + locationId matching;
-        // settings.temporaryLocation for active-temp detection.
-        const userPopulate: PopulateOptions[] = [
-            { path: 'partner1', populate: ['location'] },
-            { path: 'partner2', populate: ['location'] },
-            {
-                path: 'settings',
-                populate: [
-                    { path: 'temporaryLocation', populate: ['location'] },
-                ],
-            },
-        ];
+        const locationProjection = {
+            id: 1,
+            entityId: 1,
+            entityType: 1,
+            pinStyle: 1,
+            map: 1,
+            isDel: 1,
+        };
 
-        // Destination: all critical fields (isDel, isActive, createdById) are on the document itself.
-        const destinationPopulate: PopulateOptions[] = [];
-
-        const populates: PopulateOptions[] = [
-            {
-                path: 'entity',
-                populate: [
-                    ...(filter.entityType === E_LocationEntityType.EVENT ? eventPopulate : []),
-                    ...(filter.entityType === E_LocationEntityType.USER ? userPopulate : []),
-                    ...(filter.entityType === E_LocationEntityType.DESTINATION ? destinationPopulate : []),
-                    ...(!filter.entityType ? [...eventPopulate, ...userPopulate, ...destinationPopulate] : []),
-                ],
-            },
-        ];
-
-        const pagingResult = await mongooseCtr.findPaging(baseFilter, {
+        const effectiveOptions = {
             ...(options ?? {}),
-            ...(options?.pagination === undefined ? { pagination: false, limit: 50 } : {}),
-            populate: populates,
-        });
+            ...(options?.pagination === undefined ? { pagination: false } : {}),
+        };
+
+        let initialQueryChunks = 0;
+        const initialQueryStartedAt = Date.now();
+        const pagingResult = effectiveOptions.pagination === false
+            ? await (async (): Promise<I_Return<T_PaginateResult<I_Location>>> => {
+                    const requestedPageSize = typeof effectiveOptions.limit === 'number' && effectiveOptions.limit > 0
+                        ? effectiveOptions.limit
+                        : undefined;
+                    if (requestedPageSize) {
+                        initialQueryChunks = 1;
+                        const locationsResult = await mongooseCtr.findAll(
+                            baseFilter,
+                            locationProjection,
+                            {
+                                limit: requestedPageSize,
+                                ...(effectiveOptions.sort ? { sort: effectiveOptions.sort } : {}),
+                            } as any,
+                            populates,
+                        );
+
+                        if (!locationsResult.success || !locationsResult.result) {
+                            return locationsResult as unknown as I_Return<T_PaginateResult<I_Location>>;
+                        }
+
+                        return {
+                            success: true,
+                            result: {
+                                docs: locationsResult.result,
+                                totalDocs: locationsResult.result.length,
+                                limit: requestedPageSize,
+                                totalPages: 1,
+                                page: 1,
+                                pagingCounter: locationsResult.result.length > 0 ? 1 : 0,
+                                hasPrevPage: false,
+                                hasNextPage: false,
+                                prevPage: null,
+                                nextPage: null,
+                                offset: 0,
+                            },
+                        };
+                    }
+
+                    const docs: I_Location[] = [];
+                    let skip = 0;
+
+                    while (true) {
+                        initialQueryChunks += 1;
+                        const locationsResult = await mongooseCtr.findAll(
+                            baseFilter,
+                            locationProjection,
+                            {
+                                limit: MAP_VIEWPORT_UNPAGINATED_CHUNK_SIZE,
+                                skip,
+                                ...(effectiveOptions.sort ? { sort: effectiveOptions.sort } : {}),
+                            } as any,
+                            populates,
+                        );
+
+                        if (!locationsResult.success || !locationsResult.result) {
+                            return locationsResult as unknown as I_Return<T_PaginateResult<I_Location>>;
+                        }
+
+                        docs.push(...locationsResult.result);
+
+                        if (locationsResult.result.length < MAP_VIEWPORT_UNPAGINATED_CHUNK_SIZE) {
+                            break;
+                        }
+
+                        skip += locationsResult.result.length;
+                    }
+
+                    return {
+                        success: true,
+                        result: {
+                            docs,
+                            totalDocs: docs.length,
+                            limit: docs.length,
+                            totalPages: 1,
+                            page: 1,
+                            pagingCounter: docs.length > 0 ? 1 : 0,
+                            hasPrevPage: false,
+                            hasNextPage: false,
+                            prevPage: null,
+                            nextPage: null,
+                            offset: 0,
+                        },
+                    };
+                })()
+            : await mongooseCtr.findPaging(baseFilter, {
+                    ...effectiveOptions,
+                    projection: locationProjection,
+                    populate: populates,
+                });
+        markViewportPerf('initialQueryMs', initialQueryStartedAt);
 
         if (!pagingResult.success || !pagingResult.result) {
+            logViewportPerf('initial-query-failure');
             return pagingResult;
         }
 
         const rawDocs = pagingResult.result.docs ?? [];
+        viewportPerfCounts['initialQueryChunks'] = initialQueryChunks;
+        viewportPerfCounts['rawDocs'] = rawDocs.length;
         const existingEventIds = new Set<string>();
         for (const doc of rawDocs) {
             if (doc?.entityType !== E_LocationEntityType.EVENT)
@@ -1380,18 +2255,22 @@ export const locationCtr = {
 
         let syntheticClubVisitDocs: I_Location[] = [];
         if (shouldInjectClubVisits) {
+            const clubVisitStartedAt = Date.now();
             try {
                 const destinationFilter: T_QueryFilter<I_Location> = {
                     ...locationBoundsFilter,
                     entityType: E_LocationEntityType.DESTINATION,
                     isDel: { $ne: true },
                 };
+                const clubVisitDestinationLookupStartedAt = Date.now();
                 const destinationIdsResult = await mongooseCtr.distinct('id', destinationFilter);
+                markViewportPerf('clubVisitDestinationLookupMs', clubVisitDestinationLookupStartedAt);
                 const destinationIds = destinationIdsResult.success
                     ? (destinationIdsResult.result ?? []).filter(
                             (value): value is string => typeof value === 'string',
                         )
                     : [];
+                viewportPerfCounts['clubVisitDestinationIds'] = destinationIds.length;
 
                 if (destinationIds.length > 0) {
                     const eventFilter: T_QueryFilter<I_Event> = {
@@ -1401,10 +2280,18 @@ export const locationCtr = {
                         locationId: { $in: destinationIds },
                     };
 
+                    const clubVisitEventsLookupStartedAt = Date.now();
                     const clubEventsResult = await eventCtr.getEvents(context, {
                         filter: eventFilter as any,
-                        options: { pagination: false, populate: eventPopulate },
+                        options: {
+                            pagination: false,
+                            populate: [
+                                { path: 'createdBy', select: MAP_EVENT_OWNER_SELECT },
+                                { path: 'location', select: MAP_EVENT_INJECTION_LOCATION_SELECT },
+                            ],
+                        },
                     });
+                    markViewportPerf('clubVisitEventLookupMs', clubVisitEventsLookupStartedAt);
 
                     if (clubEventsResult.success && clubEventsResult.result?.docs) {
                         syntheticClubVisitDocs
@@ -1444,11 +2331,22 @@ export const locationCtr = {
             catch {
                 syntheticClubVisitDocs = [];
             }
+            markViewportPerf('clubVisitInjectionMs', clubVisitStartedAt);
         }
+        viewportPerfCounts['syntheticClubVisitDocs'] = syntheticClubVisitDocs.length;
 
-        const docsSource = [...rawDocs, ...syntheticClubVisitDocs];
+        const entityHydrationStartedAt = Date.now();
+        const docsSource = await hydrateMapViewportEntities([
+            ...rawDocs,
+            ...syntheticClubVisitDocs,
+        ]);
+        markViewportPerf('entityHydrationMs', entityHydrationStartedAt);
+        viewportPerfCounts['docsSource'] = docsSource.length;
 
+        const blockedUserIdsStartedAt = Date.now();
         const blockedUserIds = await getBlockedUserIds(context);
+        markViewportPerf('blockedUserIdsMs', blockedUserIdsStartedAt);
+        viewportPerfCounts['blockedUserIds'] = blockedUserIds.size;
 
         let forcedEntityInserted = false;
         const now = new Date();
@@ -1600,12 +2498,10 @@ export const locationCtr = {
 
                 const tempLoc = user?.settings?.temporaryLocation;
                 const tempEndAtValid = isTempActive(tempLoc);
-                const hasTempLocationData = Boolean(tempLoc?.location?.map || tempLoc?.locationId);
+                const hasTempLocationData = Boolean(tempLoc?.locationId);
                 const hasActiveTemp = Boolean(tempLoc && tempEndAtValid && hasTempLocationData);
 
-                const tempLocationId = tempLoc?.locationId
-                    ?? tempLoc?.location?.id
-                    ?? (tempLoc?.location?.map ? `temp:${user.id}` : undefined);
+                const tempLocationId = tempLoc?.locationId;
 
                 const p1LocationId = user.partner1?.locationId;
                 const p2LocationId = user.partner2?.locationId;
@@ -1676,7 +2572,6 @@ export const locationCtr = {
                     continue;
 
                 const tempLocationSource = tempLocationSourceByUser.get(user.id)
-                    ?? (tempLoc.location as I_Location | undefined)
                     ?? (tempInfo.tempLocationId ? originalDocsById.get(tempInfo.tempLocationId) : undefined);
 
                 const tempLocationId = tempInfo.tempLocationId;
@@ -1707,7 +2602,11 @@ export const locationCtr = {
                 );
 
                 if (!hasTempDocument) {
-                    const userPinStyle = resolveUserPinStyle(user);
+                    const sourcePinStyle = typeof source.pinStyle === 'string'
+                        && USER_PIN_STYLE_VALUES.has(source.pinStyle as E_User_PinStyle)
+                        ? source.pinStyle as E_User_PinStyle
+                        : undefined;
+                    const userPinStyle = sourcePinStyle ?? resolveUserPinStyle(user);
                     const syntheticDoc: I_Location = {
                         id: tempLocationId,
                         map: source.map,
@@ -1730,7 +2629,6 @@ export const locationCtr = {
                 let finalLocationId: string | undefined;
                 const tempLoc = user?.settings?.temporaryLocation;
                 const tempLocationSource = tempLocationSourceByUser.get(user.id)
-                    ?? (tempLoc?.location as I_Location | undefined)
                     ?? (tempLoc?.locationId ? originalDocsById.get(tempLoc.locationId) : undefined);
 
                 const tempEndAtValid = isTempActive(tempLoc);
@@ -1739,16 +2637,14 @@ export const locationCtr = {
                 let docOverride: Partial<I_Location> | undefined;
 
                 if (tempLoc && tempEndAtValid && hasTempLocationData) {
-                    const chosenTemp = tempLoc.location
-                        ?? tempLocationSource
+                    const chosenTemp = tempLocationSource
                         ?? (tempLoc.locationId ? { id: tempLoc.locationId } as Partial<I_Location> : undefined);
                     finalLocation = chosenTemp as Partial<I_Location> | undefined;
                     finalLocationId = tempLoc.locationId
-                        ?? tempLocationSource?.id
-                        ?? tempLoc.location?.id;
+                        ?? tempLocationSource?.id;
 
                     docOverride = {
-                        map: tempLocationSource?.map ?? tempLoc.location?.map ?? d.map,
+                        map: tempLocationSource?.map ?? d.map,
                     } as Partial<I_Location>;
 
                     finalSettings = {
@@ -1761,7 +2657,8 @@ export const locationCtr = {
                     } as I_User['settings'];
                 }
                 else {
-                    finalLocation = user.partner1?.location;
+                    finalLocation = user.partner1?.location
+                        ?? (user.partner1?.locationId ? originalDocsById.get(user.partner1.locationId) : undefined);
                     finalLocationId = user.partner1?.locationId;
                 }
 
@@ -1827,7 +2724,10 @@ export const locationCtr = {
             return filtered;
         };
 
+        const initialPreprocessStartedAt = Date.now();
         let docs: I_Location[] = preprocessBatch(docsSource);
+        markViewportPerf('initialPreprocessMs', initialPreprocessStartedAt);
+        viewportPerfCounts['docsAfterInitialPreprocess'] = docs.length;
 
         const limitCandidate = typeof pagingResult.result?.limit === 'number'
             ? pagingResult.result!.limit
@@ -1840,19 +2740,27 @@ export const locationCtr = {
         let nextPageToFetch = (pagingResult.result?.nextPage ?? (pageNumber + 1)) as number | null;
         let morePagesAvailable = Boolean(pagingResult.result?.hasNextPage);
         let hasMoreAfterFill = false;
+        let paginationFetchMs = 0;
+        let paginationPreprocessMs = 0;
+        let paginationFetches = 0;
 
         const usePagination = options?.pagination !== false;
         if (usePagination && docs.length < requestedLimit) {
             while (morePagesAvailable && docs.length < requestedLimit && nextPageToFetch) {
+                const nextPageQueryStartedAt = Date.now();
                 const nextPageResult = await mongooseCtr.findPaging(baseFilter, {
                     ...options,
                     page: nextPageToFetch,
                     populate: populates,
                 });
+                paginationFetchMs += Date.now() - nextPageQueryStartedAt;
+                paginationFetches += 1;
                 if (!nextPageResult.success || !nextPageResult.result)
                     break;
 
+                const paginationPreprocessStartedAt = Date.now();
                 const processed = preprocessBatch(nextPageResult.result.docs ?? []);
+                paginationPreprocessMs += Date.now() - paginationPreprocessStartedAt;
                 const remaining = requestedLimit - docs.length;
                 if (processed.length > 0) {
                     docs.push(...processed.slice(0, remaining));
@@ -1868,6 +2776,9 @@ export const locationCtr = {
                 nextPageToFetch = nextPageResult.result.nextPage as number | null;
             }
         }
+        viewportPerfTimings['paginationFetchMs'] = paginationFetchMs;
+        viewportPerfTimings['paginationPreprocessMs'] = paginationPreprocessMs;
+        viewportPerfCounts['paginationFetches'] = paginationFetches;
 
         const isTempStillActive = (user?: I_User | undefined): boolean => {
             try {
@@ -1945,10 +2856,15 @@ export const locationCtr = {
             return [...nonUser, ...bestUserDocs];
         };
 
+        const dedupeFinalDocsStartedAt = Date.now();
         docs = dedupeFinalDocs(docs);
+        markViewportPerf('dedupeFinalDocsMs', dedupeFinalDocsStartedAt);
+        const dedupeUserLocationDocsStartedAt = Date.now();
         docs = dedupeUserLocationDocs(docs);
+        markViewportPerf('dedupeUserLocationDocsMs', dedupeUserLocationDocsStartedAt);
 
         if (filter.entityId) {
+            const focusEntityStartedAt = Date.now();
             const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
             if (!alreadyInDocs) {
                 const focusLocation = await mongooseCtr.findOne(
@@ -1958,13 +2874,17 @@ export const locationCtr = {
                     populates,
                 );
                 if (focusLocation.success && focusLocation.result) {
-                    const processedFocusDocs = preprocessBatch([focusLocation.result]);
+                    const hydratedFocusDocs = await hydrateMapViewportEntities([
+                        focusLocation.result,
+                    ]);
+                    const processedFocusDocs = preprocessBatch(hydratedFocusDocs);
                     if (processedFocusDocs.length > 0) {
                         forcedEntityInserted = true;
                         docs = dedupeFinalDocs([...processedFocusDocs, ...docs]);
                     }
                 }
             }
+            markViewportPerf('focusEntityMs', focusEntityStartedAt);
         }
 
         if (forcedEntityInserted && usePagination && docs.length > requestedLimit) {
@@ -2012,6 +2932,12 @@ export const locationCtr = {
             nextPage: computedHasNextPage ? currentPage + 1 : null,
             prevPage: currentPage > 1 ? currentPage - 1 : null,
         };
+
+        viewportPerfCounts['requestedLimit'] = requestedLimit;
+        viewportPerfCounts['finalDocs'] = docs.length;
+        viewportPerfCounts['forcedEntityInserted'] = forcedEntityInserted;
+        viewportPerfCounts['hasMoreAfterFill'] = hasMoreAfterFill;
+        logViewportPerf('success');
 
         return { success: true, result: adjustedPagingResult };
     },
