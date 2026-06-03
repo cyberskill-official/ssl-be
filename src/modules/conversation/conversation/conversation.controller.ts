@@ -95,6 +95,14 @@ const LAST_ACTIVITY_SORT = {
     createdAt: -1,
 } as const;
 
+type T_MessageSubscriptionArgs = I_MessageSubscriptionFilter & {
+    input?: I_MessageSubscriptionFilter | null;
+};
+
+function getSubscriptionConversationId(args?: T_MessageSubscriptionArgs | null): string | undefined {
+    return args?.input?.conversationId ?? args?.conversationId;
+}
+
 function withLastActivitySort(options?: Record<string, any>) {
     return {
         ...(options ?? {}),
@@ -2128,10 +2136,10 @@ export const conversationCtr = {
         }
     },
 
-    subscribeToMessageSent: () => withFilter<I_MessageSentPayload, I_MessageSubscriptionFilter, I_WsContext>(
+    subscribeToMessageSent: () => withFilter<I_MessageSentPayload, T_MessageSubscriptionArgs, I_WsContext>(
         () => pubsub.asyncIterableIterator([E_CONVERSATION_EVENTS.MESSAGE_SENT]),
         async (payload, variables, context) => {
-            if (!payload || !variables || !context)
+            if (!payload || !context)
                 return false;
 
             const userId = context.req?.session?.user?.id;
@@ -2149,7 +2157,8 @@ export const conversationCtr = {
             if (!conversationId)
                 return false;
 
-            if (variables?.conversationId && conversationId !== variables.conversationId)
+            const filterConversationId = getSubscriptionConversationId(variables);
+            if (filterConversationId && conversationId !== filterConversationId)
                 return false;
 
             try {
@@ -2194,10 +2203,10 @@ export const conversationCtr = {
         },
     ),
 
-    subscribeToMessageRead: () => withFilter<I_MessageReadPayload, I_MessageSubscriptionFilter, I_WsContext>(
+    subscribeToMessageRead: () => withFilter<I_MessageReadPayload, T_MessageSubscriptionArgs, I_WsContext>(
         () => pubsub.asyncIterableIterator([E_CONVERSATION_EVENTS.MESSAGE_READ]),
         async (payload, variables, context) => {
-            if (!payload || !variables || !context)
+            if (!payload || !context)
                 return false;
 
             const userId = context.req?.session?.user?.id;
@@ -2208,7 +2217,8 @@ export const conversationCtr = {
             if (!messageRead)
                 return false;
 
-            if (variables?.conversationId && messageRead.conversationId !== variables.conversationId) {
+            const filterConversationId = getSubscriptionConversationId(variables);
+            if (filterConversationId && messageRead.conversationId !== filterConversationId) {
                 return false;
             }
 
@@ -2252,10 +2262,10 @@ export const conversationCtr = {
             }
         },
     ),
-    subscribeToMessageDeleted: () => withFilter<I_MessageDeletedPayload, I_MessageSubscriptionFilter, I_WsContext>(
+    subscribeToMessageDeleted: () => withFilter<I_MessageDeletedPayload, T_MessageSubscriptionArgs, I_WsContext>(
         () => pubsub.asyncIterableIterator([E_CONVERSATION_EVENTS.MESSAGE_DELETED]),
         async (payload, variables, context) => {
-            if (!payload || !variables || !context)
+            if (!payload || !context)
                 return false;
 
             const userId = context.req?.session?.user?.id;
@@ -2266,7 +2276,8 @@ export const conversationCtr = {
             if (!messageDeleted)
                 return false;
 
-            if (variables?.conversationId && messageDeleted.conversationId !== variables.conversationId) {
+            const filterConversationId = getSubscriptionConversationId(variables);
+            if (filterConversationId && messageDeleted.conversationId !== filterConversationId) {
                 return false;
             }
 
