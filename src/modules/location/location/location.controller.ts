@@ -18,22 +18,30 @@ import process from 'node:process';
 
 import type { I_Destination } from '#modules/destination/destination.type.js';
 import type { I_Event } from '#modules/event/index.js';
+import type { I_Gallery } from '#modules/gallery/index.js';
+import type { I_City } from '#modules/location/city/index.js';
+import type { I_Country } from '#modules/location/country/index.js';
+import type { I_Tag } from '#modules/tag/index.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_RegisterStep } from '#modules/authn/authn.type.js';
-import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, cleanFullUrl } from '#modules/bunny/index.js';
 import { DestinationModel } from '#modules/destination/index.js';
 import { E_EventType } from '#modules/event/event.type.js';
 import { eventCtr, EventModel } from '#modules/event/index.js';
+import { GalleryModel } from '#modules/gallery/index.js';
+import { CityModel } from '#modules/location/city/index.js';
+import { CountryModel } from '#modules/location/country/index.js';
+import { TagModel } from '#modules/tag/index.js';
 import { UserModel } from '#modules/user/index.js';
 import { E_AccountType, E_Gender } from '#modules/user/user.type.js';
-import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
+import { hydrateUserMedia } from '#modules/user/user.validate.js';
 import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
 import { getBlockedUserIds } from '#shared/util/block-helper.js';
 import { isTemporaryLocationActive } from '#shared/util/temporary-location.js';
+import { getRequestViewerMediaContext } from '#shared/util/viewer-media-context.helper.js';
 
 import type {
     I_Input_CreateLocation,
@@ -50,6 +58,10 @@ const mongooseCtr = new MongooseController<I_Location>(LocationModel);
 const userMongooseCtr = new MongooseController<I_User>(UserModel);
 const eventMongooseCtr = new MongooseController<I_Event>(EventModel);
 const destinationMongooseCtr = new MongooseController<I_Destination>(DestinationModel);
+const cityMongooseCtr = new MongooseController<I_City>(CityModel);
+const countryMongooseCtr = new MongooseController<I_Country>(CountryModel);
+const galleryMongooseCtr = new MongooseController<I_Gallery>(GalleryModel);
+const tagMongooseCtr = new MongooseController<I_Tag>(TagModel);
 
 const USER_PIN_STYLE_VALUES = new Set<E_User_PinStyle>(
     Object.values(E_User_PinStyle) as E_User_PinStyle[],
@@ -98,18 +110,16 @@ const DASHBOARD_PROFILE_ENTITY_SELECT = [
     'membershipExpiresAt',
     'followerCount',
     'ageVerify',
-    'partner1',
-    'partner2',
-    'lookingFor',
-    'profilePurpose',
-    'settings',
+    'partner1.dateOfBirth',
+    'partner1.galleryId',
+    'partner1.locationId',
+    'partner2.dateOfBirth',
+    'partner2.galleryId',
+    'partner2.locationId',
+    'lookingForIds',
+    'profilePurposeIds',
+    'settings.temporaryLocation',
 ].join(' ');
-const DASHBOARD_PROFILE_PARTNER_SELECT = 'dateOfBirth galleryId locationId';
-const DASHBOARD_PROFILE_LOCATION_SELECT = 'id cityId countryId';
-const DASHBOARD_PROFILE_LOCATION_POPULATE: PopulateOptions[] = [
-    { path: 'city', select: 'name' },
-    { path: 'country', select: 'name' },
-];
 const DASHBOARD_EVENT_DEFAULT_LIMIT = 20;
 const DASHBOARD_EVENT_MAX_LIMIT = 50;
 const DASHBOARD_EVENT_MAX_SCAN_LIMIT = 250;
@@ -123,7 +133,6 @@ const DASHBOARD_EVENT_ENTITY_PROJECTION = {
     createdAt: 1,
     type: 1,
     title: 1,
-    slug: 1,
     description: 1,
     startDate: 1,
     endDate: 1,
@@ -366,50 +375,7 @@ async function hydrateViewportDocsForViewer(
     context: I_Context,
     docs: I_Location[],
 ): Promise<I_Location[]> {
-    let sessionUser: I_User | undefined;
-    try {
-        const viewer = await authnCtr.getUserFromSession(context);
-        if (viewer?.id) {
-            // Fetch full user data with roles/ageVerify/membership to avoid circular dependency.
-            const sessionUserPopulated = await mongooseCtr.findOne(
-                { id: viewer.id },
-                {
-                    id: 1,
-                    roles: 1,
-                    rolesIds: 1,
-                    ageVerify: 1,
-                    membershipExpiresAt: 1,
-                    membershipEndDate: 1,
-                    partner1: 1,
-                    partner2: 1,
-                } as any,
-                undefined,
-                [
-                    { path: 'roles' },
-                    { path: 'ageVerify' },
-                    {
-                        path: 'partner1',
-                        populate: [{ path: 'gallery' }],
-                    },
-                    {
-                        path: 'partner2',
-                        populate: [{ path: 'gallery' }],
-                    },
-                ],
-            );
-            if (sessionUserPopulated.success && sessionUserPopulated.result) {
-                sessionUser = sessionUserPopulated.result;
-            }
-            else {
-                sessionUser = viewer;
-            }
-        }
-    }
-    catch {
-        sessionUser = undefined;
-    }
-
-    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+    const { mediaOptions: viewerMediaOptions } = await getRequestViewerMediaContext(context);
 
     return docs.map((doc) => {
         try {
@@ -475,17 +441,7 @@ async function hydrateDashboardEventDocsForViewer(
     context: I_Context,
     docs: I_Location[],
 ): Promise<I_Location[]> {
-    let sessionUser = context?.req?.session?.user as I_User | undefined;
-    if (!sessionUser) {
-        try {
-            sessionUser = await authnCtr.getUserFromSession(context);
-        }
-        catch {
-            sessionUser = undefined;
-        }
-    }
-
-    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+    const { mediaOptions: viewerMediaOptions } = await getRequestViewerMediaContext(context);
 
     return docs.map((doc) => {
         try {
@@ -513,6 +469,231 @@ async function hydrateDashboardEventDocsForViewer(
 
         return doc;
     });
+}
+
+function collectDashboardLocationReferenceIds(
+    location: I_Location | undefined,
+    cityIds: Set<string>,
+    countryIds: Set<string>,
+) {
+    if (!location) {
+        return;
+    }
+
+    if (location.cityId) {
+        cityIds.add(location.cityId);
+    }
+
+    if (location.countryId) {
+        countryIds.add(location.countryId);
+    }
+}
+
+interface I_DashboardProfileLocationReferenceLoaders {
+    findCities?: (ids: string[]) => Promise<I_City[]>;
+    findCountries?: (ids: string[]) => Promise<I_Country[]>;
+    findGalleries?: (ids: string[]) => Promise<I_Gallery[]>;
+    findLocations?: (ids: string[]) => Promise<I_Location[]>;
+    findTags?: (ids: string[]) => Promise<I_Tag[]>;
+}
+
+const dashboardProfileLocationReferenceLoaders: I_DashboardProfileLocationReferenceLoaders = {
+    findCities: async (ids: string[]) => {
+        if (!ids.length) {
+            return [];
+        }
+
+        const result = await cityMongooseCtr.findAll(
+            { id: { $in: ids } } as T_QueryFilter<I_City>,
+            { id: 1, name: 1 },
+            { limit: ids.length } as T_QueryOptions<I_City>,
+        );
+
+        return result.success && Array.isArray(result.result) ? result.result : [];
+    },
+    findCountries: async (ids: string[]) => {
+        if (!ids.length) {
+            return [];
+        }
+
+        const result = await countryMongooseCtr.findAll(
+            { id: { $in: ids } } as T_QueryFilter<I_Country>,
+            { id: 1, name: 1 },
+            { limit: ids.length } as T_QueryOptions<I_Country>,
+        );
+
+        return result.success && Array.isArray(result.result) ? result.result : [];
+    },
+    findGalleries: async (ids: string[]) => {
+        if (!ids.length) {
+            return [];
+        }
+
+        const result = await galleryMongooseCtr.findAll(
+            { id: { $in: ids } } as T_QueryFilter<I_Gallery>,
+            { id: 1, url: 1 },
+            { limit: ids.length } as T_QueryOptions<I_Gallery>,
+        );
+
+        return result.success && Array.isArray(result.result) ? result.result : [];
+    },
+    findLocations: async (ids: string[]) => {
+        if (!ids.length) {
+            return [];
+        }
+
+        const result = await mongooseCtr.findAll(
+            { id: { $in: ids } } as T_QueryFilter<I_Location>,
+            { id: 1, cityId: 1, countryId: 1 },
+            { limit: ids.length } as T_QueryOptions<I_Location>,
+        );
+
+        return result.success && Array.isArray(result.result) ? result.result : [];
+    },
+    findTags: async (ids: string[]) => {
+        if (!ids.length) {
+            return [];
+        }
+
+        const result = await tagMongooseCtr.findAll(
+            { id: { $in: ids } } as T_QueryFilter<I_Tag>,
+            { id: 1, name: 1 },
+            { limit: ids.length } as T_QueryOptions<I_Tag>,
+        );
+
+        return result.success && Array.isArray(result.result) ? result.result : [];
+    },
+};
+
+export async function hydrateDashboardProfileLocationReferences(
+    docs: I_Location[],
+    loaders: I_DashboardProfileLocationReferenceLoaders = dashboardProfileLocationReferenceLoaders,
+): Promise<void> {
+    const activeLoaders = {
+        ...dashboardProfileLocationReferenceLoaders,
+        ...loaders,
+    };
+    const cityIds = new Set<string>();
+    const countryIds = new Set<string>();
+    const galleryIds = new Set<string>();
+    const locationIds = new Set<string>();
+    const tagIds = new Set<string>();
+    const locationsToHydrate: I_Location[] = [];
+    const usersToHydrate: I_User[] = [];
+
+    for (const doc of docs) {
+        locationsToHydrate.push(doc);
+        collectDashboardLocationReferenceIds(doc, cityIds, countryIds);
+
+        const user = doc.entity as I_User | undefined;
+        if (!user) {
+            continue;
+        }
+
+        usersToHydrate.push(user);
+
+        for (const tagId of [
+            ...(user.lookingForIds ?? []),
+            ...(user.profilePurposeIds ?? []),
+        ]) {
+            if (tagId) {
+                tagIds.add(tagId);
+            }
+        }
+
+        for (const partner of [user.partner1, user.partner2]) {
+            if (partner?.galleryId) {
+                galleryIds.add(partner.galleryId);
+            }
+            if (partner?.locationId) {
+                locationIds.add(partner.locationId);
+            }
+            if (partner?.location) {
+                locationsToHydrate.push(partner.location);
+                collectDashboardLocationReferenceIds(partner.location, cityIds, countryIds);
+            }
+        }
+    }
+
+    const [locations, galleries, tags] = await Promise.all([
+        activeLoaders.findLocations!(Array.from(locationIds)),
+        activeLoaders.findGalleries!(Array.from(galleryIds)),
+        activeLoaders.findTags!(Array.from(tagIds)),
+    ]);
+
+    const locationById = new Map<string, I_Location>();
+    for (const location of locations) {
+        if (location?.id) {
+            locationById.set(location.id, location);
+            locationsToHydrate.push(location);
+            collectDashboardLocationReferenceIds(location, cityIds, countryIds);
+        }
+    }
+
+    const [cities, countries] = await Promise.all([
+        activeLoaders.findCities!(Array.from(cityIds)),
+        activeLoaders.findCountries!(Array.from(countryIds)),
+    ]);
+
+    const cityById = new Map<string, I_City>();
+    for (const city of cities) {
+        if (city?.id) {
+            cityById.set(city.id, city);
+        }
+    }
+
+    const countryById = new Map<string, I_Country>();
+    for (const country of countries) {
+        if (country?.id) {
+            countryById.set(country.id, country);
+        }
+    }
+
+    const galleryById = new Map<string, I_Gallery>();
+    for (const gallery of galleries) {
+        if (gallery?.id) {
+            galleryById.set(gallery.id, gallery);
+        }
+    }
+
+    const tagById = new Map<string, I_Tag>();
+    for (const tag of tags) {
+        if (tag?.id) {
+            tagById.set(tag.id, tag);
+        }
+    }
+
+    for (const user of usersToHydrate) {
+        user.lookingFor = (user.lookingForIds ?? [])
+            .map(id => tagById.get(id))
+            .filter((tag): tag is I_Tag => Boolean(tag));
+        user.profilePurpose = (user.profilePurposeIds ?? [])
+            .map(id => tagById.get(id))
+            .filter((tag): tag is I_Tag => Boolean(tag));
+
+        for (const partner of [user.partner1, user.partner2]) {
+            if (!partner) {
+                continue;
+            }
+
+            if (partner.galleryId) {
+                partner.gallery = galleryById.get(partner.galleryId);
+            }
+            if (partner.locationId) {
+                partner.location = locationById.get(partner.locationId);
+            }
+        }
+    }
+
+    for (const location of locationsToHydrate) {
+        if (location.cityId) {
+            location.city = cityById.get(location.cityId);
+        }
+
+        if (location.countryId) {
+            location.country = countryById.get(location.countryId);
+        }
+    }
 }
 
 export const locationCtr = {
@@ -1891,48 +2072,7 @@ export const locationCtr = {
             {
                 path: 'entity',
                 select: DASHBOARD_PROFILE_ENTITY_SELECT,
-                populate: [
-                    { path: 'ageVerify', select: 'status' },
-                    { path: 'lookingFor', select: 'name' },
-                    { path: 'profilePurpose', select: 'name' },
-                    {
-                        path: 'partner1',
-                        select: DASHBOARD_PROFILE_PARTNER_SELECT,
-                        populate: [
-                            { path: 'gallery', select: 'url' },
-                            {
-                                path: 'location',
-                                select: DASHBOARD_PROFILE_LOCATION_SELECT,
-                                populate: DASHBOARD_PROFILE_LOCATION_POPULATE,
-                            },
-                        ],
-                    },
-                    {
-                        path: 'partner2',
-                        select: DASHBOARD_PROFILE_PARTNER_SELECT,
-                        populate: [
-                            { path: 'gallery', select: 'url' },
-                            {
-                                path: 'location',
-                                select: DASHBOARD_PROFILE_LOCATION_SELECT,
-                                populate: DASHBOARD_PROFILE_LOCATION_POPULATE,
-                            },
-                        ],
-                    },
-                    {
-                        path: 'settings',
-                        select: 'temporaryLocation',
-                        populate: [
-                            {
-                                path: 'temporaryLocation',
-                                select: 'locationId endAt',
-                                populate: [{ path: 'location', select: 'id' }],
-                            },
-                        ],
-                    },
-                ],
             },
-            ...DASHBOARD_PROFILE_LOCATION_POPULATE,
         ];
 
         const effectiveOptions = {
@@ -2010,6 +2150,7 @@ export const locationCtr = {
         });
 
         let docs = dedupeUserLocationDocs(filteredDocs);
+        await hydrateDashboardProfileLocationReferences(docs);
         docs = await hydrateViewportDocsForViewer(context, docs);
 
         if (effectiveOptions.pagination === false) {

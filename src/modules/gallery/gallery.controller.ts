@@ -33,6 +33,7 @@ import { E_ViewEntityType } from '#modules/view/view.type.js';
 import { getEnv } from '#shared/env/index.js';
 import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
+import { getRequestViewerMediaContext } from '#shared/util/viewer-media-context.helper.js';
 
 import type {
     I_Gallery,
@@ -131,6 +132,61 @@ async function attachUploaderLocationsToGalleries(galleries: I_Gallery[]) {
 
         if (uploadedBy.partner2?.locationId) {
             uploadedBy.partner2.location = locationById.get(uploadedBy.partner2.locationId);
+        }
+    });
+}
+
+async function attachUploaderProfileGalleriesToGalleries(galleries: I_Gallery[]) {
+    const galleryIds = Array.from(
+        new Set(
+            galleries.flatMap((gallery) => {
+                const uploadedBy = gallery.uploadedBy;
+                if (!uploadedBy) {
+                    return [];
+                }
+
+                return [
+                    uploadedBy.partner1?.galleryId,
+                    uploadedBy.partner2?.galleryId,
+                ].filter(
+                    (galleryId): galleryId is string =>
+                        typeof galleryId === 'string' && galleryId.trim().length > 0,
+                );
+            }),
+        ),
+    );
+
+    if (!galleryIds.length) {
+        return;
+    }
+
+    const profileGalleries = await GalleryModel.find({
+        id: { $in: galleryIds },
+        isDel: { $ne: true },
+    })
+        .select({ id: 1, url: 1, thumbnailUrl: 1, type: 1, uploadedById: 1 })
+        .lean<I_Gallery[]>()
+        .exec();
+
+    const galleryById = new Map<string, I_Gallery>();
+    for (const gallery of profileGalleries) {
+        if (gallery?.id) {
+            galleryById.set(gallery.id, gallery);
+        }
+    }
+
+    galleries.forEach((gallery) => {
+        const uploadedBy = gallery.uploadedBy;
+        if (!uploadedBy) {
+            return;
+        }
+
+        if (uploadedBy.partner1?.galleryId) {
+            uploadedBy.partner1.gallery = galleryById.get(uploadedBy.partner1.galleryId);
+        }
+
+        if (uploadedBy.partner2?.galleryId) {
+            uploadedBy.partner2.gallery = galleryById.get(uploadedBy.partner2.galleryId);
         }
     });
 }
@@ -374,73 +430,24 @@ export const galleryCtr = {
             && (filter.uploadedByIds as string[]).some((id: string) => id && typeof id === 'string' && id.trim() === sessionUserId);
         const isOwner = ownerFromSingle || ownerFromMultiple;
 
-        // Default guests to FREE to avoid leaking clear images
-        let isFreeMember = !isLoggedIn;
-        let isPaidMember = false;
-        let isStaff = false;
-        let isAdmin = false;
+        const fallbackViewerContext = getViewerMediaContext(
+            isLoggedIn ? context.req?.session?.user : undefined,
+        );
+        let viewerMediaOptions = fallbackViewerContext.mediaOptions;
+        let isFreeMember = !isLoggedIn || viewerMediaOptions.viewerIsFreeMember === true;
+        let isPaidMember = viewerMediaOptions.viewerIsPaidMember === true;
+        let isStaff = fallbackViewerContext.isStaff;
+        let isAdmin = fallbackViewerContext.isAdmin;
+        let viewerAgeVerified = viewerMediaOptions.viewerAgeVerified === true;
+
         if (isLoggedIn) {
-            try {
-                isStaff = await authnCtr.isStaff(context);
-            }
-            catch {
-                isStaff = false;
-            }
-
-            try {
-                isAdmin = await authnCtr.isAdmin(context);
-            }
-            catch {
-                isAdmin = false;
-            }
-
-            try {
-                // Refresh viewer to avoid stale membership in session
-                const viewerRes = sessionUserId
-                    ? await userCtr.getUser(context, {
-                            filter: { id: sessionUserId },
-                            projection: 'id roles rolesIds membershipExpiresAt membershipEndDate',
-                            populate: [{ path: 'roles' }],
-                        })
-                    : null;
-
-                const mergedViewer = viewerRes?.success
-                    ? { ...context.req?.session?.user, ...viewerRes.result }
-                    : context.req?.session?.user;
-
-                // Resolve paid/free role ids for robust detection (some sessions may lack populated roles)
-                const [paidRole, promoRole, freeRole] = await Promise.all([
-                    roleCtr.getRole(context, { filter: { name: 'PAID_MEMBER' } }),
-                    roleCtr.getRole(context, { filter: { name: 'PROMO_MEMBER' } }),
-                    roleCtr.getRole(context, { filter: { name: 'FREE_MEMBER' } }),
-                ]);
-                const paidRoleId = paidRole.success ? paidRole.result.id : undefined;
-                const promoRoleId = promoRole.success ? promoRole.result.id : undefined;
-                const freeRoleId = freeRole.success ? freeRole.result.id : undefined;
-
-                const roles = Array.isArray(mergedViewer?.roles) ? mergedViewer.roles : [];
-                const roleNames = roles
-                    .map((r: any) => typeof r?.name === 'string' ? r.name.toUpperCase() : '')
-                    .filter(Boolean);
-                const roleIds = Array.isArray(mergedViewer?.rolesIds) ? mergedViewer.rolesIds : [];
-
-                const hasFreeRole = roleNames.some(n => n.includes('FREE_MEMBER'))
-                    || (freeRoleId ? roleIds.includes(freeRoleId) : false);
-                const hasPaidRole = roleNames.some(n => n.includes('PAID_MEMBER') || n.includes('PROMO_MEMBER'))
-                    || (paidRoleId ? roleIds.includes(paidRoleId) : false)
-                    || (promoRoleId ? roleIds.includes(promoRoleId) : false);
-
-                const membershipActive = mergedViewer ? authnCtr.isMembershipActive(mergedViewer) : false;
-
-                isPaidMember = hasPaidRole && membershipActive;
-                // Paid trumps free: if membership is active and user has PAID_MEMBER, do not treat as free even if FREE_MEMBER also present
-                isFreeMember = isPaidMember ? false : (hasFreeRole || !membershipActive || (!isPaidMember && !hasPaidRole));
-            }
-            catch {
-                // Fallback to free on any error to avoid leaking clear images
-                isFreeMember = true;
-                isPaidMember = false;
-            }
+            const viewerContext = await getRequestViewerMediaContext(context);
+            viewerMediaOptions = viewerContext.mediaOptions;
+            isStaff = viewerContext.isStaff;
+            isAdmin = viewerContext.isAdmin;
+            isPaidMember = viewerMediaOptions.viewerIsPaidMember === true;
+            isFreeMember = viewerMediaOptions.viewerIsFreeMember === true;
+            viewerAgeVerified = viewerMediaOptions.viewerAgeVerified === true;
         }
 
         // Apply filter + status
@@ -465,17 +472,6 @@ export const galleryCtr = {
         if (!isStaff && !isAdmin && !isOwner) {
             if (!hasExplicitStatus && mongoFilter['isPublished'] === undefined) {
                 mongoFilter['isPublished'] = { $ne: false };
-            }
-        }
-
-        let viewerAgeVerified = false;
-        if (isLoggedIn) {
-            try {
-                const viewer = await authnCtr.getUserFromSession(context);
-                viewerAgeVerified = viewer?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-            }
-            catch {
-                viewerAgeVerified = false;
             }
         }
 
@@ -507,14 +503,6 @@ export const galleryCtr = {
                     populate: [
                         { path: 'ageVerify' },
                         { path: 'roles' },
-                        {
-                            path: 'partner1',
-                            populate: [{ path: 'gallery' }],
-                        },
-                        {
-                            path: 'partner2',
-                            populate: [{ path: 'gallery' }],
-                        },
                     ],
                 },
             ],
@@ -523,6 +511,8 @@ export const galleryCtr = {
         if (!galleries.success) {
             return galleries;
         }
+
+        await attachUploaderProfileGalleriesToGalleries(galleries.result.docs);
 
         // Check uploader age verification status for all galleries
         const uploaderAgeVerificationCache = new Map<string, boolean>();
@@ -675,17 +665,6 @@ export const galleryCtr = {
 
             // Hydrate uploadedBy user media (sign/blur profile images)
             if (galleryResult.uploadedBy) {
-                let viewer: any = null;
-                try {
-                    if (isLoggedIn) {
-                        viewer = await authnCtr.getUserFromSession(context);
-                    }
-                }
-                catch {
-                    viewer = null;
-                }
-
-                const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(viewer);
                 hydrateUserMedia(galleryResult.uploadedBy, viewerMediaOptions);
             }
 
