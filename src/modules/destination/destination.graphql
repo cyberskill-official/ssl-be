@@ -17,7 +17,7 @@ enum E_DestinationAgeGroup {
 }
 
 type T_Hotel {
-    name: String
+    name: JSON
     locationId: String
     location: T_Location
     url: String
@@ -26,7 +26,7 @@ type T_Hotel {
 }
 
 input Input_Hotel {
-    name: String
+    name: JSON
     location: Input_Location
     url: String
     description: JSON
@@ -39,7 +39,7 @@ type T_Destination {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_DestinationType
-    name: String
+    name: JSON
     slug: String
     websiteURL: String
     rating: E_DestinationRating
@@ -83,7 +83,7 @@ input Input_QueryDestination {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_DestinationType
-    name: String
+    name: JSON
     slug: String
     websiteURL: String
     rating: E_DestinationRating
@@ -111,7 +111,7 @@ input Input_QueryDestination {
 
 input Input_CreateDestination {
     type: E_DestinationType!
-    name: String!
+    name: JSON!
     websiteURL: String!
     rating: E_DestinationRating!
     images: [String]!
@@ -145,7 +145,7 @@ input Input_CreateDestination {
 input Input_UpdateDestination {
     isDel: Boolean
     type: E_DestinationType
-    name: String
+    name: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
