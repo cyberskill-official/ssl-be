@@ -71,3 +71,4 @@ export const ParticipantModel = mongo.createModel<I_Participant>({
 
 ParticipantModel.schema.index({ conversationId: 1 });
 ParticipantModel.schema.index({ userId: 1, conversationId: 1 });
+ParticipantModel.schema.index({ conversationId: 1, userId: 1 });

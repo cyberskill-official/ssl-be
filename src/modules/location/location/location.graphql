@@ -154,5 +154,7 @@ type Query {
     getLocation(filter: Input_QueryLocation!, options: JSON, populate: JSON): T_Response_Location!
     getLocations(filter: Input_QueryLocation, options: JSON): T_Response_Locations!
     getLocationsInViewport(filter: Input_GetLocationInViewport!, options: JSON): T_Response_Locations!
+    getDashboardProfilesInViewport(filter: Input_GetLocationInViewport!, options: JSON): T_Response_Locations!
+    getDashboardEventsInViewport(filter: Input_GetLocationInViewport!, options: JSON): T_Response_Locations!
     getLocationsInViewportMap(filter: Input_GetLocationInViewport!, options: JSON): T_Response_Locations!
 }

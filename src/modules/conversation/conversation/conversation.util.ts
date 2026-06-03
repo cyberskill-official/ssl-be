@@ -1,6 +1,8 @@
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Gallery } from '#modules/gallery/index.js';
+import type { I_User } from '#modules/user/user.type.js';
+import type { I_HydrateUserMediaOptions } from '#modules/user/user.validate.js';
 import type { I_Context } from '#shared/typescript/express.js';
 
 import { authnCtr } from '#modules/authn/index.js';
@@ -18,6 +20,160 @@ import { transformMessageMedia } from '../message/index.js';
 import { E_ContactBillingMembershipType, E_ContactClubEventType, E_ContactContentModerationType, E_ContactGeneralFeedbackType, E_ContactLegalComplianceType, E_ContactTechnicalAccountType, E_ContactTopic, E_ConversationType } from './conversation.type.js';
 
 const MULTI_NEWLINE_REGEX = /\n{3,}/g;
+const userMongooseCtr = new MongooseController(UserModel);
+
+interface I_TransformConversationMediaOptions {
+    activeKeywords?: any[];
+    approveLogs?: any[];
+    viewer?: I_User | null;
+    sessionUser?: I_User | null;
+    viewerMediaOptions?: I_HydrateUserMediaOptions;
+    userHydrationCache?: Map<string, Promise<I_User | null>>;
+}
+
+function userNeedsMediaHydration(user?: Partial<I_User> | null): boolean {
+    if (!user)
+        return true;
+
+    const partner1GalleryMissing = !user.partner1?.gallery
+        || !user.partner1.gallery.url;
+    const partner2GalleryMissing = !user.partner2?.gallery
+        || !user.partner2.gallery.url;
+
+    return !user.ageVerify
+        || !user.roles
+        || !user.rolesIds
+        || user.membershipExpiresAt === undefined
+        || (user as any).membershipEndDate === undefined
+        || partner1GalleryMissing
+        || partner2GalleryMissing;
+}
+
+async function getCachedHydratedUser(
+    userId: string,
+    cache?: Map<string, Promise<I_User | null>>,
+): Promise<I_User | null> {
+    const cachedUser = cache?.get(userId);
+    if (cachedUser) {
+        return cachedUser;
+    }
+
+    const loadUserPromise = (async () => {
+        try {
+            const userResult = await userMongooseCtr.findOne(
+                { id: userId },
+                {
+                    id: 1,
+                    roles: 1,
+                    rolesIds: 1,
+                    ageVerify: 1,
+                    membershipExpiresAt: 1,
+                    membershipEndDate: 1,
+                    partner1: 1,
+                    partner2: 1,
+                } as any,
+                undefined,
+                [
+                    { path: 'ageVerify' },
+                    { path: 'roles' },
+                    {
+                        path: 'partner1',
+                        populate: [{ path: 'gallery' }],
+                    },
+                    {
+                        path: 'partner2',
+                        populate: [{ path: 'gallery' }],
+                    },
+                ],
+            );
+
+            if (!userResult.success || !userResult.result) {
+                return null;
+            }
+
+            return userResult.result;
+        }
+        catch {
+            return null;
+        }
+    })();
+
+    cache?.set(userId, loadUserPromise);
+    return loadUserPromise;
+}
+
+async function resolveViewerMediaContext(
+    context: I_Context,
+    options: I_TransformConversationMediaOptions,
+): Promise<I_HydrateUserMediaOptions> {
+    let viewer = options.viewer;
+    if (viewer === undefined) {
+        try {
+            viewer = await authnCtr.getUserFromSession(context);
+        }
+        catch {
+            viewer = null;
+        }
+        options.viewer = viewer ?? null;
+    }
+
+    let sessionUser = options.sessionUser;
+    if (sessionUser === undefined) {
+        if (viewer?.id) {
+            sessionUser = await getCachedHydratedUser(
+                viewer.id,
+                options.userHydrationCache,
+            );
+        }
+        else {
+            sessionUser = null;
+        }
+        options.sessionUser = sessionUser ?? null;
+    }
+
+    const viewerMediaOptions = options.viewerMediaOptions
+        ?? getViewerMediaContext(sessionUser ?? viewer ?? null).mediaOptions;
+
+    options.viewerMediaOptions = viewerMediaOptions;
+    return viewerMediaOptions;
+}
+
+async function resolveParticipantUser(
+    participantUser: any,
+    participantUserId: string | null | undefined,
+    options: I_TransformConversationMediaOptions,
+): Promise<any> {
+    const plainUser = participantUser ? toPlainConversation(participantUser) : participantUser;
+    const effectiveUserId = plainUser?.id || participantUserId;
+
+    if (!effectiveUserId) {
+        return plainUser;
+    }
+
+    if (!userNeedsMediaHydration(plainUser as Partial<I_User> | null | undefined)) {
+        return plainUser;
+    }
+
+    const hydratedUser = await getCachedHydratedUser(
+        effectiveUserId,
+        options.userHydrationCache,
+    );
+
+    if (!hydratedUser) {
+        return plainUser;
+    }
+
+    if (!plainUser) {
+        return hydratedUser;
+    }
+
+    return {
+        ...plainUser,
+        ...hydratedUser,
+        partner1: hydratedUser.partner1 || plainUser.partner1,
+        partner2: hydratedUser.partner2 || plainUser.partner2,
+    };
+}
 
 /**
  * Check if user is a participant in a private conversation
@@ -314,30 +470,20 @@ export function toPlainConversation<T>(conversation: T): T {
 export async function transformConversationMedia<T extends I_Conversation>(
     context: I_Context,
     conversation: T | null | undefined,
-    options?: {
-        activeKeywords?: any[];
-        approveLogs?: any[];
-    },
+    options?: I_TransformConversationMediaOptions,
 ): Promise<T | null | undefined> {
     if (!conversation)
         return conversation ?? null;
 
     const plainConversation = toPlainConversation(conversation);
+    const transformOptions = options ?? {};
+    if (!transformOptions.userHydrationCache) {
+        transformOptions.userHydrationCache = new Map();
+    }
+    const viewerMediaOptions = await resolveViewerMediaContext(context, transformOptions);
 
     // Transform lastMessage (includes sender avatar blur and keyword masking)
-    const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage, options) ?? plainConversation.lastMessage;
-
-    // Get viewer context for media hydration
-    // getUserFromSession is per-request cached, so this is free after the first call
-    let sessionUser: any;
-    try {
-        sessionUser = await authnCtr.getUserFromSession(context);
-    }
-    catch {
-        sessionUser = undefined;
-    }
-
-    const { mediaOptions: viewerMediaOptions } = getViewerMediaContext(sessionUser);
+    const lastMessage = await transformMessageMedia(context, plainConversation.lastMessage, transformOptions) ?? plainConversation.lastMessage;
 
     // Transform participant avatars using hydrateUserMedia
     let transformedParticipants = plainConversation.participants;
@@ -346,56 +492,17 @@ export async function transformConversationMedia<T extends I_Conversation>(
             if (!participant?.user)
                 return participant;
 
-            let user = { ...participant.user };
-
-            // Ensure ageVerify and roles are populated for hydrateUserMedia to work correctly
-            if ((!user.ageVerify || !user.roles || !user.rolesIds || user.membershipExpiresAt === undefined || (user as any).membershipEndDate === undefined) && user.id) {
-                try {
-                    const mongooseCtr = new MongooseController(UserModel);
-                    const userPopulated = await mongooseCtr.findOne(
-                        { id: user.id },
-                        {
-                            id: 1,
-                            roles: 1,
-                            rolesIds: 1,
-                            ageVerify: 1,
-                            membershipExpiresAt: 1,
-                            membershipEndDate: 1,
-                            partner1: 1,
-                            partner2: 1,
-                        } as any,
-                        undefined,
-                        [
-                            { path: 'ageVerify' },
-                            { path: 'roles' },
-                            {
-                                path: 'partner1',
-                                populate: [{ path: 'gallery' }],
-                            },
-                            {
-                                path: 'partner2',
-                                populate: [{ path: 'gallery' }],
-                            },
-                        ],
-                    );
-                    if (userPopulated.success && userPopulated.result) {
-                        // Merge ageVerify, roles and galleries into user
-                        user = {
-                            ...user,
-                            ageVerify: userPopulated.result.ageVerify,
-                            roles: userPopulated.result.roles || user.roles,
-                            partner1: userPopulated.result.partner1 || user.partner1,
-                            partner2: userPopulated.result.partner2 || user.partner2,
-                        };
-                    }
-                }
-                catch {
-                    // If fetch fails, continue with existing user data
-                }
-            }
+            const hydratedUser = await resolveParticipantUser(
+                participant.user,
+                participant.userId,
+                transformOptions,
+            );
+            const user = hydratedUser ? { ...toPlainConversation(hydratedUser) } : hydratedUser;
 
             // Use hydrateUserMedia to apply proper blur/default image logic
-            hydrateUserMedia(user, viewerMediaOptions);
+            if (user) {
+                hydrateUserMedia(user, viewerMediaOptions);
+            }
 
             return {
                 ...participant,
@@ -432,9 +539,16 @@ export async function transformConversationDocs<T extends I_Conversation>(contex
 
     const activeKeywords = activeKeywordsRes.success && Array.isArray(activeKeywordsRes.result) ? activeKeywordsRes.result : undefined;
     const approveLogs = approveLogsRes.success && approveLogsRes.result?.docs ? approveLogsRes.result.docs : undefined;
+    const sharedTransformOptions: I_TransformConversationMediaOptions = {
+        activeKeywords,
+        approveLogs,
+        userHydrationCache: new Map<string, Promise<I_User | null>>(),
+    };
+
+    await resolveViewerMediaContext(context, sharedTransformOptions);
 
     const transformed = await Promise.all(
-        docs.map(async doc => await transformConversationMedia(context, doc, { activeKeywords, approveLogs }) ?? doc),
+        docs.map(async doc => await transformConversationMedia(context, doc, sharedTransformOptions) ?? doc),
     );
     return transformed;
 }

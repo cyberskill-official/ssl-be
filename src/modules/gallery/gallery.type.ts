@@ -40,6 +40,14 @@ export interface I_Input_QueryGalleryByUserId {
     isDel?: boolean;
 }
 
+export interface I_Input_QueryDashboardGalleryInViewport {
+    southWestLatitude: number;
+    southWestLongitude: number;
+    northEastLatitude: number;
+    northEastLongitude: number;
+    type: E_GalleryType;
+}
+
 export interface I_Input_CreateGallery extends Omit<I_Gallery, T_Omit_Create | T_Gallery_Populate> {
     moderationMediaId: string;
     type: E_GalleryType;

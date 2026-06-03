@@ -5,6 +5,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { applyNameFilters, buildStartsWithFilter, escapeRegex } from '#shared/util/filter-name.js';
 
 import type { I_Country, I_Input_QueryCountry } from './country.type.js';
@@ -52,6 +53,13 @@ export const countryCtr = {
             delete computedFilter['name'];
         }
 
-        return mongooseCtr.findPaging(computedFilter as T_QueryFilter<I_Country>, options);
+        // Caching strategy for getCountries
+        const cacheKey = { filter: computedFilter, options };
+        return queryCacheService.getOrSet<I_Return<T_PaginateResult<I_Country>>>({
+            scope: 'country:getCountries',
+            key: cacheKey,
+            ttl: 1800, // 30 minutes
+            loader: async () => mongooseCtr.findPaging(computedFilter as T_QueryFilter<I_Country>, options),
+        });
     },
 };

@@ -2,9 +2,8 @@ import { Redis } from 'ioredis';
 
 import { getEnv } from '../env/index.js';
 
-const env = getEnv();
-
 export function createRedisClient(db: number = 0) {
+    const env = getEnv();
     // For ioredis v5+, use: import Redis from 'ioredis'
     // If error persists, try: import * as Redis from 'ioredis'
     // and then: return new Redis.default({...})
@@ -17,3 +16,6 @@ export function createRedisClient(db: number = 0) {
         maxRetriesPerRequest: 3,
     });
 }
+
+export * from './query-cache.service.js';
+export * from './redis.service.js';

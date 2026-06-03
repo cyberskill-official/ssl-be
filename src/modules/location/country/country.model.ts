@@ -3,6 +3,8 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
+
 import type { I_Country, I_TimeZone } from './country.type.js';
 
 export const TimeZoneSchema = mongo.createSchema<I_TimeZone>({
@@ -137,6 +139,9 @@ async function createMiddleware(this: I_Country) {
         }
 
         this.slug = newSlug.result;
+
+        // Bump cache version for country scope
+        await queryCacheService.bumpVersion('country');
     }
     catch (error) {
         if (error instanceof Error) {
@@ -175,6 +180,9 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Country>) {
 
             newData.slug = newSlug.result;
         }
+
+        // Bump cache version for country scope
+        await queryCacheService.bumpVersion('country');
     }
     catch (error) {
         if (error instanceof Error) {

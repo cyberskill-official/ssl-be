@@ -6,6 +6,7 @@ import { E_SessionPortal, SESSION_PORTAL_HEADER } from './session.constant.js';
 
 interface I_SessionRequestLike {
     headers?: IncomingHttpHeaders;
+    url?: string;
     get?: (name: string) => string | undefined;
 }
 
@@ -34,6 +35,19 @@ function normalizeOrigin(value?: string): string | undefined {
     }
 }
 
+function getQueryParam(req: I_SessionRequestLike, name: string): string | undefined {
+    if (!req.url) {
+        return undefined;
+    }
+
+    try {
+        return new URL(req.url, 'http://localhost').searchParams.get(name) ?? undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
 export function getPortalSessionCookieNames(env: I_Environment): Record<E_SessionPortal, string> {
     return {
         [E_SessionPortal.ADMIN]: env.SESSION_NAME_ADMIN,
@@ -42,7 +56,10 @@ export function getPortalSessionCookieNames(env: I_Environment): Record<E_Sessio
 }
 
 export function getSessionPortalFromRequest(req: I_SessionRequestLike, env: I_Environment): E_SessionPortal {
-    const portalHeader = getHeader(req, SESSION_PORTAL_HEADER)?.toLowerCase();
+    const portalHeader = (
+        getHeader(req, SESSION_PORTAL_HEADER)
+        ?? getQueryParam(req, SESSION_PORTAL_HEADER)
+    )?.toLowerCase();
 
     if (portalHeader === E_SessionPortal.ADMIN || portalHeader === E_SessionPortal.USER) {
         return portalHeader;

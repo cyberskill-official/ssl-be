@@ -2,6 +2,8 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
+
 import type { E_AdvertisementPlacementType, E_AdvertisementSlot, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement, I_Input_UpdateClickCount } from './advertisement.type.js';
 
 import { advertisementCtr } from './advertisement.controller.js';
@@ -9,7 +11,15 @@ import { advertisementCtr } from './advertisement.controller.js';
 const advertisementResolver = {
     Query: {
         getAdvertisement: (_parent: unknown, args: I_Input_FindOne<I_Input_QueryAdvertisement>, context: I_Context) => advertisementCtr.getAdvertisement(context, args),
-        getAdvertisements: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryAdvertisement>, context: I_Context) => advertisementCtr.getAdvertisements(context, args),
+        getAdvertisements: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryAdvertisement>, context: I_Context) =>
+            queryCacheService.getOrSet({
+                scope: 'advertisement:getAdvertisements',
+                key: args,
+                ttl: 300,
+                dependencies: ['advertisement'],
+                shouldCache: value => value.success === true,
+                loader: () => advertisementCtr.getAdvertisements(context, args),
+            }),
         getAdvertisementByPlacement: (_parent: unknown, args: { placementType: E_AdvertisementPlacementType; placementId: string; slot?: E_AdvertisementSlot }, context: I_Context) => advertisementCtr.getAdvertisementByPlacement(context, args),
     },
     Mutation: {

@@ -8,6 +8,7 @@ import type {
     T_PaginateResult,
 } from '@cyberskill/shared/node/mongo';
 import type { I_Return } from '@cyberskill/shared/typescript';
+import type { PopulateOptions } from 'mongoose';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { throwError } from '@cyberskill/shared/node/log';
@@ -35,10 +36,14 @@ export const blockCtr = {
         { options }: I_Input_FindPaging,
     ): Promise<I_Return<T_PaginateResult<I_Block>>> => {
         const currentUser = await authnCtr.getUserFromSession(context);
+        const defaultPopulate: PopulateOptions[] = [{ path: 'user' }, { path: 'block' }];
+        const populate = options && 'populate' in options
+            ? (options as { populate?: PopulateOptions[] }).populate
+            : defaultPopulate;
 
         return mongooseCtr.findPaging(
             { $or: [{ userId: currentUser.id }, { blockId: currentUser.id }] },
-            { ...options, populate: [{ path: 'user' }, { path: 'block' }] },
+            { ...options, populate },
         );
     },
     createBlock: async (

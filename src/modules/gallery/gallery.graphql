@@ -46,6 +46,14 @@ input Input_QueryGalleryByUserIds {
     isDel: Boolean
 }
 
+input Input_QueryDashboardGalleryInViewport {
+    southWestLatitude: Float!
+    southWestLongitude: Float!
+    northEastLatitude: Float!
+    northEastLongitude: Float!
+    type: E_GalleryType!
+}
+
 input Input_CreateGallery {
     type: E_GalleryType!
     url: String!
@@ -93,6 +101,10 @@ type Query {
     getGallery(filter: Input_QueryGallery!, projection: JSON, options: JSON, populate: JSON): T_Response_Gallery!
     getGalleries(filter: Input_QueryGallery, options: JSON): T_Response_Galleries!
     getGalleriesByUserIds(filter: Input_QueryGalleryByUserIds, options: JSON): T_Response_Galleries!
+    getDashboardGalleriesInViewport(
+        filter: Input_QueryDashboardGalleryInViewport!
+        options: JSON
+    ): T_Response_Galleries!
 }
 
 type Mutation {

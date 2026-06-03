@@ -23,6 +23,7 @@ import { currencyCtr } from '#modules/location/currency/currency.controller.js';
 import { settingCtr } from '#modules/setting/setting.controller.js';
 import { E_SettingType } from '#modules/setting/setting.type.js';
 import { userCtr } from '#modules/user/user.controller.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 
 import type { I_Input_CreatePricing, I_Input_QueryPricing, I_Input_UpdatePricing, I_Pricing, I_Response_SubscriptionPrice } from './pricing.type.js';
 
@@ -33,24 +34,40 @@ const mongooseCtr = new MongooseController<I_Pricing>(PricingModel);
 
 export const pricingCtr = {
     async getPricing(_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryPricing>): Promise<I_Return<I_Pricing>> {
-        const result = await mongooseCtr.findOne(filter, projection, options, populate);
-        // Ensure currencyId is always returned, even after populate
-        if (result.success && result.result && !result.result.currencyId && result.result.id) {
-            const pricingRawRes = await mongooseCtr.findOne(
-                { id: result.result.id },
-                { currencyId: 1 }, // Only get currencyId
-            );
+        return queryCacheService.getOrSet<I_Return<I_Pricing>>({
+            scope: 'pricing:getPricing',
+            key: { filter, projection, options, populate },
+            ttl: 600,
+            dependencies: ['pricing'],
+            shouldCache: value => value.success === true,
+            loader: async () => {
+                const result = await mongooseCtr.findOne(filter, projection, options, populate);
+                // Ensure currencyId is always returned, even after populate
+                if (result.success && result.result && !result.result.currencyId && result.result.id) {
+                    const pricingRawRes = await mongooseCtr.findOne(
+                        { id: result.result.id },
+                        { currencyId: 1 }, // Only get currencyId
+                    );
 
-            if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
-                if (result.success && result.result) {
-                    result.result.currencyId = pricingRawRes.result.currencyId;
+                    if (pricingRawRes.success && 'result' in pricingRawRes && pricingRawRes.result?.currencyId) {
+                        if (result.success && result.result) {
+                            result.result.currencyId = pricingRawRes.result.currencyId;
+                        }
+                    }
                 }
-            }
-        }
-        return result;
+                return result;
+            },
+        });
     },
     async getPricings(_context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryPricing>): Promise<I_Return<T_PaginateResult<I_Pricing>>> {
-        return mongooseCtr.findPaging(filter, options);
+        return queryCacheService.getOrSet<I_Return<T_PaginateResult<I_Pricing>>>({
+            scope: 'pricing:getPricings',
+            key: { filter, options },
+            ttl: 600,
+            dependencies: ['pricing'],
+            shouldCache: value => value.success === true,
+            loader: () => mongooseCtr.findPaging(filter, options),
+        });
     },
     async createPricing(context: I_Context, { doc }: I_Input_CreateOne<I_Input_CreatePricing>): Promise<I_Return<I_Pricing>> {
         // Validate currencyId exists if provided
@@ -68,7 +85,11 @@ export const pricingCtr = {
                 });
             }
         }
-        return mongooseCtr.createOne(doc);
+        const result = await mongooseCtr.createOne(doc);
+        if (result.success) {
+            await queryCacheService.bumpVersion('pricing');
+        }
+        return result;
     },
     async updatePricing(context: I_Context, { filter, update, options }: I_Input_UpdateOne<I_Input_UpdatePricing>): Promise<I_Return<I_Pricing>> {
         const pricingFound = await pricingCtr.getPricing(context, { filter });
@@ -96,7 +117,11 @@ export const pricingCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update, options);
+        const result = await mongooseCtr.updateOne(filter, update, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('pricing');
+        }
+        return result;
     },
     async deletePricing(context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryPricing>): Promise<I_Return<I_Pricing>> {
         const pricingFound = await pricingCtr.getPricing(context, { filter });
@@ -108,7 +133,11 @@ export const pricingCtr = {
             });
         }
 
-        return mongooseCtr.deleteOne(filter, options);
+        const result = await mongooseCtr.deleteOne(filter, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('pricing');
+        }
+        return result;
     },
     async getSubscriptionPrice(context: I_Context): Promise<I_Return<I_Response_SubscriptionPrice>> {
         const currentUser = await authnCtr.getUserFromSession(context);

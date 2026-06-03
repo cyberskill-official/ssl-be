@@ -49,3 +49,6 @@ export const BlockModel = mongo.createModel<I_Block>({
         },
     ],
 });
+
+BlockModel.schema.index({ userId: 1 }, { name: 'idx_blocks_user_id' });
+BlockModel.schema.index({ blockId: 1 }, { name: 'idx_blocks_block_id' });
