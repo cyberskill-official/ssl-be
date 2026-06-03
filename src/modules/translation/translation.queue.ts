@@ -14,7 +14,7 @@ export interface I_TranslationJobData {
 
 const env = getEnv();
 
-const TARGET_LANGS = ['da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi', 'vi'];
+const TARGET_LANGS = ['da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
 
 const REDIS_CONFIG = {
     host: env.REDIS_HOST,
@@ -38,7 +38,7 @@ export const translationQueue = new Bull<I_TranslationJobData>('translation', {
 });
 
 // Worker processing
-translationQueue.process(1, async (job) => {
+translationQueue.process(3, async (job) => {
     const { type, id } = job.data;
     log.info(`[TranslationQueue] Processing job ${job.id} of type ${type} for ID: ${id}`);
     try {
@@ -92,6 +92,7 @@ function ensureMultilingualValue(val: any, enValue: string): Record<string, stri
 }
 
 export async function translateBlog(id: string) {
+    const startTime = Date.now();
     // Check if already being translated
     const existingBlog = await BlogModel.findOne({ id, isDel: { $ne: true } });
     if (!existingBlog) {
@@ -302,7 +303,7 @@ export async function translateBlog(id: string) {
         };
 
         await BlogModel.findOneAndUpdate({ id, isDel: { $ne: true } }, { $set });
-        log.info(`[TranslationQueue] Blog ${id} translation completed.`);
+        log.info(`[TranslationQueue] Blog ${id} translation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Blog ${id}:`, err);
@@ -314,6 +315,7 @@ export async function translateBlog(id: string) {
 }
 
 export async function translateDestination(id: string) {
+    const startTime = Date.now();
     // Check if already being translated
     const existingDestination = await DestinationModel.findOne({ id, isDel: { $ne: true } });
     if (!existingDestination) {
@@ -350,51 +352,79 @@ export async function translateDestination(id: string) {
     const seoKeywords = getEnKeywords(destination.seo?.keywords);
     const socialMediaDescription = getEn(destination.seo?.socialMediaDescription);
 
+    const atmosphereRatingReason = getEn(destination.atmosphereRating?.reason);
+    const guestsRatingReason = getEn(destination.guestsRating?.reason);
+    const facilitiesRatingReason = getEn(destination.facilitiesRating?.reason);
+    const serviceRatingReason = getEn(destination.serviceRating?.reason);
+    const xFactorRatingReason = getEn(destination.xFactorRating?.reason);
+
     const snapshot: Record<string, any> = (destination as any).translationSnapshot || {};
 
-    // Detect changed fields
+    // Helper: check if field already has all target languages
+    function hasAllTranslations(fieldValue: any): boolean {
+        if (!fieldValue || typeof fieldValue !== 'object')
+            return false;
+        return TARGET_LANGS.every(lang => fieldValue[lang] && fieldValue[lang].length > 0);
+    }
+
+    // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
-    if (introductionHeadline !== (snapshot['introductionHeadline'] || ''))
+    if (introductionHeadline !== (snapshot['introductionHeadline'] || '') && !hasAllTranslations(destination.introductionHeadline))
         changedSmall['introductionHeadline'] = introductionHeadline;
-    if (womenDressCode !== (snapshot['womenDressCode'] || ''))
+    if (womenDressCode !== (snapshot['womenDressCode'] || '') && !hasAllTranslations(destination.womenDressCode))
         changedSmall['womenDressCode'] = womenDressCode;
-    if (menDressCode !== (snapshot['menDressCode'] || ''))
+    if (menDressCode !== (snapshot['menDressCode'] || '') && !hasAllTranslations(destination.menDressCode))
         changedSmall['menDressCode'] = menDressCode;
-    if (highlightSex !== (snapshot['highlightSex'] || ''))
+    if (highlightSex !== (snapshot['highlightSex'] || '') && !hasAllTranslations(destination.highlightSex))
         changedSmall['highlightSex'] = highlightSex;
-    if (highlightWellness !== (snapshot['highlightWellness'] || ''))
+    if (highlightWellness !== (snapshot['highlightWellness'] || '') && !hasAllTranslations(destination.highlightWellness))
         changedSmall['highlightWellness'] = highlightWellness;
-    if (highlightBar !== (snapshot['highlightBar'] || ''))
+    if (highlightBar !== (snapshot['highlightBar'] || '') && !hasAllTranslations(destination.highlightBar))
         changedSmall['highlightBar'] = highlightBar;
-    if (highlightDance !== (snapshot['highlightDance'] || ''))
+    if (highlightDance !== (snapshot['highlightDance'] || '') && !hasAllTranslations(destination.highlightDance))
         changedSmall['highlightDance'] = highlightDance;
-    if (seoTitle !== (snapshot['seoTitle'] || ''))
+    if (seoTitle !== (snapshot['seoTitle'] || '') && !hasAllTranslations(destination.seo?.title))
         changedSmall['seoTitle'] = seoTitle;
-    if (seoDescription !== (snapshot['seoDescription'] || ''))
+    if (seoDescription !== (snapshot['seoDescription'] || '') && !hasAllTranslations(destination.seo?.description))
         changedSmall['seoDescription'] = seoDescription;
-    if (seoKeywords !== (snapshot['seoKeywords'] || ''))
+    if (seoKeywords !== (snapshot['seoKeywords'] || '') && !hasAllTranslations(destination.seo?.keywords))
         changedSmall['seoKeywords'] = seoKeywords;
-    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || ''))
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') && !hasAllTranslations(destination.seo?.socialMediaDescription))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
-    const contentChanged = introductionContent !== (snapshot['introductionContent'] || '');
+    const contentChanged = introductionContent !== (snapshot['introductionContent'] || '') && !hasAllTranslations(destination.introductionContent);
+
+    // Detect rating reason changes - skip if already translated
+    const ratingReasonsChanged: Record<string, string> = {};
+    if (atmosphereRatingReason && atmosphereRatingReason !== (snapshot['atmosphereRatingReason'] || '') && !hasAllTranslations(destination.atmosphereRating?.reason))
+        ratingReasonsChanged['atmosphereRatingReason'] = atmosphereRatingReason;
+    if (guestsRatingReason && guestsRatingReason !== (snapshot['guestsRatingReason'] || '') && !hasAllTranslations(destination.guestsRating?.reason))
+        ratingReasonsChanged['guestsRatingReason'] = guestsRatingReason;
+    if (facilitiesRatingReason && facilitiesRatingReason !== (snapshot['facilitiesRatingReason'] || '') && !hasAllTranslations(destination.facilitiesRating?.reason))
+        ratingReasonsChanged['facilitiesRatingReason'] = facilitiesRatingReason;
+    if (serviceRatingReason && serviceRatingReason !== (snapshot['serviceRatingReason'] || '') && !hasAllTranslations(destination.serviceRating?.reason))
+        ratingReasonsChanged['serviceRatingReason'] = serviceRatingReason;
+    if (xFactorRatingReason && xFactorRatingReason !== (snapshot['xFactorRatingReason'] || '') && !hasAllTranslations(destination.xFactorRating?.reason))
+        ratingReasonsChanged['xFactorRatingReason'] = xFactorRatingReason;
 
     // Check nearbyHotels changes
     const currentHotels = (destination.nearbyHotels || []).map(h => ({ name: h.name || '', desc: getEn(h.description) }));
     const snapshotHotels = snapshot['nearbyHotels'] || [];
-    const hotelsChanged = JSON.stringify(currentHotels) !== JSON.stringify(snapshotHotels);
+    const hotelsChanged = JSON.stringify(currentHotels) !== JSON.stringify(snapshotHotels)
+        || (destination.nearbyHotels || []).some(h => h.description && !hasAllTranslations(h.description));
 
     // Check FAQ changes
     const currentFaqs = (destination.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
     const snapshotFaqs = snapshot['faqs'] || [];
-    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs);
+    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs)
+        || (destination.faqs || []).some(f => (f.question && !hasAllTranslations(f.question)) || (f.answer && !hasAllTranslations(f.answer)));
 
-    if (Object.keys(changedSmall).length === 0 && !contentChanged && !hotelsChanged && !faqsChanged) {
+    if (Object.keys(changedSmall).length === 0 && !contentChanged && !hotelsChanged && !faqsChanged && Object.keys(ratingReasonsChanged).length === 0) {
         log.info(`[TranslationQueue] Destination ${id}: no translatable fields changed, skipping.`);
         return;
     }
 
-    log.info(`[TranslationQueue] Destination ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${hotelsChanged ? ', hotels' : ''}${faqsChanged ? ', faqs' : ''}`);
+    log.info(`[TranslationQueue] Destination ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${hotelsChanged ? ', hotels' : ''}${faqsChanged ? ', faqs' : ''}${Object.keys(ratingReasonsChanged).length > 0 ? ', ratingReasons' : ''}`);
 
     try {
         // Prepare hotel fields
@@ -419,7 +449,8 @@ export async function translateDestination(id: string) {
         }
 
         // Run all translations in parallel
-        const [smallResults, contentResults, hotelResults, faqResults] = await Promise.all([
+        const ratingReasonKeys = Object.keys(ratingReasonsChanged);
+        const [smallResults, contentResults, hotelResults, faqResults, ...ratingReasonResults] = await Promise.all([
             Object.keys(changedSmall).length > 0
                 ? translationService.translateFields(changedSmall, TARGET_LANGS)
                 : Promise.resolve({} as Record<string, Record<string, string>>),
@@ -432,6 +463,9 @@ export async function translateDestination(id: string) {
             Object.keys(faqFields).length > 0
                 ? translationService.translateFields(faqFields, TARGET_LANGS)
                 : Promise.resolve({} as Record<string, Record<string, string>>),
+            ...ratingReasonKeys.map(key =>
+                translationService.translateRichContent(key, ratingReasonsChanged[key]!, TARGET_LANGS),
+            ),
         ]);
 
         // Apply small field translations
@@ -531,6 +565,32 @@ export async function translateDestination(id: string) {
             }
         }
 
+        // Apply rating reason translations
+        const ratingFieldMap: Record<string, string> = {
+            atmosphereRatingReason: 'atmosphereRating',
+            guestsRatingReason: 'guestsRating',
+            facilitiesRatingReason: 'facilitiesRating',
+            serviceRatingReason: 'serviceRating',
+            xFactorRatingReason: 'xFactorRating',
+        };
+        for (let i = 0; i < ratingReasonKeys.length; i++) {
+            const key = ratingReasonKeys[i]!;
+            const translations = ratingReasonResults[i] as Record<string, string>;
+            if (translations && Object.keys(translations).length > 0) {
+                const ratingField = ratingFieldMap[key]!;
+                const ratingObj = (destination as any)[ratingField];
+                if (ratingObj) {
+                    const enValue = ratingReasonsChanged[key]!;
+                    if (!ratingObj.reason || typeof ratingObj.reason === 'string') {
+                        ratingObj.reason = { en: enValue };
+                    }
+                    for (const [lang, val] of Object.entries(translations)) {
+                        ratingObj.reason[lang] = val;
+                    }
+                }
+            }
+        }
+
         // Update snapshot
         (destination as any).translationSnapshot = {
             introductionHeadline,
@@ -547,6 +607,11 @@ export async function translateDestination(id: string) {
             socialMediaDescription,
             nearbyHotels: currentHotels,
             faqs: currentFaqs,
+            atmosphereRatingReason,
+            guestsRatingReason,
+            facilitiesRatingReason,
+            serviceRatingReason,
+            xFactorRatingReason,
         };
 
         destination.markModified('introductionHeadline');
@@ -560,10 +625,15 @@ export async function translateDestination(id: string) {
         destination.markModified('nearbyHotels');
         destination.markModified('seo');
         destination.markModified('faqs');
+        destination.markModified('atmosphereRating');
+        destination.markModified('guestsRating');
+        destination.markModified('facilitiesRating');
+        destination.markModified('serviceRating');
+        destination.markModified('xFactorRating');
         destination.markModified('translationSnapshot');
 
         await destination.save({ validateBeforeSave: false });
-        log.info(`[TranslationQueue] Destination ${id} translation completed.`);
+        log.info(`[TranslationQueue] Destination ${id} translation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Destination ${id}:`, err);

@@ -2,9 +2,8 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-import { getEnv } from '#shared/env/env.util.js';
-
 import { translateBlog, translateDestination } from '../modules/translation/translation.queue.js';
+import { getEnv } from '../shared/env/index.js';
 
 const [type, id] = process.argv.slice(2);
 

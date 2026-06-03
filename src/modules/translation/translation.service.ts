@@ -217,6 +217,11 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
             }
         }
 
+        // For Lexical content: extract text nodes, translate them, then merge back
+        if (isLexical && lexicalJson) {
+            return await translationService._translateLexicalByNodes(lexicalJson, targetLangs, apiKey, model, base64Map);
+        }
+
         const langInstructions = targetLangs
             .map((lang) => {
                 const info = MARKET_MAP[lang];
@@ -235,13 +240,6 @@ Guidelines:
 - Preserve any HTML formatting, links, or placeholders.
 - Keep the SecretSwingerLust brand voice.
 
-${isLexical
-    ? `Lexical JSON Guideline:
-- The content is Lexical JSON. You MUST ONLY translate the "text" properties of text nodes, and "altText" properties of image nodes.
-- Do NOT change any other properties, keys, node structures, formats, or URLs.
-- Return each language's translated Lexical JSON as a JSON object (not stringified).`
-    : ''}
-
 Return a JSON object mapping each language code to the translated content.
 Example: { "da": "...", "de": "...", "fr": "...", ... }`;
 
@@ -252,10 +250,11 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
                     model,
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        { role: 'user', content: JSON.stringify(lexicalJson || content) },
+                        { role: 'user', content: typeof content === 'string' ? content : JSON.stringify(content) },
                     ],
                     response_format: { type: 'json_object' },
                     temperature: 0.3,
+                    max_tokens: 16384,
                 },
                 {
                     headers: {
@@ -270,28 +269,152 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
                 throw new Error('Empty response from OpenAI');
             }
 
-            const parsed = JSON.parse(resultText);
-
-            if (isLexical) {
-                for (const lang of targetLangs) {
-                    let value = parsed[lang];
-                    if (typeof value === 'string') {
-                        try {
-                            value = JSON.parse(value);
-                        }
-                        catch { /* not JSON, skip */ }
-                    }
-                    if (typeof value === 'object' && value !== null) {
-                        restoreBase64Images(value, base64Map);
-                        parsed[lang] = JSON.stringify(value);
-                    }
-                }
-            }
-
-            return parsed;
+            return JSON.parse(resultText);
         }
         catch (error: any) {
             log.error('[TranslationService] translateRichContent error:', {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data,
+            });
+            throw error;
+        }
+    },
+
+    _extractTextNodes: (node: any, path: string = ''): Array<{ path: string; text: string }> => {
+        const results: Array<{ path: string; text: string }> = [];
+        if (!node || typeof node !== 'object')
+            return results;
+
+        if (node.type === 'text' && typeof node.text === 'string' && node.text.trim().length > 0) {
+            results.push({ path, text: node.text });
+        }
+        if (node.type === 'image' && typeof node.altText === 'string' && node.altText.trim().length > 0) {
+            results.push({ path: `${path}::altText`, text: node.altText });
+        }
+
+        if (Array.isArray(node.children)) {
+            for (let i = 0; i < node.children.length; i++) {
+                const childPath = path ? `${path}/children/${i}` : `root/children/${i}`;
+                results.push(...translationService._extractTextNodes(node.children[i], childPath));
+            }
+        }
+
+        return results;
+    },
+
+    _setNestedValue: (obj: any, path: string, value: any) => {
+        const parts = path.split('/').filter(Boolean);
+        let current = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+            current = current[parts[i]!];
+        }
+        current[parts[parts.length - 1]!] = value;
+    },
+
+    _translateLexicalByNodes: async (
+        lexicalJson: any,
+        targetLangs: string[],
+        apiKey: string,
+        model: string,
+        base64Map: Record<string, string>,
+    ): Promise<Record<string, string>> => {
+        const textNodes = translationService._extractTextNodes(lexicalJson.root);
+        if (textNodes.length === 0) {
+            const result: Record<string, string> = {};
+            for (const lang of targetLangs) {
+                result[lang] = JSON.stringify(lexicalJson);
+            }
+            return result;
+        }
+
+        // Build a compact indexed map for translation
+        const textMap: Record<string, string> = {};
+        for (let i = 0; i < textNodes.length; i++) {
+            textMap[String(i)] = textNodes[i]!.text;
+        }
+
+        const langInstructions = targetLangs
+            .map((lang) => {
+                const info = MARKET_MAP[lang];
+                return info ? `${lang} (${info.market}): ${info.instructions}` : `${lang}: Use natural localization.`;
+            })
+            .join('\n');
+
+        const systemPrompt = `You are a professional translator for SecretSwingerLust.com.
+Translate the provided text values into these languages: ${targetLangs.join(', ')}.
+
+Language-specific instructions:
+${langInstructions}
+
+Guidelines:
+- Keep the meaning natural and readable. Do not make it sound machine translated.
+- Preserve any HTML formatting, links, or placeholders.
+- Keep the SecretSwingerLust brand voice.
+
+Return a JSON object where each language code maps to an object of { index: translatedText }.
+Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`;
+
+        try {
+            const response = await axios.post(
+                'https://api.openai.com/v1/chat/completions',
+                {
+                    model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: JSON.stringify(textMap) },
+                    ],
+                    response_format: { type: 'json_object' },
+                    temperature: 0.3,
+                    max_tokens: 16384,
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                },
+            );
+
+            const resultText = response.data.choices[0]?.message?.content;
+            if (!resultText) {
+                throw new Error('Empty response from OpenAI');
+            }
+
+            const translated = JSON.parse(resultText);
+            const result: Record<string, string> = {};
+
+            for (const lang of targetLangs) {
+                const langTranslations = translated[lang] || {};
+                const cloned = JSON.parse(JSON.stringify(lexicalJson));
+                for (let i = 0; i < textNodes.length; i++) {
+                    const translatedText = langTranslations[String(i)];
+                    if (translatedText !== undefined) {
+                        const nodePath = textNodes[i]!.path;
+                        const isAltText = nodePath.endsWith('::altText');
+                        const actualPath = isAltText ? nodePath.replace('::altText', '') : nodePath;
+                        const parts = actualPath.split('/').filter(Boolean);
+                        let current = cloned;
+                        for (let j = 0; j < parts.length - 1; j++) {
+                            current = current[parts[j]!];
+                        }
+                        const lastKey = parts[parts.length - 1]!;
+                        if (isAltText) {
+                            current[lastKey].altText = translatedText;
+                        }
+                        else {
+                            current[lastKey].text = translatedText;
+                        }
+                    }
+                }
+                restoreBase64Images(cloned, base64Map);
+                result[lang] = JSON.stringify(cloned);
+            }
+
+            return result;
+        }
+        catch (error: any) {
+            log.error('[TranslationService] _translateLexicalByNodes error:', {
                 message: error.message,
                 status: error.response?.status,
                 data: error.response?.data,
