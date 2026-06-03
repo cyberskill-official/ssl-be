@@ -23,7 +23,7 @@ export const SeoSchema = mongo.createSchema<I_Seo>({
             type: Object,
         },
         urlSlug: {
-            type: String,
+            type: Object,
         },
         altTextForImages: {
             type: Object,

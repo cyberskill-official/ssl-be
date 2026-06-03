@@ -40,7 +40,7 @@ type T_Destination {
     updatedAt: DateTime
     type: E_DestinationType
     name: JSON
-    slug: String
+    slug: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -84,7 +84,7 @@ input Input_QueryDestination {
     updatedAt: DateTime
     type: E_DestinationType
     name: JSON
-    slug: String
+    slug: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]

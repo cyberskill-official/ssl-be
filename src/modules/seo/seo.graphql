@@ -4,7 +4,7 @@ type T_Seo {
     keywords: JSON
     socialImage: String
     socialMediaDescription: JSON
-    urlSlug: String
+    urlSlug: JSON
     altTextForImages: JSON
     imageAltTexts: JSON
 }
@@ -15,7 +15,7 @@ input Input_Seo {
     keywords: JSON
     socialImage: String
     socialMediaDescription: JSON
-    urlSlug: String
+    urlSlug: JSON
     altTextForImages: JSON
     imageAltTexts: JSON
 }

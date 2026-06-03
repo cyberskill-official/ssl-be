@@ -11,7 +11,7 @@ export interface I_Seo {
     keywords?: Record<string, string[]>;
     socialImage?: string;
     socialMediaDescription?: I_LocalizedString;
-    urlSlug?: string;
+    urlSlug?: I_LocalizedString;
     altTextForImages?: I_LocalizedString;
     imageAltTexts?: I_ImageAltText[];
 }

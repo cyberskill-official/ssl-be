@@ -24,7 +24,7 @@ export enum E_BlogCategory {
 
 export interface I_Blog extends I_GenericDocument {
     title?: I_LocalizedString;
-    slug?: string;
+    slug?: I_LocalizedString;
     authorName?: string;
     websiteName?: string;
     websiteURL?: string;

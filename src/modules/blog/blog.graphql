@@ -30,7 +30,7 @@ type T_Blog {
     createdAt: DateTime
     updatedAt: DateTime
     title: JSON
-    slug: String
+    slug: JSON
     authorName: String
     websiteName: String
     websiteURL: String
@@ -67,7 +67,7 @@ input Input_QueryBlog {
     isDel: Boolean
     createdAt: DateTime
     updatedAt: DateTime
-    slug: String
+    slug: JSON
     authorName: String
     websiteName: String
     websiteURL: String

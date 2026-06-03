@@ -27,6 +27,13 @@ import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/u;
+
+function getEn(val: unknown): string {
+    if (typeof val === 'object' && val)
+        return (val as Record<string, string>)['en'] || '';
+    return typeof val === 'string' ? val : '';
+}
+
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
@@ -171,7 +178,7 @@ export const blogCtr = {
                             actorId: authorId,
                             presentation: {
                                 // Use slug when available so the client can navigate without hitting 404 pages.
-                                redirect: { kind: redirectKind, id: blogResult.result.slug, url: redirectUrl },
+                                redirect: { kind: redirectKind, id: getEn(blogResult.result.slug), url: redirectUrl },
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,

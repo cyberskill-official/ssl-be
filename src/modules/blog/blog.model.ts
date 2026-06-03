@@ -36,16 +36,12 @@ export const BlogModel = mongo.createModel<I_Blog>({
             },
         },
         slug: {
-            type: String,
+            type: Object,
             require: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter the slug.',
-                },
-                {
-                    validator: mongo.validator.isUnique(['slug']),
-                    message: 'Slug is duplicated.',
                 },
             ],
         },
@@ -229,7 +225,7 @@ async function createMiddleware(this: I_Blog) {
             throw new Error(newSlug.message);
         }
 
-        this.slug = newSlug.result;
+        this.slug = { en: newSlug.result };
     }
     catch (error) {
         if (error instanceof Error) {
@@ -269,7 +265,7 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>) {
                 throw new Error(newSlug.message);
             }
 
-            newData.slug = newSlug.result;
+            newData.slug = { en: newSlug.result };
         }
     }
     catch (error) {
