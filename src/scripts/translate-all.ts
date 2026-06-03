@@ -34,13 +34,14 @@ async function main() {
     log.info(`[TranslateAll] Found ${destinations.length} destinations to translate.`);
 
     for (const dest of destinations) {
-        log.info(`[TranslateAll] Translating destination: "${dest.name}" (${dest.id})`);
+        const destName = typeof dest.name === 'object' && dest.name !== null ? (dest.name as any).en || '' : (dest.name as string) || '';
+        log.info(`[TranslateAll] Translating destination: "${destName}" (${dest.id})`);
         try {
             await translateDestination(dest.id);
-            log.info(`[TranslateAll] Destination "${dest.name}" done.`);
+            log.info(`[TranslateAll] Destination "${destName}" done.`);
         }
         catch (err) {
-            log.error(`[TranslateAll] Destination "${dest.name}" failed:`, err);
+            log.error(`[TranslateAll] Destination "${destName}" failed:`, err);
         }
     }
 

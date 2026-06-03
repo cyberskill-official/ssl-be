@@ -509,7 +509,7 @@ export const eventCtr = {
                 destinationLocationId = destinationLocationId ?? destination.locationId ?? (destination.location)?.id;
             }
 
-            const clubName = destination.name?.trim() ?? '';
+            const clubName = typeof destination.name === 'object' && destination.name !== null ? ((destination.name as Record<string, string>)['en']?.trim() ?? '') : ((destination.name || '') as string).trim();
             doc.title = { en: clubName ? `Going clubbing ${clubName}` : 'Going clubbing' };
             doc.image = (destination.images && destination.images[0]) ?? image;
 

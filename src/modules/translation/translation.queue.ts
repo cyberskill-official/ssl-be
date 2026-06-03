@@ -341,6 +341,7 @@ export async function translateDestination(id: string) {
         return;
     }
 
+    const name = getEn(destination.name);
     const womenDressCode = getEn(destination.womenDressCode);
     const menDressCode = getEn(destination.menDressCode);
     const highlightSex = getEn(destination.highlightSex);
@@ -369,6 +370,8 @@ export async function translateDestination(id: string) {
 
     // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
+    if (name && name !== (snapshot['name'] || '') && !hasAllTranslations(destination.name as any))
+        changedSmall['name'] = name;
     if (introductionHeadline !== (snapshot['introductionHeadline'] || '') && !hasAllTranslations(destination.introductionHeadline))
         changedSmall['introductionHeadline'] = introductionHeadline;
     if (womenDressCode !== (snapshot['womenDressCode'] || '') && !hasAllTranslations(destination.womenDressCode))
@@ -408,10 +411,10 @@ export async function translateDestination(id: string) {
         ratingReasonsChanged['xFactorRatingReason'] = xFactorRatingReason;
 
     // Check nearbyHotels changes
-    const currentHotels = (destination.nearbyHotels || []).map(h => ({ name: h.name || '', desc: getEn(h.description) }));
+    const currentHotels = (destination.nearbyHotels || []).map(h => ({ name: getEn(h.name), desc: getEn(h.description) }));
     const snapshotHotels = snapshot['nearbyHotels'] || [];
     const hotelsChanged = JSON.stringify(currentHotels) !== JSON.stringify(snapshotHotels)
-        || (destination.nearbyHotels || []).some(h => h.description && !hasAllTranslations(h.description));
+        || (destination.nearbyHotels || []).some(h => (h.name && !hasAllTranslations(h.name as any)) || (h.description && !hasAllTranslations(h.description)));
 
     // Check FAQ changes
     const currentFaqs = (destination.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
@@ -432,6 +435,9 @@ export async function translateDestination(id: string) {
         if (hotelsChanged && currentHotels.length > 0) {
             for (let i = 0; i < currentHotels.length; i++) {
                 const hotel = currentHotels[i]!;
+                if (hotel.name) {
+                    hotelFields[`hotel_${i}_name`] = hotel.name;
+                }
                 if (hotel.desc) {
                     hotelFields[`hotel_${i}_description`] = hotel.desc;
                 }
@@ -470,7 +476,10 @@ export async function translateDestination(id: string) {
 
         // Apply small field translations
         for (const [field, translations] of Object.entries(smallResults)) {
-            if (field === 'introductionHeadline') {
+            if (field === 'name') {
+                applyTranslations(destination as any, 'name', translations, name);
+            }
+            else if (field === 'introductionHeadline') {
                 applyTranslations(destination, 'introductionHeadline', translations, introductionHeadline);
             }
             else if (field === 'womenDressCode') {
@@ -524,15 +533,26 @@ export async function translateDestination(id: string) {
         // Apply hotel translations
         if (Object.keys(hotelResults).length > 0) {
             for (let i = 0; i < currentHotels.length; i++) {
-                const key = `hotel_${i}_description`;
                 const hotelNode = destination.nearbyHotels?.[i];
                 const currentHotel = currentHotels[i]!;
-                if (hotelResults[key] && hotelNode) {
-                    if (!hotelNode.description || typeof hotelNode.description === 'string') {
-                        hotelNode.description = { en: currentHotel.desc };
+                const nameKey = `hotel_${i}_name`;
+                const descKey = `hotel_${i}_description`;
+                if (hotelNode) {
+                    if (hotelResults[nameKey]) {
+                        if (!hotelNode.name || typeof hotelNode.name === 'string') {
+                            (hotelNode as any).name = { en: currentHotel.name };
+                        }
+                        for (const [lang, val] of Object.entries(hotelResults[nameKey])) {
+                            (hotelNode.name as any)[lang] = val;
+                        }
                     }
-                    for (const [lang, val] of Object.entries(hotelResults[key])) {
-                        (hotelNode.description as any)[lang] = val;
+                    if (hotelResults[descKey]) {
+                        if (!hotelNode.description || typeof hotelNode.description === 'string') {
+                            hotelNode.description = { en: currentHotel.desc };
+                        }
+                        for (const [lang, val] of Object.entries(hotelResults[descKey])) {
+                            (hotelNode.description as any)[lang] = val;
+                        }
                     }
                 }
             }
@@ -593,6 +613,7 @@ export async function translateDestination(id: string) {
 
         // Update snapshot
         (destination as any).translationSnapshot = {
+            name,
             introductionHeadline,
             introductionContent,
             womenDressCode,
@@ -614,6 +635,7 @@ export async function translateDestination(id: string) {
             xFactorRatingReason,
         };
 
+        destination.markModified('name');
         destination.markModified('introductionHeadline');
         destination.markModified('introductionContent');
         destination.markModified('womenDressCode');

@@ -318,7 +318,8 @@ export const destinationCtr = {
             throwError({ message: 'Invalid or missing destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (!doc.name?.trim()) {
+        const docNameEn = typeof doc.name === 'object' && doc.name !== null ? (doc.name as any).en?.trim() : (doc.name as string)?.trim();
+        if (!docNameEn) {
             throwError({ message: 'Destination name is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -469,8 +470,11 @@ export const destinationCtr = {
             throwError({ message: 'Invalid destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.name !== undefined && !update.name.trim()) {
-            throwError({ message: 'Destination name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (update.name !== undefined) {
+            const updateNameEn = typeof update.name === 'object' && update.name !== null ? (update.name as any).en?.trim() : (update.name as string)?.trim();
+            if (!updateNameEn) {
+                throwError({ message: 'Destination name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
 
         if (update.websiteURL !== undefined && !validator.isURL(update.websiteURL.trim())) {

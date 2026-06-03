@@ -357,7 +357,7 @@ export function generateDestinationStructuredData(destination: any, locale: stri
             {
                 '@type': 'ListItem',
                 'position': 3,
-                'name': destination.name ?? destination.slug,
+                'name': getLocalizedValue(destination.name, locale) ?? destination.slug,
                 'item': destUrl,
             },
         ],
@@ -372,7 +372,7 @@ export function generateDestinationStructuredData(destination: any, locale: stri
     const businessSchema: Record<string, any> = {
         '@context': 'https://schema.org',
         '@type': schemaType,
-        'name': destination.name ?? destination.slug,
+        'name': getLocalizedValue(destination.name, locale) ?? destination.slug,
         'url': destUrl,
         '@id': destUrl,
     };

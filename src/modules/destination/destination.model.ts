@@ -16,7 +16,7 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
     mongoose,
     schema: {
         name: {
-            type: String,
+            type: Object,
         },
         locationId: {
             type: String,
@@ -60,7 +60,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             ],
         },
         name: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -256,9 +256,10 @@ async function createMiddleware(this: I_Destination) {
     try {
         const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
 
+        const nameValue = typeof this.name === 'object' && this.name !== null ? ((this.name as Record<string, string>)['en'] || '') : (this.name || '');
         const newSlug = await mongooseCtr.createSlug({
             field: 'name',
-            from: this,
+            from: { name: nameValue } as any,
         });
 
         if (!newSlug.success) {
@@ -286,16 +287,14 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Destination>) {
             throw new Error('Page not found');
         }
 
-        const shouldGenerateSlug = !!(
-            newData.name
-            && oldData.name
-            && newData.name !== oldData.name
-        );
+        const newNameEn = typeof newData.name === 'object' && newData.name !== null ? ((newData.name as Record<string, string>)['en'] || '') : (newData.name || '');
+        const oldNameEn = typeof oldData.name === 'object' && oldData.name !== null ? ((oldData.name as Record<string, string>)['en'] || '') : (oldData.name || '');
+        const shouldGenerateSlug = !!(newNameEn && oldNameEn && newNameEn !== oldNameEn);
 
         if (shouldGenerateSlug) {
             const newSlug = await mongooseCtr.createSlug({
                 field: 'name',
-                from: newData,
+                from: { name: newNameEn } as any,
             });
 
             if (!newSlug.success) {
