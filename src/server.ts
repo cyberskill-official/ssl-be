@@ -21,6 +21,27 @@ import { E_SessionPortal, getPortalSessionCookieNames, getSessionPortalFromReque
 const env = getEnv();
 const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
 
+function normalizeOrigin(origin?: string) {
+    if (!origin) {
+        return undefined;
+    }
+
+    try {
+        return new URL(origin).origin;
+    }
+    catch {
+        return origin.replace(/\/+$/, '');
+    }
+}
+
+function uniqueOrigins(origins: Array<string | undefined>) {
+    return Array.from(new Set(
+        origins
+            .map(origin => normalizeOrigin(origin))
+            .filter((origin): origin is string => Boolean(origin)),
+    ));
+}
+
 (async () => {
     const app = createExpress({
         static: [env.STATIC_FOLDER, env.UPLOAD_FOLDER],
@@ -59,10 +80,16 @@ const PAYPAL_WEBHOOK_PATH = '/webhook/paypal';
     app.use(sessionParser);
 
     const httpServer = createServer(app);
+    const allowedWsOrigins = uniqueOrigins([
+        env.USER_APP_URL,
+        ...env.ADMIN_PANEL_ORIGINS,
+        ...env.CORS_WHITELIST,
+    ]);
     const wsServer = createWSServer({
         server: httpServer,
         path: env.ENDPOINT_WS,
         sessionParser,
+        allowedOrigins: allowedWsOrigins,
     });
     const schema = await getSchema();
     const serverCleanup = initGraphQLWS({ schema, server: wsServer });
