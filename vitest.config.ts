@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
@@ -14,6 +14,7 @@ export default defineConfig({
     test: {
         globals: true,
         environment: 'node',
+        exclude: [...configDefaults.exclude, 'build/**'],
         env: {
             NODE_ENV: 'development',
         },

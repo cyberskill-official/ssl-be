@@ -13,10 +13,11 @@ import type {
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { escapeRegExp } from 'lodash-es';
 
+import type { I_TextModerationResult } from '#modules/moderation/ai-moderation/index.js';
 import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
@@ -46,7 +47,91 @@ import {
 } from './message.util.js';
 
 const SPECIAL_CHARS_REGEX = /[^\w\s]/;
+const TEXT_MODERATION_SYNC_TIMEOUT_MS = 800;
 const mongooseCtr = new MongooseController<I_Message>(MessageModel);
+
+type T_CreateModerationLogDoc = Parameters<typeof moderationLogCtr.createModerationLog>[1]['doc'];
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+    return new Promise((resolve) => {
+        const timeout = setTimeout(resolve, timeoutMs, null);
+
+        promise
+            .then((value) => {
+                clearTimeout(timeout);
+                resolve(value);
+            })
+            .catch(() => {
+                clearTimeout(timeout);
+                resolve(null);
+            });
+    });
+}
+
+function createModerationLogInBackground(
+    context: I_Context,
+    doc: T_CreateModerationLogDoc,
+    trace: Record<string, unknown>,
+) {
+    void moderationLogCtr.createModerationLog(context, { doc })
+        .catch((error) => {
+            log.warn('Message moderation log side-effect failed', {
+                ...trace,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        });
+}
+
+function createAiModerationLogInBackground(
+    context: I_Context,
+    moderationPromise: Promise<I_Return<I_TextModerationResult>>,
+    payload: {
+        content: string;
+        messageId: string;
+        senderId: string;
+    },
+) {
+    void moderationPromise
+        .then(async (textModerated) => {
+            if (!textModerated.success || !textModerated.result) {
+                return;
+            }
+
+            const [shouldAutoReject, shouldRequireHumanReview] = await Promise.all([
+                aiModerationCtr.shouldAutoReject(textModerated.result),
+                aiModerationCtr.shouldRequireHumanReview(textModerated.result),
+            ]);
+
+            if (!shouldAutoReject && !shouldRequireHumanReview) {
+                return;
+            }
+
+            createModerationLogInBackground(
+                context,
+                {
+                    action: E_ModerationLogAction.WARN,
+                    type: E_ModerationLogType.TEXT,
+                    userId: payload.senderId,
+                    targetUserId: payload.senderId,
+                    messageId: payload.messageId,
+                    content: payload.content,
+                    reason: `AI moderation ${shouldAutoReject ? 'blocked' : 'flagged for review'}: ${textModerated.result.reasons?.join(', ') || textModerated.result.decision || 'Suspicious content detected'}`,
+                },
+                {
+                    messageId: payload.messageId,
+                    senderId: payload.senderId,
+                    source: 'ai-moderation',
+                },
+            );
+        })
+        .catch((error) => {
+            log.warn('Message AI moderation side-effect failed', {
+                messageId: payload.messageId,
+                senderId: payload.senderId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        });
+}
 
 export const messageCtr = {
     getMessage: async (
@@ -134,34 +219,24 @@ export const messageCtr = {
             }
         }
 
-        // AI Moderation - only for text content
-        // REVIEW decisions are flagged for admin review instead of blocking the message
-        let aiModerationFlag: { reasons?: string[]; decision?: string } | null = null;
+        const textContent = content?.type === E_MessageType.TEXT && typeof content.value === 'string'
+            ? content.value
+            : '';
+        let aiModerationPromise: Promise<I_Return<I_TextModerationResult>> | null = null;
+
+        // Keep the fast auto-block path, but do not let slow external moderation
+        // stall the user's send-message flow.
         if (content?.type === E_MessageType.TEXT && content.value?.trim()) {
-            try {
-                const textModerated = await aiModerationCtr.moderateText(context, { text: content.value });
+            aiModerationPromise = aiModerationCtr.moderateText(context, { text: content.value });
+            const textModerated = await withTimeout(aiModerationPromise, TEXT_MODERATION_SYNC_TIMEOUT_MS);
 
-                if (textModerated.success && textModerated.result) {
-                    if (await aiModerationCtr.shouldAutoReject(textModerated.result)) {
-                        throwError({
-                            message: `Message blocked by AI moderation`,
-                            status: RESPONSE_STATUS.BAD_REQUEST,
-                        });
-                    }
-
-                    if (await aiModerationCtr.shouldRequireHumanReview(textModerated.result)) {
-                        // Flag for admin review instead of blocking
-                        // Message will still be sent, but a moderation log will be created
-                        aiModerationFlag = {
-                            reasons: textModerated.result.reasons,
-                            decision: textModerated.result.decision,
-                        };
-                    }
+            if (textModerated?.success && textModerated.result) {
+                if (await aiModerationCtr.shouldAutoReject(textModerated.result)) {
+                    throwError({
+                        message: `Message blocked by AI moderation`,
+                        status: RESPONSE_STATUS.BAD_REQUEST,
+                    });
                 }
-            }
-            catch {
-                // Non-fatal: AI moderation failure shouldn't block message creation
-                // This ensures messaging remains functional even if AWS Comprehend is down
             }
         }
 
@@ -223,45 +298,32 @@ export const messageCtr = {
         // This allows admins to see full context before taking action
         const messageId = createdMessage?.id || (createdMessage as any)?._id?.toString();
         if (matchedKeyword && messageId && content?.type === E_MessageType.TEXT && content.value) {
-            try {
-                const fullMessageText = typeof content.value === 'string' ? content.value : '';
-                await moderationLogCtr.createModerationLog(context, {
-                    doc: {
-                        action: E_ModerationLogAction.WARN,
-                        type: E_ModerationLogType.TEXT, // Set type to TEXT for text moderation
-                        userId: senderId,
-                        targetUserId: senderId,
-                        messageId,
-                        content: fullMessageText, // Store full message content directly
-                        reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
-                    },
-                });
-            }
-            catch {
-                // Non-fatal: log error but don't block message creation
-                // Moderation log creation failure shouldn't prevent message from being sent
-            }
+            const fullMessageText = typeof content.value === 'string' ? content.value : '';
+            createModerationLogInBackground(
+                context,
+                {
+                    action: E_ModerationLogAction.WARN,
+                    type: E_ModerationLogType.TEXT,
+                    userId: senderId,
+                    targetUserId: senderId,
+                    messageId,
+                    content: fullMessageText,
+                    reason: `Message contains keyword: "${matchedKeyword.word}" (category: ${matchedKeyword.category || 'unknown'})`,
+                },
+                {
+                    messageId,
+                    senderId,
+                    source: 'keyword',
+                },
+            );
         }
 
-        // If AI moderation flagged for review, create moderation log for admin dashboard
-        if (aiModerationFlag && messageId && content?.type === E_MessageType.TEXT && content.value) {
-            try {
-                const fullMessageText = typeof content.value === 'string' ? content.value : '';
-                await moderationLogCtr.createModerationLog(context, {
-                    doc: {
-                        action: E_ModerationLogAction.WARN,
-                        type: E_ModerationLogType.TEXT,
-                        userId: senderId,
-                        targetUserId: senderId,
-                        messageId,
-                        content: fullMessageText,
-                        reason: `AI flagged for review: ${aiModerationFlag.reasons?.join(', ') || 'Suspicious content detected'}`,
-                    },
-                });
-            }
-            catch {
-                // Non-fatal: moderation log creation failure shouldn't prevent message from being sent
-            }
+        if (aiModerationPromise && messageId && textContent.trim()) {
+            createAiModerationLogInBackground(context, aiModerationPromise, {
+                content: textContent,
+                messageId,
+                senderId,
+            });
         }
 
         if (createdMessage) {

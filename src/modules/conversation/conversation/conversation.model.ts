@@ -103,3 +103,6 @@ export const ConversationModel = mongo.createModel<I_Conversation>({
         },
     ],
 });
+
+ConversationModel.schema.index({ lastMessageAt: -1, updatedAt: -1, createdAt: -1 });
+ConversationModel.schema.index({ type: 1, lastMessageAt: -1 });

@@ -4,8 +4,9 @@ import { PUBLIC_GRAPHQL_PERMISSION_TARGETS, REST_PERMISSION_DEFINITIONS } from '
 import { E_PermissionMethodGraphQL, E_PermissionType } from './permission.type.js';
 
 export async function scanGraphqlResolvers(): Promise<I_Response_ScanPermission[]> {
-    const { allResolvers } = await import('#shared/graphql/schema.js');
+    const { getAllResolvers } = await import('#shared/graphql/schema.js');
     const permissions: I_Response_ScanPermission[] = [];
+    const allResolvers = await getAllResolvers();
 
     const operationResolvers = [
         {

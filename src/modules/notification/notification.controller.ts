@@ -17,9 +17,10 @@ import { bunnyCtr } from '#modules/bunny/bunny.controller.js';
 import { emailCtr } from '#modules/email/index.js';
 import { eventCtr } from '#modules/event/event.controller.js';
 import { followCtr } from '#modules/follow/index.js';
-import { galleryCtr } from '#modules/gallery/gallery.controller.js';
+import { GalleryModel } from '#modules/gallery/gallery.model.js';
 import { userCtr, UserModel } from '#modules/user/index.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 import { getBlockedUserIds } from '#shared/util/index.js';
 
 import type {
@@ -158,26 +159,37 @@ export const notificationCtr = {
 
         // Check if entities still exist and auto-dismiss notifications for deleted entities
         if (res.success && res.result && Array.isArray(res.result.docs)) {
-            const notificationsToDismiss: string[] = [];
+            const userEntityIds = Array.from(new Set(
+                res.result.docs
+                    .filter(n =>
+                        !n.dismissedAt
+                        && n.status !== E_NotificationStatus.DISMISSED
+                        && n.entityType === E_NotificationEntityType.USER
+                        && n.entityId,
+                    )
+                    .map(n => String(n.entityId)),
+            ));
+            let notificationsToDismiss: string[] = [];
 
-            for (const n of res.result.docs) {
-                // Skip if already dismissed
-                if (n.dismissedAt || n.status === E_NotificationStatus.DISMISSED) {
-                    continue;
+            if (userEntityIds.length > 0) {
+                try {
+                    const deletedUsers = await UserModel.find({ id: { $in: userEntityIds }, isDel: true })
+                        .select({ id: 1 })
+                        .lean<Pick<I_User, 'id'>[]>()
+                        .exec();
+                    const deletedUserIds = new Set(deletedUsers.map(user => user.id).filter(Boolean));
+
+                    notificationsToDismiss = res.result.docs
+                        .filter(n =>
+                            n.id
+                            && n.entityType === E_NotificationEntityType.USER
+                            && n.entityId
+                            && deletedUserIds.has(String(n.entityId)),
+                        )
+                        .map(n => n.id!);
                 }
-
-                // Check if entity (especially USER) still exists
-                if (n.entityType === E_NotificationEntityType.USER && n.entityId) {
-                    try {
-                        const entityUser = await userCtr.getUser(_context, { filter: { id: n.entityId } });
-                        // If user is explicitly confirmed as deleted, dismiss notification
-                        if (entityUser.success && entityUser.result?.isDel === true) {
-                            notificationsToDismiss.push(n.id!);
-                        }
-                    }
-                    catch {
-                        // Ignore check failures to avoid accidental dismissal
-                    }
+                catch {
+                    // Ignore check failures to avoid accidental dismissal
                 }
             }
 
@@ -414,26 +426,34 @@ export const notificationCtr = {
                 }
 
                 // Batch fetch gallery owners' age verification
+                const galleryOwnerIdMap = new Map<string, string>();
                 const galleryOwnerAgeVerifyMap = new Map<string, boolean>();
                 if (galleryEntityIds.size > 0) {
-                    const galleriesResult = await galleryCtr.getGalleries(_context, {
-                        filter: { id: { $in: [...galleryEntityIds] } },
-                        options: { pagination: false },
-                    });
+                    const galleryDocs = await GalleryModel.find({ id: { $in: [...galleryEntityIds] } })
+                        .select({ id: 1, uploadedById: 1 })
+                        .lean<Array<{ id?: string; uploadedById?: string }>>()
+                        .exec();
+                    const ownerIds = Array.from(new Set(
+                        galleryDocs
+                            .map(gallery => gallery.uploadedById)
+                            .filter((ownerId): ownerId is string => Boolean(ownerId)),
+                    ));
+                    const ownerDocs = ownerIds.length > 0
+                        ? await UserModel.find({ id: { $in: ownerIds } })
+                                .select({ id: 1, ageVerify: 1 })
+                                .lean<Array<Pick<I_User, 'id' | 'ageVerify'>>>()
+                                .exec()
+                        : [];
+                    const ownerAgeVerifyMap = new Map(
+                        ownerDocs
+                            .filter(owner => owner.id)
+                            .map(owner => [owner.id!, owner.ageVerify?.status === E_AgeVerifyStatus.APPROVED]),
+                    );
 
-                    if (galleriesResult.success && Array.isArray(galleriesResult.result?.docs)) {
-                        for (const gallery of galleriesResult.result.docs) {
-                            if (gallery.id && gallery.uploadedById) {
-                                const ownerResult = await userCtr.getUser(_context, {
-                                    filter: { id: gallery.uploadedById },
-                                    projection: { ageVerify: 1, roles: 1 },
-                                    populate: [{ path: 'roles' }],
-                                });
-                                if (ownerResult.success && ownerResult.result) {
-                                    const isOwnerAgeVerified = ownerResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                                    galleryOwnerAgeVerifyMap.set(gallery.id, isOwnerAgeVerified);
-                                }
-                            }
+                    for (const gallery of galleryDocs) {
+                        if (gallery.id && gallery.uploadedById) {
+                            galleryOwnerIdMap.set(gallery.id, gallery.uploadedById);
+                            galleryOwnerAgeVerifyMap.set(gallery.id, ownerAgeVerifyMap.get(gallery.uploadedById) ?? false);
                         }
                     }
                 }
@@ -515,45 +535,9 @@ export const notificationCtr = {
                             if (cachedAgeVerified !== undefined) {
                                 isThumbnailOwnerAgeVerified = cachedAgeVerified;
                             }
-                            else {
-                                // If not in cache, fetch it now
-                                try {
-                                    const galleryResult = await galleryCtr.getGallery(_context, {
-                                        filter: { id: entityId },
-                                    });
-                                    if (galleryResult.success && galleryResult.result?.uploadedById) {
-                                        const ownerResult = await userCtr.getUser(_context, {
-                                            filter: { id: galleryResult.result.uploadedById },
-                                            projection: { ageVerify: 1 },
-                                        });
-                                        if (ownerResult.success && ownerResult.result) {
-                                            isThumbnailOwnerAgeVerified = ownerResult.result.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
-                                        }
-
-                                        // Check if viewer is the owner
-                                        if (viewerId && galleryResult.result.uploadedById === viewerId) {
-                                            isThumbnailOwner = true;
-                                        }
-                                    }
-                                }
-                                catch {
-                                    // If fetch fails, assume verified to avoid blocking
-                                }
-                            }
-
-                            // Check if viewer is the owner (if not already checked above)
-                            if (!isThumbnailOwner && viewerId) {
-                                try {
-                                    const galleryResult = await galleryCtr.getGallery(_context, {
-                                        filter: { id: entityId },
-                                    });
-                                    if (galleryResult.success && galleryResult.result?.uploadedById === viewerId) {
-                                        isThumbnailOwner = true;
-                                    }
-                                }
-                                catch {
-                                    // If fetch fails, assume not owner
-                                }
+                            const galleryOwnerId = galleryOwnerIdMap.get(entityId);
+                            if (viewerId && galleryOwnerId === viewerId) {
+                                isThumbnailOwner = true;
                             }
                         }
                         // For EVENT entity type (announcement), skip gating: visible to everyone
@@ -631,6 +615,7 @@ export const notificationCtr = {
             if (!result.result.channels?.includes(E_NotificationChannel.EMAIL)) {
                 await mongooseCtr.updateOne({ id: result.result.id }, { status: E_NotificationStatus.SENT }).catch(() => { /* non-fatal */ });
             }
+            await queryCacheService.bumpVersion('notification');
         }
         return result;
     },
@@ -1175,6 +1160,10 @@ export const notificationCtr = {
             }
         }
 
+        if (result.success) {
+            await queryCacheService.bumpVersion('notification');
+        }
+
         return result;
     },
 
@@ -1184,9 +1173,12 @@ export const notificationCtr = {
     ): Promise<I_Return<I_Notification>> => {
         const result = await mongooseCtr.updateOne(filter, update, options);
 
-        if (result.success && hasInApp(result.result)) {
-            const payload: I_NotificationUpdatedPayload = { notification: result.result };
-            pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_UPDATED, payload);
+        if (result.success) {
+            if (hasInApp(result.result)) {
+                const payload: I_NotificationUpdatedPayload = { notification: result.result };
+                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_UPDATED, payload);
+            }
+            await queryCacheService.bumpVersion('notification');
         }
 
         return result;
@@ -1225,6 +1217,7 @@ export const notificationCtr = {
             };
             pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, payload);
         }
+        await queryCacheService.bumpVersion('notification');
         return result as unknown as I_Return<I_Notification | null>;
     },
 
@@ -1243,7 +1236,11 @@ export const notificationCtr = {
 
         // Optionally, publish a notification event for bulk delete
         // pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DELETED, { notificationId: null, targetId: userId });
-        return mongooseCtr.deleteMany({ ...filter, targetId: currentUser.id }, options);
+        const result = await mongooseCtr.deleteMany({ ...filter, targetId: currentUser.id }, options);
+        if (result.success) {
+            await queryCacheService.bumpVersion('notification');
+        }
+        return result;
     },
     markNotificationRead: async (
         context: I_Context,
@@ -1264,13 +1261,16 @@ export const notificationCtr = {
             { status: E_NotificationStatus.READ, readAt: new Date() },
         );
 
-        if (result.success && hasInApp(result.result)) {
-            const payload: I_NotificationReadPayload = {
-                notificationId: result.result.id!,
-                targetId: result.result.targetId!,
-                readAt: result.result.readAt!,
-            };
-            pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_READ, payload);
+        if (result.success) {
+            if (hasInApp(result.result)) {
+                const payload: I_NotificationReadPayload = {
+                    notificationId: result.result.id!,
+                    targetId: result.result.targetId!,
+                    readAt: result.result.readAt!,
+                };
+                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_READ, payload);
+            }
+            await queryCacheService.bumpVersion('notification');
         }
 
         return result;
@@ -1294,13 +1294,16 @@ export const notificationCtr = {
             { status: E_NotificationStatus.DISMISSED, dismissedAt: new Date() },
         );
 
-        if (result.success && hasInApp(result.result)) {
-            const payload: I_NotificationDismissedPayload = {
-                notificationId: result.result.id!,
-                targetId: result.result.targetId!,
-                dismissedAt: result.result.dismissedAt!,
-            };
-            pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DISMISSED, payload);
+        if (result.success) {
+            if (hasInApp(result.result)) {
+                const payload: I_NotificationDismissedPayload = {
+                    notificationId: result.result.id!,
+                    targetId: result.result.targetId!,
+                    dismissedAt: result.result.dismissedAt!,
+                };
+                pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_DISMISSED, payload);
+            }
+            await queryCacheService.bumpVersion('notification');
         }
 
         return result;

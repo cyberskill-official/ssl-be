@@ -20,6 +20,7 @@ import { authnCtr } from '#modules/authn/authn.controller.js';
 import { blogCtr } from '#modules/blog/blog.controller.js';
 import { bunnyCtr } from '#modules/bunny/index.js';
 import { destinationCtr } from '#modules/destination/destination.controller.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 
 import type { E_AdvertisementSlot, I_Advertisement, I_Input_CreateAdvertisement, I_Input_QueryAdvertisement, I_Input_UpdateAdvertisement, I_Input_UpdateClickCount } from './advertisement.type.js';
 
@@ -200,7 +201,11 @@ export const advertisementCtr = {
             isActive = false;
         }
 
-        return mongooseCtr.createOne({ ...doc, createdById: currentUser.id, isActive });
+        const result = await mongooseCtr.createOne({ ...doc, createdById: currentUser.id, isActive });
+        if (result.success) {
+            await queryCacheService.bumpVersion('advertisement');
+        }
+        return result;
     },
     updateAdvertisement: async (
         context: I_Context,
@@ -295,7 +300,11 @@ export const advertisementCtr = {
             await bunnyCtr.deleteFile(context, existingAd.result.image);
         }
 
-        return mongooseCtr.updateOne(filter, update);
+        const result = await mongooseCtr.updateOne(filter, update);
+        if (result.success) {
+            await queryCacheService.bumpVersion('advertisement');
+        }
+        return result;
     },
     deleteAdvertisement: async (
         context: I_Context,
@@ -307,7 +316,11 @@ export const advertisementCtr = {
             await bunnyCtr.deleteFile(context, advertisementFound.result.image);
         }
 
-        return mongooseCtr.deleteOne(filter);
+        const result = await mongooseCtr.deleteOne(filter);
+        if (result.success) {
+            await queryCacheService.bumpVersion('advertisement');
+        }
+        return result;
     },
     clickAdvertisement: async (
         _context: I_Context,

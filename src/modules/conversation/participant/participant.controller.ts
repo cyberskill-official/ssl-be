@@ -23,9 +23,16 @@ import { userCtr } from '#modules/user/index.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { pubsub } from '#shared/graphql/pubsub.js';
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
 
 import type { I_DirectMessageBetweenResult, I_Input_CreateParticipant, I_Input_QueryParticipant, I_Participant } from './participant.type.js';
 
+import {
+    CONVERSATION_DIRECT_MESSAGE_CACHE_TTL_SECONDS,
+    conversationDirectMessageCacheKey,
+    conversationDirectMessageCacheScope,
+} from '../conversation/conversation.cache.js';
+import { ConversationModel } from '../conversation/conversation.model.js';
 import { E_ConversationType } from '../conversation/conversation.type.js';
 import { conversationCtr, E_CONVERSATION_EVENTS } from '../conversation/index.js';
 import { messageStatusCtr } from '../message-status/index.js';
@@ -61,37 +68,49 @@ export const participantCtr = {
             });
         }
 
-        const pipeline: PipelineStage[] = [
-            { $match: { userId: { $in: [userAId, userBId] } } },
-            { $group: { _id: '$conversationId', members: { $addToSet: '$userId' } } },
-            { $match: { $expr: { $and: [
-                { $eq: [{ $size: '$members' }, 2] },
-                { $setEquals: ['$members', [userAId, userBId]] },
-            ] } } },
-            {
-                $lookup: {
-                    from: 'conversations',
-                    localField: '_id',
-                    foreignField: 'id',
-                    as: 'conversation',
-                    pipeline: [
-                        { $match: { type: { $in: conversationTypes }, isDel: { $ne: true } } },
-                    ],
-                },
-            },
-            { $unwind: '$conversation' },
-            { $limit: 1 },
-            { $project: { _id: 0, conversationId: '$_id' } },
-        ];
+        return queryCacheService.getOrSet({
+            scope: conversationDirectMessageCacheScope(userAId, userBId),
+            key: conversationDirectMessageCacheKey(userAId, userBId, conversationTypes),
+            ttl: CONVERSATION_DIRECT_MESSAGE_CACHE_TTL_SECONDS,
+            loader: async () => {
+                const [userAConversationIds, userBConversationIds] = await Promise.all([
+                    ParticipantModel.distinct('conversationId', { userId: userAId }).exec(),
+                    ParticipantModel.distinct('conversationId', { userId: userBId }).exec(),
+                ]);
 
-        const agg = await mongooseCtr.aggregate(pipeline) as I_Return<{ conversationId: string }[]>;
-        if (!agg.success || !agg.result?.length) {
-            return { exists: false };
-        }
-        return {
-            exists: true,
-            conversationId: agg.result[0]?.conversationId,
-        };
+                if (!userAConversationIds.length || !userBConversationIds.length) {
+                    return { exists: false };
+                }
+
+                const [smallerSet, largerList] = userAConversationIds.length <= userBConversationIds.length
+                    ? [new Set(userAConversationIds), userBConversationIds]
+                    : [new Set(userBConversationIds), userAConversationIds];
+                const commonConversationIds = largerList.filter(conversationId => smallerSet.has(conversationId));
+
+                if (!commonConversationIds.length) {
+                    return { exists: false };
+                }
+
+                const conversation = await ConversationModel.findOne(
+                    {
+                        id: { $in: commonConversationIds },
+                        type: { $in: conversationTypes },
+                        isDel: { $ne: true },
+                    },
+                    { id: 1 },
+                    { sort: { lastMessageAt: -1, updatedAt: -1, createdAt: -1 } },
+                ).lean<{ id: string }>().exec();
+
+                if (!conversation?.id) {
+                    return { exists: false };
+                }
+
+                return {
+                    exists: true,
+                    conversationId: conversation.id,
+                };
+            },
+        });
     },
     getParticipant: async (
         _context: I_Context,

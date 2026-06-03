@@ -181,3 +181,6 @@ export const MessageModel = mongo.createModel<I_Message>({
         },
     ],
 });
+
+MessageModel.schema.index({ conversationId: 1, createdAt: -1 });
+MessageModel.schema.index({ conversationId: 1, id: 1 });

@@ -121,3 +121,7 @@ export const LocationModel = mongo.createModel<I_Location>({
 
 // Index for cron job performance
 LocationModel.schema.index({ entityType: 1, entityId: 1 }, { name: 'idx_locations_entity' });
+LocationModel.schema.index(
+    { 'entityType': 1, 'map.latitude': 1, 'map.longitude': 1, 'entityId': 1 },
+    { name: 'idx_locations_viewport_lookup' },
+);

@@ -13,6 +13,8 @@ import { throwError } from '@cyberskill/shared/node/log';
 
 import type { I_Context } from '#shared/typescript/index.js';
 
+import { queryCacheService } from '#shared/redis/query-cache.service.js';
+
 import type { I_Input_CreateMenu, I_Input_QueryMenu, I_Input_UpdateMenu, I_Menu } from './menu.type.js';
 
 import { menuRepository } from './menu.repository.js';
@@ -28,7 +30,14 @@ export const menuService = {
         _context: I_Context,
         args: I_Input_FindPaging<I_Input_QueryMenu>,
     ): Promise<I_Return<T_PaginateResult<I_Menu>>> => {
-        return menuRepository.findPaging(args);
+        return queryCacheService.getOrSet<I_Return<T_PaginateResult<I_Menu>>>({
+            scope: 'menu:getMenus',
+            key: args,
+            ttl: 1800,
+            dependencies: ['menu'],
+            shouldCache: value => value.success === true,
+            loader: () => menuRepository.findPaging(args),
+        });
     },
     createMenu: async (
         _context: I_Context,
@@ -43,9 +52,13 @@ export const menuService = {
             });
         }
 
-        return menuRepository.createOne({
+        const result = await menuRepository.createOne({
             ...doc,
         });
+        if (result.success) {
+            await queryCacheService.bumpVersion('menu');
+        }
+        return result;
     },
     updateMenu: async (
         context: I_Context,
@@ -60,7 +73,11 @@ export const menuService = {
             });
         }
 
-        return menuRepository.updateOne({ filter, update, options });
+        const result = await menuRepository.updateOne({ filter, update, options });
+        if (result.success) {
+            await queryCacheService.bumpVersion('menu');
+        }
+        return result;
     },
     deleteMenu: async (
         context: I_Context,
@@ -75,6 +92,10 @@ export const menuService = {
             });
         }
 
-        return menuRepository.deleteOne({ filter, options });
+        const result = await menuRepository.deleteOne({ filter, options });
+        if (result.success) {
+            await queryCacheService.bumpVersion('menu');
+        }
+        return result;
     },
 };

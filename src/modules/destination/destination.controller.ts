@@ -206,10 +206,13 @@ export const destinationCtr = {
             return destinations;
 
         const docs = Array.isArray(destinations.result?.docs) ? destinations.result.docs : [];
+        const populatedDocs = docs.length > 0
+            ? await DestinationModel.populate(docs, normalized)
+            : docs;
 
         // Sign images (ratingStar, logo, wearImage, images) — supports sync/async bunnyCtr
         const signedDocs = await Promise.all(
-            docs.map(async (destination: any) => {
+            populatedDocs.map(async (destination: any) => {
                 const doc: any = typeof destination?.toObject === 'function' ? destination.toObject() : { ...destination };
 
                 if (doc.ratingStar) {

@@ -265,6 +265,9 @@ async function updateUserIpFromRequest(
     }
 }
 
+/** Per-request cache for getUserFromSession to avoid redundant DB queries within a single request. */
+const userFromSessionCache = new WeakMap<object, I_User>();
+
 export const authnCtr = {
     sendOTPEmailForAdmin: async (
         context: I_Context,
@@ -619,6 +622,11 @@ export const authnCtr = {
         };
     },
     getUserFromSession: async (context: I_Context): Promise<I_User> => {
+        const cacheKey = context.req ?? context;
+        const cached = userFromSessionCache.get(cacheKey);
+        if (cached)
+            return cached;
+
         const authChecked = await authnCtr.checkAuth(context);
 
         if (!authChecked.success) {
@@ -631,7 +639,9 @@ export const authnCtr = {
                     if (context.req?.session) {
                         await assignSessionUser(context.req.session, tokenAuth.result.user);
                     }
-                    return omit(tokenAuth.result.user, 'password') as I_User;
+                    const user = omit(tokenAuth.result.user, 'password') as I_User;
+                    userFromSessionCache.set(cacheKey, user);
+                    return user;
                 }
             }
 
@@ -641,7 +651,9 @@ export const authnCtr = {
             });
         }
 
-        return omit(authChecked.result.user, 'password') as I_User;
+        const user = omit(authChecked.result.user, 'password') as I_User;
+        userFromSessionCache.set(cacheKey, user);
+        return user;
     },
     isStaff: async (context: I_Context): Promise<boolean> => {
         const currentUser = await authnCtr.getUserFromSession(context);

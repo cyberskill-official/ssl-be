@@ -6,10 +6,11 @@ import { PubSub } from 'graphql-subscriptions';
 import { getEnv } from '../env/index.js';
 
 const env = getEnv();
+const shouldUseRedisPubSub = env.IS_PROD || env.IS_STAG;
 
-// Use RedisPubSub in production/Redis-enabled environments for multi-instance sync.
-// Fallback to local in-memory PubSub for development.
-const instance: PubSubEngine = (env.IS_PROD || env.REDIS_HOST)
+// Use RedisPubSub on server environments for multi-instance sync.
+// Fallback to local in-memory PubSub for non-production single-instance development.
+const instance: PubSubEngine = shouldUseRedisPubSub
     ? new RedisPubSub({
             connection: {
                 host: env.REDIS_HOST,
