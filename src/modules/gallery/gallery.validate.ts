@@ -143,8 +143,24 @@ export async function isUploaderAgeVerified(
         return cache.get(candidateId)!;
     }
 
+    const uploadedBy = gallery.uploadedBy;
     let isVerified
-        = gallery.uploadedBy?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+        = uploadedBy?.ageVerify?.status === E_AgeVerifyStatus.APPROVED;
+
+    const uploadedRoles = uploadedBy?.roles;
+    if (!isVerified && Array.isArray(uploadedRoles)) {
+        const roleNames = uploadedRoles.map((role: any) => role?.name).filter(Boolean) as string[];
+        const staffRoleNames = [...Object.values(E_Role_Staff), E_Role.STAFF] as string[];
+        if (roleNames.some(roleName => staffRoleNames.includes(roleName))) {
+            isVerified = true;
+        }
+        else if (uploadedBy && Object.hasOwn(uploadedBy, 'ageVerify')) {
+            if (cache) {
+                cache.set(candidateId, false);
+            }
+            return false;
+        }
+    }
 
     if (!isVerified) {
         try {
