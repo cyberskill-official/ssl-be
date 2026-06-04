@@ -56,4 +56,9 @@ export const REST_PERMISSION_DEFINITIONS: I_RestPermissionDefinition[] = [
     { method: E_PermissionMethodRest.POST, path: '/payment/paypal/capture', isPublic: true },
     { method: E_PermissionMethodRest.GET, path: '/payment/paypal/capture', isPublic: true },
     { method: E_PermissionMethodRest.POST, path: '/payment/paypal/subscription/setup' },
+    { method: E_PermissionMethodRest.POST, path: '/admin/translate/blog/:id' },
+    { method: E_PermissionMethodRest.POST, path: '/admin/translate/destination/:id' },
+    { method: E_PermissionMethodRest.POST, path: '/admin/translate/all/blogs' },
+    { method: E_PermissionMethodRest.POST, path: '/admin/translate/all/destinations' },
+    { method: E_PermissionMethodRest.GET, path: '/admin/translate/status' },
 ];

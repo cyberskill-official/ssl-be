@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-import { translateBlog, translateDestination } from '../modules/translation/translation.queue.js';
+import { translationQueue } from '../modules/translation/translation.queue.js';
 import { getEnv } from '../shared/env/index.js';
 
 const [type, id] = process.argv.slice(2);
@@ -13,6 +13,7 @@ if (!type || !id || !['blog', 'destination'].includes(type)) {
 }
 
 const translationId = id!;
+const translationType = type as 'blog' | 'destination';
 
 async function main() {
     const env = getEnv();
@@ -20,14 +21,9 @@ async function main() {
     console.log(`Connecting to ${uri} ...`);
     await mongoose.connect(uri);
 
-    console.log(`Translating ${type} ${id} ...`);
-    if (type === 'blog') {
-        await translateBlog(translationId);
-    }
-    else {
-        await translateDestination(translationId);
-    }
-    console.log('Done.');
+    console.log(`Enqueuing translation for ${translationType} ${translationId} ...`);
+    await translationQueue.add({ type: translationType, id: translationId });
+    console.log(`Done. Translation job for ${translationType} ${translationId} enqueued.`);
 
     await mongoose.disconnect();
 }
