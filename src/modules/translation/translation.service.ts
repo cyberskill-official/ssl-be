@@ -3,7 +3,7 @@ import axios from 'axios';
 
 import { getEnv } from '#shared/env/index.js';
 
-const MARKET_MAP: Record<string, { market: string; instructions: string }> = {
+export const MARKET_MAP: Record<string, { market: string; instructions: string }> = {
     'da': {
         market: 'Denmark',
         instructions: 'Use natural Danish open-minded relationship terminology.',

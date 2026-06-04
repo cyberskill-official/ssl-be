@@ -1,11 +1,12 @@
 import { log } from '@cyberskill/shared/node/log';
+import slugify from '@sindresorhus/slugify';
 import Bull from 'bull';
 
 import { BlogModel } from '#modules/blog/blog.model.js';
 import { DestinationModel } from '#modules/destination/destination.model.js';
 import { getEnv } from '#shared/env/index.js';
 
-import { translationService } from './translation.service.js';
+import { MARKET_MAP, translationService } from './translation.service.js';
 
 export interface I_TranslationJobData {
     type: 'blog' | 'destination';
@@ -78,10 +79,31 @@ function ensureMultilingual(doc: any, field: string, enValue: string): void {
         doc[field] = { en: enValue };
 }
 
+function getMarketSlug(lang: string): string {
+    const market = MARKET_MAP[lang]?.market || '';
+    return slugify(market, { lowercase: true, locale: lang });
+}
+
+function computeSlug(lang: string, translatedVal: string, englishSlug: string): string {
+    // @sindresorhus/slugify transliterates non-Latin scripts (CJK, Devanagari, etc.)
+    // so we get readable Latin slugs for all languages
+    const slug = slugify(translatedVal, { lowercase: true, locale: lang });
+    if (slug)
+        return slug;
+    // Fallback: if transliteration produces empty result, use market-name-englishSlug
+    const prefix = getMarketSlug(lang);
+    return prefix ? `${prefix}-${englishSlug}` : englishSlug;
+}
+
 function applyTranslations(doc: any, field: string, translations: Record<string, string>, enValue: string): void {
     ensureMultilingual(doc, field, enValue);
     for (const [lang, val] of Object.entries(translations)) {
-        doc[field][lang] = val;
+        if (field === 'slug') {
+            doc[field][lang] = computeSlug(lang, val, enValue);
+        }
+        else {
+            doc[field][lang] = val;
+        }
     }
 }
 
@@ -111,6 +133,7 @@ export async function translateBlog(id: string) {
     const blog = existingBlog;
 
     const title = getEn(blog.title);
+    const slug = getEn(blog.slug);
     const contentHeadline = getEn(blog.contentHeadline);
     const contentSubHeadline = getEn(blog.contentSubHeadline);
     const content = getEn(blog.content);
@@ -119,7 +142,7 @@ export async function translateBlog(id: string) {
     const seoKeywords = getEnKeywords(blog.seo?.keywords);
     const socialMediaDescription = getEn(blog.seo?.socialMediaDescription);
 
-    if (!title || !contentHeadline || !content) {
+    if (!title || !slug || !contentHeadline || !content) {
         log.warn(`[TranslationQueue] Blog ${id} is missing core English fields.`);
         return;
     }
@@ -135,35 +158,38 @@ export async function translateBlog(id: string) {
 
     // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
-    if (title !== (snapshot['title'] || '') && !hasAllTranslations(blog.title))
+    if (title !== (snapshot['title'] || '') || !hasAllTranslations(blog.title))
         changedSmall['title'] = title;
-    if (contentHeadline !== (snapshot['contentHeadline'] || '') && !hasAllTranslations(blog.contentHeadline))
+    if (slug !== (snapshot['slug'] || '') || !hasAllTranslations(blog.slug))
+        changedSmall['slug'] = slug;
+    if (contentHeadline !== (snapshot['contentHeadline'] || '') || !hasAllTranslations(blog.contentHeadline))
         changedSmall['contentHeadline'] = contentHeadline;
-    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || '') && !hasAllTranslations(blog.contentSubHeadline))
+    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || '') || !hasAllTranslations(blog.contentSubHeadline))
         changedSmall['contentSubHeadline'] = contentSubHeadline;
-    if (seoTitle !== (snapshot['seoTitle'] || '') && !hasAllTranslations(blog.seo?.title))
+    if (seoTitle !== (snapshot['seoTitle'] || '') || !hasAllTranslations(blog.seo?.title))
         changedSmall['seoTitle'] = seoTitle;
-    if (seoDescription !== (snapshot['seoDescription'] || '') && !hasAllTranslations(blog.seo?.description))
+    if (seoDescription !== (snapshot['seoDescription'] || '') || !hasAllTranslations(blog.seo?.description))
         changedSmall['seoDescription'] = seoDescription;
-    if (seoKeywords !== (snapshot['seoKeywords'] || '') && !hasAllTranslations(blog.seo?.keywords))
+    if (seoKeywords !== (snapshot['seoKeywords'] || '') || !hasAllTranslations(blog.seo?.keywords))
         changedSmall['seoKeywords'] = seoKeywords;
-    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') && !hasAllTranslations(blog.seo?.socialMediaDescription))
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') || !hasAllTranslations(blog.seo?.socialMediaDescription))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
-    const contentChanged = content !== (snapshot['content'] || '') && !hasAllTranslations(blog.content);
+    const contentChanged = content !== (snapshot['content'] || '') || !hasAllTranslations(blog.content);
 
     // Check FAQ changes
     const currentFaqs = (blog.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
     const snapshotFaqs = snapshot['faqs'] || [];
-    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs);
+    const faqsChanged = JSON.stringify(currentFaqs) !== JSON.stringify(snapshotFaqs)
+        || (blog.faqs || []).some(f => (f.question && !hasAllTranslations(f.question)) || (f.answer && !hasAllTranslations(f.answer)));
 
     if (Object.keys(changedSmall).length === 0 && !contentChanged && !faqsChanged) {
-        log.info(`[TranslationQueue] Blog ${id}: all fields already translated or unchanged, skipping.`);
+        log.info(`[TranslationQueue] Blog ${id}: all fields already translated, skipping.`);
         return;
     }
 
     log.info(`[TranslationQueue] Blog ${id}: fields to translate: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${faqsChanged ? ', faqs' : ''}`);
-    log.info(`[TranslationQueue] Blog ${id}: skipped (already translated): ${['title', 'contentHeadline', 'contentSubHeadline', 'seoTitle', 'seoDescription', 'seoKeywords', 'socialMediaDescription'].filter(f => !changedSmall[f]).join(', ')}`);
+    log.info(`[TranslationQueue] Blog ${id}: skipped (already translated): ${['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'seoTitle', 'seoDescription', 'seoKeywords', 'socialMediaDescription'].filter(f => !changedSmall[f]).join(', ')}`);
 
     log.info(`[TranslationQueue] Blog ${id}: translating changed fields: ${Object.keys(changedSmall).join(', ')}${contentChanged ? ', content' : ''}${faqsChanged ? ', faqs' : ''}`);
 
@@ -202,6 +228,12 @@ export async function translateBlog(id: string) {
                 for (const [lang, val] of Object.entries(translations))
                     multilingual[lang] = val;
                 $set['title'] = multilingual;
+            }
+            else if (field === 'slug') {
+                const multilingual = ensureMultilingualValue(blog.slug, slug);
+                for (const [lang, val] of Object.entries(translations))
+                    multilingual[lang] = computeSlug(lang, val, slug);
+                $set['slug'] = multilingual;
             }
             else if (field === 'contentHeadline') {
                 const multilingual = ensureMultilingualValue(blog.contentHeadline, contentHeadline);
@@ -292,6 +324,7 @@ export async function translateBlog(id: string) {
         // Update snapshot
         $set['translationSnapshot'] = {
             title,
+            slug,
             contentHeadline,
             contentSubHeadline,
             content,
@@ -342,6 +375,7 @@ export async function translateDestination(id: string) {
     }
 
     const name = getEn(destination.name);
+    const slug = getEn(destination.slug);
     const womenDressCode = getEn(destination.womenDressCode);
     const menDressCode = getEn(destination.menDressCode);
     const highlightSex = getEn(destination.highlightSex);
@@ -370,44 +404,46 @@ export async function translateDestination(id: string) {
 
     // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
-    if (name && name !== (snapshot['name'] || '') && !hasAllTranslations(destination.name as any))
+    if (name && (name !== (snapshot['name'] || '') || !hasAllTranslations(destination.name as any)))
         changedSmall['name'] = name;
-    if (introductionHeadline !== (snapshot['introductionHeadline'] || '') && !hasAllTranslations(destination.introductionHeadline))
+    if (slug && (slug !== (snapshot['slug'] || '') || !hasAllTranslations(destination.slug as any)))
+        changedSmall['slug'] = slug;
+    if (introductionHeadline !== (snapshot['introductionHeadline'] || '') || !hasAllTranslations(destination.introductionHeadline))
         changedSmall['introductionHeadline'] = introductionHeadline;
-    if (womenDressCode !== (snapshot['womenDressCode'] || '') && !hasAllTranslations(destination.womenDressCode))
+    if (womenDressCode !== (snapshot['womenDressCode'] || '') || !hasAllTranslations(destination.womenDressCode))
         changedSmall['womenDressCode'] = womenDressCode;
-    if (menDressCode !== (snapshot['menDressCode'] || '') && !hasAllTranslations(destination.menDressCode))
+    if (menDressCode !== (snapshot['menDressCode'] || '') || !hasAllTranslations(destination.menDressCode))
         changedSmall['menDressCode'] = menDressCode;
-    if (highlightSex !== (snapshot['highlightSex'] || '') && !hasAllTranslations(destination.highlightSex))
+    if (highlightSex !== (snapshot['highlightSex'] || '') || !hasAllTranslations(destination.highlightSex))
         changedSmall['highlightSex'] = highlightSex;
-    if (highlightWellness !== (snapshot['highlightWellness'] || '') && !hasAllTranslations(destination.highlightWellness))
+    if (highlightWellness !== (snapshot['highlightWellness'] || '') || !hasAllTranslations(destination.highlightWellness))
         changedSmall['highlightWellness'] = highlightWellness;
-    if (highlightBar !== (snapshot['highlightBar'] || '') && !hasAllTranslations(destination.highlightBar))
+    if (highlightBar !== (snapshot['highlightBar'] || '') || !hasAllTranslations(destination.highlightBar))
         changedSmall['highlightBar'] = highlightBar;
-    if (highlightDance !== (snapshot['highlightDance'] || '') && !hasAllTranslations(destination.highlightDance))
+    if (highlightDance !== (snapshot['highlightDance'] || '') || !hasAllTranslations(destination.highlightDance))
         changedSmall['highlightDance'] = highlightDance;
-    if (seoTitle !== (snapshot['seoTitle'] || '') && !hasAllTranslations(destination.seo?.title))
+    if (seoTitle !== (snapshot['seoTitle'] || '') || !hasAllTranslations(destination.seo?.title))
         changedSmall['seoTitle'] = seoTitle;
-    if (seoDescription !== (snapshot['seoDescription'] || '') && !hasAllTranslations(destination.seo?.description))
+    if (seoDescription !== (snapshot['seoDescription'] || '') || !hasAllTranslations(destination.seo?.description))
         changedSmall['seoDescription'] = seoDescription;
-    if (seoKeywords !== (snapshot['seoKeywords'] || '') && !hasAllTranslations(destination.seo?.keywords))
+    if (seoKeywords !== (snapshot['seoKeywords'] || '') || !hasAllTranslations(destination.seo?.keywords))
         changedSmall['seoKeywords'] = seoKeywords;
-    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') && !hasAllTranslations(destination.seo?.socialMediaDescription))
+    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') || !hasAllTranslations(destination.seo?.socialMediaDescription))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
-    const contentChanged = introductionContent !== (snapshot['introductionContent'] || '') && !hasAllTranslations(destination.introductionContent);
+    const contentChanged = introductionContent !== (snapshot['introductionContent'] || '') || !hasAllTranslations(destination.introductionContent);
 
     // Detect rating reason changes - skip if already translated
     const ratingReasonsChanged: Record<string, string> = {};
-    if (atmosphereRatingReason && atmosphereRatingReason !== (snapshot['atmosphereRatingReason'] || '') && !hasAllTranslations(destination.atmosphereRating?.reason))
+    if (atmosphereRatingReason && (atmosphereRatingReason !== (snapshot['atmosphereRatingReason'] || '') || !hasAllTranslations(destination.atmosphereRating?.reason)))
         ratingReasonsChanged['atmosphereRatingReason'] = atmosphereRatingReason;
-    if (guestsRatingReason && guestsRatingReason !== (snapshot['guestsRatingReason'] || '') && !hasAllTranslations(destination.guestsRating?.reason))
+    if (guestsRatingReason && (guestsRatingReason !== (snapshot['guestsRatingReason'] || '') || !hasAllTranslations(destination.guestsRating?.reason)))
         ratingReasonsChanged['guestsRatingReason'] = guestsRatingReason;
-    if (facilitiesRatingReason && facilitiesRatingReason !== (snapshot['facilitiesRatingReason'] || '') && !hasAllTranslations(destination.facilitiesRating?.reason))
+    if (facilitiesRatingReason && (facilitiesRatingReason !== (snapshot['facilitiesRatingReason'] || '') || !hasAllTranslations(destination.facilitiesRating?.reason)))
         ratingReasonsChanged['facilitiesRatingReason'] = facilitiesRatingReason;
-    if (serviceRatingReason && serviceRatingReason !== (snapshot['serviceRatingReason'] || '') && !hasAllTranslations(destination.serviceRating?.reason))
+    if (serviceRatingReason && (serviceRatingReason !== (snapshot['serviceRatingReason'] || '') || !hasAllTranslations(destination.serviceRating?.reason)))
         ratingReasonsChanged['serviceRatingReason'] = serviceRatingReason;
-    if (xFactorRatingReason && xFactorRatingReason !== (snapshot['xFactorRatingReason'] || '') && !hasAllTranslations(destination.xFactorRating?.reason))
+    if (xFactorRatingReason && (xFactorRatingReason !== (snapshot['xFactorRatingReason'] || '') || !hasAllTranslations(destination.xFactorRating?.reason)))
         ratingReasonsChanged['xFactorRatingReason'] = xFactorRatingReason;
 
     // Check nearbyHotels changes
@@ -423,7 +459,7 @@ export async function translateDestination(id: string) {
         || (destination.faqs || []).some(f => (f.question && !hasAllTranslations(f.question)) || (f.answer && !hasAllTranslations(f.answer)));
 
     if (Object.keys(changedSmall).length === 0 && !contentChanged && !hotelsChanged && !faqsChanged && Object.keys(ratingReasonsChanged).length === 0) {
-        log.info(`[TranslationQueue] Destination ${id}: no translatable fields changed, skipping.`);
+        log.info(`[TranslationQueue] Destination ${id}: all fields already translated, skipping.`);
         return;
     }
 
@@ -478,6 +514,9 @@ export async function translateDestination(id: string) {
         for (const [field, translations] of Object.entries(smallResults)) {
             if (field === 'name') {
                 applyTranslations(destination as any, 'name', translations, name);
+            }
+            else if (field === 'slug') {
+                applyTranslations(destination as any, 'slug', translations, slug);
             }
             else if (field === 'introductionHeadline') {
                 applyTranslations(destination, 'introductionHeadline', translations, introductionHeadline);
@@ -614,6 +653,7 @@ export async function translateDestination(id: string) {
         // Update snapshot
         (destination as any).translationSnapshot = {
             name,
+            slug,
             introductionHeadline,
             introductionContent,
             womenDressCode,
@@ -636,6 +676,7 @@ export async function translateDestination(id: string) {
         };
 
         destination.markModified('name');
+        destination.markModified('slug');
         destination.markModified('introductionHeadline');
         destination.markModified('introductionContent');
         destination.markModified('womenDressCode');
