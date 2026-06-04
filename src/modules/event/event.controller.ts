@@ -53,7 +53,6 @@ import type {
     I_Input_UpdateEvent,
 } from './event.type.js';
 
-import { translationQueue } from '../translation/translation.queue.js';
 import { EventModel } from './event.model.js';
 import { E_EventType } from './event.type.js';
 import { mapEventTypeToPinStyle, signEventImage, validateTimeBasedEvent } from './event.validation.js';
@@ -509,7 +508,7 @@ export const eventCtr = {
                 destinationLocationId = destinationLocationId ?? destination.locationId ?? (destination.location)?.id;
             }
 
-            const clubName = typeof destination.name === 'object' && destination.name !== null ? ((destination.name as Record<string, string>)['en']?.trim() ?? '') : ((destination.name || '') as string).trim();
+            const clubName = destination.name?.['trim']() ?? '';
             doc.title = { en: clubName ? `Going clubbing ${clubName}` : 'Going clubbing' };
             doc.image = (destination.images && destination.images[0]) ?? image;
 
@@ -611,14 +610,6 @@ export const eventCtr = {
         const eventCreated = await mongooseCtr.createOne(doc);
         if (!eventCreated.success)
             return eventCreated;
-
-        // Trigger background translation
-        if (eventCreated.result?.id) {
-            translationQueue.add({
-                type: 'event' as any,
-                id: eventCreated.result.id,
-            }).catch(e => log.error('[EventController] Failed to add translation job to queue:', e));
-        }
 
         // If PRIVATE, create conversation using final title (doc.title) and rollback if it fails
         if (type === E_EventType.PRIVATE) {
@@ -1147,14 +1138,7 @@ export const eventCtr = {
             }
         }
 
-        const updateResult = await mongooseCtr.updateOne(filter, update, options);
-        if (updateResult.success && updateResult.result?.id) {
-            translationQueue.add({
-                type: 'event',
-                id: updateResult.result.id,
-            } as any).catch(e => log.error('[EventController] Failed to add translation job to queue:', e));
-        }
-        return updateResult;
+        return mongooseCtr.updateOne(filter, update, options);
     },
     updateEvents: async (
         _context: I_Context,

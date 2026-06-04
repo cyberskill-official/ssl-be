@@ -2,7 +2,6 @@ import type { I_GenericDocument, T_Omit_Create, T_Omit_Update } from '@cyberskil
 
 import type { I_Destination } from '#modules/destination/index.js';
 import type { I_Location } from '#modules/location/index.js';
-import type { I_Seo } from '#modules/seo/index.js';
 import type { I_User } from '#modules/user/user.type.js';
 import type { I_LocalizedString } from '#shared/typescript/index.js';
 
@@ -33,8 +32,6 @@ export interface I_Event extends I_GenericDocument {
     currency?: string;
     pushMessage?: string;
     isActive?: boolean;
-    seo?: I_Seo;
-    faqs?: Array<{ question?: I_LocalizedString; answer?: I_LocalizedString }>;
 }
 
 export type T_Event_Populate = 'destination' | 'createdBy';

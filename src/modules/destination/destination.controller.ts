@@ -36,7 +36,7 @@ import type {
 } from './destination.type.js';
 
 import { translationQueue } from '../translation/translation.queue.js';
-import { buildCountryIdFilter, buildCountryNameFilter, buildDestinationSort, mergeFilters, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
+import { buildCountryIdFilter, buildCountryNameFilter, buildDestinationSort, mergeFilters, normalizeMultilingualFilter, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
@@ -53,8 +53,9 @@ export const destinationCtr = {
         delete (workingFilter as { countryId?: string }).countryId;
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
-        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
+        const multilingualFilter = normalizeMultilingualFilter(sanitizedFilterObject);
+        const baseFilter = Object.keys(multilingualFilter).length > 0
+            ? multilingualFilter as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
@@ -108,11 +109,16 @@ export const destinationCtr = {
             );
         }
 
+        // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
+        const rawSlug = (doc as any).slug;
         let localizedDoc = doc;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
             localizedDoc = localizeDocument(doc, locale);
+        }
+        if (rawSlug && typeof rawSlug === 'object') {
+            (localizedDoc as any)._rawSlug = rawSlug;
         }
 
         const intro = extractPlainTextFromRichContent(localizedDoc.introductionContent);
@@ -182,9 +188,10 @@ export const destinationCtr = {
             : undefined;
         delete (workingFilter as { countryId?: string }).countryId;
 
-        const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
-        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
+        const sanitizedFilterObject2 = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
+        const multilingualFilter2 = normalizeMultilingualFilter(sanitizedFilterObject2);
+        const baseFilter = Object.keys(multilingualFilter2).length > 0
+            ? multilingualFilter2 as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
@@ -262,7 +269,14 @@ export const destinationCtr = {
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
-            finalDocs = finalDocs.map(doc => localizeDocument(doc, locale));
+            finalDocs = finalDocs.map((doc) => {
+                const rawSlug = (doc as any).slug;
+                const localized = localizeDocument(doc, locale);
+                if (rawSlug && typeof rawSlug === 'object') {
+                    (localized as any)._rawSlug = rawSlug;
+                }
+                return localized;
+            });
         }
 
         for (const doc of finalDocs) {

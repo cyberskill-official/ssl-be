@@ -35,10 +35,41 @@ function getEn(val: unknown): string {
     return typeof val === 'string' ? val : '';
 }
 
+const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
+const MULTILINGUAL_FIELDS = new Set(['slug', 'title']);
+
+function normalizeMultilingualFilter(filter: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!filter)
+        return {};
+    const normalized: Record<string, unknown> = {};
+    const orConditions: Record<string, unknown>[] = [];
+
+    for (const [key, value] of Object.entries(filter)) {
+        if (MULTILINGUAL_FIELDS.has(key) && typeof value === 'string') {
+            orConditions.push(
+                ...MULTILINGUAL_LOCALES.map(locale => ({
+                    [`${key}.${locale}`]: value,
+                })),
+            );
+        }
+        else {
+            normalized[key] = value;
+        }
+    }
+
+    if (orConditions.length > 0) {
+        const existingOr = Array.isArray(filter['$or']) ? filter['$or'] as Record<string, unknown>[] : [];
+        normalized['$or'] = [...existingOr, ...orConditions];
+    }
+
+    return normalized;
+}
+
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
-        const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        const blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
 
         if (!blogFound.success) {
             return blogFound;
@@ -51,16 +82,23 @@ export const blogCtr = {
             }
         }
 
+        // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
+        const rawSlug = (blogFound.result as any).slug;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
             blogFound.result = localizeDocument(blogFound.result, locale);
         }
+        // Re-attach raw slug for SEO resolvers to generate per-locale URLs
+        if (rawSlug && typeof rawSlug === 'object') {
+            (blogFound.result as any)._rawSlug = rawSlug;
+        }
 
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        const effectiveFilter: Record<string, unknown> = { ...(normalizedFilter ?? {}) };
         const efAny = effectiveFilter as Record<string, any>;
         if (efAny['isDel'] === undefined) {
             efAny['isDel'] = { $ne: true };
@@ -98,7 +136,14 @@ export const blogCtr = {
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
         if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
-            filteredDocs = filteredDocs.map(doc => localizeDocument(doc, locale));
+            filteredDocs = filteredDocs.map((doc) => {
+                const rawSlug = (doc as any).slug;
+                const localized = localizeDocument(doc, locale);
+                if (rawSlug && typeof rawSlug === 'object') {
+                    (localized as any)._rawSlug = rawSlug;
+                }
+                return localized;
+            });
         }
 
         // Update result with filtered docs (keep original pagination meta if present)

@@ -224,21 +224,30 @@ ${urls}
 
 // --- Hreflang ---
 
-export function generateHreflangLinks(slug: string, contentType: string): Array<{ hreflang: string; href: string }> {
+export function generateHreflangLinks(slug: any, contentType: string): Array<{ hreflang: string; href: string }> {
     const baseUrl = env.USER_APP_URL.replace(/\/$/u, '');
-    const links = SUPPORTED_LOCALES.map(locale => ({
-        hreflang: locale,
-        href: `${baseUrl}/${locale}/${contentType}/${slug}`,
-    }));
-    links.push({ hreflang: 'x-default', href: `${baseUrl}/en/${contentType}/${slug}` });
+    const links = SUPPORTED_LOCALES.map((locale) => {
+        const localeSlug = typeof slug === 'object' && slug !== null
+            ? (slug[locale] || slug['en'] || '')
+            : (slug || '');
+        return {
+            hreflang: locale,
+            href: `${baseUrl}/${locale}/${contentType}/${encodeURIComponent(localeSlug)}`,
+        };
+    });
+    const defaultSlug = typeof slug === 'object' && slug !== null ? (slug['en'] || '') : (slug || '');
+    links.push({ hreflang: 'x-default', href: `${baseUrl}/en/${contentType}/${encodeURIComponent(defaultSlug)}` });
     return links;
 }
 
 // --- Canonical URL ---
 
-export function generateCanonicalUrl(slug: string, contentType: string, locale: string): string {
+export function generateCanonicalUrl(slug: any, contentType: string, locale: string): string {
     const baseUrl = env.USER_APP_URL.replace(/\/$/u, '');
-    return `${baseUrl}/${locale}/${contentType}/${slug}`;
+    const localeSlug = typeof slug === 'object' && slug !== null
+        ? (slug[locale] || slug['en'] || '')
+        : (slug || '');
+    return `${baseUrl}/${locale}/${contentType}/${encodeURIComponent(localeSlug)}`;
 }
 
 // --- JSON-LD Structured Data ---
