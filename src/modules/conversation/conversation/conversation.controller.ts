@@ -2189,9 +2189,6 @@ export const conversationCtr = {
             if (!conversation)
                 return false;
 
-            if (conversation.lastMessage?.senderId === userId)
-                return false;
-
             const conversationId = conversation?.id;
             if (!conversationId)
                 return false;
@@ -2212,8 +2209,6 @@ export const conversationCtr = {
                     }
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
-                        if (conversation.lastMessage?.senderId === userId)
-                            return false;
                         if (isOpen)
                             return true;
                         const participants = conversation.participants || [];
