@@ -224,10 +224,21 @@ async function main() {
         'name.en': { $exists: true },
     });
 
+    // Count items that are too large for inline translation (pre-check skip)
+    const blogsTooLarge = await BlogModel.countDocuments({
+        isDel: { $ne: true },
+        isActive: true,
+        slug: { $type: 'string' },
+        $expr: { $gt: [{ $strLenCP: { $ifNull: ['$content', ''] } }, 1380000] }, // ~1.38MB raw → ~15MB translated
+    });
+    const blogsActuallyFailed = blogsStillString - blogsTooLarge;
+
     if (blogsStillString > 0 || destsStillString > 0) {
         log.warn(`[TranslateAll] ⚠️ Verification: Blogs still string=${blogsStillString}, multilingual=${blogsMultilingual} | Destinations still string=${destsStillString}, multilingual=${destsMultilingual}`);
-        if (blogsStillString > 0)
-            log.warn(`[TranslateAll] ${blogsStillString} blogs were NOT translated. Check logs for errors.`);
+        if (blogsTooLarge > 0)
+            log.warn(`[TranslateAll] ${blogsTooLarge} blogs skipped: content too large for MongoDB inline storage (>16MB estimate). Needs external translation storage.`);
+        if (blogsActuallyFailed > 0)
+            log.warn(`[TranslateAll] ${blogsActuallyFailed} blogs were NOT translated. Check logs for errors.`);
         if (destsStillString > 0)
             log.warn(`[TranslateAll] ${destsStillString} destinations were NOT translated. Check logs for errors.`);
     }

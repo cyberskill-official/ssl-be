@@ -421,7 +421,7 @@ export async function translateDestination(id: string) {
 
     // Pre-check: estimate if translated document would exceed MongoDB's 16MB BSON limit.
     const estimatedDestSize = (introductionContent?.length || 0) * (TARGET_LANGS.length + 1)
-        + (name?.length || 0) * TARGET_LANGS.length
+        + (getEn(destination.name)?.length || 0) * TARGET_LANGS.length
         + (introductionHeadline?.length || 0) * TARGET_LANGS.length
         + 65536;
     if (estimatedDestSize > 15_000_000) {
