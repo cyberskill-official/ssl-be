@@ -136,22 +136,68 @@ async function main() {
 
     // Wait for the queue to finish processing all jobs before disconnecting.
     // The queue worker runs in this process and needs the MongoDB connection.
-    log.info('[TranslateAll] Waiting for queue to drain...');
-    await new Promise<void>((resolve) => {
-        const check = async () => {
-            const counts = await translationQueue.getJobCounts();
-            const remaining = (counts.waiting || 0) + (counts.active || 0) + (counts.delayed || 0);
-            if (remaining === 0) {
-                log.info('[TranslateAll] Queue drained.');
-                resolve();
+    const MAX_RETRY_ROUNDS = 2; // Retry failed jobs up to 2 additional rounds
+
+    for (let round = 0; round <= MAX_RETRY_ROUNDS; round++) {
+        // Wait for active/waiting/delayed jobs to finish
+        log.info(`[TranslateAll] Waiting for queue to drain (round ${round + 1}/${MAX_RETRY_ROUNDS + 1})...`);
+        await new Promise<void>((resolve) => {
+            const check = async () => {
+                const counts = await translationQueue.getJobCounts();
+                const remaining = (counts.waiting || 0) + (counts.active || 0) + (counts.delayed || 0);
+                if (remaining === 0) {
+                    log.info(`[TranslateAll] Queue drained. completed=${counts.completed} failed=${counts.failed}`);
+                    resolve();
+                }
+                else {
+                    log.info(`[TranslateAll] Queue status: waiting=${counts.waiting} active=${counts.active} completed=${counts.completed} failed=${counts.failed} delayed=${counts.delayed}`);
+                    setTimeout(check, 3000);
+                }
+            };
+            check();
+        });
+
+        // Check for failed jobs
+        const counts = await translationQueue.getJobCounts();
+        const failedCount = counts.failed || 0;
+
+        if (failedCount === 0) {
+            log.info('[TranslateAll] No failed jobs. Proceeding to verification.');
+            break;
+        }
+
+        if (round < MAX_RETRY_ROUNDS) {
+            // Retry failed jobs — they may have failed due to transient API errors
+            log.warn(`[TranslateAll] ${failedCount} job(s) failed. Retrying (round ${round + 1}/${MAX_RETRY_ROUNDS})...`);
+            const failedJobs = await translationQueue.getFailed(0, failedCount);
+            for (const job of failedJobs) {
+                const data = job.data as { type: string; id: string };
+                const reason = typeof job.failedReason === 'string'
+                    ? job.failedReason.slice(0, 200)
+                    : 'unknown';
+                log.warn(`[TranslateAll]   ↻ Retrying ${data.type} ${data.id}: ${reason}`);
+                try {
+                    await job.retry();
+                }
+                catch (retryErr: any) {
+                    log.error(`[TranslateAll]   ✗ Failed to retry job ${job.id}: ${retryErr.message}`);
+                }
             }
-            else {
-                log.info(`[TranslateAll] Queue status: waiting=${counts.waiting} active=${counts.active} completed=${counts.completed} failed=${counts.failed}`);
-                setTimeout(check, 3000);
+            await translationQueue.clean(0, 'failed');
+        }
+        else {
+            // Final round — report remaining failures with details
+            log.error(`[TranslateAll] ❌ ${failedCount} job(s) still failed after ${MAX_RETRY_ROUNDS} retry rounds:`);
+            const failedJobs = await translationQueue.getFailed(0, failedCount);
+            for (const job of failedJobs) {
+                const data = job.data as { type: string; id: string };
+                const reason = typeof job.failedReason === 'string'
+                    ? job.failedReason.slice(0, 300)
+                    : 'unknown';
+                log.error(`[TranslateAll]   ❌ ${data.type} ${data.id}: ${reason}`);
             }
-        };
-        check();
-    });
+        }
+    }
 
     // ── Verification: count what was actually translated ──
     log.info('[TranslateAll] Verifying translation results...');
