@@ -159,14 +159,17 @@ export async function translateBlog(id: string) {
     }
 
     // Pre-check: estimate if translated document would exceed MongoDB's 16MB BSON limit.
-    // Translating into 10 languages roughly multiplies content size by 10× plus JSON overhead.
-    // If already over the limit, skip before wasting API calls on a guaranteed failure.
-    const estimatedTranslatedSize = (content?.length || 0) * (TARGET_LANGS.length + 1) // +1 for en
+    // Base64 images stay ONLY in English; translations get placeholders (see translation.service.ts).
+    // So: English = full content with base64, each translation = content without base64.
+    const base64Size = (content?.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
+    const contentWithoutBase64 = (content?.length || 0) - base64Size;
+    const estimatedTranslatedSize = (content?.length || 0) // English (with base64)
+        + contentWithoutBase64 * TARGET_LANGS.length // translations (no base64)
         + (title?.length || 0) * TARGET_LANGS.length
         + (contentHeadline?.length || 0) * TARGET_LANGS.length
         + 65536; // JSON + other fields overhead
     if (estimatedTranslatedSize > 15_000_000) {
-        log.warn(`[TranslationQueue] Blog ${id} estimated translated size ~${(estimatedTranslatedSize / 1_048_576).toFixed(1)}MB — would exceed MongoDB 16MB limit. Skipping. This blog needs its translations stored externally.`);
+        log.warn(`[TranslationQueue] Blog ${id} estimated translated size ~${(estimatedTranslatedSize / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — would exceed MongoDB 16MB limit. Skipping.`);
         await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }

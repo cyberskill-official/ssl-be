@@ -294,12 +294,15 @@ async function main() {
             { _id: objId },
             { projection: { content: 1, introductionContent: 1 } },
         );
-        const contentLen = doc?.content?.en?.length || doc?.content?.length
-            || doc?.introductionContent?.en?.length || doc?.introductionContent?.length || 0;
-        const estimatedMB = (contentLen * 10 + contentLen + 65536) / 1048576;
+        const contentStr = typeof doc?.content === 'string' ? doc.content : (doc?.content?.en || '');
+        const base64Size = (contentStr.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
+        const textSize = (contentStr?.length || 0) - base64Size;
+        // English keeps base64, translations keep only text + placeholder IDs
+        const estimatedMB = ((contentStr?.length || 0) + textSize * 10 + 65536) / 1048576;
         const tooLarge = estimatedMB > 15;
         console.log(`  ${entry.title}`);
-        console.log(`    Current doc BSON: ${currentMB.toFixed(1)} MB | Est. with translations: ${estimatedMB.toFixed(1)} MB${tooLarge ? ' ⚠️ TOO LARGE (>16MB)' : ' ✓ OK'}`);
+        console.log(`    Current doc BSON: ${currentMB.toFixed(1)} MB | Base64: ${(base64Size / 1048576).toFixed(1)} MB | Text: ${(textSize / 1024).toFixed(0)} KB`);
+        console.log(`    Est. with translations: ${estimatedMB.toFixed(1)} MB${tooLarge ? ' ⚠️ TOO LARGE (>16MB)' : ' ✓ OK'}`);
     }
 
     // ── Output ──
