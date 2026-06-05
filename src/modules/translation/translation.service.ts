@@ -136,7 +136,14 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
 
         const userMessage = { fields };
 
-        try {
+        // Scale max_tokens: each field × each language + JSON overhead.
+        // translateFields is called with many small fields for destinations (name, slug,
+        // dress codes, highlights, SEO fields, etc.) so the response can be large.
+        const totalFieldLen = Object.values(fields).reduce((sum, v) => sum + v.length, 0);
+        const estimatedTokens = Math.ceil(totalFieldLen / 2) * targetLangs.length * 2 + 4096;
+        const maxTokens = Math.min(Math.max(estimatedTokens, 16384), 128000);
+
+        const makeRequest = async (retryWithMoreTokens: boolean): Promise<any> => {
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
@@ -147,6 +154,7 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
                     ],
                     response_format: { type: 'json_object' },
                     temperature: 0.3,
+                    max_tokens: retryWithMoreTokens ? Math.min(maxTokens * 2, 128000) : maxTokens,
                 },
                 {
                     headers: {
@@ -164,8 +172,25 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
             const parsed = JSON.parse(resultText);
             // OpenAI may wrap the result in a "fields" key — unwrap it
             return parsed.fields || parsed;
+        };
+
+        try {
+            return await makeRequest(false);
         }
         catch (error: any) {
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                log.warn('[TranslationService] JSON parse failed (likely truncated response), retrying with more tokens...');
+                try {
+                    return await makeRequest(true);
+                }
+                catch (retryError: any) {
+                    log.error('[TranslationService] translateFields retry also failed:', {
+                        message: retryError.message,
+                        status: retryError.response?.status,
+                    });
+                    throw retryError;
+                }
+            }
             log.error('[TranslationService] translateFields error:', {
                 message: error.message,
                 status: error.response?.status,
@@ -180,7 +205,9 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
         content: string,
         targetLangs: string[],
     ): Promise<Record<string, string>> => {
-        const BATCH_SIZE = 4;
+        // Batch size 3 balances API speed vs response size.
+        // Dynamic max_tokens in _translateRichContentBatch prevents truncation.
+        const BATCH_SIZE = 3;
         const batches: string[][] = [];
         for (let i = 0; i < targetLangs.length; i += BATCH_SIZE) {
             batches.push(targetLangs.slice(i, i + BATCH_SIZE));
@@ -243,7 +270,12 @@ Guidelines:
 Return a JSON object mapping each language code to the translated content.
 Example: { "da": "...", "de": "...", "fr": "...", ... }`;
 
-        try {
+        // Scale max_tokens with content size and batch size to avoid truncation.
+        // Estimate: input size + 2x for translation expansion + JSON overhead.
+        const estimatedTokens = Math.ceil(content.length / 2) * targetLangs.length * 2 + 2048;
+        const maxTokens = Math.min(Math.max(estimatedTokens, 16384), 128000);
+
+        const makeRequest = async (retryWithMoreTokens: boolean): Promise<Record<string, string>> => {
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
@@ -254,7 +286,7 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
                     ],
                     response_format: { type: 'json_object' },
                     temperature: 0.3,
-                    max_tokens: 16384,
+                    max_tokens: retryWithMoreTokens ? Math.min(maxTokens * 2, 128000) : maxTokens,
                 },
                 {
                     headers: {
@@ -270,8 +302,26 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
             }
 
             return JSON.parse(resultText);
+        };
+
+        try {
+            return await makeRequest(false);
         }
         catch (error: any) {
+            // If JSON was truncated, retry once with double the max_tokens
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                log.warn('[TranslationService] JSON parse failed (likely truncated response), retrying with more tokens...');
+                try {
+                    return await makeRequest(true);
+                }
+                catch (retryError: any) {
+                    log.error('[TranslationService] translateRichContent retry also failed:', {
+                        message: retryError.message,
+                        status: retryError.response?.status,
+                    });
+                    throw retryError;
+                }
+            }
             log.error('[TranslationService] translateRichContent error:', {
                 message: error.message,
                 status: error.response?.status,
@@ -355,7 +405,13 @@ Guidelines:
 Return a JSON object where each language code maps to an object of { index: translatedText }.
 Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`;
 
-        try {
+        // Scale max_tokens with content size and batch size to avoid truncation.
+        // Lexical node translation: each text node × each language + JSON overhead.
+        const totalTextLen = Object.values(textMap).reduce((sum, t) => sum + t.length, 0);
+        const estimatedTokens = Math.ceil(totalTextLen / 2) * targetLangs.length * 2 + 4096;
+        const maxTokens = Math.min(Math.max(estimatedTokens, 16384), 128000);
+
+        const makeRequest = async (retryWithMoreTokens: boolean): Promise<any> => {
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
@@ -366,7 +422,7 @@ Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`
                     ],
                     response_format: { type: 'json_object' },
                     temperature: 0.3,
-                    max_tokens: 16384,
+                    max_tokens: retryWithMoreTokens ? Math.min(maxTokens * 2, 128000) : maxTokens,
                 },
                 {
                     headers: {
@@ -381,45 +437,65 @@ Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`
                 throw new Error('Empty response from OpenAI');
             }
 
-            const translated = JSON.parse(resultText);
-            const result: Record<string, string> = {};
+            return JSON.parse(resultText);
+        };
 
-            for (const lang of targetLangs) {
-                const langTranslations = translated[lang] || {};
-                const cloned = JSON.parse(JSON.stringify(lexicalJson));
-                for (let i = 0; i < textNodes.length; i++) {
-                    const translatedText = langTranslations[String(i)];
-                    if (translatedText !== undefined) {
-                        const nodePath = textNodes[i]!.path;
-                        const isAltText = nodePath.endsWith('::altText');
-                        const actualPath = isAltText ? nodePath.replace('::altText', '') : nodePath;
-                        const parts = actualPath.split('/').filter(Boolean);
-                        let current = cloned;
-                        for (let j = 0; j < parts.length - 1; j++) {
-                            current = current[parts[j]!];
-                        }
-                        const lastKey = parts[parts.length - 1]!;
-                        if (isAltText) {
-                            current[lastKey].altText = translatedText;
-                        }
-                        else {
-                            current[lastKey].text = translatedText;
-                        }
-                    }
-                }
-                restoreBase64Images(cloned, base64Map);
-                result[lang] = JSON.stringify(cloned);
-            }
-
-            return result;
+        let translated: any;
+        try {
+            translated = await makeRequest(false);
         }
         catch (error: any) {
-            log.error('[TranslationService] _translateLexicalByNodes error:', {
-                message: error.message,
-                status: error.response?.status,
-                data: error.response?.data,
-            });
-            throw error;
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                log.warn('[TranslationService] Lexical JSON parse failed (likely truncated), retrying with more tokens...');
+                try {
+                    translated = await makeRequest(true);
+                }
+                catch (retryError: any) {
+                    log.error('[TranslationService] _translateLexicalByNodes retry also failed:', {
+                        message: retryError.message,
+                        status: retryError.response?.status,
+                    });
+                    throw retryError;
+                }
+            }
+            else {
+                log.error('[TranslationService] _translateLexicalByNodes error:', {
+                    message: error.message,
+                    status: error.response?.status,
+                    data: error.response?.data,
+                });
+                throw error;
+            }
         }
+        const result: Record<string, string> = {};
+
+        for (const lang of targetLangs) {
+            const langTranslations = translated[lang] || {};
+            const cloned = JSON.parse(JSON.stringify(lexicalJson));
+            for (let i = 0; i < textNodes.length; i++) {
+                const translatedText = langTranslations[String(i)];
+                if (translatedText !== undefined) {
+                    const nodePath = textNodes[i]!.path;
+                    const isAltText = nodePath.endsWith('::altText');
+                    const actualPath = isAltText ? nodePath.replace('::altText', '') : nodePath;
+                    const parts = actualPath.split('/').filter(Boolean);
+                    let current = cloned;
+                    for (let j = 0; j < parts.length - 1; j++) {
+                        current = current[parts[j]!];
+                    }
+                    const lastKey = parts[parts.length - 1]!;
+                    if (isAltText) {
+                        current[lastKey].altText = translatedText;
+                    }
+                    else {
+                        current[lastKey].text = translatedText;
+                    }
+                }
+            }
+            restoreBase64Images(cloned, base64Map);
+            result[lang] = JSON.stringify(cloned);
+        }
+
+        return result;
     },
 };
