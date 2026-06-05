@@ -224,13 +224,21 @@ async function main() {
         'name.en': { $exists: true },
     });
 
-    // Count items that are too large for inline translation (pre-check skip)
-    const blogsTooLarge = await BlogModel.countDocuments({
-        isDel: { $ne: true },
-        isActive: true,
-        slug: { $type: 'string' },
-        $expr: { $gt: [{ $strLenCP: { $ifNull: ['$content', ''] } }, 1380000] }, // ~1.38MB raw → ~15MB translated
-    });
+    // If any blogs still untranslated, check each with base64-aware estimate
+    let blogsTooLarge = 0;
+    if (blogsStillString > 0) {
+        const untranslated = await BlogModel.find({
+            isDel: { $ne: true },
+            isActive: true,
+            slug: { $type: 'string' },
+        }).select('content').lean();
+        for (const b of untranslated) {
+            const c = typeof b.content === 'string' ? b.content : (b.content as any)?.en || '';
+            const b64 = (c.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
+            if (c.length + (c.length - b64) * 10 + 65536 > 15_000_000)
+                blogsTooLarge++;
+        }
+    }
     const blogsActuallyFailed = blogsStillString - blogsTooLarge;
 
     if (blogsStillString > 0 || destsStillString > 0) {
