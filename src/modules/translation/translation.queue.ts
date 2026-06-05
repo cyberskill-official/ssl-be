@@ -13,6 +13,16 @@ export interface I_TranslationJobData {
     id: string;
 }
 
+/** Build query that handles both ObjectId _id and UUID id field */
+function idQuery(id: string): Record<string, any> {
+    // ObjectId hex string → query by _id
+    if (/^[0-9a-f]{24}$/i.test(id)) {
+        return { _id: id };
+    }
+    // UUID or other format → query by id field
+    return { id };
+}
+
 const env = getEnv();
 
 const TARGET_LANGS = ['da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
@@ -116,7 +126,7 @@ function ensureMultilingualValue(val: any, enValue: string): Record<string, stri
 export async function translateBlog(id: string) {
     const startTime = Date.now();
     // Check if already being translated
-    const existingBlog = await BlogModel.findOne({ id, isDel: { $ne: true } });
+    const existingBlog = await BlogModel.findOne({ ...idQuery(id), isDel: { $ne: true } });
     if (!existingBlog) {
         log.warn(`[TranslationQueue] Blog not found or deleted: ${id}`);
         return;
@@ -128,7 +138,7 @@ export async function translateBlog(id: string) {
     }
 
     // Set lock
-    await BlogModel.findOneAndUpdate({ id }, { $set: { translationInProgress: true } });
+    await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: true } });
 
     const blog = existingBlog;
 
@@ -335,7 +345,7 @@ export async function translateBlog(id: string) {
             faqs: currentFaqs,
         };
 
-        await BlogModel.findOneAndUpdate({ id, isDel: { $ne: true } }, { $set });
+        await BlogModel.findOneAndUpdate({ ...idQuery(id), isDel: { $ne: true } }, { $set });
         log.info(`[TranslationQueue] Blog ${id} translation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
     }
     catch (err) {
@@ -343,14 +353,14 @@ export async function translateBlog(id: string) {
     }
     finally {
         // Release lock
-        await BlogModel.findOneAndUpdate({ id }, { $set: { translationInProgress: false } });
+        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
     }
 }
 
 export async function translateDestination(id: string) {
     const startTime = Date.now();
     // Check if already being translated
-    const existingDestination = await DestinationModel.findOne({ id, isDel: { $ne: true } });
+    const existingDestination = await DestinationModel.findOne({ ...idQuery(id), isDel: { $ne: true } });
     if (!existingDestination) {
         log.warn(`[TranslationQueue] Destination not found or deleted: ${id}`);
         return;
@@ -362,7 +372,7 @@ export async function translateDestination(id: string) {
     }
 
     // Set lock
-    await DestinationModel.findOneAndUpdate({ id }, { $set: { translationInProgress: true } });
+    await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: true } });
 
     const destination = existingDestination;
 
@@ -703,6 +713,6 @@ export async function translateDestination(id: string) {
     }
     finally {
         // Release lock
-        await DestinationModel.findOneAndUpdate({ id }, { $set: { translationInProgress: false } });
+        await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
     }
 }

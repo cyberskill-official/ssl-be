@@ -95,7 +95,7 @@ async function main() {
     log.info(`[TranslateAll] Blogs: ${pendingBlogs.length} need translation, ${skippedBlogs} already translated → skipped.`);
 
     const blogJobs = pendingBlogs.map(blog =>
-        translationQueue.add({ type: 'blog', id: blog.id }),
+        translationQueue.add({ type: 'blog', id: blog._id.toString() }),
     );
     const blogResults = await Promise.allSettled(blogJobs);
     const blogEnqueued = blogResults.filter(r => r.status === 'fulfilled').length;
@@ -115,7 +115,7 @@ async function main() {
     log.info(`[TranslateAll] Destinations: ${pendingDests.length} need translation, ${skippedDests} already translated → skipped.`);
 
     const destJobs = pendingDests.map(dest =>
-        translationQueue.add({ type: 'destination', id: dest.id }),
+        translationQueue.add({ type: 'destination', id: dest._id.toString() }),
     );
     const destResults = await Promise.allSettled(destJobs);
     const destEnqueued = destResults.filter(r => r.status === 'fulfilled').length;
