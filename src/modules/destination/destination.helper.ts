@@ -63,6 +63,8 @@ export function normalizeMultilingualFilter(filter: Record<string, unknown>): Re
 
     for (const [key, value] of Object.entries(filter)) {
         if (MULTILINGUAL_FIELDS.has(key) && typeof value === 'string') {
+            // Match both multilingual objects AND plain strings (pre-translation fallback)
+            orConditions.push({ [key]: value });
             orConditions.push(
                 ...MULTILINGUAL_LOCALES.map(locale => ({
                     [`${key}.${locale}`]: value,
