@@ -158,6 +158,19 @@ export async function translateBlog(id: string) {
         return;
     }
 
+    // Pre-check: estimate if translated document would exceed MongoDB's 16MB BSON limit.
+    // Translating into 10 languages roughly multiplies content size by 10× plus JSON overhead.
+    // If already over the limit, skip before wasting API calls on a guaranteed failure.
+    const estimatedTranslatedSize = (content?.length || 0) * (TARGET_LANGS.length + 1) // +1 for en
+        + (title?.length || 0) * TARGET_LANGS.length
+        + (contentHeadline?.length || 0) * TARGET_LANGS.length
+        + 65536; // JSON + other fields overhead
+    if (estimatedTranslatedSize > 15_000_000) {
+        log.warn(`[TranslationQueue] Blog ${id} estimated translated size ~${(estimatedTranslatedSize / 1_048_576).toFixed(1)}MB — would exceed MongoDB 16MB limit. Skipping. This blog needs its translations stored externally.`);
+        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
+        return;
+    }
+
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
 
     // Helper: check if field already has all target languages
@@ -402,6 +415,17 @@ export async function translateDestination(id: string) {
 
     if (!introductionHeadline || !introductionContent) {
         log.warn(`[TranslationQueue] Destination ${id} is missing core English fields.`);
+        await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
+        return;
+    }
+
+    // Pre-check: estimate if translated document would exceed MongoDB's 16MB BSON limit.
+    const estimatedDestSize = (introductionContent?.length || 0) * (TARGET_LANGS.length + 1)
+        + (name?.length || 0) * TARGET_LANGS.length
+        + (introductionHeadline?.length || 0) * TARGET_LANGS.length
+        + 65536;
+    if (estimatedDestSize > 15_000_000) {
+        log.warn(`[TranslationQueue] Destination ${id} estimated translated size ~${(estimatedDestSize / 1_048_576).toFixed(1)}MB — would exceed MongoDB 16MB limit. Skipping.`);
         await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }
