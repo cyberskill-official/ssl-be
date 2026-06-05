@@ -38,6 +38,51 @@ export function sanitizeFilter(rawFilter?: Record<string, unknown>) {
     }, {});
 }
 
+/**
+ * Supported locales used for multilingual field lookups.
+ * Must match the locales in localize.ts and translation queue.
+ */
+const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
+
+/**
+ * Fields that are stored as I_LocalizedString (multilingual objects).
+ * When a filter passes a plain string for these fields, we need to search
+ * across all language variants using dot notation.
+ */
+const MULTILINGUAL_FIELDS = new Set(['slug', 'name']);
+
+/**
+ * Normalize filters for multilingual fields.
+ * When a string value is passed for a multilingual field (e.g. slug: "paris-club"),
+ * MongoDB cannot match it against the stored object { en: "paris-club", fr: "..." }.
+ * This transforms the filter to search across all locale keys using $or.
+ */
+export function normalizeMultilingualFilter(filter: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = {};
+    const orConditions: Record<string, unknown>[] = [];
+
+    for (const [key, value] of Object.entries(filter)) {
+        if (MULTILINGUAL_FIELDS.has(key) && typeof value === 'string') {
+            orConditions.push(
+                ...MULTILINGUAL_LOCALES.map(locale => ({
+                    [`${key}.${locale}`]: value,
+                })),
+            );
+        }
+        else {
+            normalized[key] = value;
+        }
+    }
+
+    if (orConditions.length > 0) {
+        // Merge existing $or with our new conditions
+        const existingOr = Array.isArray(filter['$or']) ? filter['$or'] as Record<string, unknown>[] : [];
+        normalized['$or'] = [...existingOr, ...orConditions];
+    }
+
+    return normalized;
+}
+
 export function mergeFilters(
     base?: T_QueryFilter<I_Destination>,
     extra?: T_QueryFilter<I_Destination>,

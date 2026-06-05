@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -17,19 +17,59 @@ import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#m
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { queryCacheService } from '#shared/redis/query-cache.service.js';
-import { getBlockedUserIds } from '#shared/util/index.js';
+import { E_SessionPortal } from '#shared/session/session.constant.js';
+import { getBlockedUserIds, localizeDocument } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
+import { translationQueue } from '../translation/translation.queue.js';
 import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/u;
+
+function getEn(val: unknown): string {
+    if (typeof val === 'object' && val)
+        return (val as Record<string, string>)['en'] || '';
+    return typeof val === 'string' ? val : '';
+}
+
+const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
+const MULTILINGUAL_FIELDS = new Set(['slug', 'title']);
+
+function normalizeMultilingualFilter(filter: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!filter)
+        return {};
+    const normalized: Record<string, unknown> = {};
+    const orConditions: Record<string, unknown>[] = [];
+
+    for (const [key, value] of Object.entries(filter)) {
+        if (MULTILINGUAL_FIELDS.has(key) && typeof value === 'string') {
+            orConditions.push(
+                ...MULTILINGUAL_LOCALES.map(locale => ({
+                    [`${key}.${locale}`]: value,
+                })),
+            );
+        }
+        else {
+            normalized[key] = value;
+        }
+    }
+
+    if (orConditions.length > 0) {
+        const existingOr = Array.isArray(filter['$or']) ? filter['$or'] as Record<string, unknown>[] : [];
+        normalized['$or'] = [...existingOr, ...orConditions];
+    }
+
+    return normalized;
+}
+
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
-        const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        const blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
 
         if (!blogFound.success) {
             return blogFound;
@@ -41,10 +81,24 @@ export const blogCtr = {
                 blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' } });
             }
         }
+
+        // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
+        const rawSlug = (blogFound.result as any).slug;
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            blogFound.result = localizeDocument(blogFound.result, locale);
+        }
+        // Re-attach raw slug for SEO resolvers to generate per-locale URLs
+        if (rawSlug && typeof rawSlug === 'object') {
+            (blogFound.result as any)._rawSlug = rawSlug;
+        }
+
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        const effectiveFilter: Record<string, unknown> = { ...(normalizedFilter ?? {}) };
         const efAny = effectiveFilter as Record<string, any>;
         if (efAny['isDel'] === undefined) {
             efAny['isDel'] = { $ne: true };
@@ -78,6 +132,19 @@ export const blogCtr = {
 
             return blog;
         });
+
+        const rawLocale = context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            filteredDocs = filteredDocs.map((doc) => {
+                const rawSlug = (doc as any).slug;
+                const localized = localizeDocument(doc, locale);
+                if (rawSlug && typeof rawSlug === 'object') {
+                    (localized as any)._rawSlug = rawSlug;
+                }
+                return localized;
+            });
+        }
 
         // Update result with filtered docs (keep original pagination meta if present)
         blogs.result.docs = filteredDocs;
@@ -157,7 +224,7 @@ export const blogCtr = {
                             actorId: authorId,
                             presentation: {
                                 // Use slug when available so the client can navigate without hitting 404 pages.
-                                redirect: { kind: redirectKind, id: blogResult.result.slug, url: redirectUrl },
+                                redirect: { kind: redirectKind, id: getEn(blogResult.result.slug), url: redirectUrl },
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,
@@ -173,6 +240,15 @@ export const blogCtr = {
             }
         }
         catch { }
+
+        // Trigger background translation
+        if (blogResult.success && blogResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: blogResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+
         await queryCacheService.bumpVersion('blog');
         return blogResult;
     },
@@ -280,11 +356,45 @@ export const blogCtr = {
             throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const result = await mongooseCtr.updateOne(filter, update, options);
-        if (result.success) {
-            await queryCacheService.bumpVersion('blog');
+        const getLocalizedValue = (val: unknown): string => {
+            if (typeof val === 'object' && val !== null)
+                return (val as Record<string, string>)['en'] ?? (val as Record<string, string>)['fr'] ?? (val as Record<string, string>)['de'] ?? (val as Record<string, string>)['da'] ?? '';
+            return typeof val === 'string' ? val : '';
+        };
+
+        const requiredLocalizedFields: Array<{ field: string; label: string }> = [
+            { field: 'title', label: 'title' },
+            { field: 'contentHeadline', label: 'content headline' },
+            { field: 'contentSubHeadline', label: 'content sub headline' },
+            { field: 'content', label: 'content' },
+        ];
+
+        for (const { field, label } of requiredLocalizedFields) {
+            if (Object.hasOwn(update, field) && !getLocalizedValue((update as Record<string, unknown>)[field]).trim()) {
+                throwError({ message: `Blog ${label} cannot be empty`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
-        return result;
+
+        if (Object.hasOwn(update, 'featuredImage') && !(update as Record<string, unknown>)['featuredImage']) {
+            throwError({ message: 'Blog featured image cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'type') && !(update as Record<string, unknown>)['type']) {
+            throwError({ message: 'Blog type cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'category') && !(update as Record<string, unknown>)['category']) {
+            throwError({ message: 'Blog category cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const updateResult = await mongooseCtr.updateOne(filter, update, options);
+        if (updateResult.success && updateResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: updateResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     deleteBlog: async (context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter, options });

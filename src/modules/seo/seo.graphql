@@ -1,17 +1,43 @@
 type T_Seo {
-    title: String
-    description: String
-    keywords: [String]
+    title: JSON
+    description: JSON
+    keywords: JSON
     socialImage: String
-    socialMediaDescription: String
-    altTextForImages: String
+    socialMediaDescription: JSON
+    urlSlug: JSON
+    altTextForImages: JSON
+    imageAltTexts: JSON
 }
 
 input Input_Seo {
-    title: String
-    description: String
-    keywords: [String]
+    title: JSON
+    description: JSON
+    keywords: JSON
     socialImage: String
-    socialMediaDescription: String
-    altTextForImages: String
+    socialMediaDescription: JSON
+    urlSlug: JSON
+    altTextForImages: JSON
+    imageAltTexts: JSON
+}
+
+type T_HreflangLink {
+    hreflang: String!
+    href: String!
+}
+
+type T_StaticPageSeo {
+    title: String!
+    description: String!
+
+    hreflangLinks: [T_HreflangLink]!
+}
+
+enum E_StaticPage {
+    HOME
+    DESTINATION
+    BLOG
+}
+
+extend type Query {
+    getStaticPageSeo(page: E_StaticPage!): T_StaticPageSeo
 }

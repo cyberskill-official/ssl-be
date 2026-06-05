@@ -16,18 +16,8 @@ enum E_DestinationAgeGroup {
     A45_PLUS
 }
 
-input Input_Seo {
-    title: String
-    description: String
-    keywords: [String]
-    socialImage: String
-    socialMediaDescription: String
-    urlSlug: String
-    altTextForImages: String
-}
-
 type T_Hotel {
-    name: String
+    name: JSON
     locationId: String
     location: T_Location
     url: String
@@ -36,21 +26,11 @@ type T_Hotel {
 }
 
 input Input_Hotel {
-    name: String
+    name: JSON
     location: Input_Location
     url: String
     description: JSON
     image: String
-}
-
-type T_Seo {
-    title: String
-    description: String
-    keywords: [String]
-    socialImage: String
-    socialMediaDescription: String
-    urlSlug: String
-    altTextForImages: String
 }
 
 type T_Destination {
@@ -59,8 +39,8 @@ type T_Destination {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_DestinationType
-    name: String
-    slug: String
+    name: JSON
+    slug: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -87,10 +67,14 @@ type T_Destination {
     highlightBar: JSON
     highlightDance: JSON
     seo: T_Seo
+    faqs: [T_FAQ]
     linkTo: String
     isActive: Boolean
     createdById: String
     createdBy: T_User
+
+    hreflangLinks: [T_HreflangLink]
+    structuredData: JSON
 }
 
 input Input_QueryDestination {
@@ -99,8 +83,8 @@ input Input_QueryDestination {
     createdAt: DateTime
     updatedAt: DateTime
     type: E_DestinationType
-    name: String
-    slug: String
+    name: JSON
+    slug: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -119,6 +103,7 @@ input Input_QueryDestination {
     serviceRating: Input_Rating
     xFactorRating: Input_Rating
     seo: Input_Seo
+    faqs: [Input_FAQ]
     linkTo: String
     isActive: Boolean
     createdById: String
@@ -126,7 +111,7 @@ input Input_QueryDestination {
 
 input Input_CreateDestination {
     type: E_DestinationType!
-    name: String!
+    name: JSON!
     websiteURL: String!
     rating: E_DestinationRating!
     images: [String]!
@@ -151,6 +136,7 @@ input Input_CreateDestination {
     highlightBar: JSON
     highlightDance: JSON
     seo: Input_Seo
+    faqs: [Input_FAQ]
     linkTo: String
     isActive: Boolean!
     createdById: String
@@ -159,7 +145,7 @@ input Input_CreateDestination {
 input Input_UpdateDestination {
     isDel: Boolean
     type: E_DestinationType
-    name: String
+    name: JSON
     websiteURL: String
     rating: E_DestinationRating
     images: [String]
@@ -184,6 +170,7 @@ input Input_UpdateDestination {
     highlightBar: JSON
     highlightDance: JSON
     seo: Input_Seo
+    faqs: [Input_FAQ]
     linkTo: String
     isActive: Boolean
     createdById: String

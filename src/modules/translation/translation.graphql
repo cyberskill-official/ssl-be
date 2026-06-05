@@ -1,0 +1,45 @@
+type T_TranslationQueueStatus {
+    waiting: Int!
+    active: Int!
+    completed: Int!
+    failed: Int!
+    delayed: Int!
+}
+
+type T_TranslationJobResult {
+    success: Boolean!
+    message: String
+}
+
+type T_TranslateAllResult {
+    total: Int!
+    enqueued: Int!
+}
+
+type T_Response_TranslationJobResult {
+    success: Boolean!
+    message: String
+}
+
+type T_Response_TranslateAllResult {
+    success: Boolean!
+    message: String
+    result: T_TranslateAllResult
+}
+
+type T_Response_TranslationQueueStatus {
+    success: Boolean!
+    message: String
+    result: T_TranslationQueueStatus
+}
+
+type Mutation {
+    translateBlog(id: String!): T_Response_TranslationJobResult!
+    translateDestination(id: String!): T_Response_TranslationJobResult!
+    translateAllBlogs: T_Response_TranslateAllResult!
+    translateAllDestinations: T_Response_TranslateAllResult!
+}
+
+type Query {
+    translationQueueStatus: T_Response_TranslationQueueStatus!
+}

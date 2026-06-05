@@ -22,6 +22,8 @@ import { authnCtr } from '#modules/authn/index.js';
 import { bunnyCtr, cleanFullUrl, normalizeStoragePath } from '#modules/bunny/index.js';
 import { countryCtr, E_Destination_PinStyle, E_LocationEntityType, locationCtr } from '#modules/location/index.js';
 import { extractPlainTextFromRichContent } from '#shared/rich-text/rich-text.util.js';
+import { E_SessionPortal } from '#shared/session/index.js';
+import { localizeDocument } from '#shared/util/index.js';
 
 import type {
     I_Destination,
@@ -33,7 +35,8 @@ import type {
     I_Input_UpdateDestination,
 } from './destination.type.js';
 
-import { buildCountryIdFilter, buildCountryNameFilter, buildDestinationSort, mergeFilters, sanitizeFilter } from './destination.helper.js';
+import { translationQueue } from '../translation/translation.queue.js';
+import { buildCountryIdFilter, buildCountryNameFilter, buildDestinationSort, mergeFilters, normalizeMultilingualFilter, sanitizeFilter, sortDestinationsByRating } from './destination.helper.js';
 import { DestinationModel } from './destination.model.js';
 import { E_DestinationAgeGroup, E_DestinationRating, E_DestinationType } from './destination.type.js';
 
@@ -50,8 +53,9 @@ export const destinationCtr = {
         delete (workingFilter as { countryId?: string }).countryId;
 
         const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
-        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
+        const multilingualFilter = normalizeMultilingualFilter(sanitizedFilterObject);
+        const baseFilter = Object.keys(multilingualFilter).length > 0
+            ? multilingualFilter as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
@@ -105,12 +109,24 @@ export const destinationCtr = {
             );
         }
 
-        const intro = extractPlainTextFromRichContent(doc.introductionContent);
-        if (intro) {
-            doc.introductionContentPlain = intro;
+        // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
+        const rawSlug = (doc as any).slug;
+        let localizedDoc = doc;
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            localizedDoc = localizeDocument(doc, locale);
+        }
+        if (rawSlug && typeof rawSlug === 'object') {
+            (localizedDoc as any)._rawSlug = rawSlug;
         }
 
-        return { ...destinationFound, result: doc };
+        const intro = extractPlainTextFromRichContent(localizedDoc.introductionContent);
+        if (intro) {
+            localizedDoc.introductionContentPlain = intro;
+        }
+
+        return { ...destinationFound, result: localizedDoc };
     },
     getDestinations: async (
         _context: I_Context,
@@ -136,7 +152,6 @@ export const destinationCtr = {
         );
 
         // Find 'location' entry
-        // find 'location' entry
         const locIdx = normalized.findIndex(n => n.path === 'location');
 
         if (locIdx === -1) {
@@ -173,9 +188,10 @@ export const destinationCtr = {
             : undefined;
         delete (workingFilter as { countryId?: string }).countryId;
 
-        const sanitizedFilterObject = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
-        const baseFilter = Object.keys(sanitizedFilterObject).length > 0
-            ? sanitizedFilterObject as T_QueryFilter<I_Destination>
+        const sanitizedFilterObject2 = sanitizeFilter(workingFilter as Record<string, unknown> | undefined);
+        const multilingualFilter2 = normalizeMultilingualFilter(sanitizedFilterObject2);
+        const baseFilter = Object.keys(multilingualFilter2).length > 0
+            ? multilingualFilter2 as T_QueryFilter<I_Destination>
             : undefined;
 
         const countryFilter = await buildCountryIdFilter(rawCountryId);
@@ -241,11 +257,6 @@ export const destinationCtr = {
                     );
                 }
 
-                const intro = extractPlainTextFromRichContent(doc.introductionContent);
-                if (intro) {
-                    doc.introductionContentPlain = intro;
-                }
-
                 if ('ratingOrder' in doc) {
                     delete doc.ratingOrder;
                 }
@@ -254,7 +265,28 @@ export const destinationCtr = {
             }),
         );
 
-        destinations.result.docs = signedDocs;
+        let finalDocs = sortDestinationsByRating<I_Destination>(signedDocs);
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            finalDocs = finalDocs.map((doc) => {
+                const rawSlug = (doc as any).slug;
+                const localized = localizeDocument(doc, locale);
+                if (rawSlug && typeof rawSlug === 'object') {
+                    (localized as any)._rawSlug = rawSlug;
+                }
+                return localized;
+            });
+        }
+
+        for (const doc of finalDocs) {
+            const intro = extractPlainTextFromRichContent((doc as any).introductionContent);
+            if (intro) {
+                (doc as any).introductionContentPlain = intro;
+            }
+        }
+
+        destinations.result.docs = finalDocs;
         return destinations;
     },
 
@@ -303,7 +335,8 @@ export const destinationCtr = {
             throwError({ message: 'Invalid or missing destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (!doc.name?.trim()) {
+        const docNameEn = typeof doc.name === 'object' && doc.name !== null ? (doc.name as any).en?.trim() : (doc.name as string)?.trim();
+        if (!docNameEn) {
             throwError({ message: 'Destination name is required', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
@@ -437,7 +470,14 @@ export const destinationCtr = {
             return locationCreated;
         }
 
-        return mongooseCtr.updateOne({ id: destinationCreated.result.id }, { locationId: locationCreated.result.id });
+        const updateResult = await mongooseCtr.updateOne({ id: destinationCreated.result.id }, { locationId: locationCreated.result.id });
+        if (updateResult.success && destinationCreated.result.id) {
+            translationQueue.add({
+                type: 'destination',
+                id: destinationCreated.result.id,
+            }).catch(e => log.error('[DestinationController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     updateDestination: async (
         context: I_Context,
@@ -447,8 +487,11 @@ export const destinationCtr = {
             throwError({ message: 'Invalid destination type', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        if (update.name !== undefined && !update.name.trim()) {
-            throwError({ message: 'Destination name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        if (update.name !== undefined) {
+            const updateNameEn = typeof update.name === 'object' && update.name !== null ? (update.name as any).en?.trim() : (update.name as string)?.trim();
+            if (!updateNameEn) {
+                throwError({ message: 'Destination name cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
 
         if (update.websiteURL !== undefined && !validator.isURL(update.websiteURL.trim())) {
@@ -626,7 +669,14 @@ export const destinationCtr = {
             }
         }
 
-        return mongooseCtr.updateOne(filter, update);
+        const updateResult = await mongooseCtr.updateOne(filter, update);
+        if (updateResult.success && destinationFound.result.id) {
+            translationQueue.add({
+                type: 'destination',
+                id: destinationFound.result.id,
+            }).catch(e => log.error('[DestinationController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     deleteDestination: async (
         context: I_Context,
