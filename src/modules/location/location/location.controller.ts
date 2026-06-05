@@ -2065,6 +2065,8 @@ export const locationCtr = {
             countryId: 1,
             entityId: 1,
             entityType: 1,
+            map: 1,
+            pinStyle: 1,
             isDel: 1,
         };
 
