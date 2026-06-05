@@ -59,7 +59,7 @@ const STATIC_PAGE_SEO: Record<string, { title: Record<string, string>; descripti
     },
 };
 
-export function getStaticPageSeo(page: string, locale: string): { title: string; description: string; canonicalUrl: string; hreflangLinks: Array<{ hreflang: string; href: string }> } | null {
+export function getStaticPageSeo(page: string, locale: string): { title: string; description: string; hreflangLinks: Array<{ hreflang: string; href: string }> } | null {
     const pageData = STATIC_PAGE_SEO[page];
     if (!pageData)
         return null;
@@ -67,7 +67,6 @@ export function getStaticPageSeo(page: string, locale: string): { title: string;
     const baseUrl = env.USER_APP_URL.replace(/\/$/u, '');
     const title = pageData.title[locale] ?? pageData.title['en'] ?? '';
     const description = pageData.description[locale] ?? pageData.description['en'] ?? '';
-    const canonicalUrl = `${baseUrl}/${locale}/${page}`;
 
     const hreflangLinks = SUPPORTED_LOCALES.map(loc => ({
         hreflang: loc,
@@ -75,7 +74,7 @@ export function getStaticPageSeo(page: string, locale: string): { title: string;
     }));
     hreflangLinks.push({ hreflang: 'x-default', href: `${baseUrl}/en/${page}` });
 
-    return { title, description, canonicalUrl, hreflangLinks };
+    return { title, description, hreflangLinks };
 }
 
 // --- robots.txt ---
@@ -238,16 +237,6 @@ export function generateHreflangLinks(slug: any, contentType: string): Array<{ h
     const defaultSlug = typeof slug === 'object' && slug !== null ? (slug['en'] || '') : (slug || '');
     links.push({ hreflang: 'x-default', href: `${baseUrl}/en/${contentType}/${encodeURIComponent(defaultSlug)}` });
     return links;
-}
-
-// --- Canonical URL ---
-
-export function generateCanonicalUrl(slug: any, contentType: string, locale: string): string {
-    const baseUrl = env.USER_APP_URL.replace(/\/$/u, '');
-    const localeSlug = typeof slug === 'object' && slug !== null
-        ? (slug[locale] || slug['en'] || '')
-        : (slug || '');
-    return `${baseUrl}/${locale}/${contentType}/${encodeURIComponent(localeSlug)}`;
 }
 
 // --- JSON-LD Structured Data ---

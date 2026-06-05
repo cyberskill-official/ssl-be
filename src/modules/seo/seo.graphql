@@ -28,7 +28,7 @@ type T_HreflangLink {
 type T_StaticPageSeo {
     title: String!
     description: String!
-    canonicalUrl: String!
+
     hreflangLinks: [T_HreflangLink]!
 }
 
