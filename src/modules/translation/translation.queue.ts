@@ -363,21 +363,13 @@ export async function translateBlog(id: string) {
             faqs: currentFaqs,
         };
 
-        // Estimate document size before saving to catch MongoDB's 16MB BSON limit early
-        const estimatedBsonSize = JSON.stringify($set).length;
-        if (estimatedBsonSize > 15_000_000) {
-            log.error(`[TranslationQueue] Blog ${id} translated content is ~${(estimatedBsonSize / 1_048_576).toFixed(1)}MB — exceeds MongoDB 16MB document limit. The blog content is too large to store translations inline.`);
-            throw new Error(`Blog ${id} translations exceed MongoDB 16MB document limit (~${(estimatedBsonSize / 1_048_576).toFixed(1)}MB). Consider splitting content or storing translations externally.`);
-        }
-
         try {
             await BlogModel.findOneAndUpdate({ ...idQuery(id), isDel: { $ne: true } }, { $set });
         }
         catch (saveErr: any) {
-            // Catch BSON serialization errors (MongoDB 16MB document limit)
             if (saveErr.message?.includes('offset') && saveErr.message?.includes('out of range')) {
-                log.error(`[TranslationQueue] Blog ${id} exceeds MongoDB 16MB document limit. Content is too large for inline translations.`);
-                throw new Error(`Blog ${id} exceeds MongoDB document size limit. The translated content is too large to store in a single document.`);
+                log.error(`[TranslationQueue] Blog ${id} exceeds MongoDB 16MB document limit.`);
+                throw new Error(`Blog ${id} exceeds MongoDB document size limit.`);
             }
             throw saveErr;
         }
@@ -755,12 +747,7 @@ export async function translateDestination(id: string) {
         destination.markModified('xFactorRating');
         destination.markModified('translationSnapshot');
 
-        // Estimate document size before saving to catch MongoDB's 16MB BSON limit early
-        const destJsonSize = JSON.stringify(destination).length;
-        if (destJsonSize > 15_000_000) {
-            log.error(`[TranslationQueue] Destination ${id} translated content is ~${(destJsonSize / 1_048_576).toFixed(1)}MB — exceeds MongoDB 16MB document limit.`);
-            throw new Error(`Destination ${id} translations exceed MongoDB 16MB document limit (~${(destJsonSize / 1_048_576).toFixed(1)}MB).`);
-        }
+        // Use direct string lengths, NOT JSON.stringify (same issue as blogs).
 
         try {
             await destination.save({ validateBeforeSave: false });
