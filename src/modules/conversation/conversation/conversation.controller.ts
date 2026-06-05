@@ -17,7 +17,7 @@ import { withFilter } from 'graphql-subscriptions';
 import type { I_Event } from '#modules/event/index.js';
 import type { I_Gallery } from '#modules/gallery/index.js';
 import type { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
-import type { I_Notification } from '#modules/notification/notification.type.js';
+import type { I_Notification, I_NotificationReadPayload } from '#modules/notification/notification.type.js';
 import type { I_User } from '#modules/user/index.js';
 import type { I_Context, I_WsContext } from '#shared/typescript/index.js';
 
@@ -29,10 +29,12 @@ import { emailCtr } from '#modules/email/email.controller.js';
 import { emailService } from '#modules/email/email.service.js';
 import { eventCtr } from '#modules/event/index.js';
 import { E_GalleryType } from '#modules/gallery/index.js';
-import { notificationCtr } from '#modules/notification/index.js';
+import { hasInApp, notificationCtr, NotificationModel } from '#modules/notification/index.js';
 import {
+    E_NOTIFICATION_EVENTS,
     E_NotificationChannel,
     E_NotificationEntityType,
+    E_NotificationStatus,
     E_NotificationType,
     E_RedirectType,
 } from '#modules/notification/notification.type.js';
@@ -2116,6 +2118,43 @@ export const conversationCtr = {
                 });
             }
 
+            // Find and mark corresponding NEW_MESSAGE notifications as READ
+            const unreadNotifications = await NotificationModel.find({
+                targetId: userId,
+                entityType: E_NotificationEntityType.CONVERSATION,
+                entityId: conversationId,
+                type: E_NotificationType.NEW_MESSAGE,
+                status: { $ne: E_NotificationStatus.READ },
+            });
+
+            if (unreadNotifications.length > 0) {
+                const now = new Date();
+                await NotificationModel.updateMany(
+                    {
+                        _id: { $in: unreadNotifications.map(n => n._id) },
+                    },
+                    {
+                        $set: {
+                            status: E_NotificationStatus.READ,
+                            readAt: now,
+                        },
+                    },
+                );
+
+                // Publish PubSub events and bump caches
+                for (const notification of unreadNotifications) {
+                    if (hasInApp(notification)) {
+                        const payload: I_NotificationReadPayload = {
+                            notificationId: notification.id!,
+                            targetId: notification.targetId!,
+                            readAt: now,
+                        };
+                        pubsub.publish(E_NOTIFICATION_EVENTS.NOTIFICATION_READ, payload);
+                    }
+                }
+                await queryCacheService.bumpVersion('notification');
+            }
+
             const refreshedConversationResult
                 = await conversationCtr._populateConversationWithParticipants(conversationId);
             const responseConversation = refreshedConversationResult.success
@@ -2150,9 +2189,6 @@ export const conversationCtr = {
             if (!conversation)
                 return false;
 
-            if (conversation.lastMessage?.senderId === userId)
-                return false;
-
             const conversationId = conversation?.id;
             if (!conversationId)
                 return false;
@@ -2173,8 +2209,6 @@ export const conversationCtr = {
                     }
                     case E_ConversationType.GROUP: {
                         const isOpen = isOpenPublicThread(conversation as I_Conversation);
-                        if (conversation.lastMessage?.senderId === userId)
-                            return false;
                         if (isOpen)
                             return true;
                         const participants = conversation.participants || [];
