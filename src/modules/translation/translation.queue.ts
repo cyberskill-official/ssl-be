@@ -154,6 +154,7 @@ export async function translateBlog(id: string) {
 
     if (!title || !slug || !contentHeadline || !content) {
         log.warn(`[TranslationQueue] Blog ${id} is missing core English fields.`);
+        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }
 
@@ -195,6 +196,7 @@ export async function translateBlog(id: string) {
 
     if (Object.keys(changedSmall).length === 0 && !contentChanged && !faqsChanged) {
         log.info(`[TranslationQueue] Blog ${id}: all fields already translated, skipping.`);
+        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }
 
@@ -381,6 +383,7 @@ export async function translateDestination(id: string) {
 
     if (!introductionHeadline || !introductionContent) {
         log.warn(`[TranslationQueue] Destination ${id} is missing core English fields.`);
+        await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }
 
@@ -470,6 +473,7 @@ export async function translateDestination(id: string) {
 
     if (Object.keys(changedSmall).length === 0 && !contentChanged && !hotelsChanged && !faqsChanged && Object.keys(ratingReasonsChanged).length === 0) {
         log.info(`[TranslationQueue] Destination ${id}: all fields already translated, skipping.`);
+        await DestinationModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
         return;
     }
 
