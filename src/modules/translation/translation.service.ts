@@ -74,24 +74,6 @@ function extractAndPlaceholderBase64Images(node: any, map: Record<string, string
     return count;
 }
 
-function restoreBase64Images(node: any, map: Record<string, string>) {
-    if (!node || typeof node !== 'object')
-        return;
-
-    if (node.type === 'image' && typeof node.src === 'string' && map[node.src]) {
-        node.src = map[node.src];
-    }
-
-    for (const key in node) {
-        if (Object.hasOwn(node, key)) {
-            const child = node[key];
-            if (typeof child === 'object' && child !== null) {
-                restoreBase64Images(child, map);
-            }
-        }
-    }
-}
-
 export const translationService = {
     translateFields: async (
         fields: Record<string, string>,
@@ -117,9 +99,9 @@ export const translationService = {
         // split into multiple API calls so each response fits within the limit.
         const MAX_OUTPUT_TOKENS = 16384;
         const totalFieldLen = Object.values(fields).reduce((sum, v) => sum + v.length, 0);
-        // Estimate tokens per field per language: 1 token ≈ 2 chars, expanded by ~1.5x for translation
-        const estimatedPerFieldPerLang = Math.ceil((totalFieldLen / Object.keys(fields).length) / 2) * 2 + 256;
-        const langsPerCall = Math.max(1, Math.floor((MAX_OUTPUT_TOKENS - estimatedPerFieldPerLang) / estimatedPerFieldPerLang));
+        // Total estimated output for ONE language = all fields translated + JSON overhead
+        const estimatedOutputPerLang = Math.ceil(totalFieldLen / 2) * 2 + 1024;
+        const langsPerCall = Math.max(1, Math.floor(MAX_OUTPUT_TOKENS / estimatedOutputPerLang));
 
         const langBatches: string[][] = [];
         for (let i = 0; i < targetLangs.length; i += langsPerCall) {
@@ -247,7 +229,7 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
 
         // For Lexical content: extract text nodes, translate them, then merge back
         if (isLexical && lexicalJson) {
-            return await translationService._translateLexicalByNodes(lexicalJson, targetLangs, apiKey, model, base64Map);
+            return await translationService._translateLexicalByNodes(lexicalJson, targetLangs, apiKey, model);
         }
 
         const langInstructions = targetLangs
@@ -348,7 +330,6 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
         targetLangs: string[],
         apiKey: string,
         model: string,
-        base64Map: Record<string, string>,
     ): Promise<Record<string, string>> => {
         const textNodes = translationService._extractTextNodes(lexicalJson.root);
         if (textNodes.length === 0) {
@@ -440,7 +421,12 @@ Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`
                     }
                 }
             }
-            restoreBase64Images(cloned, base64Map);
+            // NOTE: base64 images are NOT restored into translated versions.
+            // Restoring them would duplicate large base64 blobs ×10 languages,
+            // exceeding MongoDB's 16MB document limit. Image src attributes in
+            // translated content will contain placeholder IDs; the English (en)
+            // version retains the original base64 data and serves as the source
+            // of truth for images.
             result[lang] = JSON.stringify(cloned);
         }
 
