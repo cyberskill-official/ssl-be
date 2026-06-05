@@ -117,11 +117,11 @@ input Input_FAQEntry {
 }
 
 type T_FAQ {
-    entries: [T_FAQEntry!]!
+    entries: [T_FAQEntry!]
 }
 
 input Input_FAQ {
-    entries: [Input_FAQEntry!]!
+    entries: [Input_FAQEntry!]
 }
 
 union U_SettingValue = T_Footer | T_AdminNotification | T_AIModerationConfig | T_PricingDefault | T_FAQ
