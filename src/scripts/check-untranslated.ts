@@ -275,6 +275,33 @@ async function main() {
         }
     }
 
+    // ── Size check for items that would exceed MongoDB 16MB limit ──
+    console.log('\nChecking document sizes for untranslated items...\n');
+    const db = mongoose.connection.db!;
+    for (const entry of skipped) {
+        const isBlog = entry.title.startsWith('[BLOG]');
+        const id = entry.id;
+        const objId = /^[0-9a-f]{24}$/i.test(id) ? new mongoose.Types.ObjectId(id) : null;
+        if (!objId)
+            continue;
+        const pipeline = [
+            { $match: { _id: objId } },
+            { $project: { size: { $bsonSize: '$$ROOT' } } },
+        ];
+        const res = await db.collection(isBlog ? 'blogs' : 'destinations').aggregate(pipeline).toArray();
+        const currentMB = (res[0]?.size || 0) / 1048576;
+        const doc = await db.collection(isBlog ? 'blogs' : 'destinations').findOne(
+            { _id: objId },
+            { projection: { content: 1, introductionContent: 1 } },
+        );
+        const contentLen = doc?.content?.en?.length || doc?.content?.length
+            || doc?.introductionContent?.en?.length || doc?.introductionContent?.length || 0;
+        const estimatedMB = (contentLen * 10 + contentLen + 65536) / 1048576;
+        const tooLarge = estimatedMB > 15;
+        console.log(`  ${entry.title}`);
+        console.log(`    Current doc BSON: ${currentMB.toFixed(1)} MB | Est. with translations: ${estimatedMB.toFixed(1)} MB${tooLarge ? ' ⚠️ TOO LARGE (>16MB)' : ' ✓ OK'}`);
+    }
+
     // ── Output ──
     const total = blogs.length + destinations.length;
 
