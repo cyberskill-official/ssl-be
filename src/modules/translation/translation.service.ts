@@ -94,10 +94,10 @@ export const translationService = {
 
         const userMessage = { fields };
 
-        // Model hard cap is 16384 completion tokens.
+        // Model max output tokens (gpt-4.1 = 32768).
         // For large field sets (e.g. destinations with many highlights + SEO fields),
         // split into multiple API calls so each response fits within the limit.
-        const MAX_OUTPUT_TOKENS = 16384;
+        const MAX_OUTPUT_TOKENS = 32768;
         const totalFieldLen = Object.values(fields).reduce((sum, v) => sum + v.length, 0);
         // Total estimated output for ONE language = all fields translated + JSON overhead
         const estimatedOutputPerLang = Math.ceil(totalFieldLen / 2) * 2 + 1024;
@@ -183,8 +183,8 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
         targetLangs: string[],
     ): Promise<Record<string, string>> => {
         // Dynamically batch languages so each API response fits within the model's
-        // 16384 max_tokens limit. Estimate: input tokens + output tokens per lang.
-        const MAX_OUTPUT_TOKENS = 16384;
+        // 32768 max_tokens limit. Estimate: input tokens + output tokens per lang.
+        const MAX_OUTPUT_TOKENS = 32768;
         const estimatedInputTokens = Math.ceil(content.length / 2);
         const estimatedOutputPerLang = Math.ceil(estimatedInputTokens * 1.5) + 512; // translation + JSON overhead
         const langsPerBatch = Math.max(1, Math.floor((MAX_OUTPUT_TOKENS - estimatedOutputPerLang) / estimatedOutputPerLang));
@@ -253,10 +253,10 @@ Guidelines:
 Return a JSON object mapping each language code to the translated content.
 Example: { "da": "...", "de": "...", "fr": "...", ... }`;
 
-        // Model hard cap is 16384 completion tokens — use the maximum available.
-        const maxTokens = 16384;
+        // Model max output tokens (gpt-4.1 = 32768) — use the maximum available.
+        const maxTokens = 32768;
 
-        try {
+        const makeRequest = async (): Promise<any> => {
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
@@ -283,8 +283,26 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
             }
 
             return JSON.parse(resultText);
+        };
+
+        try {
+            return await makeRequest();
         }
         catch (error: any) {
+            // Retry once on JSON parse errors (transient network glitch / truncated response)
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                log.warn('[TranslationService] JSON parse failed, retrying once...');
+                try {
+                    return await makeRequest();
+                }
+                catch (retryErr: any) {
+                    log.error('[TranslationService] translateRichContent retry also failed:', {
+                        message: retryErr.message,
+                        status: retryErr.response?.status,
+                    });
+                    throw retryErr;
+                }
+            }
             log.error('[TranslationService] translateRichContent error:', {
                 message: error.message,
                 status: error.response?.status,
@@ -367,35 +385,51 @@ Guidelines:
 Return a JSON object where each language code maps to an object of { index: translatedText }.
 Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`;
 
-        // Model hard cap is 16384 completion tokens — use the maximum available.
-        const maxTokens = 16384;
+        // Model max output tokens (gpt-4.1 = 32768) — use the maximum available.
+        const maxTokens = 32768;
 
-        const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-                model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: JSON.stringify(textMap) },
-                ],
-                response_format: { type: 'json_object' },
-                temperature: 0.3,
-                max_tokens: maxTokens,
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json',
+        const makeRequest = async (): Promise<any> => {
+            const response = await axios.post(
+                'https://api.openai.com/v1/chat/completions',
+                {
+                    model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: JSON.stringify(textMap) },
+                    ],
+                    response_format: { type: 'json_object' },
+                    temperature: 0.3,
+                    max_tokens: maxTokens,
                 },
-            },
-        );
+                {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                },
+            );
 
-        const resultText = response.data.choices[0]?.message?.content;
-        if (!resultText) {
-            throw new Error('Empty response from OpenAI');
+            const resultText = response.data.choices[0]?.message?.content;
+            if (!resultText) {
+                throw new Error('Empty response from OpenAI');
+            }
+
+            return JSON.parse(resultText);
+        };
+
+        let translated: any;
+        try {
+            translated = await makeRequest();
         }
-
-        const translated = JSON.parse(resultText);
+        catch (error: any) {
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                log.warn('[TranslationService] Lexical JSON parse failed, retrying once...');
+                translated = await makeRequest();
+            }
+            else {
+                throw error;
+            }
+        }
         const result: Record<string, string> = {};
 
         for (const lang of targetLangs) {
