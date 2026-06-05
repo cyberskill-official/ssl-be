@@ -153,6 +153,42 @@ async function main() {
         check();
     });
 
+    // ── Verification: count what was actually translated ──
+    log.info('[TranslateAll] Verifying translation results...');
+
+    const blogsStillString = await BlogModel.countDocuments({
+        isDel: { $ne: true },
+        isActive: true,
+        slug: { $type: 'string' },
+    });
+    const blogsMultilingual = await BlogModel.countDocuments({
+        'isDel': { $ne: true },
+        'isActive': true,
+        'slug.en': { $exists: true },
+    });
+
+    const destsStillString = await DestinationModel.countDocuments({
+        isDel: { $ne: true },
+        isActive: true,
+        name: { $type: 'string' },
+    });
+    const destsMultilingual = await DestinationModel.countDocuments({
+        'isDel': { $ne: true },
+        'isActive': true,
+        'name.en': { $exists: true },
+    });
+
+    if (blogsStillString > 0 || destsStillString > 0) {
+        log.warn(`[TranslateAll] ⚠️ Verification: Blogs still string=${blogsStillString}, multilingual=${blogsMultilingual} | Destinations still string=${destsStillString}, multilingual=${destsMultilingual}`);
+        if (blogsStillString > 0)
+            log.warn(`[TranslateAll] ${blogsStillString} blogs were NOT translated. Check logs for errors.`);
+        if (destsStillString > 0)
+            log.warn(`[TranslateAll] ${destsStillString} destinations were NOT translated. Check logs for errors.`);
+    }
+    else {
+        log.info(`[TranslateAll] ✅ All content translated! Blogs=${blogsMultilingual}, Destinations=${destsMultilingual}`);
+    }
+
     await mongoose.disconnect();
     log.info('[TranslateAll] Disconnected from MongoDB.');
 }

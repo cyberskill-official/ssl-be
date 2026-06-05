@@ -352,6 +352,7 @@ export async function translateBlog(id: string) {
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Blog ${id}:`, err);
+        throw err; // Re-throw so Bull marks job as failed and retries
     }
     finally {
         // Release lock
@@ -714,6 +715,7 @@ export async function translateDestination(id: string) {
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Destination ${id}:`, err);
+        throw err; // Re-throw so Bull marks job as failed and retries
     }
     finally {
         // Release lock
