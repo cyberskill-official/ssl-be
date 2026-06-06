@@ -11,6 +11,11 @@ import { blogCtr } from './blog.controller.js';
 
 const BLOG_LIST_CACHE_TTL_SECONDS = 300;
 
+function getAcceptLanguage(context: I_Context): string {
+    const raw = context.req?.headers?.['x-accept-language'] ?? context.req?.headers?.['accept-language'];
+    return typeof raw === 'string' ? raw.split(',')[0]?.trim() ?? 'default' : 'default';
+}
+
 function getViewerCacheId(context: I_Context): string {
     return context.req?.session?.user?.id ?? 'guest';
 }
@@ -30,7 +35,7 @@ const blogResolver = {
         getBlogs: (_parent: unknown, args: I_Input_FindPaging<I_Input_QueryBlog>, context: I_Context) =>
             queryCacheService.getOrSet({
                 scope: 'blog:getBlogs',
-                key: { viewerId: getViewerCacheId(context), args },
+                key: { viewerId: getViewerCacheId(context), acceptLanguage: getAcceptLanguage(context), args },
                 ttl: BLOG_LIST_CACHE_TTL_SECONDS,
                 dependencies: ['blog'],
                 shouldCache: isSuccessfulBlogPage,
