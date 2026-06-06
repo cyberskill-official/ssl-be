@@ -1,11 +1,11 @@
 import { log } from '@cyberskill/shared/node/log';
 import slugify from '@sindresorhus/slugify';
 import Bull from 'bull';
-import { createHash } from 'node:crypto';
 
 import { BlogModel } from '#modules/blog/blog.model.js';
 import { DestinationModel } from '#modules/destination/destination.model.js';
 import { getEnv } from '#shared/env/index.js';
+import { getEn, getEnKeywords, hasAllTranslations, hashContent } from '#shared/util/translation-check.js';
 
 import { BlogTranslationModel } from './blog-translation.model.js';
 import { MARKET_MAP, translationService } from './translation.service.js';
@@ -72,20 +72,6 @@ translationQueue.process(3, async (job) => {
     }
 });
 
-function getEn(val: any): string {
-    if (typeof val === 'object' && val)
-        return val.en || '';
-    return typeof val === 'string' ? val : '';
-}
-
-function getEnKeywords(val: any): string {
-    if (Array.isArray(val))
-        return val.join(', ');
-    if (typeof val === 'object' && val?.en)
-        return Array.isArray(val.en) ? val.en.join(', ') : val.en;
-    return typeof val === 'string' ? val : '';
-}
-
 function ensureMultilingual(doc: any, field: string, enValue: string): void {
     if (!doc[field] || typeof doc[field] === 'string')
         doc[field] = { en: enValue };
@@ -117,33 +103,6 @@ function applyTranslations(doc: any, field: string, translations: Record<string,
             doc[field][lang] = val;
         }
     }
-}
-
-function hashContent(content: string): string {
-    return `sha256:${createHash('sha256').update(content).digest('hex')}`;
-}
-
-/**
- * Restore base64 images from English content into translated content.
- * This is a safety net: base64 images are already restored in
- * _translateRichContentBatch (translation.service.ts). This function
- * catches any edge case where placeholders remain after translation.
- */
-function restoreBase64Images(englishContent: string, translated: Record<string, string>): void {
-    // Extract all base64 data URIs from English content
-    const base64Matches = englishContent.match(/data:image\/[^"]+/g) || [];
-    if (base64Matches.length === 0)
-        return;
-
-    for (const [lang, content] of Object.entries(translated)) {
-        let restored = content;
-        for (let i = 0; i < base64Matches.length; i++) {
-            const placeholder = `__BASE64_IMAGE_PLACEHOLDER_${i}__`;
-            restored = restored.replaceAll(placeholder, base64Matches[i]!);
-        }
-        translated[lang] = restored;
-    }
-    log.info(`[TranslationQueue] Restored ${base64Matches.length} base64 images in ${Object.keys(translated).length} translated contents.`);
 }
 
 function ensureMultilingualValue(val: any, enValue: string): Record<string, string> {
@@ -237,8 +196,13 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
     }
 
     // Upsert one document per language — each stays under 16MB
+    const MAX_DOC_SIZE = 15_000_000; // 15MB safety margin below MongoDB 16MB BSON limit
     for (const [lang, translations] of Object.entries(langDocs)) {
         const docSize = JSON.stringify(translations).length;
+        if (docSize > MAX_DOC_SIZE) {
+            log.error(`[TranslationQueue] Blog ${blogId} ${lang}: estimated doc size ${(docSize / 1_048_576).toFixed(1)}MB exceeds MongoDB 16MB limit. Skipping this language to avoid crash.`);
+            continue;
+        }
         log.info(`[TranslationQueue] Blog ${blogId} saving ${lang}: ${docSize} chars (~${(docSize / 1_048_576).toFixed(1)}MB)`);
         await BlogTranslationModel.findOneAndUpdate(
             { blogId, lang },
@@ -312,6 +276,15 @@ export async function translateBlog(id: string) {
         return;
     }
 
+    // Pre-check: if content alone exceeds 14MB, each language translation
+    // would also be ~14MB+ in external storage — too close to MongoDB's 16MB limit.
+    const CONTENT_MAX = 14_000_000;
+    if ((content?.length || 0) > CONTENT_MAX) {
+        log.warn(`[TranslationQueue] Blog ${id} content is ${((content?.length || 0) / 1_048_576).toFixed(1)}MB — too large for reliable translation storage. Skipping.`);
+        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
+        return;
+    }
+
     // Pre-check: estimate how much the document will GROW from translations.
     // Base64 images are now restored in all translations (see translation.service.ts
     // _translateRichContentBatch), so we must account for base64 duplication across languages.
@@ -331,13 +304,6 @@ export async function translateBlog(id: string) {
     }
 
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
-
-    // Helper: check if field already has all target languages
-    function hasAllTranslations(fieldValue: any): boolean {
-        if (!fieldValue || typeof fieldValue !== 'object')
-            return false;
-        return TARGET_LANGS.every(lang => fieldValue[lang] && fieldValue[lang].length > 0);
-    }
 
     // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
@@ -404,12 +370,6 @@ export async function translateBlog(id: string) {
                 ? translationService.translateFields(faqFields, TARGET_LANGS)
                 : Promise.resolve({} as Record<string, Record<string, string>>),
         ]);
-
-        // Restore base64 images in translations when using external storage
-        // (each language doc has room for base64, unlike inline storage)
-        if (useExternalStorage && contentChanged && Object.keys(contentResults).length > 0) {
-            restoreBase64Images(content, contentResults);
-        }
 
         // Build $set payload with only translated fields
         const $set: Record<string, unknown> = {};
@@ -621,12 +581,6 @@ export async function translateDestination(id: string) {
     const snapshot: Record<string, any> = (destination as any).translationSnapshot || {};
 
     // Helper: check if field already has all target languages
-    function hasAllTranslations(fieldValue: any): boolean {
-        if (!fieldValue || typeof fieldValue !== 'object')
-            return false;
-        return TARGET_LANGS.every(lang => fieldValue[lang] && fieldValue[lang].length > 0);
-    }
-
     // Detect changed fields - skip if already translated
     const changedSmall: Record<string, string> = {};
     if (name && (name !== (snapshot['name'] || '') || !hasAllTranslations(destination.name as any)))

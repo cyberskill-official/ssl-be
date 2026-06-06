@@ -6,69 +6,9 @@ import { BlogModel } from '../modules/blog/blog.model.js';
 import { DestinationModel } from '../modules/destination/destination.model.js';
 import { translationQueue } from '../modules/translation/translation.queue.js';
 import { getEnv } from '../shared/env/index.js';
+import { checkBlogTranslation, checkDestinationTranslation } from '../shared/util/translation-check.js';
 
 const env = getEnv();
-
-const TARGET_LANGS = ['da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
-
-function getEn(val: any): string {
-    if (typeof val === 'object' && val)
-        return val.en || '';
-    return typeof val === 'string' ? val : '';
-}
-
-function hasAllTranslations(fieldValue: any): boolean {
-    if (!fieldValue || typeof fieldValue !== 'object')
-        return false;
-    return TARGET_LANGS.every(lang => fieldValue[lang] && fieldValue[lang].length > 0);
-}
-
-function isBlogFullyTranslated(blog: any): boolean {
-    const snapshot: Record<string, any> = blog.translationSnapshot || {};
-    if (!snapshot.title)
-        return false; // No snapshot = never translated
-
-    // Check if English values match snapshot AND all target langs present
-    const title = getEn(blog.title);
-    const slug = getEn(blog.slug);
-    const contentHeadline = getEn(blog.contentHeadline);
-    const content = getEn(blog.content);
-
-    if (title !== snapshot.title || slug !== snapshot.slug
-        || contentHeadline !== snapshot.contentHeadline || content !== snapshot.content) {
-        return false;
-    }
-
-    if (!hasAllTranslations(blog.title) || !hasAllTranslations(blog.slug)
-        || !hasAllTranslations(blog.contentHeadline) || !hasAllTranslations(blog.content)) {
-        return false;
-    }
-
-    return true;
-}
-
-function isDestinationFullyTranslated(dest: any): boolean {
-    const snapshot: Record<string, any> = dest.translationSnapshot || {};
-    if (!snapshot.name)
-        return false;
-
-    const name = getEn(dest.name);
-    const slug = getEn(dest.slug);
-    const introHeadline = getEn(dest.introductionHeadline);
-    const introContent = getEn(dest.introductionContent);
-
-    if (name !== snapshot.name || slug !== snapshot.slug
-        || introHeadline !== snapshot.introductionHeadline || introContent !== snapshot.introductionContent) {
-        return false;
-    }
-
-    if (!hasAllTranslations(dest.name) || !hasAllTranslations(dest.slug)
-        || !hasAllTranslations(dest.introductionHeadline) || !hasAllTranslations(dest.introductionContent)) {
-        return false;
-    }
-
-    return true;
-}
 
 async function main() {
     log.info('[TranslateAll] Connecting to MongoDB...');
@@ -86,11 +26,11 @@ async function main() {
     // ── Blogs ──────────────────────────────────────────────
     const blogs = await BlogModel
         .find({ isDel: { $ne: true }, isActive: true })
-        .select('id title slug contentHeadline content translationSnapshot')
+        .select('id title slug contentHeadline contentSubHeadline content seo faqs translationSnapshot')
         .lean();
     log.info(`[TranslateAll] Found ${blogs.length} blogs.`);
 
-    const pendingBlogs = blogs.filter(b => !isBlogFullyTranslated(b));
+    const pendingBlogs = blogs.filter(b => !checkBlogTranslation(b).translated);
     const skippedBlogs = blogs.length - pendingBlogs.length;
     log.info(`[TranslateAll] Blogs: ${pendingBlogs.length} need translation, ${skippedBlogs} already translated → skipped.`);
 
@@ -106,11 +46,11 @@ async function main() {
     // ── Destinations ───────────────────────────────────────
     const destinations = await DestinationModel
         .find({ isDel: { $ne: true }, isActive: true })
-        .select('id name slug introductionHeadline introductionContent translationSnapshot')
+        .select('id name slug introductionHeadline introductionContent womenDressCode menDressCode highlightSex highlightWellness highlightBar highlightDance seo nearbyHotels faqs atmosphereRating guestsRating facilitiesRating serviceRating xFactorRating translationSnapshot')
         .lean();
     log.info(`[TranslateAll] Found ${destinations.length} destinations.`);
 
-    const pendingDests = destinations.filter(d => !isDestinationFullyTranslated(d));
+    const pendingDests = destinations.filter(d => !checkDestinationTranslation(d).translated);
     const skippedDests = destinations.length - pendingDests.length;
     log.info(`[TranslateAll] Destinations: ${pendingDests.length} need translation, ${skippedDests} already translated → skipped.`);
 
@@ -123,10 +63,8 @@ async function main() {
         log.info(`[TranslateAll] Enqueued ${destEnqueued}/${pendingDests.length} destination translation jobs.`);
     }
 
-    const totalFound = blogs.length + destinations.length;
     const totalEnqueued = blogEnqueued + destEnqueued;
     const totalSkipped = skippedBlogs + skippedDests;
-    log.info(`[TranslateAll] Summary: ${totalEnqueued} enqueued, ${totalSkipped} skipped (already translated), ${totalFound} total.`);
 
     if (totalEnqueued === 0) {
         log.info('[TranslateAll] Nothing to translate. Disconnecting.');
@@ -134,70 +72,30 @@ async function main() {
         return;
     }
 
-    // Wait for the queue to finish processing all jobs before disconnecting.
-    // The queue worker runs in this process and needs the MongoDB connection.
-    const MAX_RETRY_ROUNDS = 2; // Retry failed jobs up to 2 additional rounds
-
-    for (let round = 0; round <= MAX_RETRY_ROUNDS; round++) {
-        // Wait for active/waiting/delayed jobs to finish
-        log.info(`[TranslateAll] Waiting for queue to drain (round ${round + 1}/${MAX_RETRY_ROUNDS + 1})...`);
-        await new Promise<void>((resolve) => {
-            const check = async () => {
-                const counts = await translationQueue.getJobCounts();
-                const remaining = (counts.waiting || 0) + (counts.active || 0) + (counts.delayed || 0);
-                if (remaining === 0) {
-                    log.info(`[TranslateAll] Queue drained. completed=${counts.completed} failed=${counts.failed}`);
-                    resolve();
-                }
-                else {
-                    log.info(`[TranslateAll] Queue status: waiting=${counts.waiting} active=${counts.active} completed=${counts.completed} failed=${counts.failed} delayed=${counts.delayed}`);
-                    setTimeout(check, 3000);
-                }
-            };
-            check();
+    // Wait for queue to drain (Bull handles retries via built-in attempts:3 + exponential backoff).
+    // 'drained' fires when there are zero waiting jobs — meaning all jobs have either
+    // completed, failed after exhausting retries, or been removed.
+    log.info('[TranslateAll] Waiting for queue to drain (Bull will retry failed jobs up to 3×)...');
+    const drained = new Promise<void>((resolve) => {
+        translationQueue.on('drained', () => {
+            log.info('[TranslateAll] Queue drained.');
+            resolve();
         });
+    });
 
-        // Check for failed jobs
-        const counts = await translationQueue.getJobCounts();
-        const failedCount = counts.failed || 0;
+    // Safety timeout: 30 minutes max. If the queue hasn't drained by then, proceed anyway.
+    const timeout = new Promise<void>((resolve) => {
+        setTimeout(() => {
+            log.warn('[TranslateAll] Queue drain timeout (30 min). Proceeding with verification...');
+            resolve();
+        }, 30 * 60 * 1000);
+    });
 
-        if (failedCount === 0) {
-            log.info('[TranslateAll] No failed jobs. Proceeding to verification.');
-            break;
-        }
+    await Promise.race([drained, timeout]);
 
-        if (round < MAX_RETRY_ROUNDS) {
-            // Retry failed jobs — they may have failed due to transient API errors
-            log.warn(`[TranslateAll] ${failedCount} job(s) failed. Retrying (round ${round + 1}/${MAX_RETRY_ROUNDS})...`);
-            const failedJobs = await translationQueue.getFailed(0, failedCount);
-            for (const job of failedJobs) {
-                const data = job.data as { type: string; id: string };
-                const reason = typeof job.failedReason === 'string'
-                    ? job.failedReason.slice(0, 200)
-                    : 'unknown';
-                log.warn(`[TranslateAll]   ↻ Retrying ${data.type} ${data.id}: ${reason}`);
-                try {
-                    await job.retry();
-                }
-                catch (retryErr: any) {
-                    log.error(`[TranslateAll]   ✗ Failed to retry job ${job.id}: ${retryErr.message}`);
-                }
-            }
-            await translationQueue.clean(0, 'failed');
-        }
-        else {
-            // Final round — report remaining failures with details
-            log.error(`[TranslateAll] ❌ ${failedCount} job(s) still failed after ${MAX_RETRY_ROUNDS} retry rounds:`);
-            const failedJobs = await translationQueue.getFailed(0, failedCount);
-            for (const job of failedJobs) {
-                const data = job.data as { type: string; id: string };
-                const reason = typeof job.failedReason === 'string'
-                    ? job.failedReason.slice(0, 300)
-                    : 'unknown';
-                log.error(`[TranslateAll]   ❌ ${data.type} ${data.id}: ${reason}`);
-            }
-        }
-    }
+    // Report queue stats
+    const finalCounts = await translationQueue.getJobCounts();
+    log.info(`[TranslateAll] Queue final: completed=${finalCounts.completed} failed=${finalCounts.failed} waiting=${finalCounts.waiting} active=${finalCounts.active}`);
 
     // ── Verification: count what was actually translated ──
     log.info('[TranslateAll] Verifying translation results...');
@@ -224,7 +122,7 @@ async function main() {
         'name.en': { $exists: true },
     });
 
-    // If any blogs still untranslated, check each with base64-aware estimate
+    // If any blogs still untranslated, identify why
     let blogsTooLarge = 0;
     if (blogsStillString > 0) {
         const untranslated = await BlogModel.find({
@@ -235,7 +133,7 @@ async function main() {
         for (const b of untranslated) {
             const c = typeof b.content === 'string' ? b.content : (b.content as any)?.en || '';
             const b64 = (c.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
-            if (c.length + (c.length - b64) * 10 + 65536 > 15_000_000)
+            if (c.length + (c.length - b64) * 10 + 65536 > 15_000_000 || c.length > 14_000_000)
                 blogsTooLarge++;
         }
     }
@@ -244,16 +142,17 @@ async function main() {
     if (blogsStillString > 0 || destsStillString > 0) {
         log.warn(`[TranslateAll] ⚠️ Verification: Blogs still string=${blogsStillString}, multilingual=${blogsMultilingual} | Destinations still string=${destsStillString}, multilingual=${destsMultilingual}`);
         if (blogsTooLarge > 0)
-            log.warn(`[TranslateAll] ${blogsTooLarge} blogs skipped: content too large for MongoDB inline storage (>16MB estimate). Needs external translation storage.`);
+            log.warn(`[TranslateAll] ${blogsTooLarge} blogs skipped: content too large for MongoDB storage (>14MB). Needs external translation storage or content optimization.`);
         if (blogsActuallyFailed > 0)
-            log.warn(`[TranslateAll] ${blogsActuallyFailed} blogs were NOT translated. Check logs for errors.`);
+            log.warn(`[TranslateAll] ${blogsActuallyFailed} blogs were NOT translated. Check queue logs for errors (failed=${finalCounts.failed}).`);
         if (destsStillString > 0)
-            log.warn(`[TranslateAll] ${destsStillString} destinations were NOT translated. Check logs for errors.`);
+            log.warn(`[TranslateAll] ${destsStillString} destinations were NOT translated. Check queue logs for errors.`);
     }
     else {
         log.info(`[TranslateAll] ✅ All content translated! Blogs=${blogsMultilingual}, Destinations=${destsMultilingual}`);
     }
 
+    log.info(`[TranslateAll] Summary: ${totalEnqueued} enqueued, ${totalSkipped} skipped (already translated), ${blogs.length + destinations.length} total.`);
     await mongoose.disconnect();
     log.info('[TranslateAll] Disconnected from MongoDB.');
 }
