@@ -123,6 +123,28 @@ function hashContent(content: string): string {
     return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
+/**
+ * Restore base64 images from English content into translated content.
+ * Only safe for external storage (one doc per language, room for base64).
+ * For inline storage, base64 stays as placeholders to keep doc under 16MB.
+ */
+function restoreBase64Images(englishContent: string, translated: Record<string, string>): void {
+    // Extract all base64 data URIs from English content
+    const base64Matches = englishContent.match(/data:image\/[^"]+/g) || [];
+    if (base64Matches.length === 0)
+        return;
+
+    for (const [lang, content] of Object.entries(translated)) {
+        let restored = content;
+        for (let i = 0; i < base64Matches.length; i++) {
+            const placeholder = `__BASE64_IMAGE_PLACEHOLDER_${i}__`;
+            restored = restored.replaceAll(placeholder, base64Matches[i]!);
+        }
+        translated[lang] = restored;
+    }
+    log.info(`[TranslationQueue] Restored ${base64Matches.length} base64 images in ${Object.keys(translated).length} translated contents.`);
+}
+
 function ensureMultilingualValue(val: any, enValue: string): Record<string, string> {
     if (val && typeof val === 'object')
         return { ...val };
@@ -282,7 +304,10 @@ export async function translateBlog(id: string) {
     // If text-only growth exceeds 10MB, store translations externally to avoid
     // MongoDB's 16MB document limit. Base64 images already exist in the English
     // document and are NOT duplicated in translations.
-    const useExternalStorage = estimatedGrowth > 10_000_000;
+    // Also use external storage when base64 images are present (>1MB) so they
+    // can be restored in translated content (inline: placeholder, external: real).
+    const hasLargeBase64 = base64Size > 1_000_000;
+    const useExternalStorage = estimatedGrowth > 10_000_000 || hasLargeBase64;
     if (useExternalStorage) {
         log.info(`[TranslationQueue] Blog ${id} estimated text growth ~${(estimatedGrowth / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB in English only, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — will store translations externally.`);
     }
@@ -361,6 +386,12 @@ export async function translateBlog(id: string) {
                 ? translationService.translateFields(faqFields, TARGET_LANGS)
                 : Promise.resolve({} as Record<string, Record<string, string>>),
         ]);
+
+        // Restore base64 images in translations when using external storage
+        // (each language doc has room for base64, unlike inline storage)
+        if (useExternalStorage && contentChanged && Object.keys(contentResults).length > 0) {
+            restoreBase64Images(content, contentResults);
+        }
 
         // Build $set payload with only translated fields
         const $set: Record<string, unknown> = {};
