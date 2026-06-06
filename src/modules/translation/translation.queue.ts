@@ -220,15 +220,29 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
         );
     }
 
-    // Update translationSnapshot on the blog (not the heavy translations)
+    // Update translationSnapshot on the blog (not the heavy translations).
+    // Only save snapshot if content was actually translated — otherwise the hash
+    // creates a false "translated" state that blocks future re-translation.
     if ($set['translationSnapshot']) {
+        const snapshotData = $set['translationSnapshot'] as Record<string, any>;
+        // Check if content was actually saved to at least one language
+        const contentSaved = Object.values(langDocs).some(
+            (t: any) => t['content'] && typeof t['content'] === 'string' && t['content'].length > 0,
+        );
+        if (!contentSaved && snapshotData['content']) {
+            // Content was NOT saved externally — remove it from snapshot to avoid
+            // marking it as "translated" when only SEO/small fields were stored.
+            delete snapshotData['content'];
+            log.warn(`[TranslationQueue] Blog ${blogId}: content was NOT saved externally — removing from snapshot to allow future re-translation.`);
+        }
+
         const snapshotResult = await BlogModel.findOneAndUpdate(
             idQuery(blogId),
-            { $set: { translationSnapshot: $set['translationSnapshot'] } },
+            { $set: { translationSnapshot: snapshotData } },
             { returnDocument: 'after' },
         );
         if (snapshotResult) {
-            log.info(`[TranslationQueue] Blog ${blogId} translationSnapshot saved. Fields in snapshot: ${Object.keys($set['translationSnapshot']).join(', ')}`);
+            log.info(`[TranslationQueue] Blog ${blogId} translationSnapshot saved. Fields in snapshot: ${Object.keys(snapshotData).join(', ')}`);
         }
         else {
             log.error(`[TranslationQueue] Blog ${blogId} FAILED to save translationSnapshot — blog not found with idQuery: ${JSON.stringify(idQuery(blogId))}`);
@@ -353,12 +367,19 @@ export async function translateBlog(id: string) {
 
     // Safety check: if content hash hasn't changed, verify translations actually
     // exist in BlogTranslationModel. If not, the content was never translated
-    // (e.g. previous run saved snapshot but translation API call failed silently).
+    // (e.g. previous run saved snapshot but translation API call failed silently,
+    //  or only SEO fields were stored externally while content was skipped).
     if (!contentChanged && content && snapshotContent.startsWith('sha256:')) {
-        const extCount = await BlogTranslationModel.countDocuments({ blogId: id });
+        const extCount = await BlogTranslationModel.countDocuments({
+            'blogId': id,
+            'translations.content': { $exists: true, $type: 'string', $not: { $size: 0 } },
+        });
         if (extCount === 0) {
-            log.warn(`[TranslationQueue] Blog ${id}: content hash matches snapshot but no external translations exist. Forcing content re-translation.`);
+            log.warn(`[TranslationQueue] Blog ${id}: content hash matches snapshot but no external translations with actual content exist (only ${await BlogTranslationModel.countDocuments({ blogId: id })} docs without content). Forcing content re-translation.`);
             contentChanged = true;
+        }
+        else {
+            log.info(`[TranslationQueue] Blog ${id}: ${extCount}/10 external translations with real content confirmed.`);
         }
     }
 
