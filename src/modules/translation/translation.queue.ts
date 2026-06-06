@@ -347,9 +347,20 @@ export async function translateBlog(id: string) {
 
     // Use hash comparison for content to avoid storing full content in snapshot
     const snapshotContent = snapshot['content'] || '';
-    const contentChanged = snapshotContent.startsWith('sha256:')
+    let contentChanged = snapshotContent.startsWith('sha256:')
         ? hashContent(content) !== snapshotContent
         : content !== snapshotContent || !hasAllTranslations(blog.content);
+
+    // Safety check: if content hash hasn't changed, verify translations actually
+    // exist in BlogTranslationModel. If not, the content was never translated
+    // (e.g. previous run saved snapshot but translation API call failed silently).
+    if (!contentChanged && content && snapshotContent.startsWith('sha256:')) {
+        const extCount = await BlogTranslationModel.countDocuments({ blogId: id });
+        if (extCount === 0) {
+            log.warn(`[TranslationQueue] Blog ${id}: content hash matches snapshot but no external translations exist. Forcing content re-translation.`);
+            contentChanged = true;
+        }
+    }
 
     // Check FAQ changes
     const currentFaqs = (blog.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));

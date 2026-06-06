@@ -34,15 +34,29 @@ async function checkBlog(blog: any): Promise<SkipEntry | null> {
     // 3. Cross-check with external BlogTranslationModel for fields that appear
     //    "not multilingual yet" — they may be stored externally due to document size.
     if (!status.translated && status.missingLanguages.some(m => m.startsWith('content'))) {
-        const extDocs = await BlogTranslationModel.countDocuments({ blogId: id });
-        if (extDocs > 0) {
-            // Content is stored externally — remove content-related issues from the report
-            status.changedFields = status.changedFields.filter(f => f !== 'content');
-            status.missingLanguages = status.missingLanguages.filter(m => !m.startsWith('content'));
-            // Recheck if everything is now translated
-            if (status.changedFields.length === 0 && status.missingLanguages.length === 0) {
-                return null; // All fields are translated (inline + external)
+        const TARGET_LANGS = ['da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
+        const extDocs = await BlogTranslationModel.find({ blogId: id }).select('lang translations').lean();
+        if (extDocs.length > 0) {
+            // Content is stored externally — verify all 10 languages have content translations
+            const langsWithContent = extDocs.filter((d: any) => d.translations?.content?.length > 0).map((d: any) => d.lang);
+            const missingLangs = TARGET_LANGS.filter(l => !langsWithContent.includes(l));
+
+            if (missingLangs.length === 0 && extDocs.length >= TARGET_LANGS.length) {
+                // All 10 languages have content — truly translated
+                status.changedFields = status.changedFields.filter(f => f !== 'content');
+                status.missingLanguages = status.missingLanguages.filter(m => !m.startsWith('content'));
+                if (status.changedFields.length === 0 && status.missingLanguages.length === 0) {
+                    return null; // All fields are fully translated (inline + external)
+                }
             }
+            else if (missingLangs.length > 0 && extDocs.length < TARGET_LANGS.length) {
+                // Some languages missing — update reason to be specific
+                status.changedFields = status.changedFields.filter(f => f !== 'content');
+                status.missingLanguages = status.missingLanguages.filter(m => !m.startsWith('content'));
+                // Add specific missing language info to reason
+                status.changedFields.push(`content (external: ${extDocs.length}/10 langs, missing: ${missingLangs.join(', ')})`);
+            }
+            // else: extDocs >= 10 but some languages have empty content — still broken
         }
     }
 

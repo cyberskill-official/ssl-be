@@ -41,11 +41,15 @@ function getEn(val: unknown): string {
  * document per language) back into the blog document before localization.
  */
 async function mergeExternalTranslations(doc: Record<string, any>): Promise<void> {
-    const blogId = doc['id'] || doc['_id']?.toString();
-    if (!blogId)
+    const uuidId = doc['id'];
+    const objectId = doc['_id']?.toString();
+    // BlogTranslationModel may have been keyed with either the UUID (id field)
+    // or ObjectId hex string (_id field). Query both to avoid missing translations.
+    const blogIdCandidates = [uuidId, objectId].filter(Boolean) as string[];
+    if (!blogIdCandidates.length)
         return;
 
-    const extDocs = await BlogTranslationModel.find({ blogId }).lean();
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }).lean();
     if (!extDocs.length)
         return;
 
@@ -61,7 +65,11 @@ async function mergeExternalTranslations(doc: Record<string, any>): Promise<void
         for (const field of topFields) {
             if (t[field] !== undefined && t[field] !== null) {
                 if (!doc[field] || typeof doc[field] !== 'object') {
+                    // Preserve the English (en) original before converting to multilingual object
+                    const enOriginal = typeof doc[field] === 'string' ? doc[field] : undefined;
                     doc[field] = {};
+                    if (enOriginal)
+                        doc[field]['en'] = enOriginal;
                 }
                 doc[field][lang] = t[field];
             }
@@ -117,11 +125,20 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
     if (docs.length === 0)
         return;
 
-    const blogIds = docs.map(d => d['id'] || d['_id']?.toString()).filter(Boolean);
-    if (blogIds.length === 0)
+    // Collect both UUID (id) and ObjectId (_id) candidates for each doc
+    const blogIdCandidates: string[] = [];
+    for (const d of docs) {
+        const uuidId = d['id'];
+        const objectId = d['_id']?.toString();
+        if (uuidId)
+            blogIdCandidates.push(uuidId);
+        if (objectId && objectId !== uuidId)
+            blogIdCandidates.push(objectId);
+    }
+    if (blogIdCandidates.length === 0)
         return;
 
-    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIds } }).lean();
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }).lean();
     // Group by blogId: { blogId -> { lang -> translations } }
     const extMap = new Map<string, Record<string, Record<string, any>>>();
     for (const ext of extDocs) {
@@ -148,7 +165,11 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
             for (const field of topFields) {
                 if (t[field] !== undefined && t[field] !== null) {
                     if (!doc[field] || typeof doc[field] !== 'object') {
+                        // Preserve the English (en) original before converting to multilingual object
+                        const enOriginal = typeof doc[field] === 'string' ? doc[field] : undefined;
                         doc[field] = {};
+                        if (enOriginal)
+                            doc[field]['en'] = enOriginal;
                     }
                     doc[field][lang] = t[field];
                 }
@@ -156,13 +177,17 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
 
             if (t['seo']) {
                 if (!doc['seo'] || typeof doc['seo'] !== 'object') {
-                    doc['seo'] = {};
+                    const enSeo = typeof doc['seo'] === 'object' ? doc['seo'] : undefined;
+                    doc['seo'] = enSeo ? { ...enSeo } : {};
                 }
                 const seoExt = t['seo'] as Record<string, any>;
                 for (const [seoField, val] of Object.entries(seoExt)) {
                     if (val !== undefined && val !== null) {
                         if (!doc['seo'][seoField] || typeof doc['seo'][seoField] !== 'object') {
+                            const enSeoField = typeof doc['seo'][seoField] === 'string' ? doc['seo'][seoField] : undefined;
                             doc['seo'][seoField] = {};
+                            if (enSeoField)
+                                doc['seo'][seoField]['en'] = enSeoField;
                         }
                         doc['seo'][seoField][lang] = val;
                     }
