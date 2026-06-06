@@ -164,7 +164,15 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
 
         if (value && typeof value === 'object' && !Array.isArray(value)) {
             const langMap = value as Record<string, unknown>;
-            const hasLangKeys = Object.keys(langMap).some(k => /^[a-z]{2}(?:-[A-Z]{2})?$/.test(k));
+            // Distinguish lang-first ({ en, da, de }) from field-first
+            // ({ title: { en, da }, description: { en, da } }).
+            // Use TARGET_LANGS to avoid false positives on short keys like "id"
+            // that accidentally match a generic lang regex.
+            const keys = Object.keys(langMap);
+            const knownLangKeys = keys.filter(k => TARGET_LANGS.includes(k) || k === 'en');
+            const hasLangKeys = knownLangKeys.length > 0
+                && knownLangKeys.length >= keys.length * 0.5
+                && keys.every(k => TARGET_LANGS.includes(k) || k === 'en' || !/^[a-z]{2}(?:-[A-Z]{2})?$/.test(k));
             if (hasLangKeys) {
                 // Top-level multilingual field: title, slug, content, etc.
                 for (const [lang, val] of Object.entries(langMap)) {
@@ -185,9 +193,9 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
                                 continue;
                             if (!langDocs[lang])
                                 langDocs[lang] = {};
-                            if (!langDocs[lang]!['seo'])
-                                langDocs[lang]!['seo'] = {};
-                            (langDocs[lang]!['seo'] as Record<string, unknown>)[subField] = val;
+                            if (!langDocs[lang]![field])
+                                langDocs[lang]![field] = {};
+                            (langDocs[lang]![field] as Record<string, unknown>)[subField] = val;
                         }
                     }
                 }
