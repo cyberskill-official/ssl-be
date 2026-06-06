@@ -72,26 +72,31 @@ async function main() {
         return;
     }
 
-    // Wait for queue to drain (Bull handles retries via built-in attempts:3 + exponential backoff).
-    // 'drained' fires when there are zero waiting jobs — meaning all jobs have either
-    // completed, failed after exhausting retries, or been removed.
-    log.info('[TranslateAll] Waiting for queue to drain (Bull will retry failed jobs up to 3×)...');
-    const drained = new Promise<void>((resolve) => {
-        translationQueue.on('drained', () => {
-            log.info('[TranslateAll] Queue drained.');
-            resolve();
-        });
-    });
+    // Wait for ALL jobs to complete (not just 'drained' which fires when waiting=0
+    // while active jobs may still be processing).
+    // Bull handles retries via built-in attempts:3 + exponential backoff.
+    log.info('[TranslateAll] Waiting for all queue jobs to complete...');
+    const MAX_WAIT_MS = 30 * 60 * 1000; // 30 min safety timeout
+    const startWait = Date.now();
 
-    // Safety timeout: 30 minutes max. If the queue hasn't drained by then, proceed anyway.
-    const timeout = new Promise<void>((resolve) => {
-        setTimeout(() => {
-            log.warn('[TranslateAll] Queue drain timeout (30 min). Proceeding with verification...');
-            resolve();
-        }, 30 * 60 * 1000);
+    await new Promise<void>((resolve) => {
+        const check = async () => {
+            const counts = await translationQueue.getJobCounts();
+            const remaining = (counts.waiting || 0) + (counts.active || 0) + (counts.delayed || 0);
+            if (remaining === 0) {
+                log.info(`[TranslateAll] All jobs done. completed=${counts.completed} failed=${counts.failed}`);
+                resolve();
+                return;
+            }
+            if (Date.now() - startWait > MAX_WAIT_MS) {
+                log.warn(`[TranslateAll] Timeout after ${MAX_WAIT_MS / 60000}min. Proceeding with ${remaining} jobs still pending.`);
+                resolve();
+                return;
+            }
+            setTimeout(check, 3000);
+        };
+        check();
     });
-
-    await Promise.race([drained, timeout]);
 
     // Report queue stats
     const finalCounts = await translationQueue.getJobCounts();
