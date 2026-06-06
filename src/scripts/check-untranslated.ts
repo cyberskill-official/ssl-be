@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { BlogModel } from '../modules/blog/blog.model.js';
 import { DestinationModel } from '../modules/destination/destination.model.js';
+import { BlogTranslationModel } from '../modules/translation/blog-translation.model.js';
 import { getEnv } from '../shared/env/index.js';
 import { checkBlogTranslation, checkDestinationTranslation } from '../shared/util/translation-check.js';
 
@@ -18,7 +19,7 @@ interface SkipEntry {
 
 // ── Blog check ──
 
-function checkBlog(blog: any): SkipEntry | null {
+async function checkBlog(blog: any): Promise<SkipEntry | null> {
     const id = blog._id?.toString() || blog.id || 'unknown';
     const title = (typeof blog.title === 'object' ? blog.title?.en : blog.title) || '(no title)';
 
@@ -29,6 +30,21 @@ function checkBlog(blog: any): SkipEntry | null {
 
     // 2. Use shared util for accurate translation status (handles SHA256 content hash)
     const status = checkBlogTranslation(blog);
+
+    // 3. Cross-check with external BlogTranslationModel for fields that appear
+    //    "not multilingual yet" — they may be stored externally due to document size.
+    if (!status.translated && status.missingLanguages.some(m => m.startsWith('content'))) {
+        const extDocs = await BlogTranslationModel.countDocuments({ blogId: id });
+        if (extDocs > 0) {
+            // Content is stored externally — remove content-related issues from the report
+            status.changedFields = status.changedFields.filter(f => f !== 'content');
+            status.missingLanguages = status.missingLanguages.filter(m => !m.startsWith('content'));
+            // Recheck if everything is now translated
+            if (status.changedFields.length === 0 && status.missingLanguages.length === 0) {
+                return null; // All fields are translated (inline + external)
+            }
+        }
+    }
 
     if (status.translated) {
         return null; // Already fully translated
@@ -101,7 +117,7 @@ async function main() {
 
     console.log(`Checking ${blogs.length} blogs...`);
     for (const blog of blogs) {
-        const result = checkBlog(blog);
+        const result = await checkBlog(blog);
         if (result) {
             skipped.push({ ...result, title: `[BLOG] ${result.title}` });
         }

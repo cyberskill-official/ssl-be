@@ -73,7 +73,7 @@ translationQueue.process(3, async (job) => {
 });
 
 function ensureMultilingual(doc: any, field: string, enValue: string): void {
-    if (!doc[field] || typeof doc[field] === 'string')
+    if (!doc[field] || typeof doc[field] === 'string' || Array.isArray(doc[field]))
         doc[field] = { en: enValue };
 }
 
@@ -195,7 +195,8 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
         }
     }
 
-    // Upsert one document per language — each stays under 16MB
+    // Upsert one document per language — merge into existing translations
+    // to avoid overwriting previously translated fields that weren't in this $set.
     const MAX_DOC_SIZE = 15_000_000; // 15MB safety margin below MongoDB 16MB BSON limit
     for (const [lang, translations] of Object.entries(langDocs)) {
         const docSize = JSON.stringify(translations).length;
@@ -203,39 +204,58 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
             log.error(`[TranslationQueue] Blog ${blogId} ${lang}: estimated doc size ${(docSize / 1_048_576).toFixed(1)}MB exceeds MongoDB 16MB limit. Skipping this language to avoid crash.`);
             continue;
         }
-        log.info(`[TranslationQueue] Blog ${blogId} saving ${lang}: ${docSize} chars (~${(docSize / 1_048_576).toFixed(1)}MB)`);
+        log.info(`[TranslationQueue] Blog ${blogId} saving ${lang}: ${Object.keys(translations).join(', ')} (${docSize} chars, ~${(docSize / 1_048_576).toFixed(1)}MB)`);
+
+        // Build dot-notation $set to merge individual fields without replacing
+        // the entire translations object (which would lose previously translated fields).
+        const dotSet: Record<string, unknown> = {};
+        for (const [field, val] of Object.entries(translations)) {
+            dotSet[`translations.${field}`] = val;
+        }
+
         await BlogTranslationModel.findOneAndUpdate(
             { blogId, lang },
-            { $set: { translations } },
+            { $set: dotSet },
             { upsert: true, returnDocument: 'after' },
         );
     }
 
     // Update translationSnapshot on the blog (not the heavy translations)
     if ($set['translationSnapshot']) {
-        await BlogModel.findOneAndUpdate(
+        const snapshotResult = await BlogModel.findOneAndUpdate(
             idQuery(blogId),
             { $set: { translationSnapshot: $set['translationSnapshot'] } },
+            { returnDocument: 'after' },
         );
+        if (snapshotResult) {
+            log.info(`[TranslationQueue] Blog ${blogId} translationSnapshot saved. Fields in snapshot: ${Object.keys($set['translationSnapshot']).join(', ')}`);
+        }
+        else {
+            log.error(`[TranslationQueue] Blog ${blogId} FAILED to save translationSnapshot — blog not found with idQuery: ${JSON.stringify(idQuery(blogId))}`);
+        }
     }
 
-    // Also write translated slug and title back to the Blog document so that
-    // multilingual slug/title lookups (normalizeMultilingualFilter) can find
-    // the blog by non-English values. These are tiny strings — they don't
-    // meaningfully contribute to document size.
+    // Also write translated slug, title, contentHeadline, contentSubHeadline,
+    // and SEO fields back to the Blog document so that multilingual lookups and
+    // translation status checks can find them. These are tiny strings.
+    const INLINE_FIELDS = ['slug', 'title', 'contentHeadline', 'contentSubHeadline'];
     const inlineUpdate: Record<string, unknown> = {};
-    for (const field of ['slug', 'title']) {
+    for (const field of INLINE_FIELDS) {
         const fieldValue = $set[field];
         if (fieldValue && typeof fieldValue === 'object') {
             inlineUpdate[field] = fieldValue;
         }
+    }
+    // SEO fields are also small — always save inline
+    if ($set['seo'] && typeof $set['seo'] === 'object') {
+        inlineUpdate['seo'] = $set['seo'];
     }
     if (Object.keys(inlineUpdate).length > 0) {
         await BlogModel.findOneAndUpdate(
             idQuery(blogId),
             { $set: inlineUpdate },
         );
-        log.info(`[TranslationQueue] Blog ${blogId} inline slug/title updated for multilingual lookup support.`);
+        log.info(`[TranslationQueue] Blog ${blogId} inline fields updated: ${Object.keys(inlineUpdate).join(', ')}`);
     }
 
     log.info(`[TranslationQueue] Blog ${blogId} translations saved externally (${Object.keys(langDocs).length} languages, ~${JSON.stringify(langDocs).length} chars total).`);
@@ -305,23 +325,24 @@ export async function translateBlog(id: string) {
 
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
 
-    // Detect changed fields - skip if already translated
+    // Detect changed fields - skip if already translated.
+    // Only include fields that actually have English content to translate.
     const changedSmall: Record<string, string> = {};
-    if (title !== (snapshot['title'] || '') || !hasAllTranslations(blog.title))
+    if (title && (title !== (snapshot['title'] || '') || !hasAllTranslations(blog.title)))
         changedSmall['title'] = title;
-    if (slug !== (snapshot['slug'] || '') || !hasAllTranslations(blog.slug))
+    if (slug && (slug !== (snapshot['slug'] || '') || !hasAllTranslations(blog.slug)))
         changedSmall['slug'] = slug;
-    if (contentHeadline !== (snapshot['contentHeadline'] || '') || !hasAllTranslations(blog.contentHeadline))
+    if (contentHeadline && (contentHeadline !== (snapshot['contentHeadline'] || '') || !hasAllTranslations(blog.contentHeadline)))
         changedSmall['contentHeadline'] = contentHeadline;
-    if (contentSubHeadline !== (snapshot['contentSubHeadline'] || '') || !hasAllTranslations(blog.contentSubHeadline))
+    if (contentSubHeadline && (contentSubHeadline !== (snapshot['contentSubHeadline'] || '') || !hasAllTranslations(blog.contentSubHeadline)))
         changedSmall['contentSubHeadline'] = contentSubHeadline;
-    if (seoTitle !== (snapshot['seoTitle'] || '') || !hasAllTranslations(blog.seo?.title))
+    if (seoTitle && (seoTitle !== (snapshot['seoTitle'] || '') || !hasAllTranslations(blog.seo?.title)))
         changedSmall['seoTitle'] = seoTitle;
-    if (seoDescription !== (snapshot['seoDescription'] || '') || !hasAllTranslations(blog.seo?.description))
+    if (seoDescription && (seoDescription !== (snapshot['seoDescription'] || '') || !hasAllTranslations(blog.seo?.description)))
         changedSmall['seoDescription'] = seoDescription;
-    if (seoKeywords !== (snapshot['seoKeywords'] || '') || !hasAllTranslations(blog.seo?.keywords))
+    if (seoKeywords && (seoKeywords !== (snapshot['seoKeywords'] || '') || !hasAllTranslations(blog.seo?.keywords)))
         changedSmall['seoKeywords'] = seoKeywords;
-    if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') || !hasAllTranslations(blog.seo?.socialMediaDescription))
+    if (socialMediaDescription && (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') || !hasAllTranslations(blog.seo?.socialMediaDescription)))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
     // Use hash comparison for content to avoid storing full content in snapshot
