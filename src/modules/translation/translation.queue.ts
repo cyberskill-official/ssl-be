@@ -1,11 +1,13 @@
 import { log } from '@cyberskill/shared/node/log';
 import slugify from '@sindresorhus/slugify';
 import Bull from 'bull';
+import { createHash } from 'node:crypto';
 
 import { BlogModel } from '#modules/blog/blog.model.js';
 import { DestinationModel } from '#modules/destination/destination.model.js';
 import { getEnv } from '#shared/env/index.js';
 
+import { BlogTranslationModel } from './blog-translation.model.js';
 import { MARKET_MAP, translationService } from './translation.service.js';
 
 export interface I_TranslationJobData {
@@ -117,10 +119,120 @@ function applyTranslations(doc: any, field: string, translations: Record<string,
     }
 }
 
+function hashContent(content: string): string {
+    return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
 function ensureMultilingualValue(val: any, enValue: string): Record<string, string> {
     if (val && typeof val === 'object')
         return { ...val };
     return { en: enValue };
+}
+
+/**
+ * Store translations in the external BlogTranslation collection instead of
+ * embedding them in the Blog document. Used when the translated content
+ * would cause the Blog document to exceed MongoDB's 16MB BSON limit.
+ *
+ * The Blog document keeps only English (en) values + translationSnapshot.
+ * All non-English translations are stored in BlogTranslationModel.
+ */
+/**
+ * Store translations in the external BlogTranslation collection, one document
+ * per language. Each language's translated content stays under MongoDB's 16MB
+ * BSON limit even for very large blogs.
+ */
+async function saveTranslationsExternal(blogId: string, $set: Record<string, unknown>): Promise<void> {
+    // Invert the $set structure: from { field: { da: ..., de: ... } }
+    // to { da: { field: ... }, de: { field: ... } } — one doc per language.
+    const langDocs: Record<string, Record<string, unknown>> = {};
+
+    for (const [field, value] of Object.entries($set)) {
+        if (field === 'translationSnapshot') {
+            continue;
+        }
+
+        // Handle FAQ arrays: extract per-language faq translations
+        if (field === 'faqs' && Array.isArray(value)) {
+            for (let fi = 0; fi < value.length; fi++) {
+                const faq = value[fi] as Record<string, unknown> | undefined;
+                if (!faq)
+                    continue;
+                for (const subField of ['question', 'answer']) {
+                    const subValue = faq[subField];
+                    if (subValue && typeof subValue === 'object') {
+                        for (const [lang, val] of Object.entries(subValue as Record<string, unknown>)) {
+                            if (lang === 'en')
+                                continue;
+                            if (!langDocs[lang])
+                                langDocs[lang] = {};
+                            if (!langDocs[lang]!['faqs'])
+                                langDocs[lang]!['faqs'] = [];
+                            const faqArr = langDocs[lang]!['faqs'] as Array<Record<string, unknown>>;
+                            while (faqArr.length <= fi) faqArr.push({});
+                            if (!faqArr[fi]![subField])
+                                faqArr[fi]![subField] = {};
+                            (faqArr[fi]![subField] as Record<string, unknown>)[lang] = val;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            const langMap = value as Record<string, unknown>;
+            const hasLangKeys = Object.keys(langMap).some(k => /^[a-z]{2}(?:-[A-Z]{2})?$/.test(k));
+            if (hasLangKeys) {
+                // Top-level multilingual field: title, slug, content, etc.
+                for (const [lang, val] of Object.entries(langMap)) {
+                    if (lang === 'en')
+                        continue;
+                    if (!langDocs[lang])
+                        langDocs[lang] = {};
+                    langDocs[lang]![field] = val;
+                }
+            }
+            else {
+                // Nested object like 'seo': { title: { da:..., de:... }, ... }
+                for (const [subField, subValue] of Object.entries(langMap)) {
+                    if (subValue && typeof subValue === 'object' && !Array.isArray(subValue)) {
+                        const subLangMap = subValue as Record<string, unknown>;
+                        for (const [lang, val] of Object.entries(subLangMap)) {
+                            if (lang === 'en')
+                                continue;
+                            if (!langDocs[lang])
+                                langDocs[lang] = {};
+                            if (!langDocs[lang]!['seo'])
+                                langDocs[lang]!['seo'] = {};
+                            (langDocs[lang]!['seo'] as Record<string, unknown>)[subField] = val;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Upsert one document per language — each stays under 16MB
+    for (const [lang, translations] of Object.entries(langDocs)) {
+        const docSize = JSON.stringify(translations).length;
+        log.info(`[TranslationQueue] Blog ${blogId} saving ${lang}: ${docSize} chars (~${(docSize / 1_048_576).toFixed(1)}MB)`);
+        await BlogTranslationModel.findOneAndUpdate(
+            { blogId, lang },
+            { $set: { translations } },
+            { upsert: true, returnDocument: 'after' },
+        );
+    }
+
+    // Only update translationSnapshot on the blog (not the heavy translations)
+    if ($set['translationSnapshot']) {
+        await BlogModel.findOneAndUpdate(
+            idQuery(blogId),
+            { $set: { translationSnapshot: $set['translationSnapshot'] } },
+        );
+    }
+
+    log.info(`[TranslationQueue] Blog ${blogId} translations saved externally (${Object.keys(langDocs).length} languages, ~${JSON.stringify(langDocs).length} chars total).`);
 }
 
 export async function translateBlog(id: string) {
@@ -158,20 +270,21 @@ export async function translateBlog(id: string) {
         return;
     }
 
-    // Pre-check: estimate if translated document would exceed MongoDB's 16MB BSON limit.
+    // Pre-check: estimate how much the document will GROW from translations.
     // Base64 images stay ONLY in English; translations get placeholders (see translation.service.ts).
-    // So: English = full content with base64, each translation = content without base64.
+    // Therefore we only care about TEXT growth (without base64), not total document size.
     const base64Size = (content?.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
     const contentWithoutBase64 = (content?.length || 0) - base64Size;
-    const estimatedTranslatedSize = (content?.length || 0) // English (with base64)
-        + contentWithoutBase64 * TARGET_LANGS.length // translations (no base64)
+    const estimatedGrowth = contentWithoutBase64 * TARGET_LANGS.length // translations (text only, no base64)
         + (title?.length || 0) * TARGET_LANGS.length
         + (contentHeadline?.length || 0) * TARGET_LANGS.length
         + 65536; // JSON + other fields overhead
-    if (estimatedTranslatedSize > 15_000_000) {
-        log.warn(`[TranslationQueue] Blog ${id} estimated translated size ~${(estimatedTranslatedSize / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — would exceed MongoDB 16MB limit. Skipping.`);
-        await BlogModel.findOneAndUpdate(idQuery(id), { $set: { translationInProgress: false } });
-        return;
+    // If text-only growth exceeds 10MB, store translations externally to avoid
+    // MongoDB's 16MB document limit. Base64 images already exist in the English
+    // document and are NOT duplicated in translations.
+    const useExternalStorage = estimatedGrowth > 10_000_000;
+    if (useExternalStorage) {
+        log.info(`[TranslationQueue] Blog ${id} estimated text growth ~${(estimatedGrowth / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB in English only, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — will store translations externally.`);
     }
 
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};
@@ -202,7 +315,11 @@ export async function translateBlog(id: string) {
     if (socialMediaDescription !== (snapshot['socialMediaDescription'] || '') || !hasAllTranslations(blog.seo?.socialMediaDescription))
         changedSmall['socialMediaDescription'] = socialMediaDescription;
 
-    const contentChanged = content !== (snapshot['content'] || '') || !hasAllTranslations(blog.content);
+    // Use hash comparison for content to avoid storing full content in snapshot
+    const snapshotContent = snapshot['content'] || '';
+    const contentChanged = snapshotContent.startsWith('sha256:')
+        ? hashContent(content) !== snapshotContent
+        : content !== snapshotContent || !hasAllTranslations(blog.content);
 
     // Check FAQ changes
     const currentFaqs = (blog.faqs || []).map(f => ({ q: getEn(f.question), a: getEn(f.answer) }));
@@ -349,13 +466,13 @@ export async function translateBlog(id: string) {
             $set['faqs'] = updatedFaqs;
         }
 
-        // Update snapshot
+        // Update snapshot (hash content to keep blog document small)
         $set['translationSnapshot'] = {
             title,
             slug,
             contentHeadline,
             contentSubHeadline,
-            content,
+            content: hashContent(content),
             seoTitle,
             seoDescription,
             seoKeywords,
@@ -363,18 +480,26 @@ export async function translateBlog(id: string) {
             faqs: currentFaqs,
         };
 
-        try {
-            await BlogModel.findOneAndUpdate({ ...idQuery(id), isDel: { $ne: true } }, { $set });
+        // Save translations: inline for normal blogs, external for oversized ones
+        if (useExternalStorage) {
+            await saveTranslationsExternal(id, $set);
         }
-        catch (saveErr: any) {
-            if (saveErr.message?.includes('offset') && saveErr.message?.includes('out of range')) {
-                log.error(`[TranslationQueue] Blog ${id} exceeds MongoDB 16MB document limit.`);
-                throw new Error(`Blog ${id} exceeds MongoDB document size limit.`);
+        else {
+            try {
+                await BlogModel.findOneAndUpdate({ ...idQuery(id), isDel: { $ne: true } }, { $set });
             }
-            throw saveErr;
+            catch (saveErr: any) {
+                if (saveErr.message?.includes('offset') && saveErr.message?.includes('out of range')) {
+                    log.warn(`[TranslationQueue] Blog ${id} inline save exceeded MongoDB limit, falling back to external storage.`);
+                    await saveTranslationsExternal(id, $set);
+                }
+                else {
+                    throw saveErr;
+                }
+            }
         }
 
-        log.info(`[TranslationQueue] Blog ${id} translation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s.`);
+        log.info(`[TranslationQueue] Blog ${id} translation completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s${useExternalStorage ? ' (external storage)' : ''}.`);
     }
     catch (err) {
         log.error(`[TranslationQueue] Error translating Blog ${id}:`, err);

@@ -22,6 +22,7 @@ import { getBlockedUserIds, localizeDocument } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
+import { BlogTranslationModel } from '../translation/blog-translation.model.js';
 import { translationQueue } from '../translation/translation.queue.js';
 import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
@@ -33,6 +34,165 @@ function getEn(val: unknown): string {
     if (typeof val === 'object' && val)
         return (val as Record<string, string>)['en'] || '';
     return typeof val === 'string' ? val : '';
+}
+
+/**
+ * Merge external translations (stored in BlogTranslation collection, one
+ * document per language) back into the blog document before localization.
+ */
+async function mergeExternalTranslations(doc: Record<string, any>): Promise<void> {
+    const blogId = doc['id'] || doc['_id']?.toString();
+    if (!blogId)
+        return;
+
+    const extDocs = await BlogTranslationModel.find({ blogId }).lean();
+    if (!extDocs.length)
+        return;
+
+    // Merge each language's translations into the doc
+    for (const ext of extDocs) {
+        const lang = ext.lang;
+        const t = ext.translations as Record<string, any>;
+        if (!t)
+            continue;
+
+        // Merge top-level multilingual fields
+        const topFields = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'];
+        for (const field of topFields) {
+            if (t[field] !== undefined && t[field] !== null) {
+                if (!doc[field] || typeof doc[field] !== 'object') {
+                    doc[field] = {};
+                }
+                doc[field][lang] = t[field];
+            }
+        }
+
+        // Merge nested SEO fields
+        if (t['seo']) {
+            if (!doc['seo'] || typeof doc['seo'] !== 'object') {
+                doc['seo'] = {};
+            }
+            const seoExt = t['seo'] as Record<string, any>;
+            for (const [seoField, val] of Object.entries(seoExt)) {
+                if (val !== undefined && val !== null) {
+                    if (!doc['seo'][seoField] || typeof doc['seo'][seoField] !== 'object') {
+                        doc['seo'][seoField] = {};
+                    }
+                    doc['seo'][seoField][lang] = val;
+                }
+            }
+        }
+
+        // Merge FAQ translations
+        if (t['faqs'] && Array.isArray(t['faqs'])) {
+            const faqArr = t['faqs'] as Array<Record<string, any>>;
+            if (!doc['faqs'] || !Array.isArray(doc['faqs'])) {
+                doc['faqs'] = [];
+            }
+            for (let i = 0; i < faqArr.length; i++) {
+                const faqExt = faqArr[i];
+                if (!faqExt)
+                    continue;
+                if (!doc['faqs'][i]) {
+                    doc['faqs'][i] = { question: {}, answer: {} };
+                }
+                for (const subField of ['question', 'answer']) {
+                    if (faqExt[subField] !== undefined && faqExt[subField] !== null) {
+                        if (!doc['faqs'][i][subField] || typeof doc['faqs'][i][subField] !== 'object') {
+                            doc['faqs'][i][subField] = {};
+                        }
+                        doc['faqs'][i][subField][lang] = faqExt[subField];
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Batch-merge external translations for multiple blog documents.
+ * Used by getBlogs to avoid N+1 queries.
+ */
+async function batchMergeExternalTranslations(docs: Record<string, any>[]): Promise<void> {
+    if (docs.length === 0)
+        return;
+
+    const blogIds = docs.map(d => d['id'] || d['_id']?.toString()).filter(Boolean);
+    if (blogIds.length === 0)
+        return;
+
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIds } }).lean();
+    // Group by blogId: { blogId -> { lang -> translations } }
+    const extMap = new Map<string, Record<string, Record<string, any>>>();
+    for (const ext of extDocs) {
+        if (!extMap.has(ext.blogId)) {
+            extMap.set(ext.blogId, {});
+        }
+        extMap.get(ext.blogId)![ext.lang] = ext.translations as Record<string, any>;
+    }
+
+    for (const doc of docs) {
+        const blogId = doc['id'] || doc['_id']?.toString();
+        if (!blogId)
+            continue;
+        const langMap = extMap.get(blogId);
+        if (!langMap)
+            continue;
+
+        // Merge each language's translations
+        for (const [lang, t] of Object.entries(langMap)) {
+            if (!t)
+                continue;
+
+            const topFields = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'];
+            for (const field of topFields) {
+                if (t[field] !== undefined && t[field] !== null) {
+                    if (!doc[field] || typeof doc[field] !== 'object') {
+                        doc[field] = {};
+                    }
+                    doc[field][lang] = t[field];
+                }
+            }
+
+            if (t['seo']) {
+                if (!doc['seo'] || typeof doc['seo'] !== 'object') {
+                    doc['seo'] = {};
+                }
+                const seoExt = t['seo'] as Record<string, any>;
+                for (const [seoField, val] of Object.entries(seoExt)) {
+                    if (val !== undefined && val !== null) {
+                        if (!doc['seo'][seoField] || typeof doc['seo'][seoField] !== 'object') {
+                            doc['seo'][seoField] = {};
+                        }
+                        doc['seo'][seoField][lang] = val;
+                    }
+                }
+            }
+
+            if (t['faqs'] && Array.isArray(t['faqs'])) {
+                const faqArr = t['faqs'] as Array<Record<string, any>>;
+                if (!doc['faqs'] || !Array.isArray(doc['faqs'])) {
+                    doc['faqs'] = [];
+                }
+                for (let i = 0; i < faqArr.length; i++) {
+                    const faqExt = faqArr[i];
+                    if (!faqExt)
+                        continue;
+                    if (!doc['faqs'][i]) {
+                        doc['faqs'][i] = { question: {}, answer: {} };
+                    }
+                    for (const subField of ['question', 'answer']) {
+                        if (faqExt[subField] !== undefined && faqExt[subField] !== null) {
+                            if (!doc['faqs'][i][subField] || typeof doc['faqs'][i][subField] !== 'object') {
+                                doc['faqs'][i][subField] = {};
+                            }
+                            doc['faqs'][i][subField][lang] = faqExt[subField];
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
@@ -84,6 +244,9 @@ export const blogCtr = {
             }
         }
 
+        // Merge external translations (for oversized blogs) before localization
+        await mergeExternalTranslations(blogFound.result as any);
+
         // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
         const rawSlug = (blogFound.result as any).slug;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
@@ -134,6 +297,9 @@ export const blogCtr = {
 
             return blog;
         });
+
+        // Merge external translations (for oversized blogs) before localization
+        await batchMergeExternalTranslations(filteredDocs as any);
 
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
