@@ -231,7 +231,33 @@ const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
-        const blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
+        let blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
+
+        // Fallback: if slug-based lookup failed, the blog may have its translations
+        // (including slug) stored externally in BlogTranslationModel. Search there
+        // and retry with the blogId. This is a safety net for blogs translated before
+        // inline slug/title backfill was added to saveTranslationsExternal.
+        if (!blogFound.success && typeof (filter as Record<string, unknown> | undefined)?.['slug'] === 'string') {
+            const slugValue = (filter as Record<string, string>)['slug']!;
+            const extDoc = await BlogTranslationModel.findOne({
+                'translations.slug': slugValue,
+            }).lean();
+            if (extDoc) {
+                log.info(`[BlogController] Blog found via external slug translation lookup: "${slugValue}" → ${extDoc.blogId}`);
+                // Use blogId + the original filter conditions (except the slug $or which already failed)
+                const cleanFilter: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(normalizedFilter)) {
+                    if (key !== '$or')
+                        cleanFilter[key] = value;
+                }
+                blogFound = await mongooseCtr.findOne(
+                    { id: extDoc.blogId, ...cleanFilter },
+                    projection,
+                    options,
+                    populate,
+                );
+            }
+        }
 
         if (!blogFound.success) {
             return blogFound;

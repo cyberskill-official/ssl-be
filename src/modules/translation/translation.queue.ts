@@ -247,12 +247,31 @@ async function saveTranslationsExternal(blogId: string, $set: Record<string, unk
         );
     }
 
-    // Only update translationSnapshot on the blog (not the heavy translations)
+    // Update translationSnapshot on the blog (not the heavy translations)
     if ($set['translationSnapshot']) {
         await BlogModel.findOneAndUpdate(
             idQuery(blogId),
             { $set: { translationSnapshot: $set['translationSnapshot'] } },
         );
+    }
+
+    // Also write translated slug and title back to the Blog document so that
+    // multilingual slug/title lookups (normalizeMultilingualFilter) can find
+    // the blog by non-English values. These are tiny strings — they don't
+    // meaningfully contribute to document size.
+    const inlineUpdate: Record<string, unknown> = {};
+    for (const field of ['slug', 'title']) {
+        const fieldValue = $set[field];
+        if (fieldValue && typeof fieldValue === 'object') {
+            inlineUpdate[field] = fieldValue;
+        }
+    }
+    if (Object.keys(inlineUpdate).length > 0) {
+        await BlogModel.findOneAndUpdate(
+            idQuery(blogId),
+            { $set: inlineUpdate },
+        );
+        log.info(`[TranslationQueue] Blog ${blogId} inline slug/title updated for multilingual lookup support.`);
     }
 
     log.info(`[TranslationQueue] Blog ${blogId} translations saved externally (${Object.keys(langDocs).length} languages, ~${JSON.stringify(langDocs).length} chars total).`);
