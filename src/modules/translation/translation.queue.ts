@@ -125,8 +125,9 @@ function hashContent(content: string): string {
 
 /**
  * Restore base64 images from English content into translated content.
- * Only safe for external storage (one doc per language, room for base64).
- * For inline storage, base64 stays as placeholders to keep doc under 16MB.
+ * This is a safety net: base64 images are already restored in
+ * _translateRichContentBatch (translation.service.ts). This function
+ * catches any edge case where placeholders remain after translation.
  */
 function restoreBase64Images(englishContent: string, translated: Record<string, string>): void {
     // Extract all base64 data URIs from English content
@@ -293,23 +294,21 @@ export async function translateBlog(id: string) {
     }
 
     // Pre-check: estimate how much the document will GROW from translations.
-    // Base64 images stay ONLY in English; translations get placeholders (see translation.service.ts).
-    // Therefore we only care about TEXT growth (without base64), not total document size.
+    // Base64 images are now restored in all translations (see translation.service.ts
+    // _translateRichContentBatch), so we must account for base64 duplication across languages.
     const base64Size = (content?.match(/data:image\/[^"]+/g) || []).reduce((s: number, m: string) => s + m.length, 0);
     const contentWithoutBase64 = (content?.length || 0) - base64Size;
-    const estimatedGrowth = contentWithoutBase64 * TARGET_LANGS.length // translations (text only, no base64)
+    const estimatedGrowth = (contentWithoutBase64 + base64Size) * TARGET_LANGS.length
         + (title?.length || 0) * TARGET_LANGS.length
         + (contentHeadline?.length || 0) * TARGET_LANGS.length
         + 65536; // JSON + other fields overhead
-    // If text-only growth exceeds 10MB, store translations externally to avoid
-    // MongoDB's 16MB document limit. Base64 images already exist in the English
-    // document and are NOT duplicated in translations.
-    // Also use external storage when base64 images are present (>1MB) so they
-    // can be restored in translated content (inline: placeholder, external: real).
+    // If estimated growth exceeds 10MB (safety margin below MongoDB's 16MB limit),
+    // store translations externally — one document per language with plenty of room.
+    // Also use external storage when base64 images exceed 1MB to avoid document bloat.
     const hasLargeBase64 = base64Size > 1_000_000;
     const useExternalStorage = estimatedGrowth > 10_000_000 || hasLargeBase64;
     if (useExternalStorage) {
-        log.info(`[TranslationQueue] Blog ${id} estimated text growth ~${(estimatedGrowth / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB in English only, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — will store translations externally.`);
+        log.info(`[TranslationQueue] Blog ${id} estimated growth ~${(estimatedGrowth / 1_048_576).toFixed(1)}MB (base64: ${(base64Size / 1_048_576).toFixed(1)}MB, text: ${(contentWithoutBase64 / 1_048_576).toFixed(3)}MB) — will store translations externally.`);
     }
 
     const snapshot: Record<string, any> = (blog as any).translationSnapshot || {};

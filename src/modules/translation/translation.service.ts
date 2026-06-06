@@ -74,6 +74,34 @@ function extractAndPlaceholderBase64Images(node: any, map: Record<string, string
     return count;
 }
 
+/**
+ * Extract base64 data URIs from an HTML string and replace them with placeholders.
+ * This prevents OpenAI from truncating or altering large base64 strings during translation.
+ * Returns the processed HTML and a map of placeholder → data URI.
+ */
+function extractBase64FromHTML(html: string): { processed: string; map: Record<string, string> } {
+    const map: Record<string, string> = {};
+    let count = 0;
+    const processed = html.replace(/data:image\/[^"'\s>]+/g, (match) => {
+        const id = `__BASE64_IMAGE_PLACEHOLDER_${count}__`;
+        map[id] = match;
+        count++;
+        return id;
+    });
+    return { processed, map };
+}
+
+/**
+ * Restore base64 data URIs from placeholders in a translated HTML string.
+ */
+function restoreBase64InHTML(html: string, map: Record<string, string>): string {
+    let restored = html;
+    for (const [placeholder, dataUri] of Object.entries(map)) {
+        restored = restored.replaceAll(placeholder, dataUri);
+    }
+    return restored;
+}
+
 export const translationService = {
     translateFields: async (
         fields: Record<string, string>,
@@ -229,8 +257,27 @@ ${Object.keys(fields).map(k => `- "${k}"`).join('\n')}`;
 
         // For Lexical content: extract text nodes, translate them, then merge back
         if (isLexical && lexicalJson) {
-            return await translationService._translateLexicalByNodes(lexicalJson, targetLangs, apiKey, model);
+            const results = await translationService._translateLexicalByNodes(lexicalJson, targetLangs, apiKey, model);
+            // Restore base64 images in translated content (they were replaced with placeholders
+            // before translation to avoid sending large data URIs to the OpenAI API).
+            if (Object.keys(base64Map).length > 0) {
+                for (const [lang, translatedContent] of Object.entries(results)) {
+                    let restored = translatedContent;
+                    for (const [placeholder, dataUri] of Object.entries(base64Map)) {
+                        restored = restored.replaceAll(placeholder, dataUri);
+                    }
+                    results[lang] = restored;
+                }
+                log.info(`[TranslationService] Restored ${Object.keys(base64Map).length} base64 images in ${Object.keys(results).length} translated Lexical contents.`);
+            }
+            return results;
         }
+
+        // For non-Lexical HTML content: extract base64 images before sending to OpenAI
+        // to prevent the model from truncating or altering large data URIs.
+        const htmlBase64Result = extractBase64FromHTML(typeof content === 'string' ? content : '');
+        const contentToSend = typeof content === 'string' ? htmlBase64Result.processed : content;
+        const htmlBase64Map = htmlBase64Result.map;
 
         const langInstructions = targetLangs
             .map((lang) => {
@@ -247,7 +294,7 @@ ${langInstructions}
 
 Guidelines:
 - Keep the meaning natural and readable. Do not make it sound machine translated.
-- Preserve any HTML formatting, links, or placeholders.
+- Preserve any HTML formatting, links, or placeholders (including __BASE64_IMAGE_PLACEHOLDER_*__ markers — do NOT translate or modify them).
 - Keep the SecretSwingerLust brand voice.
 
 Return a JSON object mapping each language code to the translated content.
@@ -263,7 +310,7 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
                     model,
                     messages: [
                         { role: 'system', content: systemPrompt },
-                        { role: 'user', content: typeof content === 'string' ? content : JSON.stringify(content) },
+                        { role: 'user', content: typeof contentToSend === 'string' ? contentToSend : JSON.stringify(contentToSend) },
                     ],
                     response_format: { type: 'json_object' },
                     temperature: 0.3,
@@ -286,7 +333,17 @@ Example: { "da": "...", "de": "...", "fr": "...", ... }`;
         };
 
         try {
-            return await makeRequest();
+            const results = await makeRequest();
+            // Restore base64 images in translated HTML content
+            if (Object.keys(htmlBase64Map).length > 0) {
+                for (const [lang, translatedContent] of Object.entries(results)) {
+                    if (typeof translatedContent === 'string') {
+                        results[lang] = restoreBase64InHTML(translatedContent, htmlBase64Map);
+                    }
+                }
+                log.info(`[TranslationService] Restored ${Object.keys(htmlBase64Map).length} base64 images in ${Object.keys(results).length} translated HTML contents.`);
+            }
+            return results;
         }
         catch (error: any) {
             // Retry once on JSON parse errors (transient network glitch / truncated response)
@@ -455,12 +512,9 @@ Example: { "da": { "0": "...", "1": "..." }, "de": { "0": "...", "1": "..." } }`
                     }
                 }
             }
-            // NOTE: base64 images are NOT restored into translated versions.
-            // Restoring them would duplicate large base64 blobs ×10 languages,
-            // exceeding MongoDB's 16MB document limit. Image src attributes in
-            // translated content will contain placeholder IDs; the English (en)
-            // version retains the original base64 data and serves as the source
-            // of truth for images.
+            // NOTE: base64 image placeholders in translated content are restored
+            // by the caller (_translateRichContentBatch) before returning to the queue.
+            // The English (en) version retains the original base64 data as the source of truth.
             result[lang] = JSON.stringify(cloned);
         }
 
