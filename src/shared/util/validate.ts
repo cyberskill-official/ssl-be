@@ -78,13 +78,7 @@ export const validate = {
             validator: (password: string) =>
                 PASSWORD_REGEX.ALPHANUMERIC.test(password),
             message:
-                'Password must contain both uppercase and lowercase letters, and numbers',
-        },
-        specialChar: {
-            validator: (password: string) =>
-                PASSWORD_REGEX.SPECIAL_CHAR.test(password),
-            message:
-                'Password must contain at least one special character (e.g., @, #, $, %, etc.)',
+                'Password must contain at least one uppercase letter, one lowercase letter, and one number',
         },
         validate: (password: string): void => {
             const errors: string[] = [];
@@ -94,9 +88,6 @@ export const validate = {
             }
             if (!validate.password.alphanumeric.validator(password)) {
                 errors.push(validate.password.alphanumeric.message);
-            }
-            if (!validate.password.specialChar.validator(password)) {
-                errors.push(validate.password.specialChar.message);
             }
 
             if (errors.length > 0) {

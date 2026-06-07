@@ -1610,7 +1610,13 @@ export const authnCtr = {
             });
         }
 
-        const { identity, password, rememberMe, loginType } = args;
+        const { password, rememberMe, loginType } = args;
+        // Normalize email to lowercase for case-insensitive email login.
+        // If identity looks like an email, lowercase it so it matches the stored
+        // lowercase email. Usernames are left as-is (case-sensitive).
+        const identity = args.identity.includes('@')
+            ? args.identity.trim().toLowerCase()
+            : args.identity;
         const isAdminPortalLogin = loginType === E_LoginType.ADMIN;
         const isUserPortalLogin = loginType === E_LoginType.USER;
 
