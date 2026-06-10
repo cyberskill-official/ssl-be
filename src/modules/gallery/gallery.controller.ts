@@ -542,6 +542,14 @@ export const galleryCtr = {
         if (galleryFound.result.thumbnailUrl) {
             galleryFound.result.thumbnailUrl = applyThumbnailPolicy(galleryFound.result.thumbnailUrl) ?? galleryFound.result.thumbnailUrl;
         }
+        else if (galleryFound.result.type === E_GalleryType.VIDEO && galleryFound.result.url) {
+            const streamThumbnailUrl = bunnyCtr.generateStreamThumbnailUrlFromUrl({
+                fullUrl: galleryFound.result.url,
+            });
+            if (streamThumbnailUrl) {
+                galleryFound.result.thumbnailUrl = streamThumbnailUrl;
+            }
+        }
 
         return galleryFound;
     },
@@ -797,6 +805,14 @@ export const galleryCtr = {
             }
             if (galleryResult.thumbnailUrl) {
                 galleryResult.thumbnailUrl = transformMediaUrl(galleryResult.thumbnailUrl) ?? undefined;
+            }
+            else if (galleryResult.url && gallery.type === E_GalleryType.VIDEO) {
+                const streamThumbnailUrl = bunnyCtr.generateStreamThumbnailUrlFromUrl({
+                    fullUrl: galleryResult.url,
+                });
+                if (streamThumbnailUrl) {
+                    galleryResult.thumbnailUrl = streamThumbnailUrl;
+                }
             }
 
             // Hydrate uploadedBy user media (sign/blur profile images)

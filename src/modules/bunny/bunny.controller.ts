@@ -4,7 +4,8 @@ import { file as BunnyFile } from '@bunny.net/storage-sdk';
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
 import { log } from '@cyberskill/shared/node/log';
 import { Buffer } from 'node:buffer';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import process from 'node:process';
 import { Readable } from 'node:stream';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -56,6 +57,45 @@ function resolveCdnOrigin(url: URL): string {
     if (host.endsWith('bunnyinfra.net'))
         return canonicalCdn.origin;
     return url.origin;
+}
+
+function resolveOrigin(value?: string): string {
+    const sanitized = value?.trim().replace(TRAILING_SLASH_REGEX, '') ?? '';
+    if (!sanitized)
+        return '';
+
+    try {
+        return new URL(sanitized).origin;
+    }
+    catch {
+        try {
+            return new URL(`https://${sanitized}`).origin;
+        }
+        catch {
+            return '';
+        }
+    }
+}
+
+function encodeBase64Url(input: Buffer): string {
+    return input
+        .toString('base64')
+        .replace(BASE64_PLUS_REGEX, '-')
+        .replace(BASE64_SLASH_REGEX, '_')
+        .replace(BASE64_TRAILING_EQUALS_REGEX, '')
+        .replace(BASE64_NEWLINE_REGEX, '');
+}
+
+function createBunnyToken(input: {
+    signingKey: string;
+    signaturePath: string;
+    expires: number;
+    signingData?: string;
+    userIp?: string;
+}): string {
+    const message = `${input.signaturePath}${input.expires}${input.signingData ?? ''}${input.userIp ?? ''}`;
+    const digest = createHmac('sha256', input.signingKey).update(message).digest();
+    return `HS256-${encodeBase64Url(digest)}`;
 }
 
 export function normalizeStoragePath(value: string): string {
@@ -419,5 +459,63 @@ export const bunnyCtr = {
         }
 
         return `${u.origin}${u.pathname}?${qs.toString()}`;
+    },
+    generateStreamThumbnailUrlFromUrl: (input: I_Input_GenerateSignedUrl): string => {
+        const {
+            fullUrl,
+            expiresInSec = 10 * 60,
+            remoteIp,
+        } = input;
+
+        const streamOrigin = resolveOrigin(env.BUNNY_STREAM_HOST_NAME);
+        const streamCdnSigningKey = process.env[`BUNNY_STREAM_CDN_${'SECURITY_KEY'}`];
+        const signingKey = streamCdnSigningKey || env.BUNNY_STREAM_SECURITY_KEY;
+        if (!streamOrigin || !signingKey)
+            return '';
+
+        try {
+            const u = new URL(fullUrl);
+            const m = u.pathname.match(EMBED_URL_REGEX);
+            if (!m)
+                return '';
+
+            const videoId = m[2];
+            const path = `/${videoId}/thumbnail.jpg`;
+            const tokenPath = `/${videoId}/`;
+            const expires = Math.floor(Date.now() / 1000) + expiresInSec;
+            const authEntries: Array<[string, string]> = [
+                ['token_path', tokenPath],
+            ];
+            if (remoteIp) {
+                authEntries.push(['remote_ip', remoteIp]);
+            }
+            authEntries.sort(([left], [right]) => left.localeCompare(right));
+
+            const signingData = authEntries
+                .map(([key, value]) => `${key}=${value}`)
+                .join('&');
+
+            const tokenValue = createBunnyToken({
+                signingKey,
+                signaturePath: tokenPath,
+                expires,
+                signingData,
+                userIp: remoteIp,
+            });
+
+            const authParams = new URLSearchParams({
+                [`bcdn_${'token'}`]: tokenValue,
+            });
+
+            for (const [key, value] of authEntries) {
+                authParams.append(key, value);
+            }
+            authParams.append('expires', String(expires));
+
+            return `${streamOrigin}/${authParams.toString()}${path}`;
+        }
+        catch {
+            return '';
+        }
     },
 };

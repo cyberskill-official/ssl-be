@@ -8,11 +8,14 @@ import { notificationCtr } from '#modules/notification/notification.controller.j
 import { E_NotificationChannel, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
 import { findLatestPayPalSubscriptionForUser } from '#modules/payment/payment-subscription-link.service.js';
 import { paymentSubscriptionCtr } from '#modules/payment/payment-subscription/payment-subscription.controller.js';
+import { E_PaymentSubscriptionStatus } from '#modules/payment/payment-subscription/payment-subscription.type.js';
 import { paypalCtr } from '#modules/payment/paypal/paypal.controller.js';
 import { UserModel } from '#modules/user/user.model.js';
 import { createSystemContext } from '#shared/util/context.js';
 
 import type { I_CronTaskContext } from '../cron.type.js';
+
+import { isPastForceDowngradeWindow } from './membership.helper.js';
 
 interface I_MembershipCandidate extends Pick<
     I_User,
@@ -32,6 +35,8 @@ export async function executeDowngradeExpiredMembershipsTask(
         downgraded: 0,
         skippedPayPalGrace: 0,
         scheduledReconciliation: 0,
+        forcedDowngradeAfterGrace: 0,
+        subscriptionsCancelled: 0,
         skippedPayPalActive: 0,
         skippedNoSubscription: 0,
         skippedPayPalApiFailure: 0,
@@ -122,24 +127,58 @@ export async function executeDowngradeExpiredMembershipsTask(
 
         try {
             const hasPaidMemberRole = hasRole(user, paidRoleId);
+            let localSubscriptionAllowsDowngrade = false;
+
             if (hasPaidMemberRole) {
                 const localSubscription = await paymentSubscriptionCtr.findLatestPayPalSubscriptionForUser(user.id);
                 if (localSubscription?.providerSubscriptionId) {
                     const graceUntil = localSubscription.graceUntil
                         ? new Date(localSubscription.graceUntil)
                         : null;
+                    const terminalSubscriptionStatus = [
+                        E_PaymentSubscriptionStatus.CANCELLED,
+                        E_PaymentSubscriptionStatus.EXPIRED,
+                    ].includes(localSubscription.status);
+                    const forceExpiredActionRequired = localSubscription.status === E_PaymentSubscriptionStatus.ACTION_REQUIRED
+                        && isPastForceDowngradeWindow(graceUntil, now);
+
                     if (graceUntil && graceUntil > now) {
                         summary.skippedPayPalGrace += 1;
                         continue;
                     }
 
-                    await paymentSubscriptionCtr.scheduleReconciliationNow(localSubscription.providerSubscriptionId);
-                    summary.scheduledReconciliation += 1;
-                    continue;
+                    if (terminalSubscriptionStatus) {
+                        localSubscriptionAllowsDowngrade = true;
+                    }
+                    else if (forceExpiredActionRequired) {
+                        const cancelRes = await paypalCtr.cancelSubscription({}, {
+                            subscriptionId: localSubscription.providerSubscriptionId,
+                            reason: 'Renewal payment was not completed within 48 hours after the access grace window.',
+                        });
+
+                        if (cancelRes.success) {
+                            await paymentSubscriptionCtr.markCancelled(localSubscription.providerSubscriptionId);
+                            summary.subscriptionsCancelled += 1;
+                        }
+                        else {
+                            await paymentSubscriptionCtr.markActionRequired(
+                                localSubscription.providerSubscriptionId,
+                                cancelRes.message ?? 'Failed to cancel unpaid PayPal subscription after the 48-hour grace limit.',
+                            );
+                        }
+
+                        summary.forcedDowngradeAfterGrace += 1;
+                        localSubscriptionAllowsDowngrade = true;
+                    }
+                    else {
+                        await paymentSubscriptionCtr.scheduleReconciliationNow(localSubscription.providerSubscriptionId);
+                        summary.scheduledReconciliation += 1;
+                        continue;
+                    }
                 }
             }
 
-            if (hasPaidMemberRole && !user.membershipCancelled) {
+            if (hasPaidMemberRole && !user.membershipCancelled && !localSubscriptionAllowsDowngrade) {
                 try {
                     const subscriptionLink = await findLatestPayPalSubscriptionForUser(user.id);
                     const subscriptionId = subscriptionLink.subscriptionId;
@@ -171,8 +210,31 @@ export async function executeDowngradeExpiredMembershipsTask(
                     }
 
                     if (providerStatus === 'ACTIVE' || providerStatus === 'SUSPENDED') {
-                        summary.skippedPayPalActive += 1;
-                        continue;
+                        const membershipExpiry = user.membershipEndDate ?? user.membershipExpiresAt;
+                        if (isPastForceDowngradeWindow(membershipExpiry, now)) {
+                            const cancelRes = await paypalCtr.cancelSubscription({}, {
+                                subscriptionId,
+                                reason: 'Renewal payment was not completed within 48 hours after membership expiry.',
+                            });
+
+                            if (cancelRes.success) {
+                                summary.subscriptionsCancelled += 1;
+                            }
+                            else {
+                                summary.skippedPayPalApiFailure += 1;
+                                await context.logger.warn({
+                                    event: 'membership_paypal_cancel_failed_after_48h',
+                                    message: 'Could not cancel PayPal subscription after unpaid membership exceeded the 48-hour limit; user will still be downgraded.',
+                                    meta: { userId: user.id, subscriptionId, message: cancelRes.message },
+                                });
+                            }
+
+                            summary.forcedDowngradeAfterGrace += 1;
+                        }
+                        else {
+                            summary.skippedPayPalActive += 1;
+                            continue;
+                        }
                     }
                 }
                 catch (error) {

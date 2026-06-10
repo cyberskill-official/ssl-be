@@ -15,6 +15,7 @@ import { E_PaymentProvider } from '#modules/payment/payment-transaction/payment-
 import { UserModel } from '#modules/user/user.model.js';
 
 const ACTIVE_RENEWAL_DELAY_HOLD_REFRESH_BUFFER_MINUTES = 15;
+export const FORCE_DOWNGRADE_AFTER_UNPAID_MS = 48 * 60 * 60 * 1000;
 
 type T_MembershipAuditUser = Pick<
     I_User,
@@ -51,6 +52,22 @@ async function findMembershipHoldUser(userId: string): Promise<T_MembershipHoldU
         })
         .lean()
         .exec() as Promise<T_MembershipHoldUser | null>;
+}
+
+export function isPastForceDowngradeWindow(
+    referenceDate: Date | string | null | undefined,
+    now = new Date(),
+): boolean {
+    if (!referenceDate) {
+        return false;
+    }
+
+    const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+    if (Number.isNaN(date.getTime())) {
+        return false;
+    }
+
+    return now.getTime() - date.getTime() >= FORCE_DOWNGRADE_AFTER_UNPAID_MS;
 }
 
 export async function downgradeUserToFree(args: {

@@ -31,7 +31,7 @@ import { getEnv } from '#shared/env/index.js';
 import type { I_CronTaskContext } from '../cron.type.js';
 
 import { runWithConcurrency } from '../cron.util.js';
-import { downgradeUserToFree, extendActivePayPalRenewalDelayHold } from './membership.helper.js';
+import { downgradeUserToFree, extendActivePayPalRenewalDelayHold, isPastForceDowngradeWindow } from './membership.helper.js';
 
 const env = getEnv();
 const context = {} as I_Context;
@@ -216,6 +216,57 @@ async function reconcileSubscription(
         const failedPaymentsCount = getFailedPaymentsCount(paypalSubscription);
 
         if (activeWithoutPaymentAfterGrace) {
+            if (isPastForceDowngradeWindow(graceUntil)) {
+                const cancelRes = await paypalCtr.cancelSubscription(context, {
+                    subscriptionId,
+                    reason: 'Renewal payment was not completed within 48 hours after the access grace window.',
+                });
+
+                if (cancelRes.success) {
+                    await paymentSubscriptionCtr.markCancelled(subscriptionId);
+                }
+                else {
+                    await paymentSubscriptionCtr.markActionRequired(
+                        subscriptionId,
+                        cancelRes.message ?? 'Failed to cancel unpaid PayPal subscription after the 48-hour grace limit.',
+                    );
+                    increment(summary, 'actionRequired');
+                }
+
+                if (localSubscription.userId) {
+                    const downgraded = await downgradeUserToFree({
+                        userId: localSubscription.userId,
+                        providerSubscriptionId: subscriptionId,
+                        orderId: localSubscription.orderId,
+                        paymentRequestId: localSubscription.paymentRequestId,
+                        reason: E_MembershipEntitlementChangeReason.DOWNGRADE_EXPIRED,
+                        metadata: {
+                            providerStatus,
+                            graceUntil: graceUntil?.toISOString(),
+                            source: 'payment-subscription-reconciliation',
+                            billingPeriodEndAt: periodEnd?.toISOString(),
+                            forcedAfterHours: 48,
+                            cancelSucceeded: cancelRes.success,
+                        },
+                    });
+                    if (downgraded) {
+                        increment(summary, 'downgraded');
+                    }
+                }
+
+                await cronContext.logger.warn({
+                    event: 'subscription_forced_downgrade_after_48h',
+                    message: 'PayPal subscription was forced to cancel and user was downgraded after unpaid renewal exceeded 48 hours.',
+                    meta: {
+                        subscriptionId,
+                        userId: localSubscription.userId,
+                        graceUntil: graceUntil?.toISOString(),
+                        cancelSucceeded: cancelRes.success,
+                    },
+                });
+                return;
+            }
+
             const holdUntil = localSubscription.userId && failedPaymentsCount <= 0
                 ? await extendActivePayPalRenewalDelayHold({
                         userId: localSubscription.userId,
