@@ -377,6 +377,21 @@ export const paymentSubscriptionCtr = {
         ).exec();
     },
 
+    async markCancelled(providerSubscriptionId: string): Promise<void> {
+        await PaymentSubscriptionModel.updateOne(
+            { provider: E_PaymentProvider.PAYPAL, providerSubscriptionId },
+            {
+                $set: {
+                    status: E_PaymentSubscriptionStatus.CANCELLED,
+                    providerStatus: 'CANCELLED',
+                    lastCheckedAt: new Date(),
+                    nextReconcileAt: addMinutes(new Date(), 60),
+                },
+                $unset: { lastError: '' },
+            },
+        ).exec();
+    },
+
     async scheduleReconciliationNow(providerSubscriptionId: string): Promise<void> {
         await PaymentSubscriptionModel.updateOne(
             { provider: E_PaymentProvider.PAYPAL, providerSubscriptionId },
