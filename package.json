@@ -41,6 +41,7 @@
         "@graphql-tools/utils": "11.0.0",
         "@paypal/paypal-server-sdk": "2.2.0",
         "@sendgrid/mail": "8.1.6",
+        "@sindresorhus/slugify": "3.0.0",
         "axios": "1.13.6",
         "bcryptjs": "3.0.3",
         "body-parser": "2.2.2",

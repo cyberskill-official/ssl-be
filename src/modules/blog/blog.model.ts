@@ -3,12 +3,25 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
-import { SeoSchema } from '#modules/seo/index.js';
+import { SeoSchema } from '#modules/seo/seo.schema.js';
 import { SocialLinkSchema } from '#modules/setting/index.js';
 
 import type { I_Blog } from './blog.type.js';
 
 import { E_BlogCategory, E_BlogType } from './blog.type.js';
+
+export const FaqSchema = mongo.createSchema({
+    standalone: true,
+    mongoose,
+    schema: {
+        question: {
+            type: Object,
+        },
+        answer: {
+            type: Object,
+        },
+    },
+});
 
 export const BlogModel = mongo.createModel<I_Blog>({
     mongoose,
@@ -23,16 +36,12 @@ export const BlogModel = mongo.createModel<I_Blog>({
             },
         },
         slug: {
-            type: String,
+            type: Object,
             require: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter the slug.',
-                },
-                {
-                    validator: mongo.validator.isUnique(['slug']),
-                    message: 'Slug is duplicated.',
                 },
             ],
         },
@@ -136,6 +145,9 @@ export const BlogModel = mongo.createModel<I_Blog>({
         seo: {
             type: SeoSchema,
         },
+        faqs: {
+            type: [FaqSchema],
+        },
         isActive: {
             type: Boolean,
             default: false,
@@ -150,6 +162,10 @@ export const BlogModel = mongo.createModel<I_Blog>({
         },
         iframe: {
             type: String,
+        },
+        translationSnapshot: {
+            type: Object,
+            default: {},
         },
     },
     virtuals: [
@@ -194,19 +210,22 @@ export const BlogModel = mongo.createModel<I_Blog>({
 });
 
 async function createMiddleware(this: I_Blog) {
+    if (!this.isNew)
+        return;
     try {
         const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 
+        const titleEn = typeof this.title === 'string' ? this.title : (this.title as any)?.en;
         const newSlug = await mongooseCtr.createSlug({
             field: 'title',
-            from: this,
+            from: { title: titleEn } as any,
         });
 
         if (!newSlug.success) {
             throw new Error(newSlug.message);
         }
 
-        this.slug = newSlug.result;
+        this.slug = { en: newSlug.result };
     }
     catch (error) {
         if (error instanceof Error) {
@@ -214,7 +233,7 @@ async function createMiddleware(this: I_Blog) {
         }
         throw new Error(String(error));
     }
-};
+}
 
 async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>) {
     try {
@@ -227,23 +246,26 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Blog>) {
             throw new Error('Page not found');
         }
 
+        const oldTitleEn = typeof oldData.title === 'string' ? oldData.title : (oldData.title as any)?.en;
+        const newTitleEn = typeof newData.title === 'string' ? newData.title : (newData.title as any)?.en;
+
         const shouldGenerateSlug = !!(
-            newData.title
-            && oldData.title
-            && newData.title !== oldData.title
+            newTitleEn
+            && oldTitleEn
+            && newTitleEn !== oldTitleEn
         );
 
         if (shouldGenerateSlug) {
             const newSlug = await mongooseCtr.createSlug({
                 field: 'title',
-                from: newData,
+                from: { title: newTitleEn } as any,
             });
 
             if (!newSlug.success) {
                 throw new Error(newSlug.message);
             }
 
-            newData.slug = newSlug.result;
+            newData.slug = { en: newSlug.result };
         }
     }
     catch (error) {

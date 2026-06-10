@@ -504,7 +504,6 @@ export const UserModel = mongo.createModel<I_User>({
                 },
                 validate.password.minLength,
                 validate.password.alphanumeric,
-                validate.password.specialChar,
             ],
         },
         rolesIds: {

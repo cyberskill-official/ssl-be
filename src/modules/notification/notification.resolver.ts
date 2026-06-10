@@ -22,6 +22,7 @@ import type {
 } from './notification.type.js';
 
 import { notificationCtr } from './notification.controller.js';
+import { NotificationModel } from './notification.model.js';
 
 function getViewerCacheId(context: I_Context): string {
     return context.req?.session?.user?.id ?? 'guest';
@@ -96,7 +97,10 @@ const notificationResolver = {
         },
         notificationRead: {
             subscribe: (parent: any, args: any, context: any, info: any) => notificationCtr.subscribeToNotificationRead()(parent, args, context, info),
-            resolve: (payload: I_NotificationReadPayload) => payload,
+            resolve: async (payload: I_NotificationReadPayload) => {
+                const notification = await NotificationModel.findOne({ id: payload.notificationId }).lean();
+                return notification || payload;
+            },
         },
         notificationDismissed: {
             subscribe: (parent: any, args: any, context: any, info: any) => notificationCtr.subscribeToNotificationDismissed()(parent, args, context, info),

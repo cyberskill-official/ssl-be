@@ -113,6 +113,8 @@ export function getEnv(): I_Environment {
         PAYPAL_WEBHOOK_ID: str({ default: '' }),
         EMAIL_LOGO_URL: str({ default: '' }),
         DISABLE_OTP_ENFORCEMENT: str({ choices: ['true', 'false'], default: 'true' }),
+        OPENAI_API_KEY: str({ default: '' }),
+        OPENAI_MODEL: str({ default: '' }),
     });
 
     return {

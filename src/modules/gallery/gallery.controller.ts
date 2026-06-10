@@ -15,6 +15,7 @@ import { MongooseController } from '@cyberskill/shared/node/mongo';
 import { isValidObjectId, Types } from 'mongoose';
 
 import type { I_Location } from '#modules/location/location/location.type.js';
+import type { I_User } from '#modules/user/index.js';
 import type { I_Context } from '#shared/typescript/index.js';
 
 import { E_AgeVerifyStatus, E_RegisterStep } from '#modules/authn/authn.type.js';
@@ -26,7 +27,7 @@ import { E_LikeEntityType, likeCtr } from '#modules/like/index.js';
 import { LocationModel } from '#modules/location/location/location.model.js';
 import { E_LocationEntityType } from '#modules/location/location/location.type.js';
 import { E_ModerationMediaStatus } from '#modules/moderation/moderation-media/moderation-media.type.js';
-import { userCtr } from '#modules/user/index.js';
+import { userCtr, UserModel } from '#modules/user/index.js';
 import { getViewerMediaContext, hydrateUserMedia } from '#modules/user/user.validate.js';
 import { viewCtr } from '#modules/view/index.js';
 import { E_ViewEntityType } from '#modules/view/view.type.js';
@@ -57,6 +58,14 @@ type CreateGalleryInput = I_Input_CreateOne<I_Input_CreateGallery> & {
     bypassAgeVerification?: boolean;
 };
 
+type GalleryPagingOptions = I_Input_FindPaging<I_Input_QueryGallery>['options'];
+type UploaderAgeVerificationUser = Pick<I_User, 'ageVerify' | 'id' | 'roles'>;
+
+const staffUploaderRoleNames = new Set<string>([
+    ...Object.values(E_Role_Staff),
+    E_Role.STAFF,
+]);
+
 function buildEmptyGalleryPage(page: number, limit: number): T_PaginateResult<I_Gallery> {
     return {
         docs: [],
@@ -71,6 +80,124 @@ function buildEmptyGalleryPage(page: number, limit: number): T_PaginateResult<I_
         nextPage: null,
         offset: 0,
     };
+}
+
+function hasSpecificGalleryFilter(
+    filter?: T_QueryFilter<I_Input_QueryGallery>,
+    options?: GalleryPagingOptions,
+): boolean {
+    const filterRecord = (filter || {}) as Record<string, unknown>;
+    const optionsRecord = (options || {}) as Record<string, unknown>;
+    const hasValue = (value: unknown): boolean => {
+        if (Array.isArray(value))
+            return value.length > 0;
+        if (typeof value === 'string')
+            return value.trim().length > 0;
+        if (value && typeof value === 'object')
+            return Object.keys(value).length > 0;
+        return value !== undefined && value !== null;
+    };
+
+    const hasSearch
+        = typeof optionsRecord['search'] === 'string'
+            && optionsRecord['search'].trim().length > 0;
+
+    return Boolean(
+        hasValue(filterRecord['id'])
+        || hasValue(filterRecord['_id'])
+        || hasValue(filterRecord['moderationMediaId'])
+        || hasValue(filterRecord['uploadedById'])
+        || hasValue(filterRecord['uploadedByIds'])
+        || hasSearch,
+    );
+}
+
+function shouldGuardBroadGalleryQuery(
+    filter?: T_QueryFilter<I_Input_QueryGallery>,
+    options?: GalleryPagingOptions,
+): boolean {
+    return options?.pagination === false && !hasSpecificGalleryFilter(filter, options);
+}
+
+function isUploaderAgeVerifiedFromUser(
+    uploader?: UploaderAgeVerificationUser | null,
+): boolean {
+    if (!uploader)
+        return false;
+
+    if (uploader.ageVerify?.status === E_AgeVerifyStatus.APPROVED)
+        return true;
+
+    return (uploader.roles || []).some(role =>
+        role?.name ? staffUploaderRoleNames.has(role.name) : false,
+    );
+}
+
+function hasPopulatedUploaderAgeVerification(
+    uploader?: I_User | null,
+): boolean {
+    return Boolean(
+        uploader
+        && Object.hasOwn(uploader, 'ageVerify')
+        && Array.isArray(uploader.roles),
+    );
+}
+
+async function buildUploaderAgeVerificationCache(
+    galleries: I_Gallery[],
+): Promise<Map<string, boolean>> {
+    const cache = new Map<string, boolean>();
+    const uploaderIdsToFetch = new Set<string>();
+
+    for (const gallery of galleries) {
+        const uploaderId = gallery.uploadedBy?.id ?? gallery.uploadedById;
+        if (!uploaderId || cache.has(uploaderId))
+            continue;
+
+        if (hasPopulatedUploaderAgeVerification(gallery.uploadedBy)) {
+            cache.set(
+                uploaderId,
+                isUploaderAgeVerifiedFromUser(gallery.uploadedBy),
+            );
+            continue;
+        }
+
+        uploaderIdsToFetch.add(uploaderId);
+    }
+
+    const missingUploaderIds = Array.from(uploaderIdsToFetch).filter(
+        uploaderId => !cache.has(uploaderId),
+    );
+
+    if (missingUploaderIds.length === 0)
+        return cache;
+
+    const uploaders = await UserModel.find({
+        id: { $in: missingUploaderIds },
+        isDel: { $ne: true },
+        isAdminBlocked: { $ne: true },
+    })
+        .select({ ageVerify: 1, id: 1, rolesIds: 1 })
+        .populate([{ path: 'roles', select: { id: 1, name: 1 } }])
+        .lean<I_User[]>()
+        .exec();
+
+    const resolvedUploaderIds = new Set<string>();
+    for (const uploader of uploaders) {
+        if (!uploader.id)
+            continue;
+
+        resolvedUploaderIds.add(uploader.id);
+        cache.set(uploader.id, isUploaderAgeVerifiedFromUser(uploader));
+    }
+
+    for (const uploaderId of missingUploaderIds) {
+        if (!resolvedUploaderIds.has(uploaderId)) {
+            cache.set(uploaderId, false);
+        }
+    }
+
+    return cache;
 }
 
 async function attachUploaderLocationsToGalleries(galleries: I_Gallery[]) {
@@ -460,6 +587,17 @@ export const galleryCtr = {
             delete modifiedFilter.uploadedByIds;
         }
 
+        if (shouldGuardBroadGalleryQuery(modifiedFilter, options)) {
+            return {
+                success: true,
+                message: 'No galleries found for broad unpaginated query.',
+                result: buildEmptyGalleryPage(
+                    Number(options?.page ?? 1),
+                    Number(options?.limit ?? 0),
+                ),
+            };
+        }
+
         const mongoFilter: Record<string, unknown> = { ...(modifiedFilter as Record<string, unknown>) };
         // Always hide deleted items
         mongoFilter['isDel'] = { $ne: true };
@@ -514,9 +652,6 @@ export const galleryCtr = {
 
         await attachUploaderProfileGalleriesToGalleries(galleries.result.docs);
 
-        // Check uploader age verification status for all galleries
-        const uploaderAgeVerificationCache = new Map<string, boolean>();
-
         const galleryDocs = (await Promise.all(
             galleries.result.docs.map(async (gallery) => {
                 if (isStaff || isAdmin) {
@@ -569,6 +704,7 @@ export const galleryCtr = {
             }),
         )).filter(({ shouldInclude }) => shouldInclude).map(({ gallery }) => gallery);
         const galleryIds = galleryDocs.map(g => g.id);
+        const uploaderAgeVerificationCache = await buildUploaderAgeVerificationCache(galleryDocs);
 
         // batch like/view
         const likeCountsMap = await likeCtr.getLikeCountsBatch(context, {

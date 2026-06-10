@@ -25,7 +25,7 @@ export enum E_DestinationAgeGroup {
 }
 
 export interface I_Hotel {
-    name?: string;
+    name?: I_LocalizedString;
     locationId?: string;
     location?: I_Location;
     url?: string;
@@ -35,8 +35,8 @@ export interface I_Hotel {
 
 export interface I_Destination extends I_GenericDocument {
     type?: E_DestinationType;
-    name?: string;
-    slug?: string;
+    name?: I_LocalizedString;
+    slug?: I_LocalizedString;
     websiteURL?: string;
     rating?: E_DestinationRating;
     images?: string[];
@@ -63,10 +63,15 @@ export interface I_Destination extends I_GenericDocument {
     highlightBar?: I_LocalizedString;
     highlightDance?: I_LocalizedString;
     seo?: I_Seo;
+    faqs?: Array<{
+        question: I_LocalizedString;
+        answer: I_LocalizedString;
+    }>;
     linkTo?: string;
     isActive?: boolean;
     createdById?: string;
     createdBy?: I_User;
+    translationSnapshot?: Record<string, any>;
 }
 
 export type T_Destination_Populate = 'createdBy';
@@ -77,7 +82,7 @@ export interface I_Input_QueryDestination extends Omit<I_Destination, T_Destinat
 
 export interface I_Input_CreateDestination extends Omit<I_Destination, T_Omit_Create | T_Destination_Populate> {
     type: E_DestinationType;
-    name: string;
+    name: I_LocalizedString;
     websiteURL: string;
     rating: E_DestinationRating;
     images: string[];

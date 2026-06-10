@@ -12,7 +12,7 @@ export const RatingSchema = mongo.createSchema<I_Rating>({
             default: 0,
         },
         reason: {
-            type: String,
+            type: Object,
         },
     },
 });

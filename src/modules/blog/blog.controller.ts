@@ -2,7 +2,7 @@ import type { I_Input_CreateOne, I_Input_DeleteOne, I_Input_FindOne, I_Input_Fin
 import type { I_Return } from '@cyberskill/shared/typescript';
 
 import { RESPONSE_STATUS } from '@cyberskill/shared/constant';
-import { throwError } from '@cyberskill/shared/node/log';
+import { log, throwError } from '@cyberskill/shared/node/log';
 import { MongooseController } from '@cyberskill/shared/node/mongo';
 
 import type { I_Context } from '#shared/typescript/index.js';
@@ -17,19 +17,272 @@ import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#m
 import { userCtr } from '#modules/user/index.js';
 import { getEnv } from '#shared/env/index.js';
 import { queryCacheService } from '#shared/redis/query-cache.service.js';
-import { getBlockedUserIds } from '#shared/util/index.js';
+import { E_SessionPortal } from '#shared/session/session.constant.js';
+import { getBlockedUserIds, localizeDocument } from '#shared/util/index.js';
 
 import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog } from './blog.type.js';
 
+import { BlogTranslationModel } from '../translation/blog-translation.model.js';
+import { translationQueue } from '../translation/translation.queue.js';
 import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/u;
+
+function getEn(val: unknown): string {
+    if (typeof val === 'object' && val)
+        return (val as Record<string, string>)['en'] || '';
+    return typeof val === 'string' ? val : '';
+}
+
+/**
+ * Merge external translations (stored in BlogTranslation collection, one
+ * document per language) back into the blog document before localization.
+ */
+async function mergeExternalTranslations(doc: Record<string, any>): Promise<void> {
+    const uuidId = doc['id'];
+    const objectId = doc['_id']?.toString();
+    // BlogTranslationModel may have been keyed with either the UUID (id field)
+    // or ObjectId hex string (_id field). Query both to avoid missing translations.
+    const blogIdCandidates = [uuidId, objectId].filter(Boolean) as string[];
+    if (!blogIdCandidates.length)
+        return;
+
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }).lean();
+    if (!extDocs.length)
+        return;
+
+    // Merge each language's translations into the doc
+    for (const ext of extDocs) {
+        const lang = ext.lang;
+        const t = ext.translations as Record<string, any>;
+        if (!t)
+            continue;
+
+        // Merge top-level multilingual fields
+        const topFields = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'];
+        for (const field of topFields) {
+            if (t[field] !== undefined && t[field] !== null) {
+                if (!doc[field] || typeof doc[field] !== 'object') {
+                    // Preserve the English (en) original before converting to multilingual object
+                    const enOriginal = typeof doc[field] === 'string' ? doc[field] : undefined;
+                    doc[field] = {};
+                    if (enOriginal)
+                        doc[field]['en'] = enOriginal;
+                }
+                doc[field][lang] = t[field];
+            }
+        }
+
+        // Merge nested SEO fields
+        if (t['seo']) {
+            if (!doc['seo'] || typeof doc['seo'] !== 'object') {
+                doc['seo'] = {};
+            }
+            const seoExt = t['seo'] as Record<string, any>;
+            for (const [seoField, val] of Object.entries(seoExt)) {
+                if (val !== undefined && val !== null) {
+                    if (!doc['seo'][seoField] || typeof doc['seo'][seoField] !== 'object') {
+                        doc['seo'][seoField] = {};
+                    }
+                    doc['seo'][seoField][lang] = val;
+                }
+            }
+        }
+
+        // Merge FAQ translations
+        if (t['faqs'] && Array.isArray(t['faqs'])) {
+            const faqArr = t['faqs'] as Array<Record<string, any>>;
+            if (!doc['faqs'] || !Array.isArray(doc['faqs'])) {
+                doc['faqs'] = [];
+            }
+            for (let i = 0; i < faqArr.length; i++) {
+                const faqExt = faqArr[i];
+                if (!faqExt)
+                    continue;
+                if (!doc['faqs'][i]) {
+                    doc['faqs'][i] = { question: {}, answer: {} };
+                }
+                for (const subField of ['question', 'answer']) {
+                    if (faqExt[subField] !== undefined && faqExt[subField] !== null) {
+                        if (!doc['faqs'][i][subField] || typeof doc['faqs'][i][subField] !== 'object') {
+                            doc['faqs'][i][subField] = {};
+                        }
+                        doc['faqs'][i][subField][lang] = faqExt[subField];
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Batch-merge external translations for multiple blog documents.
+ * Used by getBlogs to avoid N+1 queries.
+ */
+async function batchMergeExternalTranslations(docs: Record<string, any>[]): Promise<void> {
+    if (docs.length === 0)
+        return;
+
+    // Collect both UUID (id) and ObjectId (_id) candidates for each doc
+    const blogIdCandidates: string[] = [];
+    for (const d of docs) {
+        const uuidId = d['id'];
+        const objectId = d['_id']?.toString();
+        if (uuidId)
+            blogIdCandidates.push(uuidId);
+        if (objectId && objectId !== uuidId)
+            blogIdCandidates.push(objectId);
+    }
+    if (blogIdCandidates.length === 0)
+        return;
+
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }).lean();
+    // Group by blogId: { blogId -> { lang -> translations } }
+    const extMap = new Map<string, Record<string, Record<string, any>>>();
+    for (const ext of extDocs) {
+        if (!extMap.has(ext.blogId)) {
+            extMap.set(ext.blogId, {});
+        }
+        extMap.get(ext.blogId)![ext.lang] = ext.translations as Record<string, any>;
+    }
+
+    for (const doc of docs) {
+        const blogId = doc['id'] || doc['_id']?.toString();
+        if (!blogId)
+            continue;
+        const langMap = extMap.get(blogId);
+        if (!langMap)
+            continue;
+
+        // Merge each language's translations
+        for (const [lang, t] of Object.entries(langMap)) {
+            if (!t)
+                continue;
+
+            const topFields = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'];
+            for (const field of topFields) {
+                if (t[field] !== undefined && t[field] !== null) {
+                    if (!doc[field] || typeof doc[field] !== 'object') {
+                        // Preserve the English (en) original before converting to multilingual object
+                        const enOriginal = typeof doc[field] === 'string' ? doc[field] : undefined;
+                        doc[field] = {};
+                        if (enOriginal)
+                            doc[field]['en'] = enOriginal;
+                    }
+                    doc[field][lang] = t[field];
+                }
+            }
+
+            if (t['seo']) {
+                if (!doc['seo'] || typeof doc['seo'] !== 'object') {
+                    const enSeo = typeof doc['seo'] === 'object' ? doc['seo'] : undefined;
+                    doc['seo'] = enSeo ? { ...enSeo } : {};
+                }
+                const seoExt = t['seo'] as Record<string, any>;
+                for (const [seoField, val] of Object.entries(seoExt)) {
+                    if (val !== undefined && val !== null) {
+                        if (!doc['seo'][seoField] || typeof doc['seo'][seoField] !== 'object') {
+                            const enSeoField = typeof doc['seo'][seoField] === 'string' ? doc['seo'][seoField] : undefined;
+                            doc['seo'][seoField] = {};
+                            if (enSeoField)
+                                doc['seo'][seoField]['en'] = enSeoField;
+                        }
+                        doc['seo'][seoField][lang] = val;
+                    }
+                }
+            }
+
+            if (t['faqs'] && Array.isArray(t['faqs'])) {
+                const faqArr = t['faqs'] as Array<Record<string, any>>;
+                if (!doc['faqs'] || !Array.isArray(doc['faqs'])) {
+                    doc['faqs'] = [];
+                }
+                for (let i = 0; i < faqArr.length; i++) {
+                    const faqExt = faqArr[i];
+                    if (!faqExt)
+                        continue;
+                    if (!doc['faqs'][i]) {
+                        doc['faqs'][i] = { question: {}, answer: {} };
+                    }
+                    for (const subField of ['question', 'answer']) {
+                        if (faqExt[subField] !== undefined && faqExt[subField] !== null) {
+                            if (!doc['faqs'][i][subField] || typeof doc['faqs'][i][subField] !== 'object') {
+                                doc['faqs'][i][subField] = {};
+                            }
+                            doc['faqs'][i][subField][lang] = faqExt[subField];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
+const MULTILINGUAL_FIELDS = new Set(['slug', 'title']);
+
+function normalizeMultilingualFilter(filter: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!filter)
+        return {};
+    const normalized: Record<string, unknown> = {};
+    const orConditions: Record<string, unknown>[] = [];
+
+    for (const [key, value] of Object.entries(filter)) {
+        if (MULTILINGUAL_FIELDS.has(key) && typeof value === 'string') {
+            // Match both multilingual objects AND plain strings (pre-translation fallback)
+            orConditions.push({ [key]: value });
+            orConditions.push(
+                ...MULTILINGUAL_LOCALES.map(locale => ({
+                    [`${key}.${locale}`]: value,
+                })),
+            );
+        }
+        else {
+            normalized[key] = value;
+        }
+    }
+
+    if (orConditions.length > 0) {
+        const existingOr = Array.isArray(filter['$or']) ? filter['$or'] as Record<string, unknown>[] : [];
+        normalized['$or'] = [...existingOr, ...orConditions];
+    }
+
+    return normalized;
+}
+
 const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
-        const blogFound = await mongooseCtr.findOne(filter, projection, options, populate);
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        let blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
+
+        // Fallback: if slug-based lookup failed, the blog may have its translations
+        // (including slug) stored externally in BlogTranslationModel. Search there
+        // and retry with the blogId. This is a safety net for blogs translated before
+        // inline slug/title backfill was added to saveTranslationsExternal.
+        if (!blogFound.success && typeof (filter as Record<string, unknown> | undefined)?.['slug'] === 'string') {
+            const slugValue = (filter as Record<string, string>)['slug']!;
+            const extDoc = await BlogTranslationModel.findOne({
+                'translations.slug': slugValue,
+            }).lean();
+            if (extDoc) {
+                log.info(`[BlogController] Blog found via external slug translation lookup: "${slugValue}" → ${extDoc.blogId}`);
+                // Use blogId + the original filter conditions (except the slug $or which already failed)
+                const cleanFilter: Record<string, unknown> = {};
+                for (const [key, value] of Object.entries(normalizedFilter)) {
+                    if (key !== '$or')
+                        cleanFilter[key] = value;
+                }
+                blogFound = await mongooseCtr.findOne(
+                    { id: extDoc.blogId, ...cleanFilter },
+                    projection,
+                    options,
+                    populate,
+                );
+            }
+        }
 
         if (!blogFound.success) {
             return blogFound;
@@ -41,10 +294,27 @@ export const blogCtr = {
                 blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' } });
             }
         }
+
+        // Merge external translations (for oversized blogs) before localization
+        await mergeExternalTranslations(blogFound.result as any);
+
+        // Preserve raw multilingual slug for SEO (hreflang, canonicalUrl) before localization
+        const rawSlug = (blogFound.result as any).slug;
+        const rawLocale = _context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            blogFound.result = localizeDocument(blogFound.result, locale);
+        }
+        // Re-attach raw slug for SEO resolvers to generate per-locale URLs
+        if (rawSlug && typeof rawSlug === 'object') {
+            (blogFound.result as any)._rawSlug = rawSlug;
+        }
+
         return blogFound;
     },
     getBlogs: async (context: I_Context, { filter, options }: I_Input_FindPaging<I_Input_QueryBlog>): Promise<I_Return<T_PaginateResult<I_Blog>>> => {
-        const effectiveFilter: Record<string, unknown> = { ...(filter ?? {}) };
+        const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
+        const effectiveFilter: Record<string, unknown> = { ...(normalizedFilter ?? {}) };
         const efAny = effectiveFilter as Record<string, any>;
         if (efAny['isDel'] === undefined) {
             efAny['isDel'] = { $ne: true };
@@ -54,6 +324,25 @@ export const blogCtr = {
 
         if (!blogs.success)
             return blogs;
+
+        const isAdmin = context.req?.sessionPortal === E_SessionPortal.ADMIN;
+
+        // ADMIN fast path: skip blocking, skip signed URLs (they expire), skip translation merge
+        if (isAdmin) {
+            blogs.result.docs = blogs.result.docs.map((blog) => {
+                // Still sign image URLs so the admin panel can display them
+                const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+                for (const field of imageFields) {
+                    if (blog[field]) {
+                        blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
+                    }
+                }
+                return blog;
+            });
+            return blogs;
+        }
+
+        // --- User path below (all the heavy operations) ---
 
         // Get blocked user IDs for bidirectional blocking
         const blockedUserIds = await getBlockedUserIds(context);
@@ -78,6 +367,22 @@ export const blogCtr = {
 
             return blog;
         });
+
+        // Merge external translations (for oversized blogs) before localization
+        await batchMergeExternalTranslations(filteredDocs as any);
+
+        const rawLocale = context.req?.headers?.['x-accept-language'];
+        const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
+        if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+            filteredDocs = filteredDocs.map((doc) => {
+                const rawSlug = (doc as any).slug;
+                const localized = localizeDocument(doc, locale);
+                if (rawSlug && typeof rawSlug === 'object') {
+                    (localized as any)._rawSlug = rawSlug;
+                }
+                return localized;
+            });
+        }
 
         // Update result with filtered docs (keep original pagination meta if present)
         blogs.result.docs = filteredDocs;
@@ -157,7 +462,7 @@ export const blogCtr = {
                             actorId: authorId,
                             presentation: {
                                 // Use slug when available so the client can navigate without hitting 404 pages.
-                                redirect: { kind: redirectKind, id: blogResult.result.slug, url: redirectUrl },
+                                redirect: { kind: redirectKind, id: getEn(blogResult.result.slug), url: redirectUrl },
                                 actor: {
                                     username: currentUser.username,
                                     accountType: currentUser.accountType,
@@ -173,6 +478,15 @@ export const blogCtr = {
             }
         }
         catch { }
+
+        // Trigger background translation
+        if (blogResult.success && blogResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: blogResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+
         await queryCacheService.bumpVersion('blog');
         return blogResult;
     },
@@ -280,11 +594,45 @@ export const blogCtr = {
             throwError({ message: 'Podcast requires an uploaded file or an accepted embed URL.', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const result = await mongooseCtr.updateOne(filter, update, options);
-        if (result.success) {
-            await queryCacheService.bumpVersion('blog');
+        const getLocalizedValue = (val: unknown): string => {
+            if (typeof val === 'object' && val !== null)
+                return (val as Record<string, string>)['en'] ?? (val as Record<string, string>)['fr'] ?? (val as Record<string, string>)['de'] ?? (val as Record<string, string>)['da'] ?? '';
+            return typeof val === 'string' ? val : '';
+        };
+
+        const requiredLocalizedFields: Array<{ field: string; label: string }> = [
+            { field: 'title', label: 'title' },
+            { field: 'contentHeadline', label: 'content headline' },
+            { field: 'contentSubHeadline', label: 'content sub headline' },
+            { field: 'content', label: 'content' },
+        ];
+
+        for (const { field, label } of requiredLocalizedFields) {
+            if (Object.hasOwn(update, field) && !getLocalizedValue((update as Record<string, unknown>)[field]).trim()) {
+                throwError({ message: `Blog ${label} cannot be empty`, status: RESPONSE_STATUS.BAD_REQUEST });
+            }
         }
-        return result;
+
+        if (Object.hasOwn(update, 'featuredImage') && !(update as Record<string, unknown>)['featuredImage']) {
+            throwError({ message: 'Blog featured image cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'type') && !(update as Record<string, unknown>)['type']) {
+            throwError({ message: 'Blog type cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        if (Object.hasOwn(update, 'category') && !(update as Record<string, unknown>)['category']) {
+            throwError({ message: 'Blog category cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
+        }
+
+        const updateResult = await mongooseCtr.updateOne(filter, update, options);
+        if (updateResult.success && updateResult.result?.id) {
+            translationQueue.add({
+                type: 'blog',
+                id: updateResult.result.id,
+            }).catch(e => log.error('[BlogController] Failed to add translation job to queue:', e));
+        }
+        return updateResult;
     },
     deleteBlog: async (context: I_Context, { filter, options }: I_Input_DeleteOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const blogFound = await blogCtr.getBlog(context, { filter, options });

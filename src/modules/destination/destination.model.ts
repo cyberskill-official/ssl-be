@@ -3,8 +3,9 @@ import type { T_QueryWithHelpers } from '@cyberskill/shared/node/mongo';
 import { mongo, MongooseController } from '@cyberskill/shared/node/mongo';
 import mongoose from 'mongoose';
 
+import { FaqSchema } from '#modules/blog/blog.model.js';
 import { RatingSchema } from '#modules/rating/index.js';
-import { SeoSchema } from '#modules/seo/index.js';
+import { SeoSchema } from '#modules/seo/seo.schema.js';
 
 import type { I_Destination, I_Hotel } from './destination.type.js';
 
@@ -15,7 +16,7 @@ export const HotelSchema = mongo.createSchema<I_Hotel>({
     mongoose,
     schema: {
         name: {
-            type: String,
+            type: Object,
         },
         locationId: {
             type: String,
@@ -59,7 +60,7 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             ],
         },
         name: {
-            type: String,
+            type: Object,
             required: true,
             validate: [
                 {
@@ -69,16 +70,12 @@ export const DestinationModel = mongo.createModel<I_Destination>({
             ],
         },
         slug: {
-            type: String,
+            type: Object,
             require: true,
             validate: [
                 {
                     validator: mongo.validator.isRequired(),
                     message: 'Please enter the slug.',
-                },
-                {
-                    validator: mongo.validator.isUnique(['slug']),
-                    message: 'Slug is duplicated.',
                 },
             ],
         },
@@ -199,6 +196,9 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         seo: {
             type: SeoSchema,
         },
+        faqs: {
+            type: [FaqSchema],
+        },
         linkTo: {
             type: String,
         },
@@ -208,6 +208,10 @@ export const DestinationModel = mongo.createModel<I_Destination>({
         },
         createdById: {
             type: String,
+        },
+        translationSnapshot: {
+            type: Object,
+            default: {},
         },
     },
     virtuals: [
@@ -243,19 +247,22 @@ export const DestinationModel = mongo.createModel<I_Destination>({
 });
 
 async function createMiddleware(this: I_Destination) {
+    if (!this.isNew)
+        return;
     try {
         const mongooseCtr = new MongooseController<I_Destination>(DestinationModel);
 
+        const nameValue = typeof this.name === 'object' && this.name !== null ? ((this.name as Record<string, string>)['en'] || '') : (this.name || '');
         const newSlug = await mongooseCtr.createSlug({
             field: 'name',
-            from: this,
+            from: { name: nameValue } as any,
         });
 
         if (!newSlug.success) {
             throw new Error(newSlug.message);
         }
 
-        this.slug = newSlug.result;
+        this.slug = { en: newSlug.result };
     }
     catch (error) {
         if (error instanceof Error) {
@@ -276,23 +283,21 @@ async function updateMiddleware(this: T_QueryWithHelpers<I_Destination>) {
             throw new Error('Page not found');
         }
 
-        const shouldGenerateSlug = !!(
-            newData.name
-            && oldData.name
-            && newData.name !== oldData.name
-        );
+        const newNameEn = typeof newData.name === 'object' && newData.name !== null ? ((newData.name as Record<string, string>)['en'] || '') : (newData.name || '');
+        const oldNameEn = typeof oldData.name === 'object' && oldData.name !== null ? ((oldData.name as Record<string, string>)['en'] || '') : (oldData.name || '');
+        const shouldGenerateSlug = !!(newNameEn && oldNameEn && newNameEn !== oldNameEn);
 
         if (shouldGenerateSlug) {
             const newSlug = await mongooseCtr.createSlug({
                 field: 'name',
-                from: newData,
+                from: { name: newNameEn } as any,
             });
 
             if (!newSlug.success) {
                 throw new Error(newSlug.message);
             }
 
-            newData.slug = newSlug.result;
+            newData.slug = { en: newSlug.result };
         }
     }
     catch (error) {

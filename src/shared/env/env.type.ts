@@ -65,4 +65,6 @@ export interface I_Environment {
     PAYMENT_REDIRECT_URL: string;
     PAYPAL_WEBHOOK_ID: string;
     DISABLE_OTP_ENFORCEMENT: string;
+    OPENAI_API_KEY: string;
+    OPENAI_MODEL: string;
 }
