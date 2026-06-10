@@ -332,6 +332,25 @@ export const blogCtr = {
         if (!blogs.success)
             return blogs;
 
+        const isAdmin = context.req?.sessionPortal === E_SessionPortal.ADMIN;
+
+        // ADMIN fast path: skip blocking, skip signed URLs (they expire), skip translation merge
+        if (isAdmin) {
+            blogs.result.docs = blogs.result.docs.map((blog) => {
+                // Still sign image URLs so the admin panel can display them
+                const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+                for (const field of imageFields) {
+                    if (blog[field]) {
+                        blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
+                    }
+                }
+                return blog;
+            });
+            return blogs;
+        }
+
+        // --- User path below (all the heavy operations) ---
+
         // Get blocked user IDs for bidirectional blocking
         const blockedUserIds = await getBlockedUserIds(context);
 
@@ -361,11 +380,11 @@ export const blogCtr = {
 
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        const isAdmin = context.req?.sessionPortal === E_SessionPortal.ADMIN;
-        if (isAdmin || locale) {
+        // Note: isAdmin fast-returns above (line ~338), so we only reach here for non-admin users
+        if (locale) {
             filteredDocs = filteredDocs.map((doc) => {
                 const rawSlug = (doc as any).slug;
-                const localized = localizeDocument(doc, isAdmin ? 'en' : locale!);
+                const localized = localizeDocument(doc, locale);
                 if (rawSlug && typeof rawSlug === 'object') {
                     (localized as any)._rawSlug = rawSlug;
                 }

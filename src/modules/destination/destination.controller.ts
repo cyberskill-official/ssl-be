@@ -114,8 +114,8 @@ export const destinationCtr = {
         let localizedDoc = doc;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        const isAdmin = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
-        if (isAdmin) {
+        const isAdminPortal = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdminPortal) {
             localizedDoc = localizeDocument(doc, 'en');
         }
         else if (locale) {

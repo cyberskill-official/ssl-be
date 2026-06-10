@@ -19,7 +19,8 @@ module.exports = {
         instances: isMain ? 'max' : 1,
         exec_mode: isMain ? 'cluster' : 'fork',
         exp_backoff_restart_delay: 100,
-        max_memory_restart: '1G',
+        max_memory_restart: '2G',
+        node_args: ['--max-old-space-size=2048'],
         env: {
             NODE_ENV: 'production',
             NODE_ENV_MODE: isMain ? 'production' : 'staging',
