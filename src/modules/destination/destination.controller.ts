@@ -121,6 +121,11 @@ export const destinationCtr = {
         else if (locale) {
             localizedDoc = localizeDocument(doc, locale);
         }
+        // Fix seo.keywords: object → string for GraphQL String type
+        if ((localizedDoc as any).seo?.keywords && typeof (localizedDoc as any).seo.keywords === 'object') {
+            const kw = (localizedDoc as any).seo.keywords;
+            (localizedDoc as any).seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
+        }
         if (rawSlug && typeof rawSlug === 'object') {
             (localizedDoc as any)._rawSlug = rawSlug;
         }
@@ -279,6 +284,11 @@ export const destinationCtr = {
                 const localized = localizeDocument(doc, isAdmin ? 'en' : locale!);
                 if (rawSlug && typeof rawSlug === 'object') {
                     (localized as any)._rawSlug = rawSlug;
+                }
+                // Fix seo.keywords: object → string for GraphQL String type
+                if ((localized as any).seo?.keywords && typeof (localized as any).seo.keywords === 'object') {
+                    const kw = (localized as any).seo.keywords;
+                    (localized as any).seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
                 }
                 return localized;
             });
