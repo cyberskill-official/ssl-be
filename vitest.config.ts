@@ -15,6 +15,7 @@ export default defineConfig({
         globals: true,
         environment: 'node',
         exclude: [...configDefaults.exclude, 'build/**'],
+        setupFiles: [resolve(rootDir, 'src/shared/test/vitest.setup.ts')],
         env: {
             NODE_ENV: 'development',
         },

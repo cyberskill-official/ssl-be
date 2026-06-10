@@ -302,9 +302,26 @@ export const blogCtr = {
         const rawSlug = (blogFound.result as any).slug;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        const isAdmin = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdmin) {
+            // Admin editors expect English strings, not multilingual objects.
+            // Localize to 'en' so title/slug/contentHeadline/contentSubHeadline/content
+            // render correctly in the blog edit form.
+            blogFound.result = localizeDocument(blogFound.result, 'en');
+        }
+        else if (locale) {
             blogFound.result = localizeDocument(blogFound.result, locale);
         }
+
+        // Fix seo.keywords: if it's still an object (e.g. {0:"...", en:"...", da:"..."}),
+        // extract the en/English string so GraphQL receives the expected String type.
+        // The "0" key (from array-to-object conversion) breaks isLocalizedStringObject detection.
+        const blogResult = blogFound.result as any;
+        if (blogResult.seo?.keywords && typeof blogResult.seo.keywords === 'object') {
+            const kw = blogResult.seo.keywords;
+            blogResult.seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
+        }
+
         // Re-attach raw slug for SEO resolvers to generate per-locale URLs
         if (rawSlug && typeof rawSlug === 'object') {
             (blogFound.result as any)._rawSlug = rawSlug;
@@ -336,6 +353,12 @@ export const blogCtr = {
                     if (blog[field]) {
                         blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
                     }
+                }
+                // Fix seo.keywords: object → string for GraphQL String type
+                const b = blog as any;
+                if (b.seo?.keywords && typeof b.seo.keywords === 'object') {
+                    const kw = b.seo.keywords;
+                    b.seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
                 }
                 return blog;
             });
@@ -373,12 +396,18 @@ export const blogCtr = {
 
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        // Note: isAdmin fast-returns above (line ~338), so we only reach here for non-admin users
+        if (locale) {
             filteredDocs = filteredDocs.map((doc) => {
                 const rawSlug = (doc as any).slug;
                 const localized = localizeDocument(doc, locale);
                 if (rawSlug && typeof rawSlug === 'object') {
                     (localized as any)._rawSlug = rawSlug;
+                }
+                // Fix seo.keywords: object → string
+                if ((localized as any).seo?.keywords && typeof (localized as any).seo.keywords === 'object') {
+                    const kw = (localized as any).seo.keywords;
+                    (localized as any).seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
                 }
                 return localized;
             });

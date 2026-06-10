@@ -26,6 +26,7 @@
         "vitest.config.ts",
         "**/*.test.ts",
         "**/*.spec.ts",
+        "src/shared/test/**/*.ts",
         "src/scripts"
     ]
 }

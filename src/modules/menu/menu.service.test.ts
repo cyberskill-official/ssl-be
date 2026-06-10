@@ -8,8 +8,6 @@ import type {
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { I_Context } from '#shared/typescript/index.js';
-
 import type { I_Input_CreateMenu, I_Input_QueryMenu, I_Input_UpdateMenu } from './menu.type.js';
 
 const menuRepositoryMock = vi.hoisted(() => ({
@@ -20,13 +18,22 @@ const menuRepositoryMock = vi.hoisted(() => ({
     deleteOne: vi.fn(),
 }));
 
+const queryCacheServiceMock = vi.hoisted(() => ({
+    getOrSet: vi.fn(async ({ loader }: { loader: () => Promise<unknown> }) => loader()),
+    bumpVersion: vi.fn(async () => undefined),
+}));
+
 vi.mock('./menu.repository.js', () => ({
     menuRepository: menuRepositoryMock,
 }));
 
+vi.mock('#shared/redis/query-cache.service.js', () => ({
+    queryCacheService: queryCacheServiceMock,
+}));
+
 const { menuService } = await import('./menu.service.js');
 
-const context = {} as I_Context;
+const context = {};
 
 describe('menuService', () => {
     beforeEach(() => {
@@ -44,7 +51,6 @@ describe('menuService', () => {
         };
         const listArgs: I_Input_FindPaging<I_Input_QueryMenu> = {
             filter: { parentId: 'parent-1' },
-            options: { sort: { order: 1 } },
         };
 
         menuRepositoryMock.findOne.mockResolvedValue(singleResult);
