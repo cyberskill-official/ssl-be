@@ -258,6 +258,12 @@ export const uploadCtr = {
                 if (thumbRes.success) {
                     thumbnailUrl = thumbRes.result!;
                 }
+                else {
+                    log.warn('[Upload] Video thumbnail generation skipped', {
+                        reason: thumbRes.message,
+                        uploadPath,
+                    });
+                }
             }
             catch (error) {
                 // swallow thumbnail errors; not critical for upload
