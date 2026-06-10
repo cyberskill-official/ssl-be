@@ -11,6 +11,7 @@ import { authnCtr } from '#modules/authn/index.js';
 
 import type { I_Input_CreateTag, I_Input_QueryTag, I_Input_UpdateTag, I_Tag } from './tag.type.js';
 
+import { prepareTagListQuery } from './tag-list-query.js';
 import { TagModel } from './tag.model.js';
 
 const mongooseCtr = new MongooseController<I_Tag>(TagModel);
@@ -49,10 +50,24 @@ export const tagCtr = {
                         isCustom: { $ne: true },
                     };
 
-            return mongooseCtr.findPaging(scopedFilter as any, options);
+            const preparedQuery = prepareTagListQuery(
+                scopedFilter as Record<string, unknown>,
+                options as Record<string, unknown> | undefined,
+            );
+            return mongooseCtr.findPaging(
+                preparedQuery.filter as Parameters<typeof mongooseCtr.findPaging>[0],
+                preparedQuery.options as Parameters<typeof mongooseCtr.findPaging>[1],
+            );
         }
 
-        return mongooseCtr.findPaging(filter, options);
+        const preparedQuery = prepareTagListQuery(
+            filter as Record<string, unknown>,
+            options as Record<string, unknown> | undefined,
+        );
+        return mongooseCtr.findPaging(
+            preparedQuery.filter as Parameters<typeof mongooseCtr.findPaging>[0],
+            preparedQuery.options as Parameters<typeof mongooseCtr.findPaging>[1],
+        );
     },
     createTag: async (
         context: I_Context,

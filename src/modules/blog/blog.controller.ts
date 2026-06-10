@@ -24,6 +24,8 @@ import type { I_Blog, I_Input_CreateBlog, I_Input_QueryBlog, I_Input_UpdateBlog 
 
 import { BlogTranslationModel } from '../translation/blog-translation.model.js';
 import { translationQueue } from '../translation/translation.queue.js';
+import { BLOG_MULTILINGUAL_LOCALES, prepareBlogListQuery } from './blog-list-query.js';
+import { prepareBlogLookupFilter } from './blog-query.js';
 import { normalizePodcastEmbedUrl } from './blog.embed.js';
 import { BlogModel } from './blog.model.js';
 
@@ -220,7 +222,6 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
     }
 }
 
-const MULTILINGUAL_LOCALES = ['en', 'da', 'de', 'fr', 'es', 'pl', 'it', 'pt', 'pt-BR', 'ko', 'hi'];
 const MULTILINGUAL_FIELDS = new Set(['slug', 'title']);
 
 function normalizeMultilingualFilter(filter: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -234,7 +235,7 @@ function normalizeMultilingualFilter(filter: Record<string, unknown> | undefined
             // Match both multilingual objects AND plain strings (pre-translation fallback)
             orConditions.push({ [key]: value });
             orConditions.push(
-                ...MULTILINGUAL_LOCALES.map(locale => ({
+                ...BLOG_MULTILINGUAL_LOCALES.map(locale => ({
                     [`${key}.${locale}`]: value,
                 })),
             );
@@ -256,7 +257,8 @@ const mongooseCtr = new MongooseController<I_Blog>(BlogModel);
 export const blogCtr = {
     getBlog: async (_context: I_Context, { filter, projection, options, populate }: I_Input_FindOne<I_Input_QueryBlog>): Promise<I_Return<I_Blog>> => {
         const normalizedFilter = normalizeMultilingualFilter(filter as Record<string, unknown> | undefined);
-        let blogFound = await mongooseCtr.findOne(normalizedFilter, projection, options, populate);
+        const lookupFilter = prepareBlogLookupFilter(normalizedFilter);
+        let blogFound = await mongooseCtr.findOne(lookupFilter, projection, options, populate);
 
         // Fallback: if slug-based lookup failed, the blog may have its translations
         // (including slug) stored externally in BlogTranslationModel. Search there
@@ -337,7 +339,14 @@ export const blogCtr = {
             efAny['isDel'] = { $ne: true };
         }
 
-        const blogs = await mongooseCtr.findPaging(effectiveFilter, options);
+        const preparedQuery = prepareBlogListQuery(
+            effectiveFilter,
+            options as Record<string, unknown> | undefined,
+        );
+        const blogs = await mongooseCtr.findPaging(
+            preparedQuery.filter as Parameters<typeof mongooseCtr.findPaging>[0],
+            preparedQuery.options as Parameters<typeof mongooseCtr.findPaging>[1],
+        );
 
         if (!blogs.success)
             return blogs;
@@ -654,7 +663,11 @@ export const blogCtr = {
             throwError({ message: 'Blog category cannot be empty', status: RESPONSE_STATUS.BAD_REQUEST });
         }
 
-        const updateResult = await mongooseCtr.updateOne(filter, update, options);
+        const updateResult = await mongooseCtr.updateOne(
+            prepareBlogLookupFilter(filter as Record<string, unknown>) as Parameters<typeof mongooseCtr.updateOne>[0],
+            update,
+            options,
+        );
         if (updateResult.success && updateResult.result?.id) {
             translationQueue.add({
                 type: 'blog',
@@ -679,7 +692,10 @@ export const blogCtr = {
             }
         }
 
-        const result = await mongooseCtr.deleteOne(filter, options);
+        const result = await mongooseCtr.deleteOne(
+            prepareBlogLookupFilter(filter as Record<string, unknown>) as Parameters<typeof mongooseCtr.deleteOne>[0],
+            options,
+        );
         if (result.success) {
             await queryCacheService.bumpVersion('blog');
         }
@@ -691,6 +707,10 @@ export const blogCtr = {
         if (!blogFound.success) {
             throwError({ message: 'Blog not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
-        return mongooseCtr.updateOne(filter, { $inc: { readCount: 1 } }, { new: true });
+        return mongooseCtr.updateOne(
+            prepareBlogLookupFilter(filter as Record<string, unknown>) as Parameters<typeof mongooseCtr.updateOne>[0],
+            { $inc: { readCount: 1 } },
+            { new: true },
+        );
     },
 };
