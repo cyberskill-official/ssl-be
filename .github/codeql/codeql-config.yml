@@ -1,0 +1,13 @@
+name: "Custom CodeQL Configuration"
+query-filters:
+- exclude:
+    id:
+      - js/weak-password-requirements
+      - js/insufficient-password-strength
+      - js/weak-cryptographic-algorithm
+paths:
+  - src
+paths-ignore:
+  - node_modules
+  - "**/*.test.ts"
+  - "**/*.spec.ts"
