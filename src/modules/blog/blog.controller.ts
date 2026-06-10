@@ -302,7 +302,14 @@ export const blogCtr = {
         const rawSlug = (blogFound.result as any).slug;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        const isAdmin = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdmin) {
+            // Admin editors expect English strings, not multilingual objects.
+            // Localize to 'en' so title/slug/contentHeadline/contentSubHeadline/content
+            // render correctly in the blog edit form.
+            blogFound.result = localizeDocument(blogFound.result, 'en');
+        }
+        else if (locale) {
             blogFound.result = localizeDocument(blogFound.result, locale);
         }
         // Re-attach raw slug for SEO resolvers to generate per-locale URLs
@@ -354,10 +361,11 @@ export const blogCtr = {
 
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        const isAdmin = context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdmin || locale) {
             filteredDocs = filteredDocs.map((doc) => {
                 const rawSlug = (doc as any).slug;
-                const localized = localizeDocument(doc, locale);
+                const localized = localizeDocument(doc, isAdmin ? 'en' : locale!);
                 if (rawSlug && typeof rawSlug === 'object') {
                     (localized as any)._rawSlug = rawSlug;
                 }

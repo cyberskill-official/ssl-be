@@ -114,7 +114,11 @@ export const destinationCtr = {
         let localizedDoc = doc;
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        const isAdmin = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdmin) {
+            localizedDoc = localizeDocument(doc, 'en');
+        }
+        else if (locale) {
             localizedDoc = localizeDocument(doc, locale);
         }
         if (rawSlug && typeof rawSlug === 'object') {
@@ -268,10 +272,11 @@ export const destinationCtr = {
         let finalDocs = sortDestinationsByRating<I_Destination>(signedDocs);
         const rawLocale = _context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
-        if (locale && _context.req?.sessionPortal !== E_SessionPortal.ADMIN) {
+        const isAdmin = _context.req?.sessionPortal === E_SessionPortal.ADMIN;
+        if (isAdmin || locale) {
             finalDocs = finalDocs.map((doc) => {
                 const rawSlug = (doc as any).slug;
-                const localized = localizeDocument(doc, locale);
+                const localized = localizeDocument(doc, isAdmin ? 'en' : locale!);
                 if (rawSlug && typeof rawSlug === 'object') {
                     (localized as any)._rawSlug = rawSlug;
                 }
