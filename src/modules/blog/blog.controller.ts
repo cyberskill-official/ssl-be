@@ -31,6 +31,30 @@ import { BlogModel } from './blog.model.js';
 
 const env = getEnv();
 const LEADING_SLASHES_REGEX = /^\/+/u;
+const BLOG_IMAGE_FIELDS: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
+const BLOG_TRANSLATION_TOP_FIELDS = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'] as const;
+const BLOG_TRANSLATION_ALL_FIELDS = [...BLOG_TRANSLATION_TOP_FIELDS, 'seo', 'faqs'] as const;
+const BLOG_DASHBOARD_TRANSLATION_FIELDS = ['title', 'slug', 'contentHeadline'] as const;
+const BLOG_DASHBOARD_SUMMARY_PROJECTION = 'id createdAt updatedAt title slug type category featuredImage contentHeadline authorId';
+
+type T_BlogTranslationField = typeof BLOG_TRANSLATION_ALL_FIELDS[number];
+
+function signBlogImageUrls(blog: I_Blog): I_Blog {
+    for (const field of BLOG_IMAGE_FIELDS) {
+        if (blog[field]) {
+            blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
+        }
+    }
+
+    return blog;
+}
+
+function normalizeSeoKeywords(blog: Record<string, any>): void {
+    if (blog['seo']?.keywords && typeof blog['seo'].keywords === 'object') {
+        const kw = blog['seo'].keywords;
+        blog['seo'].keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
+    }
+}
 
 function getEn(val: unknown): string {
     if (typeof val === 'object' && val)
@@ -123,7 +147,10 @@ async function mergeExternalTranslations(doc: Record<string, any>): Promise<void
  * Batch-merge external translations for multiple blog documents.
  * Used by getBlogs to avoid N+1 queries.
  */
-async function batchMergeExternalTranslations(docs: Record<string, any>[]): Promise<void> {
+async function batchMergeExternalTranslations(
+    docs: Record<string, any>[],
+    fields: readonly T_BlogTranslationField[] = BLOG_TRANSLATION_ALL_FIELDS,
+): Promise<void> {
     if (docs.length === 0)
         return;
 
@@ -140,7 +167,15 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
     if (blogIdCandidates.length === 0)
         return;
 
-    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }).lean();
+    const fieldSet = new Set(fields);
+    const projection = fields.reduce<Record<string, 1>>(
+        (acc, field) => {
+            acc[`translations.${field}`] = 1;
+            return acc;
+        },
+        { blogId: 1, lang: 1 },
+    );
+    const extDocs = await BlogTranslationModel.find({ blogId: { $in: blogIdCandidates } }, projection).lean();
     // Group by blogId: { blogId -> { lang -> translations } }
     const extMap = new Map<string, Record<string, Record<string, any>>>();
     for (const ext of extDocs) {
@@ -163,7 +198,7 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
             if (!t)
                 continue;
 
-            const topFields = ['title', 'slug', 'contentHeadline', 'contentSubHeadline', 'content'];
+            const topFields = BLOG_TRANSLATION_TOP_FIELDS.filter(field => fieldSet.has(field));
             for (const field of topFields) {
                 if (t[field] !== undefined && t[field] !== null) {
                     if (!doc[field] || typeof doc[field] !== 'object') {
@@ -177,7 +212,7 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
                 }
             }
 
-            if (t['seo']) {
+            if (fieldSet.has('seo') && t['seo']) {
                 if (!doc['seo'] || typeof doc['seo'] !== 'object') {
                     const enSeo = typeof doc['seo'] === 'object' ? doc['seo'] : undefined;
                     doc['seo'] = enSeo ? { ...enSeo } : {};
@@ -196,7 +231,7 @@ async function batchMergeExternalTranslations(docs: Record<string, any>[]): Prom
                 }
             }
 
-            if (t['faqs'] && Array.isArray(t['faqs'])) {
+            if (fieldSet.has('faqs') && t['faqs'] && Array.isArray(t['faqs'])) {
                 const faqArr = t['faqs'] as Array<Record<string, any>>;
                 if (!doc['faqs'] || !Array.isArray(doc['faqs'])) {
                     doc['faqs'] = [];
@@ -339,13 +374,22 @@ export const blogCtr = {
             efAny['isDel'] = { $ne: true };
         }
 
+        const rawOptions = (options ?? {}) as Record<string, unknown>;
+        const { dashboardSummary, ...queryOptions } = rawOptions;
+        const isDashboardSummary = dashboardSummary === true;
         const preparedQuery = prepareBlogListQuery(
             effectiveFilter,
-            options as Record<string, unknown> | undefined,
+            queryOptions,
         );
+        const pagingOptions = isDashboardSummary
+            ? (({ pagination: _pagination, ...summaryOptions }) => ({
+                    ...summaryOptions,
+                    projection: BLOG_DASHBOARD_SUMMARY_PROJECTION,
+                }))(preparedQuery.options)
+            : preparedQuery.options;
         const blogs = await mongooseCtr.findPaging(
             preparedQuery.filter as Parameters<typeof mongooseCtr.findPaging>[0],
-            preparedQuery.options as Parameters<typeof mongooseCtr.findPaging>[1],
+            pagingOptions as Parameters<typeof mongooseCtr.findPaging>[1],
         );
 
         if (!blogs.success)
@@ -357,18 +401,9 @@ export const blogCtr = {
         if (isAdmin) {
             blogs.result.docs = blogs.result.docs.map((blog) => {
                 // Still sign image URLs so the admin panel can display them
-                const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
-                for (const field of imageFields) {
-                    if (blog[field]) {
-                        blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
-                    }
-                }
+                signBlogImageUrls(blog);
                 // Fix seo.keywords: object → string for GraphQL String type
-                const b = blog as any;
-                if (b.seo?.keywords && typeof b.seo.keywords === 'object') {
-                    const kw = b.seo.keywords;
-                    b.seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
-                }
+                normalizeSeoKeywords(blog as any);
                 return blog;
             });
             return blogs;
@@ -388,20 +423,13 @@ export const blogCtr = {
             });
         }
 
-        filteredDocs = filteredDocs.map((blog) => {
-            const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
-
-            for (const field of imageFields) {
-                if (blog[field]) {
-                    blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
-                }
-            }
-
-            return blog;
-        });
+        filteredDocs = filteredDocs.map(signBlogImageUrls);
 
         // Merge external translations (for oversized blogs) before localization
-        await batchMergeExternalTranslations(filteredDocs as any);
+        await batchMergeExternalTranslations(
+            filteredDocs as any,
+            isDashboardSummary ? BLOG_DASHBOARD_TRANSLATION_FIELDS : BLOG_TRANSLATION_ALL_FIELDS,
+        );
 
         const rawLocale = context.req?.headers?.['x-accept-language'];
         const locale = typeof rawLocale === 'string' ? rawLocale.split(',')[0]?.trim() : undefined;
@@ -415,8 +443,7 @@ export const blogCtr = {
                 }
                 // Fix seo.keywords: object → string
                 if ((localized as any).seo?.keywords && typeof (localized as any).seo.keywords === 'object') {
-                    const kw = (localized as any).seo.keywords;
-                    (localized as any).seo.keywords = typeof kw.en === 'string' ? kw.en : (typeof kw['0'] === 'string' ? kw['0'] : String(Object.values(kw).find((v: unknown) => typeof v === 'string') || ''));
+                    normalizeSeoKeywords(localized as any);
                 }
                 return localized;
             });
