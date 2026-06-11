@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6.0.1
 
       - name: Env & Deps
-        uses: cyberskill-world/.github/actions/env-deps@main
+        uses: cyberskill-official/.github/actions/env-deps@main
 
       - name: Lint
-        uses: cyberskill-world/.github/actions/lint@main
+        uses: cyberskill-official/.github/actions/lint@main
