@@ -79,6 +79,7 @@ const MAP_USER_ENTITY_PROJECTION = {
     accountType: 1,
     isOnline: 1,
     hasUpcomingEvent: 1,
+    ageVerify: 1,
     partner1: 1,
     partner2: 1,
     settings: 1,
@@ -369,6 +370,87 @@ async function hydrateMapViewportEntities(docs: I_Location[]): Promise<I_Locatio
 
         return doc;
     });
+}
+
+async function hydrateMapViewportUserAvatarGalleries(
+    context: I_Context,
+    docs: I_Location[],
+): Promise<void> {
+    const galleryIds = new Set<string>();
+    const users: I_User[] = [];
+
+    for (const doc of docs) {
+        if (doc.entityType !== E_LocationEntityType.USER)
+            continue;
+
+        const user = doc.entity as I_User | undefined;
+        if (!user?.id)
+            continue;
+
+        users.push(user);
+
+        const partner1GalleryId = user.partner1?.galleryId;
+        const partner2GalleryId = user.partner2?.galleryId;
+
+        if (partner1GalleryId && !user.partner1?.gallery?.url) {
+            galleryIds.add(partner1GalleryId);
+        }
+        if (partner2GalleryId && !user.partner2?.gallery?.url) {
+            galleryIds.add(partner2GalleryId);
+        }
+    }
+
+    if (galleryIds.size === 0)
+        return;
+
+    const galleriesResult = await galleryMongooseCtr.findAll(
+        { id: { $in: Array.from(galleryIds) }, isDel: { $ne: true } } as any,
+        { id: 1, url: 1 } as any,
+        { limit: galleryIds.size } as any,
+    );
+
+    if (!galleriesResult.success || !galleriesResult.result)
+        return;
+
+    const galleryById = new Map<string, I_Gallery>();
+    for (const gallery of galleriesResult.result) {
+        if (gallery?.id && gallery.url) {
+            galleryById.set(gallery.id, gallery);
+        }
+    }
+
+    const { mediaOptions } = await getRequestViewerMediaContext(context);
+    const hydratedUserIds = new Set<string>();
+
+    for (const user of users) {
+        const partner1GalleryId = user.partner1?.galleryId;
+        const partner2GalleryId = user.partner2?.galleryId;
+
+        if (partner1GalleryId && !user.partner1?.gallery?.url) {
+            const gallery = galleryById.get(partner1GalleryId);
+            if (gallery) {
+                user.partner1 = {
+                    ...user.partner1,
+                    gallery,
+                };
+            }
+        }
+
+        if (partner2GalleryId && !user.partner2?.gallery?.url) {
+            const gallery = galleryById.get(partner2GalleryId);
+            if (gallery) {
+                user.partner2 = {
+                    ...user.partner2,
+                    gallery,
+                };
+            }
+        }
+
+        if (!hydratedUserIds.has(user.id)) {
+            hydrateUserMedia(user, mediaOptions);
+            hydratedUserIds.add(user.id);
+        }
+    }
 }
 
 async function hydrateViewportDocsForViewer(
@@ -3019,6 +3101,10 @@ export const locationCtr = {
         docs = dedupeUserLocationDocs(docs);
         markViewportPerf('dedupeUserLocationDocsMs', dedupeUserLocationDocsStartedAt);
 
+        const avatarGalleryHydrationStartedAt = Date.now();
+        await hydrateMapViewportUserAvatarGalleries(context, docs);
+        markViewportPerf('avatarGalleryHydrationMs', avatarGalleryHydrationStartedAt);
+
         if (filter.entityId) {
             const focusEntityStartedAt = Date.now();
             const alreadyInDocs = docs.some(doc => doc.entityId === filter.entityId);
@@ -3035,6 +3121,7 @@ export const locationCtr = {
                     ]);
                     const processedFocusDocs = preprocessBatch(hydratedFocusDocs);
                     if (processedFocusDocs.length > 0) {
+                        await hydrateMapViewportUserAvatarGalleries(context, processedFocusDocs);
                         forcedEntityInserted = true;
                         docs = dedupeFinalDocs([...processedFocusDocs, ...docs]);
                     }

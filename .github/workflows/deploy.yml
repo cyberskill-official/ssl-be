@@ -24,7 +24,7 @@ jobs:
           fi
 
       - name: Deploy
-        uses: cyberskill-world/.github/actions/deploy@main
+        uses: cyberskill-official/.github/actions/deploy@main
         with:
           HOST: ${{ vars[format('{0}_HOST', steps.env.outputs.ENV_PREFIX)] }}
           PORT: ${{ vars[format('{0}_PORT', steps.env.outputs.ENV_PREFIX)] }}

@@ -208,6 +208,10 @@ export const BlogModel = mongo.createModel<I_Blog>({
         },
     ],
 });
+BlogModel.schema.index(
+    { isActive: 1, isDel: 1, createdAt: -1 },
+    { name: 'idx_blogs_active_deleted_created_at' },
+);
 
 async function createMiddleware(this: I_Blog) {
     if (!this.isNew)
