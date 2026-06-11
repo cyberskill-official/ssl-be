@@ -9,7 +9,7 @@ describe('prepareBlogListQuery', () => {
             { page: 2, limit: 10, search: 'Guide (2026)+?' },
         );
 
-        expect(result.options).toEqual({ page: 2, limit: 10 });
+        expect(result.options).toEqual({ page: 2, limit: 10, leanWithId: false });
         expect(result.filter).toMatchObject({
             isDel: { $ne: true },
             type: 'BLOG',
@@ -38,5 +38,18 @@ describe('prepareBlogListQuery', () => {
 
         expect(result.filter['$or']).toEqual([{ 'title.en': 'Exact' }]);
         expect(result.filter['$and']).toHaveLength(2);
+    });
+
+    it('prevents lean pagination from replacing public blog id with Mongo _id', () => {
+        const result = prepareBlogListQuery(
+            {},
+            { lean: true, leanWithId: true, projection: { id: 1, title: 1 } },
+        );
+
+        expect(result.options).toEqual({
+            lean: true,
+            leanWithId: false,
+            projection: { id: 1, title: 1 },
+        });
     });
 });

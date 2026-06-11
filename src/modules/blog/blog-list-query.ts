@@ -16,6 +16,14 @@ function appendAndCondition(filter: T_QueryRecord, condition: T_QueryRecord): T_
     };
 }
 
+function withSafeBlogPagingOptions(options: T_QueryRecord): T_QueryRecord {
+    return {
+        ...options,
+        // mongoose-paginate-v2 otherwise overwrites the public UUID id with Mongo _id for lean docs.
+        leanWithId: false,
+    };
+}
+
 export function prepareBlogListQuery(
     filter: T_QueryRecord,
     options: T_QueryRecord | undefined,
@@ -24,7 +32,7 @@ export function prepareBlogListQuery(
     const normalizedSearch = typeof search === 'string' ? search.trim() : '';
 
     if (!normalizedSearch) {
-        return { filter, options: paginateOptions };
+        return { filter, options: withSafeBlogPagingOptions(paginateOptions) };
     }
 
     const searchRegex = new RegExp(escapeRegex(normalizedSearch), 'i');
@@ -41,6 +49,6 @@ export function prepareBlogListQuery(
                 { hostName: searchRegex },
             ],
         }),
-        options: paginateOptions,
+        options: withSafeBlogPagingOptions(paginateOptions),
     };
 }
