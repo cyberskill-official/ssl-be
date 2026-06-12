@@ -77,6 +77,7 @@ export const destinationCtr = {
                 extraQueryParams: {
                     class: 'normal',
                 },
+                expiresInSec: 24 * 60 * 60, // 24 hours
             });
         }
 
@@ -86,6 +87,7 @@ export const destinationCtr = {
                 extraQueryParams: {
                     class: 'normal',
                 },
+                expiresInSec: 24 * 60 * 60, // 24 hours
             });
         }
 
@@ -95,6 +97,7 @@ export const destinationCtr = {
                 extraQueryParams: {
                     class: 'normal',
                 },
+                expiresInSec: 24 * 60 * 60, // 24 hours
             });
         }
 
@@ -105,6 +108,7 @@ export const destinationCtr = {
                     extraQueryParams: {
                         class: 'normal',
                     },
+                    expiresInSec: 24 * 60 * 60, // 24 hours
                 }),
             );
         }
@@ -242,26 +246,26 @@ export const destinationCtr = {
 
                 if (doc.ratingStar) {
                     doc.ratingStar = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.ratingStar), extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.ratingStar), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 }),
                     );
                 }
 
                 if (doc.logo) {
                     doc.logo = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.logo), extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.logo), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 }),
                     );
                 }
 
                 if (doc.wearImage) {
                     doc.wearImage = await Promise.resolve(
-                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.wearImage), extraQueryParams: { class: 'normal' } }),
+                        bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(doc.wearImage), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 }),
                     );
                 }
 
                 if (Array.isArray(doc.images)) {
                     doc.images = await Promise.all(
                         doc.images.map((imageUrl: string) =>
-                            Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(imageUrl), extraQueryParams: { class: 'normal' } })),
+                            Promise.resolve(bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(imageUrl), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 })),
                         ),
                     );
                 }

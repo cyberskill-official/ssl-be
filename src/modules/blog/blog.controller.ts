@@ -322,6 +322,7 @@ export const blogCtr = {
         }
 
         if (!blogFound.success) {
+            log.warn(`[BlogController] getBlog not found — filter: ${JSON.stringify(filter)}, normalizedFilter: ${JSON.stringify(normalizedFilter)}`);
             return blogFound;
         }
 
@@ -559,6 +560,7 @@ export const blogCtr = {
         const blogFound = await blogCtr.getBlog(context, { filter });
 
         if (!blogFound.success) {
+            log.warn(`[BlogController] updateBlog — getBlog failed with filter: ${JSON.stringify(filter)}`);
             throwError({ message: 'Blog not found.', status: RESPONSE_STATUS.NOT_FOUND });
         }
 
