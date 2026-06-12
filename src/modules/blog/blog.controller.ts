@@ -42,7 +42,7 @@ type T_BlogTranslationField = typeof BLOG_TRANSLATION_ALL_FIELDS[number];
 function signBlogImageUrls(blog: I_Blog): I_Blog {
     for (const field of BLOG_IMAGE_FIELDS) {
         if (blog[field]) {
-            blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' } });
+            blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
         }
     }
 
@@ -329,7 +329,7 @@ export const blogCtr = {
         const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
         for (const field of imageFields) {
             if (blogFound.result[field]) {
-                blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' } });
+                blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
             }
         }
 
@@ -502,7 +502,7 @@ export const blogCtr = {
         let thumbnailUrl: string | undefined;
         try {
             if (blogResult.result.featuredImage) {
-                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' } });
+                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
             }
         }
         catch { }
