@@ -10,7 +10,7 @@ import type { I_Context } from '#shared/typescript/index.js';
 import { authnCtr } from '#modules/authn/index.js';
 import { roleCtr } from '#modules/authz/role/role.controller.js';
 import { E_Role, E_Role_Staff } from '#modules/authz/role/role.type.js';
-import { bunnyCtr } from '#modules/bunny/index.js';
+import { bunnyCtr, cleanFullUrl } from '#modules/bunny/index.js';
 import { languageCtr } from '#modules/language/index.js';
 import { notificationCtr } from '#modules/notification/index.js';
 import { E_NotificationEntityType, E_NotificationType, E_RedirectType } from '#modules/notification/notification.type.js';
@@ -42,7 +42,7 @@ type T_BlogTranslationField = typeof BLOG_TRANSLATION_ALL_FIELDS[number];
 function signBlogImageUrls(blog: I_Blog): I_Blog {
     for (const field of BLOG_IMAGE_FIELDS) {
         if (blog[field]) {
-            blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: blog[field]!, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
+            blog[field] = bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(blog[field]!), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
         }
     }
 
@@ -329,7 +329,7 @@ export const blogCtr = {
         const imageFields: Array<keyof Pick<I_Blog, 'featuredImage' | 'logo' | 'cover' | 'file'>> = ['featuredImage', 'logo', 'cover', 'file'];
         for (const field of imageFields) {
             if (blogFound.result[field]) {
-                blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: blogFound.result[field]!, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
+                blogFound.result[field] = bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(blogFound.result[field]!), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
             }
         }
 
@@ -502,7 +502,7 @@ export const blogCtr = {
         let thumbnailUrl: string | undefined;
         try {
             if (blogResult.result.featuredImage) {
-                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: blogResult.result.featuredImage, extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
+                thumbnailUrl = bunnyCtr.generateSignedUrl({ fullUrl: cleanFullUrl(blogResult.result.featuredImage), extraQueryParams: { class: 'normal' }, expiresInSec: 24 * 60 * 60 });
             }
         }
         catch { }
